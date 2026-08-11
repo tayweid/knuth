@@ -1,0 +1,888 @@
+@import "computer-modern/cmu-serif.css";
+
+/* ===== Reset & Base ===== */
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+:root {
+  --bg: #ffffff;
+  --bg-secondary: #f8f9fa;
+  --text: #1a1a1a;
+  --text-muted: #6b7280;
+  --border: #e5e7eb;
+  --accent: #3b82f6;
+  --code-bg: #f6f8fa;
+  --code-border: #e1e4e8;
+  --exec-border: #9ca3af;
+  --exec-bg: #f9fafb;
+  --font-serif: "Computer Modern Serif", "CMU Serif", Georgia, "Times New Roman", serif;
+  --font-mono: "SF Mono", "Fira Code", "Consolas", monospace;
+}
+
+body {
+  font-family: var(--font-serif);
+  font-size: 14px;
+  line-height: 1.4;
+  color: var(--text);
+  background: #ffffff;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Override Crepe's warm-white theme to pure white and black text */
+.milkdown {
+  --crepe-color-background: #ffffff !important;
+  --crepe-color-surface: #ffffff !important;
+  --crepe-color-surface-low: #ffffff !important;
+  --crepe-color-on-background: #1a1a1a !important;
+  --crepe-color-on-surface: #1a1a1a !important;
+  --crepe-color-on-surface-variant: #4a4a4a !important;
+  --crepe-color-hover: #f5f5f5 !important;
+  --crepe-color-selected: #e8e8e8 !important;
+  --crepe-color-secondary: #f0f0f0 !important;
+  --crepe-color-primary: #1a1a1a !important;
+  --crepe-font-title: "Computer Modern Serif", "CMU Serif", Georgia, serif !important;
+  --crepe-font-default: "Computer Modern Serif", "CMU Serif", Georgia, serif !important;
+  --crepe-color-inline-code: #c7254e !important;
+  color: #1a1a1a !important;
+}
+
+/* Force inline math to black and correct sizing */
+.milkdown .math-inline,
+.milkdown [data-type="math_inline"],
+.milkdown .katex {
+  color: #1a1a1a !important;
+}
+
+.milkdown span[data-type="math_inline"] {
+  display: inline !important;
+  vertical-align: baseline !important;
+  padding: 0 2px !important;
+  cursor: text !important;
+}
+
+.milkdown span[data-type="math_inline"] .katex {
+  font-size: 1em !important;
+}
+
+/* ===== App Layout ===== */
+.app {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+}
+
+
+/* ===== Connection Status ===== */
+.status-indicator {
+  position: fixed;
+  top: 6px;
+  left: 78px;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--text-muted);
+  opacity: 0.4;
+  z-index: 100;
+  pointer-events: none;
+}
+
+.status-on {
+  color: #22c55e;
+  opacity: 0.6;
+}
+
+
+.titlebar-filename {
+  font-weight: 500;
+  color: var(--text);
+}
+
+.titlebar-separator {
+  color: var(--border);
+}
+
+.titlebar-status {
+  font-family: var(--font-mono);
+  font-size: 10px;
+}
+
+.titlebar-status-on {
+  color: #22c55e;
+}
+
+/* ===== LaTeX heading sizes and spacing ===== */
+.milkdown h1 {
+  font-size: 1.8em !important;
+  font-weight: bold !important;
+  margin-top: 1.0em !important;
+  margin-bottom: 0.4em !important;
+  line-height: 1.2 !important;
+}
+
+.milkdown h2 {
+  font-size: 1.5em !important;
+  font-weight: bold !important;
+  margin-top: 0.8em !important;
+  margin-bottom: 0.15em !important;
+  line-height: 1.25 !important;
+}
+
+.milkdown h3 {
+  font-size: 1.3em !important;
+  font-weight: bold !important;
+  margin-top: 0.7em !important;
+  margin-bottom: 0.1em !important;
+  line-height: 1.3 !important;
+}
+
+.milkdown h4 {
+  font-size: 1.15em !important;
+  font-weight: bold !important;
+  margin-top: 0.6em !important;
+  margin-bottom: 0.1em !important;
+  line-height: 1.3 !important;
+}
+
+.milkdown h5 {
+  font-size: 1.05em !important;
+  font-weight: bold !important;
+  margin-top: 0.5em !important;
+  margin-bottom: 0.15em !important;
+}
+
+.milkdown h6 {
+  font-size: 1em !important;
+  font-weight: bold !important;
+  margin-top: 0.5em !important;
+  margin-bottom: 0.15em !important;
+}
+
+.milkdown h1:first-child,
+.milkdown h2:first-child,
+.milkdown h3:first-child {
+  margin-top: 0 !important;
+}
+
+/* Tight paragraph spacing — match LaTeX parskip */
+.milkdown p {
+  margin-top: 0 !important;
+  margin-bottom: 0.15em !important;
+}
+
+/* ===== Editor ===== */
+.editor-wrapper {
+  flex: 1;
+  overflow-y: auto;
+  display: flex;
+  justify-content: center;
+  position: relative;
+}
+
+/* Ensure drag/drop events reach ProseMirror */
+.editor-wrapper,
+.notebook-content,
+.editor-layout {
+  -webkit-user-drop: auto;
+}
+
+.notebook-content {
+  max-width: 950px;
+  width: 100%;
+  margin: 0 auto;
+  padding: 48px 8px 200px;
+  outline: none;
+}
+
+/* ===== Code Cells (pymd-specific) ===== */
+.code-cell {
+  position: relative;
+  margin-top: 0.5em;
+  margin-bottom: 0.5em;
+  border: 1px solid var(--code-border);
+  border-radius: 16px;
+  overflow: visible;
+  background: var(--code-bg);
+}
+
+.code-cell-exec {
+  border-color: var(--exec-border);
+  background: var(--exec-bg);
+}
+
+.code-cell-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--text-muted);
+  padding: 4px 8px;
+  background: var(--bg-secondary);
+  border-bottom: 1px solid var(--code-border);
+  border-radius: 16px 16px 0 0;
+  user-select: none;
+}
+
+.code-cell:hover .code-cell-header {
+  /* no special hover behavior */
+}
+
+.code-cell-collapsed .code-cell-header {
+  border-bottom: none;
+  border-radius: 16px;
+}
+
+.code-cell-exec .code-cell-header {
+  border-bottom-color: var(--exec-border);
+  background: #f3f4f6;
+}
+
+.code-cell-header-left,
+.code-cell-header-right {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.code-cell-header-left {
+  min-width: 32px;
+  margin-left: -4px;
+}
+
+.code-cell-run {
+  font-size: 11px;
+  line-height: 1;
+  color: #dc2626;
+  background: rgba(220, 38, 38, 0.08);
+  border: 1px solid rgba(220, 38, 38, 0.3);
+  border-radius: 50%;
+  width: 24px;
+  height: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: background 0.15s, transform 0.1s;
+}
+
+.code-cell-run:hover {
+  background: rgba(220, 38, 38, 0.15);
+  transform: scale(1.1);
+}
+
+.code-cell-run:disabled {
+  cursor: default;
+  transform: none;
+}
+
+.code-cell-run-active {
+  color: #991b1b;
+  animation: pulse 0.8s ease-in-out infinite;
+}
+
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.4; }
+}
+
+.code-cell-editor {
+  padding: 8px 0 8px 8px;
+}
+
+.code-cell-exec-toggle,
+.code-cell-toggle {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--border);
+  background: none;
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  padding: 1px 6px;
+  cursor: pointer;
+  opacity: 0.5;
+  transition: opacity 0.15s, color 0.15s, border-color 0.15s, background 0.15s;
+}
+
+.code-cell-exec-toggle:hover,
+.code-cell-toggle:hover {
+  opacity: 1;
+  color: var(--text-muted);
+  border-color: var(--text-muted);
+}
+
+.code-cell-exec-toggle-on {
+  opacity: 1;
+  color: var(--accent);
+  border-color: var(--accent);
+  background: rgba(59, 130, 246, 0.1);
+}
+
+.code-cell-exec-toggle-on:hover {
+  background: rgba(59, 130, 246, 0.2);
+}
+
+.code-cell-toggle-on {
+  opacity: 1;
+  color: #b45309;
+  border-color: #b45309;
+  background: rgba(180, 83, 9, 0.1);
+}
+
+.code-cell-toggle-on:hover {
+  background: rgba(180, 83, 9, 0.2);
+}
+
+.code-cell-delete {
+  font-size: 13px;
+  line-height: 1;
+  background: none;
+  border: none;
+  cursor: pointer;
+  opacity: 0.3;
+  padding: 0 2px;
+  transition: opacity 0.15s, color 0.15s;
+  color: var(--text-muted);
+}
+
+.code-cell-delete:hover {
+  opacity: 0.7;
+}
+
+.code-cell-delete-confirm {
+  opacity: 1 !important;
+  color: #dc2626 !important;
+}
+
+.code-cell-copy {
+  font-size: 13px;
+  line-height: 1;
+  background: none;
+  border: none;
+  cursor: pointer;
+  opacity: 0.4;
+  padding: 0 2px;
+  transition: opacity 0.15s;
+}
+
+.code-cell-copy:hover {
+  opacity: 1;
+}
+
+.code-cell + .code-cell {
+  margin-top: 0.5em;
+}
+
+.code-cell-running {
+  opacity: 0.7;
+}
+
+.code-cell-output:empty {
+  display: none;
+}
+
+/* Override Crepe's code block wrapper background */
+.milkdown .milkdown-code-block {
+  background: transparent !important;
+  padding: 0 !important;
+  margin: 1em 0 !important;
+}
+
+.code-cell-output {
+  border-top: 1px solid var(--code-border);
+  background: #ffffff;
+  border-radius: 0;
+}
+
+.code-cell-exec .code-cell-output {
+  border-top-color: var(--exec-border);
+}
+
+.code-cell-stdout {
+  padding: 8px 16px;
+  font-family: var(--font-mono);
+  font-size: 13px;
+  white-space: pre-wrap;
+  margin: 0;
+  color: var(--text);
+}
+
+.code-cell-stderr {
+  padding: 8px 16px;
+  font-family: var(--font-mono);
+  font-size: 13px;
+  white-space: pre-wrap;
+  margin: 0;
+  color: #b45309;
+}
+
+.code-cell-error {
+  padding: 8px 16px;
+  font-family: var(--font-mono);
+  font-size: 13px;
+  white-space: pre-wrap;
+  margin: 0;
+  color: #dc2626;
+  background: rgba(220, 38, 38, 0.05);
+  border-radius: 0 0 16px 16px;
+}
+
+.code-cell-figure {
+  display: block;
+  max-width: 100%;
+  height: auto;
+  padding: 8px 12px;
+}
+
+/* ===== Cell Divider (Colab-style) ===== */
+.cell-divider {
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 5;
+}
+
+.cell-divider-bottom {
+  top: calc(100% + (0.5em - 32px) / 2);
+}
+
+.cell-divider-top {
+  bottom: calc(100% + (0.5em - 32px) / 2);
+}
+
+.cell-divider-line {
+  position: absolute;
+  left: 10%;
+  right: 10%;
+  height: 1px;
+  background: transparent;
+  transition: background 0.15s;
+}
+
+.cell-divider:hover .cell-divider-line {
+  background: var(--border);
+}
+
+.cell-divider-btns {
+  display: flex;
+  gap: 8px;
+  opacity: 0;
+  transition: opacity 0.15s;
+  z-index: 10;
+}
+
+.cell-divider:hover .cell-divider-btns {
+  opacity: 1;
+}
+
+.cell-divider-btn {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--text-muted);
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 2px 12px;
+  cursor: pointer;
+  transition: color 0.15s, border-color 0.15s;
+}
+
+.cell-divider-btn:hover {
+  color: var(--accent);
+  border-color: var(--accent);
+}
+
+/* ===== LaTeX Display Math ===== */
+.pymd-latex-block {
+  margin: 0.5em 0;
+  cursor: text;
+  padding: 8px;
+  border-radius: 8px;
+  transition: background 0.15s;
+}
+
+.pymd-latex-block:hover {
+  background: var(--code-bg);
+}
+
+.pymd-latex-rendered {
+  text-align: center;
+}
+
+.pymd-latex-empty {
+  color: var(--text-muted);
+  font-style: italic;
+  font-family: var(--font-mono);
+}
+
+.pymd-latex-editor {
+  border: 1px solid var(--accent);
+  border-radius: 8px;
+  overflow: hidden;
+  background: var(--code-bg);
+}
+
+/* ===== CodeMirror overrides ===== */
+.cm-activeLine {
+  background-color: transparent !important;
+  border-top: none !important;
+  border-bottom: none !important;
+  outline-style: none !important;
+  box-shadow: none !important;
+}
+
+.cm-focused .cm-activeLine {
+  background-color: rgba(0, 0, 0, 0.06) !important;
+}
+
+.cm-activeLineGutter {
+  background-color: transparent !important;
+}
+
+/* Remove dashed outlines from code cells */
+.code-cell *:focus,
+.code-cell *:focus-visible,
+.code-cell *:focus-within {
+  outline-style: none !important;
+}
+
+/* Override Crepe's ProseMirror padding */
+.milkdown .ProseMirror {
+  padding: 8px 4px !important;
+}
+
+/* Fix toolbar: ensure it doesn't shift content */
+.milkdown .milkdown-toolbar {
+  position: fixed !important;
+  z-index: 9999 !important;
+}
+
+/* Instant block handle movement */
+.milkdown-block-handle {
+  transition: none !important;
+}
+
+/* Hide node selection outline */
+.ProseMirror .ProseMirror-selectednode {
+  outline: none !important;
+}
+
+/* ===== Interpolation {{variable}} ===== */
+.interpolation-hidden {
+  display: none;
+}
+
+.interpolation-value {
+  font-weight: inherit;
+}
+
+.interpolation-editing {
+  font-family: var(--font-mono);
+  font-size: 0.88em;
+  color: var(--accent);
+  background: rgba(59, 130, 246, 0.08);
+  border-radius: 3px;
+  padding: 0 2px;
+}
+
+.interpolation-unresolved {
+  color: var(--text-muted);
+  background: rgba(0, 0, 0, 0.04);
+  border-radius: 3px;
+  padding: 0 2px;
+  font-family: var(--font-mono);
+  font-size: 0.88em;
+}
+
+/* ===== Editor Layout (panels + editor) ===== */
+.editor-layout {
+  display: flex;
+  flex: 1;
+  overflow: hidden;
+}
+
+/* ===== Collapsible Panels ===== */
+.panel-left,
+.panel-right {
+  display: flex;
+  flex-shrink: 0;
+  position: relative;
+  transition: width 0.2s;
+}
+
+.panel-expanded.panel-left {
+  width: 200px;
+  border-right: 1px solid var(--border);
+}
+
+.panel-expanded.panel-right {
+  width: 350px;
+  border-left: 1px solid var(--border);
+}
+
+.panel-collapsed {
+  width: 24px;
+}
+
+.panel-toggle {
+  position: fixed;
+  top: 28px;
+  bottom: 0;
+  width: 20px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  border: none;
+  color: var(--border);
+  cursor: pointer;
+  font-size: 14px;
+  z-index: 100;
+  transition: color 0.15s, background 0.15s;
+}
+
+.panel-toggle:hover {
+  color: var(--text);
+  background: var(--bg-secondary);
+}
+
+.panel-toggle-left {
+  left: 0;
+}
+
+.panel-toggle-right {
+  right: 0;
+}
+
+/* ===== Outline (left panel) ===== */
+.outline-content {
+  overflow-y: auto;
+  padding: 12px 0;
+  font-size: 13px;
+  width: 100%;
+}
+
+.outline-header {
+  padding: 0 12px 8px;
+  font-weight: 600;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--text-muted);
+}
+
+.outline-list {
+  display: flex;
+  flex-direction: column;
+}
+
+.outline-item {
+  padding: 4px 12px;
+  cursor: pointer;
+  color: var(--text-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  transition: background 0.1s, color 0.1s;
+  border-left: 2px solid transparent;
+}
+
+.outline-item:hover {
+  background: var(--code-bg);
+  color: var(--text);
+}
+
+.outline-active {
+  color: var(--text);
+  border-left-color: var(--accent);
+  font-weight: 500;
+}
+
+.outline-level-1 { padding-left: 12px; font-weight: 600; }
+.outline-level-2 { padding-left: 24px; }
+.outline-level-3 { padding-left: 36px; font-size: 12px; }
+.outline-level-4 { padding-left: 48px; font-size: 12px; }
+.outline-level-5 { padding-left: 60px; font-size: 11px; }
+.outline-level-6 { padding-left: 72px; font-size: 11px; }
+
+/* ===== Raw Markdown (right panel) ===== */
+.raw-content {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+}
+
+.raw-header {
+  padding: 12px 12px 8px;
+  font-weight: 600;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--text-muted);
+  flex-shrink: 0;
+}
+
+.raw-textarea {
+  flex: 1;
+  padding: 0 12px 12px;
+  border: none;
+  outline: none;
+  resize: none;
+  font-family: var(--font-mono);
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--text);
+  background: transparent;
+}
+
+/* ===== Scrollbar ===== */
+.editor-wrapper::-webkit-scrollbar {
+  width: 6px;
+}
+
+.editor-wrapper::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.editor-wrapper::-webkit-scrollbar-thumb {
+  background: var(--border);
+  border-radius: 3px;
+}
+
+.editor-wrapper::-webkit-scrollbar-thumb:hover {
+  background: var(--text-muted);
+}
+
+/* ===== Print Styles (Cmd+P WYSIWYG PDF) ===== */
+@media print {
+  @page {
+    size: letter;
+    margin: 1in;
+  }
+
+  /* Hide all UI chrome */
+  .panel-left,
+  .panel-right,
+  .status-indicator,
+  .milkdown-block-handle,
+  .cell-divider,
+  .code-cell-header,
+  .code-cell-add-bar,
+  .milkdown-slash-menu,
+  .milkdown-toolbar,
+  .milkdown-link-tooltip {
+    display: none !important;
+  }
+
+  /* Reset layout */
+  .app {
+    display: block !important;
+    height: auto !important;
+    padding: 0 !important;
+  }
+
+  .editor-layout {
+    display: block !important;
+    overflow: visible !important;
+  }
+
+  .editor-wrapper {
+    display: block !important;
+    overflow: visible !important;
+  }
+
+  .notebook-content {
+    max-width: none !important;
+    padding: 0 !important;
+    margin: 0 !important;
+  }
+
+  /* Print font size */
+  body {
+    font-size: 11pt !important;
+    line-height: 1.3 !important;
+    color: #000 !important;
+    background: #fff !important;
+  }
+
+  /* All text black */
+  .milkdown,
+  .milkdown * {
+    color: #000 !important;
+  }
+
+  /* Code blocks: clean for print */
+  .code-cell {
+    border: 0.5pt solid #ccc !important;
+    border-radius: 16px !important;
+    margin: 0.8em 0 !important;
+    break-inside: avoid !important;
+    page-break-inside: avoid !important;
+    background: #f9f9f9 !important;
+  }
+
+  .code-cell-editor {
+    padding: 6pt 8pt !important;
+  }
+
+  .code-cell-output {
+    border-top: 0.5pt solid #ccc !important;
+    background: #fff !important;
+  }
+
+  /* Collapsed code cells: hide completely in print */
+  .code-cell-collapsed {
+    display: none !important;
+  }
+
+  /* Page break control */
+  .milkdown h1,
+  .milkdown h2,
+  .milkdown h3,
+  .milkdown h4,
+  .milkdown h5,
+  .milkdown h6 {
+    break-after: avoid !important;
+    page-break-after: avoid !important;
+  }
+
+  .pymd-latex-block,
+  .milkdown img,
+  .code-cell-figure {
+    break-inside: avoid !important;
+    page-break-inside: avoid !important;
+    max-width: 100% !important;
+  }
+
+  /* Remove hover effects */
+  .pymd-latex-block:hover,
+  .outline-item:hover {
+    background: transparent !important;
+  }
+
+  /* KaTeX: black */
+  .katex,
+  .katex * {
+    color: #000 !important;
+  }
+
+  /* Hide scrollbar artifacts */
+  .editor-wrapper::-webkit-scrollbar {
+    display: none !important;
+  }
+
+  /* Node selection outline: hide */
+  .ProseMirror .ProseMirror-selectednode {
+    outline: none !important;
+  }
+}

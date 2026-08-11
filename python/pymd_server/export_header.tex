@@ -1,0 +1,45 @@
+% Preserve blank lines as vertical space
+\usepackage{parskip}
+\setlength{\parskip}{0.5\baselineskip}
+
+% Custom code block styling for pymd export
+\usepackage{tcolorbox}
+\tcbuselibrary{listings}
+\usepackage{fancyvrb}
+
+\definecolor{codebg}{HTML}{F6F8FA}
+\definecolor{codeborder}{HTML}{E1E4E8}
+\definecolor{linenumcolor}{HTML}{9CA3AF}
+
+% Only redefine Shaded if it exists (Pandoc creates it when there are code blocks)
+\makeatletter
+\@ifundefined{Shaded}{%
+  % Define it fresh
+  \newenvironment{Shaded}{%
+    \begin{tcolorbox}[
+      colback=codebg,
+      colframe=codeborder,
+      arc=12pt,
+      boxrule=0.5pt,
+      left=8pt,
+      right=8pt,
+      top=6pt,
+      bottom=6pt
+    ]
+  }{\end{tcolorbox}}
+}{%
+  % Redefine existing
+  \renewenvironment{Shaded}{%
+    \begin{tcolorbox}[
+      colback=codebg,
+      colframe=codeborder,
+      arc=12pt,
+      boxrule=0.5pt,
+      left=8pt,
+      right=8pt,
+      top=6pt,
+      bottom=6pt
+    ]
+  }{\end{tcolorbox}}
+}
+\makeatother

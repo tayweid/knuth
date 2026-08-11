@@ -1,0 +1,18 @@
+[project]
+name = "pymd-server"
+version = "0.1.0"
+description = "Python sidecar server for pymd editor"
+requires-python = ">=3.11"
+dependencies = [
+    "websockets>=13.0",
+]
+
+[project.optional-dependencies]
+sci = [
+    "matplotlib",
+    "numpy",
+    "pandas",
+]
+
+[project.scripts]
+pymd-server = "pymd_server.server:main"

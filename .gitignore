@@ -1,0 +1,38 @@
+# Dependencies
+node_modules/
+target/
+
+# Build output
+dist/
+
+# Environment
+.env
+.env.*
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Tauri build artifacts
+src-tauri/target/
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+.eggs/
+build/
+dist/
+
+# pymd output cache
+*.pymd
+
+# Claude
+.claude/
