@@ -16,7 +16,10 @@ visible work but the least likely to invalidate anything.
 Vite + vanilla TS, mirroring Plass conventions (tsx-run tests, fixed dev
 port 5198). No framework, no editor deps yet.
 
-## Milestone 1 — File format (parse/serialize, round-trip)
+## Milestone 1 — File format (parse/serialize, round-trip) ✓
+
+Implemented in `src/format/percent.ts`; corpus + tests in
+`src/format/corpus/` and `src/format/round-trip.test.ts` (`npm test`).
 
 The `.py` percent-format document model, as pure logic with no UI.
 

@@ -102,13 +102,20 @@ and makes pyrmd the computation half.
   cell delimiters, `# %% [markdown]` text cells with `# `-prefixed prose —
   the convention jupytext/VS Code/Spyder/PyCharm already speak, so pyrmd
   files open as cell documents everywhere, and `python file.py` runs as-is.
-- Scratch cells: `# %% scratch` (exact tag TBD).
+- Scratch cells: `# %% scratch` — DECIDED: the exact token `scratch`
+  after the marker; any other suffix (titles, `tags=[...]`) stays a
+  program cell, so jupytext-written files parse unchanged.
 - **Outputs are stored inside the `.py`** as machine-managed comment blocks
   under their cell (text reprs, stdout). Figures are NOT embedded — they
   already live as `figs/<name>.svg` via auto-persistence, so the output
   block references the path. Everything stays diffable plain text, and git
   diffs show results changing alongside code — reproducibility receipts in
   the history.
+- DECIDED (output syntax): every output line is a comment prefixed
+  `#-> ` (bare `#->` for blanks); the block is the trailing run of such
+  lines in its cell. No start/end delimiters — self-delimiting, so
+  nothing can collide with `# %%` scanners, and results diff line by
+  line. `#->` lines are machine-owned: rewritten or removed on each run.
 
 ## Platform
 
@@ -129,8 +136,9 @@ and makes pyrmd the computation half.
 2. Scratch cells under bare `python file.py` — they execute (they're real
    code) and may error against ephemeral state. Does plain-python parity
    matter enough to guard, or is `pyrmd run` the canonical runner?
-3. Exact scratch-cell tag and output-block delimiter syntax in the percent
-   format (stay jupytext-tolerant).
+3. DECIDED — see "File format": scratch tag is the exact token
+   `# %% scratch`; outputs are trailing `#-> ` comment runs, no
+   delimiters.
 4. Scratch namespace v1: separate ChainMap-style namespace from day one,
    or shared namespace + never-persists rule first?
 5. When the DAG lands: staleness precision only, or opt-in reactive
