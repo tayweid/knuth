@@ -83,6 +83,12 @@ body {
   z-index: 10;
 }
 
+/* Keep the pods centered on the document column, not the viewport:
+   when the session panel is open, cede its width. */
+body:has(#panel:not([hidden])) #toolbar {
+  padding-right: calc(350px + 14px);
+}
+
 .tb-pod {
   display: inline-flex;
   align-items: center;
