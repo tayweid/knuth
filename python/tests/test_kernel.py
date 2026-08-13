@@ -120,6 +120,15 @@ async def test_over_websocket():
             _, final = await c.run(7, "x")
             assert final["result"] == "42", final
 
+            # Session isolation: a second connection gets its OWN kernel —
+            # a fresh namespace that can't see this one's variables.
+            async with websockets.connect(f"ws://127.0.0.1:{PORT}") as ws2:
+                c2 = Client(ws2)
+                _, final = await c2.run(1, "x")
+                assert final["type"] == "error" and "NameError" in final["traceback"], final
+            _, final = await c.run(9, "x")  # ours is untouched
+            assert final["result"] == "42", final
+
             # Restart: fresh process, empty namespace.
             await c.send(type="restart")
             while True:

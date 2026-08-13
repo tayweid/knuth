@@ -251,14 +251,15 @@ body {
   display: flex;
   align-items: stretch;
   height: 100vh;
-  padding-top: 60px;
 }
 
 #doc {
   flex: 1;
   min-width: 0;
   overflow-y: auto;
-  padding: 1.5rem 1.5rem 40vh;
+  /* The bar floats over the room; content starts below it and scrolls
+     beneath it, Plass-style. */
+  padding: calc(60px + 1.5rem) 1.5rem 40vh;
 }
 
 /* The bench: Knuth works directly on the room's surface — the lit white
@@ -464,16 +465,17 @@ body {
 
 .insert-actions button:hover { background: rgba(157, 184, 214, 0.12); }
 
-/* ---------- session panes: dark glass at the room's edge ---------- */
+/* ---------- session panes: a full-height column of the room ---------- */
 
 #panel {
   flex: 0 0 350px;
   display: flex;
   flex-direction: column;
-  background: var(--room-pane);
+  background: var(--bg);
   border-left: 1px solid var(--room-line);
   color: var(--room-ink);
   overflow: hidden;
+  padding-top: 60px;
 }
 
 #panel[hidden] { display: none; }
@@ -561,7 +563,7 @@ body {
 .data-table thead th {
   position: sticky;
   top: 0;
-  background: var(--room-pane);
+  background: var(--bg);
   color: var(--room-ink-soft);
   font-weight: 600;
   z-index: 1;

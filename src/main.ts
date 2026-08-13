@@ -72,7 +72,11 @@ function labeled(id: string, glyph: string, label: string, title: string): strin
 const toolbar = document.getElementById('toolbar')!;
 toolbar.innerHTML = `
   <div class="tb-pod doc-pod" id="doc-pod"><span class="name" id="file-name" title="Click to rename">untitled.py</span></div>
-  <div class="tb-pod tb-group" id="cells-pod"></div>
+  <div class="tb-pod tb-group" id="cells-pod">
+    ${labeled('add-code', icon('code'), 'Code', 'Program cell below the current one')}
+    ${labeled('add-scratch', icon('scratch'), 'Scratch', 'Scratch cell — explores the session, never persists')}
+    ${labeled('add-text', icon('text'), 'Text', 'Markdown text cell')}
+  </div>
   <div class="tb-pod tb-group">
     ${labeled('run-stale', icon('play'), 'Stale', 'Run stale program cells in order')}
     ${labeled('run-all', icon('playall'), 'All', 'Run all program cells from the top')}
@@ -171,7 +175,14 @@ function repaintName() {
 
 fileManager = new FileManager({
   getDoc: () => docView.doc,
-  setDoc: (doc) => docView.setDoc(doc),
+  setDoc: (doc) => {
+    docView.setDoc(doc);
+    // A different document deserves a fresh session — otherwise the
+    // previous document's variables haunt the explorer and values.json.
+    if (kernel.isReady) {
+      void kernel.restart().then(() => void panel.refresh());
+    }
+  },
   onState: repaintName,
   message: toast,
 });
@@ -191,26 +202,9 @@ flyout($('doc-pod'), icon('open'), 'File — open, save, project folder', [
   },
 ]);
 
-flyout($('cells-pod'), icon('plus'), 'Insert cell — code, scratch, text', [
-  {
-    glyph: icon('code'),
-    label: 'Code',
-    title: 'Program cell below the current one',
-    run: () => docView.insertRelative('program'),
-  },
-  {
-    glyph: icon('scratch'),
-    label: 'Scratch',
-    title: 'Scratch cell — explores the session, never persists',
-    run: () => docView.insertRelative('scratch'),
-  },
-  {
-    glyph: icon('text'),
-    label: 'Text',
-    title: 'Markdown text cell',
-    run: () => docView.insertRelative('text'),
-  },
-]);
+$('add-code').addEventListener('click', () => docView.insertRelative('program'));
+$('add-scratch').addEventListener('click', () => docView.insertRelative('scratch'));
+$('add-text').addEventListener('click', () => docView.insertRelative('text'));
 $('run-all').addEventListener('click', () => void docView.runAllProgram());
 $('run-stale').addEventListener('click', () => void docView.runStale());
 $('stop').addEventListener('click', () => kernel.interrupt());

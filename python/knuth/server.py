@@ -1,9 +1,10 @@
-"""WebSocket server owning the kernel subprocess.
+"""WebSocket server: one kernel subprocess PER CONNECTION.
 
-Clients speak the kernel's JSON protocol over ws://127.0.0.1:<port>, plus
-two commands the server handles itself: `interrupt` (SIGINT to the kernel
-process) and `restart` (kill and respawn — clients see a fresh `ready`).
-Kernel events are broadcast to every connected client.
+Every window/document gets its own fresh session — no state bleeding
+between documents or page loads, and closing the window ends its session.
+`interrupt` (SIGINT) and `restart` (kill + respawn, fresh `ready`) act on
+this connection's kernel only; every other message is forwarded verbatim,
+and kernel events stream straight back to the owning client.
 """
 
 import asyncio
@@ -16,10 +17,8 @@ import websockets
 
 
 class KernelProcess:
-    def __init__(self, on_event):
-        self.on_event = on_event
+    def __init__(self):
         self.proc = None
-        self._reader = None
 
     async def start(self):
         self.proc = await asyncio.create_subprocess_exec(
@@ -33,17 +32,6 @@ class KernelProcess:
             # and SVG rendering works in any context.
             env={"MPLBACKEND": "Agg", **os.environ},
         )
-        self._reader = asyncio.create_task(self._read_events())
-
-    async def _read_events(self):
-        while True:
-            line = await self.proc.stdout.readline()
-            if not line:
-                break
-            try:
-                self.on_event(json.loads(line))
-            except ValueError:
-                continue
 
     async def send(self, msg):
         self.proc.stdin.write((json.dumps(msg) + "\n").encode())
@@ -55,40 +43,34 @@ class KernelProcess:
         except ProcessLookupError:
             pass
 
-    async def restart(self):
-        if self._reader:
-            self._reader.cancel()
-        try:
-            self.proc.kill()
-        except ProcessLookupError:
-            pass
-        await self.proc.wait()
-        await self.start()
-
     def kill(self):
         if self.proc and self.proc.returncode is None:
             self.proc.kill()
 
+    async def stop(self):
+        self.kill()
+        if self.proc:
+            await self.proc.wait()
+
+
+async def _pump(kernel, ws):
+    """Forward this kernel's event lines to its client."""
+    while True:
+        line = await kernel.proc.stdout.readline()
+        if not line:
+            break
+        try:
+            await ws.send(line.decode())
+        except websockets.exceptions.ConnectionClosed:
+            break
+
 
 async def serve(port):
-    clients = set()
-    kernel_ready = False
-
-    def on_event(event):
-        nonlocal kernel_ready
-        if event.get("type") == "ready":
-            kernel_ready = True
-        websockets.broadcast(clients, json.dumps(event))
-
-    kernel = KernelProcess(on_event)
-    await kernel.start()
-
     async def handler(ws):
-        clients.add(ws)
+        kernel = KernelProcess()
+        await kernel.start()
+        pump_task = asyncio.create_task(_pump(kernel, ws))
         try:
-            # Late-joining clients still need to learn the kernel is up.
-            if kernel_ready:
-                await ws.send(json.dumps({"type": "ready"}))
             async for raw in ws:
                 try:
                     msg = json.loads(raw)
@@ -98,18 +80,19 @@ async def serve(port):
                 if kind == "interrupt":
                     kernel.interrupt()
                 elif kind == "restart":
-                    await kernel.restart()
+                    pump_task.cancel()
+                    await kernel.stop()
+                    await kernel.start()
+                    pump_task = asyncio.create_task(_pump(kernel, ws))
                 else:
                     await kernel.send(msg)
         finally:
-            clients.discard(ws)
+            pump_task.cancel()
+            kernel.kill()
 
-    try:
-        async with websockets.serve(handler, "127.0.0.1", port):
-            print(f"knuth kernel server on ws://127.0.0.1:{port}", flush=True)
-            await asyncio.get_running_loop().create_future()
-    finally:
-        kernel.kill()
+    async with websockets.serve(handler, "127.0.0.1", port):
+        print(f"knuth kernel server on ws://127.0.0.1:{port} (one session per window)", flush=True)
+        await asyncio.get_running_loop().create_future()
 
 
 def main(port=5197):
