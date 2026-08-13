@@ -51,10 +51,13 @@ interface CellView {
   running: boolean;
 }
 
+type NewCellKind = 'program' | 'scratch' | 'text';
+
 export class DocumentView {
   doc: KnuthDocument = parseDocument('# %%\n');
   private views: CellView[] = [];
   private endZone!: HTMLElement;
+  private lastFocused: CellView | null = null;
 
   constructor(
     private container: HTMLElement,
@@ -205,6 +208,25 @@ export class DocumentView {
     return v;
   }
 
+  /** Insert after the cell the user is (or was last) working in. */
+  insertRelative(kind: NewCellKind) {
+    const anchor =
+      this.lastFocused && this.views.includes(this.lastFocused)
+        ? this.lastFocused
+        : this.views[this.views.length - 1];
+    if (anchor) this.insertAfter(anchor, kind);
+    else this.insertAtEnd(kind);
+  }
+
+  private trackFocus(v: CellView) {
+    return EditorView.domEventHandlers({
+      focus: () => {
+        this.lastFocused = v;
+        return false;
+      },
+    });
+  }
+
   private cellKeymap(v: CellView) {
     return keymap.of([
       { key: 'Mod-Enter', run: () => (void this.runCell(v), true) },
@@ -231,6 +253,7 @@ export class DocumentView {
       doc: cellCode(v.cell),
       extensions: [
         this.cellKeymap(v),
+        this.trackFocus(v),
         minimalSetup,
         oneDark,
         python(),
@@ -262,6 +285,7 @@ export class DocumentView {
           { key: 'Shift-Enter', run: () => (this.focusAfter(v, false), true) },
           { key: 'Backspace', run: () => this.backspaceOnEmpty(v) },
         ]),
+        this.trackFocus(v),
         minimalSetup,
         oneDark,
         markdown(),
@@ -325,10 +349,10 @@ export class DocumentView {
 
   // ---------- structure edits ----------
 
-  private newCell(kind: 'program' | 'text'): Cell {
-    return kind === 'text'
-      ? { kind, marker: '# %% [markdown]', source: [''], output: [], trailing: [] }
-      : { kind, marker: '# %%', source: [''], output: [], trailing: [] };
+  private newCell(kind: NewCellKind): Cell {
+    const marker =
+      kind === 'text' ? '# %% [markdown]' : kind === 'scratch' ? '# %% scratch' : '# %%';
+    return { kind, marker, source: [''], output: [], trailing: [] };
   }
 
   /** Keep a blank separator line at the end of the cell above the gap. */
@@ -338,7 +362,7 @@ export class DocumentView {
     if (seg[seg.length - 1]?.trim() !== '') seg.push('');
   }
 
-  private insertAt(i: number, kind: 'program' | 'text') {
+  private insertAt(i: number, kind: NewCellKind) {
     const cell = this.newCell(kind);
     this.ensureSeparator(this.views[i - 1]);
     this.doc.cells.splice(i, 0, cell);
@@ -354,15 +378,15 @@ export class DocumentView {
     this.onChange();
   }
 
-  private insertAfter(v: CellView, kind: 'program' | 'text') {
+  private insertAfter(v: CellView, kind: NewCellKind) {
     this.insertAt(this.views.indexOf(v) + 1, kind);
   }
 
-  private insertBefore(v: CellView, kind: 'program' | 'text') {
+  private insertBefore(v: CellView, kind: NewCellKind) {
     this.insertAt(this.views.indexOf(v), kind);
   }
 
-  private insertAtEnd(kind: 'program' | 'text') {
+  private insertAtEnd(kind: NewCellKind) {
     this.insertAt(this.views.length, kind);
   }
 

@@ -142,6 +142,83 @@ body {
 
 .tb-btn .ico { width: 19px; height: 19px; display: block; }
 
+/* Word tags under buttons (Plass): light glass, dark ink, hover-revealed. */
+.tb-btn { position: relative; }
+
+.tb-btn .lbl {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 50%;
+  transform: translateX(-50%);
+  font: 11px var(--sans);
+  color: #2c2b29;
+  background: rgba(251, 250, 248, 0.92);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid rgba(0, 0, 0, 0.08);
+  border-radius: 5px;
+  padding: 2px 8px;
+  white-space: nowrap;
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.3);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.16s ease;
+  z-index: 20;
+}
+
+.tb-btn:hover .lbl,
+.tb-btn:focus-visible .lbl {
+  opacity: 1;
+}
+
+/* Hover flyouts: the group's labeled icons laid OVER their trigger.
+   Pods carry backdrop-filter (a stacking context), so lift whichever
+   pod the cursor is in above its neighbors. */
+#toolbar > * { position: relative; }
+#toolbar > *:hover,
+#toolbar > *:focus-within { z-index: 20; }
+
+.tb-flyout-wrap {
+  position: relative;
+  display: inline-flex;
+}
+
+.tb-flyout {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 5px 8px;
+  background: color-mix(in srgb, #3a3840 94%, transparent);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 999px;
+  box-shadow: 0 5px 18px rgba(0, 0, 0, 0.45);
+  opacity: 0;
+  visibility: hidden;
+  transition: opacity 0.14s ease;
+  z-index: 30;
+}
+
+.tb-flyout .tb-btn {
+  height: 40px;
+  min-width: 40px;
+  padding: 0 8px;
+  opacity: 1;
+}
+
+.tb-flyout .tb-btn .ico { width: 22px; height: 22px; }
+
+.tb-flyout-wrap:hover .tb-flyout,
+.tb-flyout-wrap:focus-within .tb-flyout {
+  opacity: 1;
+  visibility: visible;
+}
+
 /* Renaming, in place in the slug. */
 #toolbar .rename {
   font: 15px/1.5 var(--serif);
@@ -273,21 +350,43 @@ body {
 .cell.stale .cm-editor { border-left: 3px solid var(--amber); }
 
 /* text cells: light serif prose straight on the room — no box, no modes.
-   A hairline rule appears on the left while you're in (or over) the cell,
-   spanning exactly its height: the extent made visible without a box. */
+   Tiny bars above and below mark the cell's top and bottom while you're
+   in (or over) it: the extent made visible without becoming a box. */
 
 .cell.kind-text .cm-editor {
   border: 0;
   background: transparent;
   font-size: 17px;
-  box-shadow: inset 2px 0 0 transparent;
-  transition: box-shadow 0.15s ease;
+  position: relative;
 }
 
 .cell.kind-text .cm-editor.cm-focused { border: 0; }
 
-.cell.kind-text:hover .cm-editor { box-shadow: inset 2px 0 0 rgba(255, 255, 255, 0.12); }
-.cell.kind-text:focus-within .cm-editor { box-shadow: inset 2px 0 0 rgba(157, 184, 214, 0.4); }
+.cell.kind-text .cm-editor::before,
+.cell.kind-text .cm-editor::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  width: 28px;
+  height: 2px;
+  border-radius: 1px;
+  background: transparent;
+  transition: background 0.15s ease;
+  pointer-events: none;
+}
+
+.cell.kind-text .cm-editor::before { top: 0; }
+.cell.kind-text .cm-editor::after { bottom: 0; }
+
+.cell.kind-text:hover .cm-editor::before,
+.cell.kind-text:hover .cm-editor::after {
+  background: rgba(255, 255, 255, 0.16);
+}
+
+.cell.kind-text:focus-within .cm-editor::before,
+.cell.kind-text:focus-within .cm-editor::after {
+  background: rgba(157, 184, 214, 0.45);
+}
 
 .cell.kind-text .cm-content {
   font-family: var(--serif);
@@ -297,7 +396,9 @@ body {
   caret-color: #fff;
 }
 
-.cell.kind-text .cm-line { padding: 0 0 0 12px; }
+.cell.kind-text .cm-line { padding: 0; }
+
+.cell.kind-text .cm-content { padding: 8px 0; }
 
 .cell.kind-text .cm-placeholder {
   font-style: italic;

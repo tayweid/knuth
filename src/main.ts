@@ -16,6 +16,11 @@ const ICONS: Record<string, string> = {
   save: '<path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/>',
   project:
     '<path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/><circle cx="12" cy="14" r="2.4"/><line x1="12" y1="9.5" x2="12" y2="11.6"/>',
+  plus: '<line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>',
+  code: '<polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/>',
+  scratch:
+    '<rect x="4" y="4" width="16" height="16" rx="2" stroke-dasharray="3.4 2.8"/><line x1="9" y1="12" x2="15" y2="12"/>',
+  text: '<polyline points="4 7 4 4 20 4 20 7"/><line x1="9" y1="20" x2="15" y2="20"/><line x1="12" y1="4" x2="12" y2="20"/>',
   play: '<polygon points="7 4.5 19 12 7 19.5"/>',
   playall: '<polygon points="3.5 5 11 12 3.5 19"/><polygon points="13 5 20.5 12 13 19"/>',
   stop: '<rect x="6.5" y="6.5" width="11" height="11" rx="1.5"/>',
@@ -27,22 +32,55 @@ function icon(name: string): string {
   return `<svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${ICONS[name]}</svg>`;
 }
 
+// Plass's hover flyout: the trigger's group lays its labeled icons OVER
+// the trigger — pure :hover, no gap for the cursor to cross.
+function flyout(
+  parent: HTMLElement,
+  glyph: string,
+  title: string,
+  items: Array<{ glyph: string; label: string; title: string; run: () => void }>,
+) {
+  const wrap = document.createElement('span');
+  wrap.className = 'tb-flyout-wrap';
+  const trigger = document.createElement('button');
+  trigger.type = 'button';
+  trigger.className = 'tb-btn';
+  trigger.title = title;
+  trigger.innerHTML = glyph;
+  trigger.addEventListener('mousedown', (e) => e.preventDefault());
+  wrap.append(trigger);
+  const fly = document.createElement('span');
+  fly.className = 'tb-flyout';
+  for (const it of items) {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.className = 'tb-btn';
+    b.title = it.title;
+    b.innerHTML = `${it.glyph}<span class="lbl">${it.label}</span>`;
+    b.addEventListener('mousedown', (e) => e.preventDefault());
+    b.addEventListener('click', it.run);
+    fly.append(b);
+  }
+  wrap.append(fly);
+  parent.append(wrap);
+}
+
+function labeled(id: string, glyph: string, label: string, title: string): string {
+  return `<button class="tb-btn" id="${id}" title="${title}">${glyph}<span class="lbl">${label}</span></button>`;
+}
+
 const toolbar = document.getElementById('toolbar')!;
 toolbar.innerHTML = `
-  <div class="tb-pod doc-pod"><span class="name" id="file-name" title="Click to rename">untitled.py</span></div>
+  <div class="tb-pod doc-pod" id="doc-pod"><span class="name" id="file-name" title="Click to rename">untitled.py</span></div>
+  <div class="tb-pod tb-group" id="cells-pod"></div>
   <div class="tb-pod tb-group">
-    <button class="tb-btn" id="open" title="Open (Cmd-O)">${icon('open')}</button>
-    <button class="tb-btn" id="save" title="Save (Cmd-S)">${icon('save')}</button>
-    <button class="tb-btn" id="folder" title="Attach the project folder: values.json and figs/ stay fresh there for Typst/Plass">${icon('project')}</button>
+    ${labeled('run-stale', icon('play'), 'Stale', 'Run stale program cells in order')}
+    ${labeled('run-all', icon('playall'), 'All', 'Run all program cells from the top')}
+    ${labeled('stop', icon('stop'), 'Stop', 'Interrupt the running cell')}
+    ${labeled('restart', icon('restart'), 'Restart', 'Fresh session (kernel process replaced)')}
   </div>
   <div class="tb-pod tb-group">
-    <button class="tb-btn" id="run-stale" title="Run stale program cells in order">${icon('play')}</button>
-    <button class="tb-btn" id="run-all" title="Run all program cells from the top">${icon('playall')}</button>
-    <button class="tb-btn" id="stop" title="Interrupt the running cell">${icon('stop')}</button>
-    <button class="tb-btn" id="restart" title="Fresh session (kernel process replaced)">${icon('restart')}</button>
-  </div>
-  <div class="tb-pod tb-group">
-    <button class="tb-btn" id="toggle-panel" title="Show/hide the session panes">${icon('panel')}</button>
+    ${labeled('toggle-panel', icon('panel'), 'Session', 'Show/hide the session panes')}
     <span id="kernel-status">connecting…</span>
   </div>
 `;
@@ -140,16 +178,39 @@ fileManager = new FileManager({
 
 fileManager.newDoc();
 
-$('open').addEventListener('click', () => void fileManager.open());
-$('save').addEventListener('click', () => void fileManager.save());
-$('folder').addEventListener('click', () => {
-  void fileManager.attachFolder().then((attached) => {
-    if (attached) {
-      $('folder').textContent = `⌂ ${fileManager.dir!.name}`;
-      syncArtifacts();
-    }
-  });
-});
+// The file lifecycle lives in the name slug, one trigger flying out to
+// three; the cells pod does the same for insertion.
+flyout($('doc-pod'), icon('open'), 'File — open, save, project folder', [
+  { glyph: icon('open'), label: 'Open', title: 'Open… (⌘O)', run: () => void fileManager.open() },
+  { glyph: icon('save'), label: 'Save', title: 'Save (⌘S)', run: () => void fileManager.save() },
+  {
+    glyph: icon('project'),
+    label: 'Folder',
+    title: 'Attach the project folder: values.json and figs/ stay fresh there for Typst/Plass',
+    run: () => void fileManager.attachFolder().then((ok) => ok && syncArtifacts()),
+  },
+]);
+
+flyout($('cells-pod'), icon('plus'), 'Insert cell — code, scratch, text', [
+  {
+    glyph: icon('code'),
+    label: 'Code',
+    title: 'Program cell below the current one',
+    run: () => docView.insertRelative('program'),
+  },
+  {
+    glyph: icon('scratch'),
+    label: 'Scratch',
+    title: 'Scratch cell — explores the session, never persists',
+    run: () => docView.insertRelative('scratch'),
+  },
+  {
+    glyph: icon('text'),
+    label: 'Text',
+    title: 'Markdown text cell',
+    run: () => docView.insertRelative('text'),
+  },
+]);
 $('run-all').addEventListener('click', () => void docView.runAllProgram());
 $('run-stale').addEventListener('click', () => void docView.runStale());
 $('stop').addEventListener('click', () => kernel.interrupt());
