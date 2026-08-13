@@ -54,11 +54,11 @@ Two candidate architectures, both behind the same small Kernel interface
   (Chromium-only) — the riskiest assumption, especially writing figures
   through the mount.
 
-**Decision checkpoint at the start of this milestone**: write up the
-tradeoffs properly (leaning local sidecar) and pick the v1 default. The
-Kernel interface keeps the other one available later either way. If
-Pyodide is in the running, a half-day spike — mount a folder, run
-pandas + matplotlib, write `figs/test.svg` from inside — settles it.
+**Decision checkpoint at the start of this milestone**: the tradeoff
+write-up lives in [KERNEL.md](./KERNEL.md), recommending the local
+sidecar for v1 (one engine shared with `knuth run`; Pyodide stays
+available later behind the same Kernel interface as a zero-install
+teaching mode).
 
 Done when: a code string runs in a fresh session from the app, stdout
 streams back, errors carry tracebacks, and Stop works.
