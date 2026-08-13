@@ -1,4 +1,8 @@
-# pyrmd
+# Knuth (formerly pyrmd)
+
+> Part of the Claerbout suite with [Plass](https://github.com/tayweid/plass).
+> The v2 redesign lives in [DESIGN.md](./DESIGN.md); the README below
+> describes the v1 Tauri app.
 
 A WYSIWYG markdown editor with executable Python code cells. Combines Typora-style editing with Jupyter-style computation in a native desktop app.
 

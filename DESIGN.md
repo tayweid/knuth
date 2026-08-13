@@ -1,4 +1,4 @@
-# pyrmd v2 — the workbench
+# Knuth — the workbench (formerly pyrmd)
 
 ## Naming (decided)
 
