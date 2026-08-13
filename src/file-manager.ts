@@ -129,6 +129,30 @@ export class FileManager {
     }
   }
 
+  /** Rename in place (Chromium handle.move); enforces the .py suffix. */
+  async rename(newName: string): Promise<boolean> {
+    newName = newName.trim();
+    if (!newName) return false;
+    if (!/\.py$/i.test(newName)) newName += '.py';
+    if (newName === this.name) return true;
+    if (this.handle) {
+      if (typeof this.handle.move !== 'function') {
+        this.hooks.message('Renaming needs a newer Chrome (FileSystemHandle.move)');
+        return false;
+      }
+      try {
+        await this.handle.move(newName);
+      } catch (e) {
+        console.warn('Rename failed', e);
+        this.hooks.message('Could not rename the file');
+        return false;
+      }
+    }
+    this.name = newName;
+    this.hooks.onState();
+    return true;
+  }
+
   // ---------- project folder: the contract ----------
 
   async attachFolder(): Promise<boolean> {

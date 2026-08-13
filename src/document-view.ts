@@ -64,6 +64,8 @@ export class DocumentView {
     private onProgramRun?: () => void,
     /** Any code cell finished (ok or not) — the session may have changed. */
     private onRun?: () => void,
+    /** A cell was deleted; calling `restore` puts it back. */
+    private onCellDeleted?: (restore: () => void) => void,
   ) {}
 
   setDoc(doc: KnuthDocument) {
@@ -208,7 +210,20 @@ export class DocumentView {
       { key: 'Mod-Enter', run: () => (void this.runCell(v), true) },
       { key: 'Shift-Enter', run: () => (this.runAndAdvance(v), true) },
       { key: 'Alt-Enter', run: () => (this.runAndInsertBelow(v), true) },
+      { key: 'Backspace', run: () => this.backspaceOnEmpty(v) },
     ]);
+  }
+
+  /** Backspace in an empty cell deletes it (Jupyter's affordance) and
+   *  moves focus up; the deletion is restorable via onCellDeleted. */
+  private backspaceOnEmpty(v: CellView): boolean {
+    if (v.editor && v.editor.state.doc.length === 0 && this.views.length > 1) {
+      const prev = this.views[this.views.indexOf(v) - 1] ?? this.views[1];
+      this.remove(v);
+      prev?.editor?.focus();
+      return true;
+    }
+    return false;
   }
 
   private buildCodeBody(v: CellView) {
@@ -243,7 +258,10 @@ export class DocumentView {
     v.editor = new EditorView({
       doc: textProse(v.cell).replace(/\n$/, ''),
       extensions: [
-        keymap.of([{ key: 'Shift-Enter', run: () => (this.focusAfter(v, false), true) }]),
+        keymap.of([
+          { key: 'Shift-Enter', run: () => (this.focusAfter(v, false), true) },
+          { key: 'Backspace', run: () => this.backspaceOnEmpty(v) },
+        ]),
         minimalSetup,
         oneDark,
         markdown(),
@@ -281,7 +299,6 @@ export class DocumentView {
         this.onChange();
       });
     }
-    add('✕', 'Delete cell', () => this.remove(v));
     return tools;
   }
 
@@ -351,6 +368,7 @@ export class DocumentView {
 
   private remove(v: CellView) {
     const i = this.views.indexOf(v);
+    const cell = v.cell;
     this.doc.cells.splice(i, 1);
     this.views.splice(i, 1);
     v.editor?.destroy();
@@ -358,6 +376,20 @@ export class DocumentView {
     this.markStaleFromIndex(i);
     this.onChange();
     if (this.views.length === 0) this.insertAtEnd('program');
+    this.onCellDeleted?.(() => {
+      const at = Math.min(i, this.views.length);
+      this.doc.cells.splice(at, 0, cell);
+      const view = this.buildView(cell);
+      this.views.splice(at, 0, view);
+      if (at + 1 < this.views.length) this.views[at + 1].root.before(view.root);
+      else this.endZone.before(view.root);
+      if (cell.kind === 'program') {
+        view.stale = true;
+        this.refreshBadge(view);
+      }
+      view.editor?.focus();
+      this.onChange();
+    });
   }
 
   private rebuild(v: CellView) {

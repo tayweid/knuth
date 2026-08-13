@@ -122,21 +122,41 @@ body {
 
 /* Sleep/wake: soft at rest, everything wakes near the bar. */
 .tb-btn {
-  font: 13px/1 var(--sans);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   color: rgba(240, 238, 233, 0.9);
   background: transparent;
   border: 0;
   border-radius: 8px;
   height: 32px;
-  padding: 0 10px;
+  min-width: 32px;
+  padding: 0 6px;
   cursor: pointer;
   opacity: 0.4;
   transition: opacity 0.25s ease, background 0.12s, color 0.12s;
-  white-space: nowrap;
 }
 
 #toolbar:hover .tb-btn { opacity: 1; }
 .tb-btn:hover { background: rgba(255, 255, 255, 0.12); }
+
+.tb-btn .ico { width: 19px; height: 19px; display: block; }
+
+/* Renaming, in place in the slug. */
+#toolbar .rename {
+  font: 15px/1.5 var(--serif);
+  letter-spacing: 0.09em;
+  color: rgba(252, 252, 251, 0.95);
+  background: transparent;
+  border: 0;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.3);
+  outline: none;
+  width: 16ch;
+  padding: 0;
+}
+
+#toolbar .name { cursor: text; border-radius: 5px; padding: 1px 4px; }
+#toolbar .name:hover { color: #fff; }
 
 #kernel-status {
   font: 12px/1 var(--sans);
@@ -252,15 +272,22 @@ body {
 
 .cell.stale .cm-editor { border-left: 3px solid var(--amber); }
 
-/* text cells: light serif prose straight on the room — no box, no modes */
+/* text cells: light serif prose straight on the room — no box, no modes.
+   A hairline rule appears on the left while you're in (or over) the cell,
+   spanning exactly its height: the extent made visible without a box. */
 
 .cell.kind-text .cm-editor {
   border: 0;
   background: transparent;
   font-size: 17px;
+  box-shadow: inset 2px 0 0 transparent;
+  transition: box-shadow 0.15s ease;
 }
 
 .cell.kind-text .cm-editor.cm-focused { border: 0; }
+
+.cell.kind-text:hover .cm-editor { box-shadow: inset 2px 0 0 rgba(255, 255, 255, 0.12); }
+.cell.kind-text:focus-within .cm-editor { box-shadow: inset 2px 0 0 rgba(157, 184, 214, 0.4); }
 
 .cell.kind-text .cm-content {
   font-family: var(--serif);
@@ -270,7 +297,7 @@ body {
   caret-color: #fff;
 }
 
-.cell.kind-text .cm-line { padding: 0; }
+.cell.kind-text .cm-line { padding: 0 0 0 12px; }
 
 .cell.kind-text .cm-placeholder {
   font-style: italic;

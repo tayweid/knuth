@@ -16,6 +16,11 @@ interface SaveFilePickerOptions {
   suggestedName?: string;
 }
 
+interface FileSystemFileHandle {
+  /** Chromium: rename within the same directory. */
+  move?(name: string): Promise<void>;
+}
+
 interface Window {
   showOpenFilePicker?(options?: OpenFilePickerOptions): Promise<FileSystemFileHandle[]>;
   showSaveFilePicker?(options?: SaveFilePickerOptions): Promise<FileSystemFileHandle>;
