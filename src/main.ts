@@ -13,6 +13,7 @@ toolbar.innerHTML = `
   <span class="name" id="file-name">untitled.py</span>
   <button id="open" title="Open (Cmd-O)">Open</button>
   <button id="save" title="Save (Cmd-S)">Save</button>
+  <button id="folder" title="Attach the project folder: values.json and figs/ are kept fresh there for Typst/Plass">Folder…</button>
   <span class="spacer"></span>
   <button id="run-stale">Run stale</button>
   <button id="run-all">Run all</button>
@@ -55,7 +56,25 @@ const kernel = new SidecarKernel(undefined, (state) => {
 });
 
 let fileManager: FileManager;
-const docView = new DocumentView($('doc'), kernel, () => fileManager?.noteChange());
+
+// After program cells run, mirror the session into the project folder
+// (values.json + figs/). Debounced so a run-all writes once at the end.
+let artifactsTimer = 0;
+function syncArtifacts() {
+  if (!fileManager?.dir) return;
+  clearTimeout(artifactsTimer);
+  artifactsTimer = window.setTimeout(async () => {
+    const artifacts = await kernel.artifacts();
+    if (artifacts) await fileManager.writeArtifacts(artifacts.values, artifacts.figures);
+  }, 300);
+}
+
+const docView = new DocumentView(
+  $('doc'),
+  kernel,
+  () => fileManager?.noteChange(),
+  syncArtifacts,
+);
 
 fileManager = new FileManager({
   getDoc: () => docView.doc,
@@ -78,6 +97,14 @@ fileManager.newDoc();
 
 $('open').addEventListener('click', () => void fileManager.open());
 $('save').addEventListener('click', () => void fileManager.save());
+$('folder').addEventListener('click', () => {
+  void fileManager.attachFolder().then((attached) => {
+    if (attached) {
+      $('folder').textContent = `⌂ ${fileManager.dir!.name}`;
+      syncArtifacts();
+    }
+  });
+});
 $('run-all').addEventListener('click', () => void docView.runAllProgram());
 $('run-stale').addEventListener('click', () => void docView.runStale());
 $('stop').addEventListener('click', () => kernel.interrupt());

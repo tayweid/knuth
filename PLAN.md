@@ -92,9 +92,16 @@ the OS (Plass lesson).
 
 Done when: open, edit, run, save a `.py` cell document end to end.
 
-## Milestone 4 — The contract (auto-persistence)
+## Milestone 4 — The contract (auto-persistence) ✓
 
-The Claerbout payoff: Knuth's session feeds a Typst paper with no glue.
+Built. The kernel produces artifacts (`Session.artifacts()`: JSON-safe
+namespace mirror + named figures as SVG text); the app materializes them
+into an attached project folder ("Folder…" in the toolbar) after each
+clean program-cell run — the browser cannot hand the kernel a real path,
+so contract writes happen client-side through the directory handle, which
+also works unchanged for a future Pyodide backend. Acceptance demo passed:
+values.json + figs/fig.svg + stock `typst compile`, value change picked up
+on recompile with neither app in the loop.
 
 - After each program-cell run, mirror the namespace per DESIGN.md rules:
   - scalars / small serializables → `values.json` (regenerated, never
@@ -134,5 +141,9 @@ session, not the document.
 - Cell-level DAG for staleness precision; possibly opt-in reactive rerun.
 - The kernel not chosen in Milestone 2, behind the same interface.
 - Tables in the folder contract (DESIGN.md Q1 — parked).
+- Kernel working directory: sidecar code can't `read_csv('data.csv')`
+  relative to the project folder, because the browser never learns real
+  paths. Likely a server-side project root (`knuth serve --root` or a
+  path hint file) — needed before `knuth run` feels complete.
 - Plass line-breaker port for text-cell typography (Q6 revisit).
 - External-change reload, themes, export niceties.

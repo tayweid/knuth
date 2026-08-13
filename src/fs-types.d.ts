@@ -19,6 +19,7 @@ interface SaveFilePickerOptions {
 interface Window {
   showOpenFilePicker?(options?: OpenFilePickerOptions): Promise<FileSystemFileHandle[]>;
   showSaveFilePicker?(options?: SaveFilePickerOptions): Promise<FileSystemFileHandle>;
+  showDirectoryPicker?(options?: { mode?: 'read' | 'readwrite' }): Promise<FileSystemDirectoryHandle>;
   launchQueue?: {
     setConsumer(consumer: (params: { files: FileSystemHandle[] }) => void): void;
   };

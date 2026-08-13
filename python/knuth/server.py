@@ -8,6 +8,7 @@ Kernel events are broadcast to every connected client.
 
 import asyncio
 import json
+import os
 import signal
 import sys
 
@@ -28,6 +29,9 @@ class KernelProcess:
             "knuth.kernel",
             stdin=asyncio.subprocess.PIPE,
             stdout=asyncio.subprocess.PIPE,
+            # Headless matplotlib: no GUI windows from a background service,
+            # and SVG rendering works in any context.
+            env={"MPLBACKEND": "Agg", **os.environ},
         )
         self._reader = asyncio.create_task(self._read_events())
 

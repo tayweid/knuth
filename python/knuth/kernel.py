@@ -69,6 +69,9 @@ def main():
                     emit({"type": "error", "id": msg["id"], "traceback": payload})
             elif kind == "namespace":
                 emit({"type": "namespace", "vars": session.snapshot()})
+            elif kind == "artifacts":
+                values, figures = session.artifacts()
+                emit({"type": "artifacts", "values": values, "figures": figures})
         except KeyboardInterrupt:
             # Interrupt arrived while idle (or between commands): ignore.
             state["id"] = None

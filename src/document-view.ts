@@ -52,6 +52,8 @@ export class DocumentView {
     private container: HTMLElement,
     private kernel: Kernel,
     private onChange: () => void,
+    /** A program cell finished cleanly — namespace/artifacts moved. */
+    private onProgramRun?: () => void,
   ) {}
 
   setDoc(doc: KnuthDocument) {
@@ -116,6 +118,7 @@ export class DocumentView {
     if (outcome.ok && v.cell.kind === 'program') v.stale = false;
     this.refreshBadge(v);
     this.onChange();
+    if (outcome.ok && v.cell.kind === 'program') this.onProgramRun?.();
     return outcome.ok;
   }
 

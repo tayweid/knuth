@@ -31,11 +31,19 @@ export interface NamespaceVar {
   preview: string;
 }
 
+export interface Artifacts {
+  /** JSON-safe namespace mirror destined for values.json. */
+  values: Record<string, unknown>;
+  /** Named figures as SVG text, destined for figs/<name>.svg. */
+  figures: Record<string, string>;
+}
+
 export interface Kernel {
   run(code: string, handlers?: RunHandlers): Promise<RunOutcome>;
   interrupt(): void;
   restart(): Promise<void>;
   namespace(): Promise<NamespaceVar[]>;
+  artifacts(): Promise<Artifacts | null>;
   close(): void;
 }
 
@@ -54,6 +62,7 @@ export class SidecarKernel implements Kernel {
   private nextId = 1;
   private runs = new Map<number, PendingRun>();
   private namespaceWaiters: Array<(vars: NamespaceVar[]) => void> = [];
+  private artifactsWaiters: Array<(artifacts: Artifacts | null) => void> = [];
   private restartWaiters: Array<() => void> = [];
 
   constructor(
@@ -91,6 +100,7 @@ export class SidecarKernel implements Kernel {
     }
     this.runs.clear();
     for (const resolve of this.namespaceWaiters.splice(0)) resolve([]);
+    for (const resolve of this.artifactsWaiters.splice(0)) resolve(null);
     for (const resolve of this.restartWaiters.splice(0)) resolve();
   }
 
@@ -123,6 +133,10 @@ export class SidecarKernel implements Kernel {
       }
       case 'namespace': {
         this.namespaceWaiters.shift()?.(msg.vars);
+        break;
+      }
+      case 'artifacts': {
+        this.artifactsWaiters.shift()?.({ values: msg.values, figures: msg.figures });
         break;
       }
     }
@@ -160,6 +174,14 @@ export class SidecarKernel implements Kernel {
     return new Promise((resolve) => {
       this.namespaceWaiters.push(resolve);
       this.send({ type: 'namespace' });
+    });
+  }
+
+  async artifacts(): Promise<Artifacts | null> {
+    if (!this.connectedReady) return null;
+    return new Promise((resolve) => {
+      this.artifactsWaiters.push(resolve);
+      this.send({ type: 'artifacts' });
     });
   }
 

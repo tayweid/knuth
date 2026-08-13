@@ -95,6 +95,13 @@ and makes pyrmd the computation half.
   - DataFrames: session-only (viewer material; too big for the contract).
   - `values.json` is REGENERATED on each clean run, never appended — it
     mirrors the program namespace exactly; deleted variables disappear.
+- DECIDED (M4): the kernel *produces* artifacts; the app *materializes*
+  them. The browser can never hand the sidecar a real path (File System
+  Access API exposes no paths), so contract writes go through the app's
+  project-folder directory handle — an architecture that also works
+  unchanged for a Pyodide backend. Consequence: the kernel's cwd is not
+  the project folder in sidecar mode; relative data reads are an open
+  problem (see PLAN.md Later).
 
 ## File format: `.py`, percent format, outputs inside
 

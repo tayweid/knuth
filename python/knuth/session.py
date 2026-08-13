@@ -6,8 +6,45 @@ stdout/stderr redirection is the kernel's job.
 """
 
 import ast
+import json
 import traceback
 import types
+
+# values.json size guard: a "small serializable" stops being small here.
+MAX_VALUE_JSON = 10_000
+
+
+def _persistable(value):
+    """(value, ok): JSON-safe mirror of a namespace value, or ok=False.
+    Unwraps numpy scalars; rejects non-finite floats, big payloads, and
+    anything json can't express (DataFrames stay session-only)."""
+    if type(value).__module__ == "numpy" and hasattr(value, "item"):
+        try:
+            value = value.item()
+        except Exception:
+            return None, False
+    if not (value is None or isinstance(value, (bool, int, float, str, list, tuple, dict))):
+        return None, False
+    try:
+        encoded = json.dumps(value, allow_nan=False)
+    except (TypeError, ValueError):
+        return None, False
+    if len(encoded) > MAX_VALUE_JSON:
+        return None, False
+    return value, True
+
+
+def _is_figure(value):
+    t = type(value)
+    return t.__name__ == "Figure" and t.__module__.startswith("matplotlib")
+
+
+def _figure_svg(fig):
+    import io
+
+    buf = io.StringIO()
+    fig.savefig(buf, format="svg")
+    return buf.getvalue()
 
 
 class Session:
@@ -67,6 +104,26 @@ class Session:
             entry["preview"] = preview[:80] + ("…" if len(preview) > 80 else "")
             out.append(entry)
         return out
+
+    def artifacts(self):
+        """The folder contract (DESIGN.md auto-persistence): a JSON-safe
+        mirror of the namespace for values.json, and named figures rendered
+        to SVG text for figs/<name>.svg. Underscore names are private;
+        modules and non-serializables (DataFrames included) stay behind."""
+        values, figures = {}, {}
+        for name, value in self.namespace.items():
+            if name.startswith("_") or isinstance(value, types.ModuleType):
+                continue
+            if _is_figure(value):
+                try:
+                    figures[name] = _figure_svg(value)
+                except Exception:
+                    pass
+                continue
+            mirrored, ok = _persistable(value)
+            if ok:
+                values[name] = mirrored
+        return values, figures
 
     def _format_traceback(self, e):
         # Hide our own frames: report from the first frame inside the cell.
