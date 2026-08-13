@@ -39,7 +39,13 @@ The `.py` percent-format document model, as pure logic with no UI.
 Done when: corpus round-trips byte-identically, including files written by
 jupytext, and the syntax decisions are recorded in DESIGN.md.
 
-## Milestone 2 — Kernel (decision, then session)
+## Milestone 2 — Kernel (decision, then session) ✓
+
+Built as decided in KERNEL.md: `python/knuth/` (Session, kernel
+subprocess, WebSocket server; `knuth serve`, default port 5197) and
+`src/kernel/kernel.ts` (Kernel interface + SidecarKernel client).
+End-to-end tests in `python/tests/test_kernel.py`; `src/main.ts` is a
+temporary dev panel until Milestone 3.
 
 Two candidate architectures, both behind the same small Kernel interface
 (run cell, stream stdout, report result/error, interrupt, restart):

@@ -1,18 +1,19 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
 [project]
-name = "pymd-server"
-version = "0.1.0"
-description = "Python sidecar server for pymd editor"
+name = "knuth"
+version = "2.0.0.dev0"
+description = "Knuth kernel sidecar: the live-session server and reproducibility runner of the Claerbout suite"
 requires-python = ">=3.11"
 dependencies = [
     "websockets>=13.0",
 ]
 
-[project.optional-dependencies]
-sci = [
-    "matplotlib",
-    "numpy",
-    "pandas",
-]
-
 [project.scripts]
-pymd-server = "pymd_server.server:main"
+knuth = "knuth.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["knuth*"]

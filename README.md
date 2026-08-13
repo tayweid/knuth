@@ -28,11 +28,16 @@ Tauri app (WYSIWYG markdown with executable cells) lives on the
 ```bash
 npm install
 npm run dev    # Vite dev server on port 5198
-npm test       # format round-trip tests (from Milestone 1)
+npm test       # format round-trip tests
+
+python3 -m venv .venv && .venv/bin/pip install -e python/
+.venv/bin/knuth serve                        # kernel server on ws://127.0.0.1:5197
+.venv/bin/python python/tests/test_kernel.py # kernel end-to-end tests
 ```
 
-`python/` holds the pymd_server lineage: the local kernel candidate and
-the future home of the `knuth run` CLI.
+`python/` is the `knuth` package: the live session, the kernel
+subprocess and WebSocket server behind `knuth serve`, and the future
+home of `knuth run`.
 
 ## License
 
