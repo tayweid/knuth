@@ -23,7 +23,6 @@ toolbar.innerHTML = `
     <button class="tb-btn" id="stop" title="Interrupt the running cell">Stop</button>
     <button class="tb-btn" id="restart" title="Fresh session (kernel process replaced)">Restart</button>
   </div>
-  <span class="spacer"></span>
   <div class="tb-pod tb-group">
     <button class="tb-btn" id="toggle-panel" title="Show/hide the session panes">Session</button>
     <span id="kernel-status">connecting…</span>

@@ -12,6 +12,7 @@ import { minimalSetup, EditorView } from 'codemirror';
 import { keymap, placeholder } from '@codemirror/view';
 import { python } from '@codemirror/lang-python';
 import { markdown } from '@codemirror/lang-markdown';
+import { oneDark } from '@codemirror/theme-one-dark';
 import {
   type Cell,
   type KnuthDocument,
@@ -216,6 +217,7 @@ export class DocumentView {
       extensions: [
         this.cellKeymap(v),
         minimalSetup,
+        oneDark,
         python(),
         EditorView.lineWrapping,
         EditorView.updateListener.of((update) => {
@@ -243,6 +245,7 @@ export class DocumentView {
       extensions: [
         keymap.of([{ key: 'Shift-Enter', run: () => (this.focusAfter(v, false), true) }]),
         minimalSetup,
+        oneDark,
         markdown(),
         EditorView.lineWrapping,
         placeholder('Write…'),

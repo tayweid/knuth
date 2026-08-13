@@ -67,17 +67,18 @@ body {
   overflow: hidden;
 }
 
-/* ---------- toolbar: dark glass pods over the room ---------- */
+/* ---------- toolbar: Plass's floating glass pods, verbatim ---------- */
 
 #toolbar {
   position: fixed;
   top: 0;
   left: 0;
   right: 0;
-  height: 58px;
+  height: 60px;
   display: flex;
   align-items: center;
-  gap: 6px;
+  justify-content: center;
+  gap: 5px;
   padding: 0 14px;
   z-index: 10;
 }
@@ -86,7 +87,7 @@ body {
   display: inline-flex;
   align-items: center;
   gap: 2px;
-  height: 40px;
+  height: 42px;
   padding: 0 6px;
   background: var(--glass);
   backdrop-filter: blur(12px);
@@ -95,35 +96,47 @@ body {
   border-radius: 12px;
 }
 
-.doc-pod { padding: 0 14px; }
-
-#toolbar .name {
-  font-family: var(--mono);
-  font-size: 13px;
-  color: var(--glass-ink);
-  white-space: nowrap;
+/* Stadium end-caps on the run of pods; flat facing seams between. */
+.tb-pod.doc-pod {
+  gap: 9px;
+  padding: 0 10px 0 16px;
+  border-radius: 21px 12px 12px 21px;
 }
 
-#toolbar .dirty { color: var(--amber); }
+#toolbar > .tb-pod:last-child {
+  border-radius: 12px 21px 21px 12px;
+}
 
+/* The document slug: small serif, letterspaced, quiet (Plass's galley). */
+#toolbar .name {
+  font: 15px/1.5 var(--serif);
+  letter-spacing: 0.09em;
+  color: rgba(252, 252, 251, 0.8);
+  white-space: nowrap;
+  max-width: 40ch;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+#toolbar .dirty { color: var(--amber); font-size: 9px; }
+
+/* Sleep/wake: soft at rest, everything wakes near the bar. */
 .tb-btn {
   font: 13px/1 var(--sans);
-  color: var(--glass-ink-soft);
+  color: rgba(240, 238, 233, 0.9);
   background: transparent;
   border: 0;
   border-radius: 8px;
-  height: 30px;
+  height: 32px;
   padding: 0 10px;
   cursor: pointer;
-  opacity: 0.55;
+  opacity: 0.4;
   transition: opacity 0.25s ease, background 0.12s, color 0.12s;
   white-space: nowrap;
 }
 
 #toolbar:hover .tb-btn { opacity: 1; }
-.tb-btn:hover { background: rgba(255, 255, 255, 0.12); color: var(--glass-ink); }
-
-#toolbar .spacer { flex: 1; }
+.tb-btn:hover { background: rgba(255, 255, 255, 0.12); }
 
 #kernel-status {
   font: 12px/1 var(--sans);
@@ -141,33 +154,29 @@ body {
   display: flex;
   align-items: stretch;
   height: 100vh;
-  padding-top: 58px;
+  padding-top: 60px;
 }
 
 #doc {
   flex: 1;
   min-width: 0;
   overflow-y: auto;
-  padding: 1.25rem 1.5rem 40vh;
+  padding: 1.5rem 1.5rem 40vh;
 }
 
-/* The sheet: the one lit surface in the room. */
+/* The bench: Knuth works directly on the room's surface — the lit white
+   page belongs to Plass; the workbench glows quietly instead. */
 #sheet {
   max-width: 52rem;
   margin: 0 auto;
-  background: var(--sheet);
-  border-radius: 6px;
-  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.35), 0 18px 50px rgba(0, 0, 0, 0.3);
-  padding: 2.25rem 2.5rem 3rem;
-  min-height: 60vh;
 }
 
-/* ---------- cells ---------- */
+/* ---------- cells on the bench ---------- */
 
 .cell {
   display: flex;
   gap: 0.6rem;
-  padding: 0.1rem 0;
+  padding: 0.2rem 0;
 }
 
 .cell .gutter {
@@ -182,17 +191,17 @@ body {
 .cell .run {
   border: 0;
   background: none;
-  color: #b9b6af;
+  color: rgba(240, 238, 233, 0.35);
   cursor: pointer;
   font-size: 11px;
   padding: 0.1rem;
   transition: color 0.12s;
 }
 
-.cell .run:hover { color: var(--accent); }
+.cell .run:hover { color: #9db8d6; }
 
 .cell .badge { font-size: 11px; color: var(--amber); }
-.cell.running .badge { color: var(--accent); }
+.cell.running .badge { color: #9db8d6; }
 
 .cell .body { flex: 1; min-width: 0; }
 
@@ -209,41 +218,41 @@ body {
 
 .cell .tools button {
   font-size: 11px;
-  color: #b9b6af;
+  color: rgba(240, 238, 233, 0.35);
   border: 0;
   background: none;
   cursor: pointer;
   padding: 0.1rem 0.25rem;
 }
 
-.cell .tools button:hover { color: var(--ink); }
+.cell .tools button:hover { color: var(--room-ink); }
 
-/* code cells */
+/* code cells: dark instrument cards, One Dark ink */
 
 .cell .cm-editor {
-  border: 1px solid var(--line);
+  border: 1px solid rgba(255, 255, 255, 0.07);
   border-radius: 8px;
-  background: var(--wash);
   font-size: 13.5px;
 }
 
-.cell .cm-editor.cm-focused { outline: none; border-color: color-mix(in srgb, var(--accent) 55%, var(--line)); }
+.cell .cm-editor.cm-focused { outline: none; border-color: rgba(157, 184, 214, 0.45); }
 .cell .cm-content { padding: 0.5rem 0; font-family: var(--mono); }
 .cell .cm-line { padding: 0 0.75rem; }
 
-.cell.kind-scratch .cm-editor { border-style: dashed; background: var(--sheet); }
+.cell.kind-scratch .cm-editor { border-style: dashed; background: transparent; }
+.cell.kind-scratch .cm-editor .cm-gutters { background: transparent; }
 
 .scratch-label {
   font-size: 10px;
   letter-spacing: 0.08em;
   text-transform: uppercase;
-  color: #b9b6af;
+  color: var(--room-ink-soft);
   margin-bottom: 0.15rem;
 }
 
 .cell.stale .cm-editor { border-left: 3px solid var(--amber); }
 
-/* text cells: just prose on the sheet — no box, no modes */
+/* text cells: light serif prose straight on the room — no box, no modes */
 
 .cell.kind-text .cm-editor {
   border: 0;
@@ -257,35 +266,36 @@ body {
   font-family: var(--serif);
   line-height: 1.6;
   padding: 0.2rem 0;
-  caret-color: var(--ink);
+  color: var(--room-ink);
+  caret-color: #fff;
 }
 
 .cell.kind-text .cm-line { padding: 0; }
 
 .cell.kind-text .cm-placeholder {
   font-style: italic;
-  color: #b9b6af;
+  color: var(--room-ink-soft);
 }
 
-/* outputs */
+/* outputs: quiet instrument readout */
 
 .cell .output {
-  margin: 0.35rem 0 0.15rem;
+  margin: 0.35rem 0 0;
   padding: 0.45rem 0.75rem;
-  background: var(--sheet);
-  border-left: 3px solid var(--line);
+  background: transparent;
+  border-left: 3px solid rgba(255, 255, 255, 0.14);
   font: 12.5px/1.5 var(--mono);
   white-space: pre-wrap;
   overflow-x: auto;
-  color: #3f3d3a;
+  color: #b5b3ae;
 }
 
-.cell .output.error { border-left-color: var(--error); color: var(--error); }
+.cell .output.error { border-left-color: #cd6452; color: #cd6452; }
 
 /* insert strips between cells (Jupyter's hover affordance, quietly) */
 
 .insert-zone {
-  height: 14px;
+  height: 16px;
   position: relative;
   display: flex;
   align-items: center;
@@ -302,13 +312,13 @@ body {
   transition: border-color 0.15s;
 }
 
-.insert-zone:hover::before { border-color: color-mix(in srgb, var(--accent) 35%, transparent); }
+.insert-zone:hover::before { border-color: rgba(157, 184, 214, 0.35); }
 
 .insert-actions {
   position: relative;
   display: none;
   gap: 0.25rem;
-  background: var(--sheet);
+  background: var(--bg);
   padding: 0 0.5rem;
 }
 
@@ -316,15 +326,15 @@ body {
 
 .insert-actions button {
   font: 11px/1 var(--sans);
-  color: var(--accent);
-  border: 1px solid color-mix(in srgb, var(--accent) 30%, transparent);
+  color: #9db8d6;
+  border: 1px solid rgba(157, 184, 214, 0.3);
   border-radius: 999px;
-  background: var(--sheet);
+  background: var(--bg);
   padding: 0.25rem 0.6rem;
   cursor: pointer;
 }
 
-.insert-actions button:hover { background: color-mix(in srgb, var(--accent) 8%, var(--sheet)); }
+.insert-actions button:hover { background: rgba(157, 184, 214, 0.12); }
 
 /* ---------- session panes: dark glass at the room's edge ---------- */
 
