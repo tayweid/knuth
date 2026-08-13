@@ -101,7 +101,9 @@ fileManager = new FileManager({
       dot.textContent = '●';
       $('file-name').append(dot);
     }
-    document.title = `${fileManager.name} - Knuth`;
+    // Just the file name: the installed app's window prepends its own
+    // app name, so anything more reads twice.
+    document.title = fileManager.name;
   },
   message: toast,
 });
