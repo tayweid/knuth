@@ -64,7 +64,7 @@ wheels) and run in a Web Worker inside the tab. Nothing is installed.
 - `knuth run` still needs real Python regardless, so Pyodide-first means
   building and maintaining two execution paths from day one.
 
-## Recommendation: local sidecar for v1
+## DECIDED (2026-08-13): local sidecar for v1
 
 Knuth's stated identity (DESIGN.md) is the computation half of a
 reproducibility workflow: native-scale work, real project folders, and a

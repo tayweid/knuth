@@ -116,6 +116,14 @@ and makes pyrmd the computation half.
   lines in its cell. No start/end delimiters — self-delimiting, so
   nothing can collide with `# %%` scanners, and results diff line by
   line. `#->` lines are machine-owned: rewritten or removed on each run.
+- Complex outputs follow one rule: the output block stores the *text
+  face* of a result — what a terminal would show. DataFrames appear as
+  pandas' own truncated text repr (full data lives in the session,
+  viewed in the data pane, never in the file); figures appear as their
+  `figs/<name>.svg` path reference; long stdout gets capped with a
+  truncation marker (exact marker TBD at Milestone 3). Paper-grade
+  artifacts always travel through the folder contract, never through
+  output blocks.
 
 ## Platform
 
