@@ -69,6 +69,19 @@ interface PendingRun {
   resolve(outcome: RunOutcome): void;
 }
 
+// The session id lives in sessionStorage: it survives reloads of THIS tab
+// but is never shared with a new window — exactly a session's lifetime.
+// The server holds a disconnected session for a grace period, so reload,
+// sleep, or a network blip reattaches instead of losing the namespace.
+function sessionId(): string {
+  let id = sessionStorage.getItem('knuth-session');
+  if (!id) {
+    id = crypto.randomUUID();
+    sessionStorage.setItem('knuth-session', id);
+  }
+  return id;
+}
+
 export class SidecarKernel implements Kernel {
   private ws: WebSocket | null = null;
   private connectedReady = false;
@@ -82,7 +95,7 @@ export class SidecarKernel implements Kernel {
 
   constructor(
     private url: string = DEFAULT_KERNEL_URL,
-    private onStatus?: (status: KernelStatus) => void,
+    private onStatus?: (status: KernelStatus, resumed?: boolean) => void,
   ) {
     this.connect();
   }
@@ -96,6 +109,7 @@ export class SidecarKernel implements Kernel {
     this.onStatus?.('connecting');
     const ws = new WebSocket(this.url);
     this.ws = ws;
+    ws.addEventListener('open', () => ws.send(JSON.stringify({ type: 'attach', session: sessionId() })));
     ws.addEventListener('message', (ev) => this.dispatch(JSON.parse(ev.data)));
     // 'error' is always followed by 'close'; one path handles both.
     ws.addEventListener('close', () => this.dropped());
@@ -122,6 +136,11 @@ export class SidecarKernel implements Kernel {
 
   private dispatch(msg: any): void {
     switch (msg.type) {
+      case 'attached': {
+        // A duplicated tab forks: the server hands us a fresh identity.
+        if (msg.session) sessionStorage.setItem('knuth-session', msg.session);
+        break;
+      }
       case 'ready': {
         if (this.connectedReady) {
           // A ready while already ready is a completed restart: in-flight
@@ -130,7 +149,7 @@ export class SidecarKernel implements Kernel {
         }
         this.connectedReady = true;
         for (const resolve of this.restartWaiters.splice(0)) resolve();
-        this.onStatus?.('ready');
+        this.onStatus?.('ready', msg.resumed === true);
         break;
       }
       case 'stream': {

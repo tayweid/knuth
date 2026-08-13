@@ -53,6 +53,20 @@ class Client:
     async def recv(self):
         return json.loads(await self.ws.recv())
 
+    async def attach(self, session):
+        """Handshake; returns the `attached` message (session, resumed)."""
+        await self.send(type="attach", session=session)
+        while True:
+            msg = await self.recv()
+            if msg["type"] == "attached":
+                return msg
+
+    async def wait_ready(self):
+        while True:
+            msg = await self.recv()
+            if msg["type"] == "ready":
+                return msg
+
     async def run(self, run_id, code):
         """Send a run and collect (streams, final) until done/error."""
         await self.send(type="run", id=run_id, code=code)
@@ -81,8 +95,12 @@ async def test_over_websocket():
                 if time.monotonic() > deadline:
                     raise
                 await asyncio.sleep(0.1)
+        SID = "test-session-1"
         async with ws:
             c = Client(ws)
+            attached = await c.attach(SID)
+            assert attached["session"] == SID and attached["resumed"] is False, attached
+            await c.wait_ready()
 
             # Streaming plus REPL-style result, and persistence across runs.
             streams, final = await c.run(1, "x = 6 * 7\nprint('hi')\nx")
@@ -120,13 +138,24 @@ async def test_over_websocket():
             _, final = await c.run(7, "x")
             assert final["result"] == "42", final
 
-            # Session isolation: a second connection gets its OWN kernel —
-            # a fresh namespace that can't see this one's variables.
+            # Session isolation: a different session id gets its OWN kernel.
             async with websockets.connect(f"ws://127.0.0.1:{PORT}") as ws2:
                 c2 = Client(ws2)
+                await c2.attach("test-session-2")
+                await c2.wait_ready()
                 _, final = await c2.run(1, "x")
                 assert final["type"] == "error" and "NameError" in final["traceback"], final
-            _, final = await c.run(9, "x")  # ours is untouched
+
+            # A duplicated tab (same id, actively held) forks, never steals.
+            async with websockets.connect(f"ws://127.0.0.1:{PORT}") as ws3:
+                c3 = Client(ws3)
+                attached = await c3.attach(SID)
+                assert attached["session"] != SID and attached["resumed"] is False, attached
+                await c3.wait_ready()
+                _, final = await c3.run(1, "x")
+                assert final["type"] == "error" and "NameError" in final["traceback"], final
+
+            _, final = await c.run(9, "x")  # ours is untouched by either
             assert final["result"] == "42", final
 
             # Restart: fresh process, empty namespace.
@@ -137,8 +166,59 @@ async def test_over_websocket():
                     break
             _, final = await c.run(8, "x")
             assert final["type"] == "error" and "NameError" in final["traceback"], final
+            _, final = await c.run(10, "marker = 7")
+            assert final["type"] == "done", final
+
+        # Reload survival: the tab is gone but the session id reclaims the
+        # still-warm kernel within the grace period.
+        async with websockets.connect(f"ws://127.0.0.1:{PORT}") as ws4:
+            c4 = Client(ws4)
+            attached = await c4.attach(SID)
+            assert attached["resumed"] is True, attached
+            msg = await c4.wait_ready()
+            assert msg.get("resumed") is True, msg
+            _, final = await c4.run(1, "marker")
+            assert final["result"] == "7", final
 
         print("websocket end-to-end: ok")
+    finally:
+        server.terminate()
+        server.wait()
+
+
+async def test_grace_reap():
+    """Past the grace period the session is truly gone: fresh kernel."""
+    port = PORT + 1
+    server = subprocess.Popen(
+        [sys.executable, "-m", "knuth", "serve", "--port", str(port), "--grace", "1"],
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+    )
+    try:
+        ws = None
+        deadline = time.monotonic() + 10
+        while ws is None:
+            try:
+                ws = await websockets.connect(f"ws://127.0.0.1:{port}")
+            except OSError:
+                if time.monotonic() > deadline:
+                    raise
+                await asyncio.sleep(0.1)
+        async with ws:
+            c = Client(ws)
+            await c.attach("reap-me")
+            await c.wait_ready()
+            _, final = await c.run(1, "z = 5")
+            assert final["type"] == "done", final
+        await asyncio.sleep(2.5)
+        async with websockets.connect(f"ws://127.0.0.1:{port}") as ws2:
+            c2 = Client(ws2)
+            attached = await c2.attach("reap-me")
+            assert attached["resumed"] is False, attached
+            await c2.wait_ready()
+            _, final = await c2.run(1, "z")
+            assert final["type"] == "error" and "NameError" in final["traceback"], final
+        print("grace reap: ok")
     finally:
         server.terminate()
         server.wait()
@@ -147,4 +227,5 @@ async def test_over_websocket():
 if __name__ == "__main__":
     test_session()
     asyncio.run(test_over_websocket())
+    asyncio.run(test_grace_reap())
     print("test_kernel: all assertions passed")

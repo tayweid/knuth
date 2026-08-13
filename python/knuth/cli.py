@@ -17,6 +17,12 @@ def main():
 
     serve = sub.add_parser("serve", help="run the kernel WebSocket server in the foreground")
     serve.add_argument("--port", type=int, default=DEFAULT_PORT)
+    serve.add_argument(
+        "--grace",
+        type=int,
+        default=120,
+        help="seconds a disconnected session stays alive for reattach (default 120)",
+    )
 
     agent_cmd = sub.add_parser("agent", help="manage the background kernel service (launchd)")
     agent_cmd.add_argument("action", choices=["install", "uninstall", "status"])
@@ -43,7 +49,7 @@ def main():
         else:
             sys.exit(agent.status())
     else:
-        serve_main(getattr(args, "port", DEFAULT_PORT))
+        serve_main(getattr(args, "port", DEFAULT_PORT), getattr(args, "grace", 120))
 
 
 if __name__ == "__main__":

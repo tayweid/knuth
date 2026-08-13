@@ -102,12 +102,15 @@ function toast(text: string) {
 
 const status = $('kernel-status');
 let hadSession = false;
-const kernel = new SidecarKernel(undefined, (state) => {
+const kernel = new SidecarKernel(undefined, (state, resumed) => {
   if (state === 'ready') {
     status.textContent = 'kernel';
     status.className = 'ok';
-    if (hadSession) {
-      // Fresh process behind us (serve restarted, machine slept, …).
+    if (resumed && !hadSession) {
+      // Reloaded tab reattached to its living session.
+      toast('Session resumed');
+    } else if (!resumed && hadSession) {
+      // Genuinely fresh process behind us (restart, grace expired, …).
       docView.markAllStale();
       toast('Kernel session reset');
     }
