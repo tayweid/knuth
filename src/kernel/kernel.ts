@@ -1,8 +1,15 @@
 // The Kernel interface (KERNEL.md): everything the app needs from an
 // execution backend. SidecarKernel is the v1 implementation; a Pyodide
 // backend would implement the same surface.
+//
+// SidecarKernel reconnects forever: the sidecar may start after the page
+// (or restart underneath it), so a lost/failed connection retries every
+// 2s and status changes surface through onStatus. The server sends a
+// `ready` snapshot to late-joining clients, so connecting at any time
+// converges to 'ready'.
 
 export type StreamWhich = 'stdout' | 'stderr';
+export type KernelStatus = 'connecting' | 'ready' | 'down';
 
 export interface RunHandlers {
   onStream?(which: StreamWhich, text: string): void;
@@ -12,7 +19,7 @@ export interface RunOutcome {
   ok: boolean;
   /** repr of the cell's last expression (null if none) when ok. */
   result: string | null;
-  /** Formatted traceback when not ok. */
+  /** Formatted traceback (or connection failure reason) when not ok. */
   traceback: string | null;
 }
 
@@ -25,7 +32,6 @@ export interface NamespaceVar {
 }
 
 export interface Kernel {
-  ready: Promise<void>;
   run(code: string, handlers?: RunHandlers): Promise<RunOutcome>;
   interrupt(): void;
   restart(): Promise<void>;
@@ -34,6 +40,7 @@ export interface Kernel {
 }
 
 export const DEFAULT_KERNEL_URL = 'ws://127.0.0.1:5197';
+const RECONNECT_MS = 2000;
 
 interface PendingRun {
   handlers?: RunHandlers;
@@ -41,41 +48,63 @@ interface PendingRun {
 }
 
 export class SidecarKernel implements Kernel {
-  ready: Promise<void>;
-  private ws: WebSocket;
+  private ws: WebSocket | null = null;
+  private connectedReady = false;
+  private closed = false;
   private nextId = 1;
   private runs = new Map<number, PendingRun>();
   private namespaceWaiters: Array<(vars: NamespaceVar[]) => void> = [];
   private restartWaiters: Array<() => void> = [];
-  private sawReady = false;
 
-  constructor(url: string = DEFAULT_KERNEL_URL) {
-    this.ws = new WebSocket(url);
-    this.ready = new Promise((resolve, reject) => {
-      this.ws.addEventListener('error', () => reject(new Error(`kernel not reachable at ${url}`)), {
-        once: true,
-      });
-      const onReady = () => {
-        this.sawReady = true;
-        resolve();
-      };
-      this.ws.addEventListener('message', (ev) => this.dispatch(JSON.parse(ev.data), onReady));
-    });
+  constructor(
+    private url: string = DEFAULT_KERNEL_URL,
+    private onStatus?: (status: KernelStatus) => void,
+  ) {
+    this.connect();
   }
 
-  private dispatch(msg: any, onFirstReady: () => void): void {
+  get isReady(): boolean {
+    return this.connectedReady;
+  }
+
+  private connect(): void {
+    if (this.closed) return;
+    this.onStatus?.('connecting');
+    const ws = new WebSocket(this.url);
+    this.ws = ws;
+    ws.addEventListener('message', (ev) => this.dispatch(JSON.parse(ev.data)));
+    // 'error' is always followed by 'close'; one path handles both.
+    ws.addEventListener('close', () => this.dropped());
+  }
+
+  private dropped(): void {
+    if (this.closed) return;
+    this.connectedReady = false;
+    this.failPending('kernel connection lost');
+    this.onStatus?.('down');
+    setTimeout(() => this.connect(), RECONNECT_MS);
+  }
+
+  private failPending(reason: string): void {
+    for (const run of this.runs.values()) {
+      run.resolve({ ok: false, result: null, traceback: reason });
+    }
+    this.runs.clear();
+    for (const resolve of this.namespaceWaiters.splice(0)) resolve([]);
+    for (const resolve of this.restartWaiters.splice(0)) resolve();
+  }
+
+  private dispatch(msg: any): void {
     switch (msg.type) {
       case 'ready': {
-        if (!this.sawReady) {
-          onFirstReady();
-        } else {
-          // Restart completed: in-flight runs will never finish.
-          for (const run of this.runs.values()) {
-            run.resolve({ ok: false, result: null, traceback: 'kernel restarted' });
-          }
-          this.runs.clear();
+        if (this.connectedReady) {
+          // A ready while already ready is a completed restart: in-flight
+          // runs died with the old process.
+          this.failPending('kernel restarted');
         }
+        this.connectedReady = true;
         for (const resolve of this.restartWaiters.splice(0)) resolve();
+        this.onStatus?.('ready');
         break;
       }
       case 'stream': {
@@ -100,11 +129,13 @@ export class SidecarKernel implements Kernel {
   }
 
   private send(msg: object): void {
-    this.ws.send(JSON.stringify(msg));
+    this.ws!.send(JSON.stringify(msg));
   }
 
   async run(code: string, handlers?: RunHandlers): Promise<RunOutcome> {
-    await this.ready;
+    if (!this.connectedReady) {
+      return { ok: false, result: null, traceback: 'no kernel connection' };
+    }
     const id = this.nextId++;
     return new Promise((resolve) => {
       this.runs.set(id, { handlers, resolve });
@@ -113,11 +144,11 @@ export class SidecarKernel implements Kernel {
   }
 
   interrupt(): void {
-    this.send({ type: 'interrupt' });
+    if (this.connectedReady) this.send({ type: 'interrupt' });
   }
 
   async restart(): Promise<void> {
-    await this.ready;
+    if (!this.connectedReady) return;
     return new Promise((resolve) => {
       this.restartWaiters.push(resolve);
       this.send({ type: 'restart' });
@@ -125,7 +156,7 @@ export class SidecarKernel implements Kernel {
   }
 
   async namespace(): Promise<NamespaceVar[]> {
-    await this.ready;
+    if (!this.connectedReady) return [];
     return new Promise((resolve) => {
       this.namespaceWaiters.push(resolve);
       this.send({ type: 'namespace' });
@@ -133,6 +164,7 @@ export class SidecarKernel implements Kernel {
   }
 
   close(): void {
-    this.ws.close();
+    this.closed = true;
+    this.ws?.close();
   }
 }

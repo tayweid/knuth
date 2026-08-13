@@ -32,18 +32,27 @@ function toast(text: string) {
   toastTimer = window.setTimeout(() => (toastEl.hidden = true), 2500);
 }
 
-const kernel = new SidecarKernel();
 const status = $('kernel-status');
-kernel.ready.then(
-  () => {
+let hadSession = false;
+const kernel = new SidecarKernel(undefined, (state) => {
+  if (state === 'ready') {
     status.textContent = 'kernel';
     status.className = 'ok';
-  },
-  () => {
-    status.textContent = 'no kernel — run: knuth serve';
+    if (hadSession) {
+      // Fresh process behind us (serve restarted, machine slept, …).
+      docView.markAllStale();
+      toast('Kernel session reset');
+    }
+    hadSession = true;
+  } else if (state === 'down') {
+    status.textContent = 'no kernel — install: knuth agent install';
+    status.title = 'Retrying every 2s. One-time setup: knuth agent install';
     status.className = 'bad';
-  },
-);
+  } else {
+    status.textContent = 'connecting…';
+    status.className = '';
+  }
+});
 
 let fileManager: FileManager;
 const docView = new DocumentView($('doc'), kernel, () => fileManager?.noteChange());

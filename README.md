@@ -31,7 +31,15 @@ offers Knuth for double-clicked `.py` files, which arrive via the launch
 queue. Manifest changes only propagate to the OS after an app
 uninstall/reinstall. Deploy = push `main`: `.github/workflows/deploy.yml`
 publishes to GitHub Pages. The kernel stays local either way — the page
-connects to `knuth serve` on localhost.
+connects to the kernel server on localhost, and reconnects automatically
+if it comes and goes.
+
+One-time kernel setup, so the server is simply always there:
+
+```bash
+.venv/bin/knuth agent install   # launchd service: starts at login, restarts on exit
+.venv/bin/knuth agent status    # or uninstall
+```
 
 ## Development
 

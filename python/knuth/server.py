@@ -68,8 +68,12 @@ class KernelProcess:
 
 async def serve(port):
     clients = set()
+    kernel_ready = False
 
     def on_event(event):
+        nonlocal kernel_ready
+        if event.get("type") == "ready":
+            kernel_ready = True
         websockets.broadcast(clients, json.dumps(event))
 
     kernel = KernelProcess(on_event)
@@ -78,6 +82,9 @@ async def serve(port):
     async def handler(ws):
         clients.add(ws)
         try:
+            # Late-joining clients still need to learn the kernel is up.
+            if kernel_ready:
+                await ws.send(json.dumps({"type": "ready"}))
             async for raw in ws:
                 try:
                     msg = json.loads(raw)
