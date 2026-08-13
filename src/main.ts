@@ -1,74 +1,108 @@
-// Milestone 2 dev panel: prove the Kernel interface end to end from the
-// browser (run, live streams, tracebacks, interrupt, restart, namespace).
-// The real document UI replaces this in Milestone 3.
+// Boot: toolbar + document view + file manager + kernel, then the
+// launch-queue consumer LAST — Chrome delivers queued launch files
+// synchronously inside setConsumer, so everything it touches must
+// already be live (hard-won Plass lesson).
 
-import { SidecarKernel, DEFAULT_KERNEL_URL, type NamespaceVar } from './kernel/kernel.ts';
+import './styles.css';
+import { SidecarKernel } from './kernel/kernel.ts';
+import { DocumentView } from './document-view.ts';
+import { FileManager } from './file-manager.ts';
 
-const app = document.getElementById('app')!;
-app.innerHTML = `
-  <style>
-    body { font: 14px/1.5 ui-monospace, monospace; margin: 2rem auto; max-width: 44rem; padding: 0 1rem; }
-    textarea { width: 100%; height: 9rem; font: inherit; box-sizing: border-box; }
-    button { font: inherit; margin-right: 0.5rem; }
-    pre { background: #f5f5f5; padding: 0.75rem; white-space: pre-wrap; min-height: 2rem; }
-    pre.err { color: #b00020; }
-    #status { color: #666; margin-bottom: 0.75rem; }
-    #ns { color: #666; }
-  </style>
-  <div id="status">connecting to ${DEFAULT_KERNEL_URL} — start with: .venv/bin/knuth serve</div>
-  <textarea id="code">import time
-for i in range(5):
-    print('tick', i)
-    time.sleep(0.5)
-6 * 7</textarea>
-  <p>
-    <button id="run">Run</button>
-    <button id="stop">Stop</button>
-    <button id="restart">Restart</button>
-  </p>
-  <pre id="out"></pre>
-  <pre id="result"></pre>
-  <div id="ns"></div>
+const toolbar = document.getElementById('toolbar')!;
+toolbar.innerHTML = `
+  <span class="name" id="file-name">untitled.py</span>
+  <button id="open" title="Open (Cmd-O)">Open</button>
+  <button id="save" title="Save (Cmd-S)">Save</button>
+  <span class="spacer"></span>
+  <button id="run-stale">Run stale</button>
+  <button id="run-all">Run all</button>
+  <button id="stop" title="Interrupt the running cell">Stop</button>
+  <button id="restart" title="Fresh session (kernel process replaced)">Restart</button>
+  <span id="kernel-status">connecting…</span>
 `;
 
 const $ = (id: string) => document.getElementById(id)!;
-const code = $('code') as HTMLTextAreaElement;
-const out = $('out');
-const result = $('result');
+const toastEl = $('toast');
+let toastTimer = 0;
 
-const kernel = new SidecarKernel();
-kernel.ready.then(
-  () => ($('status').textContent = 'kernel ready'),
-  (e) => ($('status').textContent = String(e)),
-);
-
-function showNamespace(vars: NamespaceVar[]): void {
-  $('ns').textContent =
-    'namespace: ' +
-    (vars.map((v) => `${v.name}: ${v.type} = ${v.preview}`).join(' · ') || '(empty)');
+function toast(text: string) {
+  toastEl.textContent = text;
+  toastEl.hidden = false;
+  clearTimeout(toastTimer);
+  toastTimer = window.setTimeout(() => (toastEl.hidden = true), 2500);
 }
 
-$('run').addEventListener('click', async () => {
-  out.textContent = '';
-  result.textContent = '';
-  result.className = '';
-  const outcome = await kernel.run(code.value, {
-    onStream: (which, text) => {
-      out.textContent += which === 'stderr' ? `[stderr] ${text}` : text;
-    },
-  });
-  if (outcome.ok) {
-    result.textContent = outcome.result ?? '';
-  } else {
-    result.textContent = outcome.traceback ?? '';
-    result.className = 'err';
-  }
-  showNamespace(await kernel.namespace());
+const kernel = new SidecarKernel();
+const status = $('kernel-status');
+kernel.ready.then(
+  () => {
+    status.textContent = 'kernel';
+    status.className = 'ok';
+  },
+  () => {
+    status.textContent = 'no kernel — run: knuth serve';
+    status.className = 'bad';
+  },
+);
+
+let fileManager: FileManager;
+const docView = new DocumentView($('doc'), kernel, () => fileManager?.noteChange());
+
+fileManager = new FileManager({
+  getDoc: () => docView.doc,
+  setDoc: (doc) => docView.setDoc(doc),
+  onState: () => {
+    $('file-name').innerHTML = '';
+    $('file-name').append(fileManager.name, fileManager.dirty ? ' ' : '');
+    if (fileManager.dirty) {
+      const dot = document.createElement('span');
+      dot.className = 'dirty';
+      dot.textContent = '●';
+      $('file-name').append(dot);
+    }
+    document.title = `${fileManager.name} - Knuth`;
+  },
+  message: toast,
 });
 
+fileManager.newDoc();
+
+$('open').addEventListener('click', () => void fileManager.open());
+$('save').addEventListener('click', () => void fileManager.save());
+$('run-all').addEventListener('click', () => void docView.runAllProgram());
+$('run-stale').addEventListener('click', () => void docView.runStale());
 $('stop').addEventListener('click', () => kernel.interrupt());
-$('restart').addEventListener('click', async () => {
-  await kernel.restart();
-  $('status').textContent = 'kernel ready (restarted)';
-  showNamespace(await kernel.namespace());
+$('restart').addEventListener('click', () => {
+  void kernel.restart().then(() => {
+    docView.markAllStale();
+    toast('Fresh session');
+  });
+});
+
+window.addEventListener(
+  'keydown',
+  (e) => {
+    if (!(e.metaKey || e.ctrlKey)) return;
+    const key = e.key.toLowerCase();
+    if (key === 's') {
+      e.preventDefault();
+      void fileManager.save();
+    } else if (key === 'o') {
+      e.preventDefault();
+      void fileManager.open();
+    }
+  },
+  { capture: true },
+);
+
+// OS file-handler launches (installed PWA, Finder double-click) arrive
+// here. Registered at end of boot, after every object it touches exists.
+window.launchQueue?.setConsumer((params) => {
+  const file = params.files[0];
+  if (file && file.kind === 'file') {
+    void fileManager.loadHandle(file as FileSystemFileHandle).catch((e) => {
+      console.warn('Launched file failed to open', e);
+      toast('Could not open the launched file — try again');
+    });
+  }
 });

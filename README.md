@@ -23,6 +23,16 @@ bottom, regenerate everything.
 Tauri app (WYSIWYG markdown with executable cells) lives on the
 [`v1-tauri`](../../tree/v1-tauri) branch, its docs in `archive/v1/`.
 
+## Install as an app (Chrome)
+
+Knuth is a PWA registered as a handler for `.py` files: once the deployed
+app is installed from Chrome (⋮ → Cast, save and share → Install), macOS
+offers Knuth for double-clicked `.py` files, which arrive via the launch
+queue. Manifest changes only propagate to the OS after an app
+uninstall/reinstall. Deploy = push `main`: `.github/workflows/deploy.yml`
+publishes to GitHub Pages. The kernel stays local either way — the page
+connects to `knuth serve` on localhost.
+
 ## Development
 
 ```bash

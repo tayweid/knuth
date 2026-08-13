@@ -1,0 +1,200 @@
+:root {
+  --ink: #1a1c20;
+  --faint: #8a8f98;
+  --line: #e4e6ea;
+  --paper: #ffffff;
+  --wash: #f6f7f9;
+  --accent: #3b6ec9;
+  --error: #b00020;
+  --amber: #c98a1d;
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  color: var(--ink);
+  background: var(--paper);
+  font: 15px/1.55 -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+}
+
+/* ---------- toolbar ---------- */
+
+#toolbar {
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.5rem 1rem;
+  background: var(--paper);
+  border-bottom: 1px solid var(--line);
+}
+
+#toolbar .name {
+  font-weight: 600;
+  margin-right: 0.25rem;
+}
+
+#toolbar .dirty { color: var(--amber); }
+
+#toolbar button {
+  font: inherit;
+  font-size: 13px;
+  padding: 0.2rem 0.6rem;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--paper);
+  cursor: pointer;
+}
+
+#toolbar button:hover { background: var(--wash); }
+
+#toolbar .spacer { flex: 1; }
+
+#kernel-status {
+  font-size: 13px;
+  color: var(--faint);
+}
+
+#kernel-status.ok::before { content: '● '; color: #2e9e5b; }
+#kernel-status.bad::before { content: '● '; color: var(--error); }
+
+/* ---------- document ---------- */
+
+#doc {
+  max-width: 52rem;
+  margin: 1.5rem auto 40vh;
+  padding: 0 1rem;
+}
+
+.cell {
+  display: flex;
+  gap: 0.6rem;
+  padding: 0.3rem 0;
+  border-radius: 8px;
+}
+
+.cell .gutter {
+  flex: 0 0 2rem;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.2rem;
+  padding-top: 0.25rem;
+}
+
+.cell .run {
+  border: 0;
+  background: none;
+  color: var(--faint);
+  cursor: pointer;
+  font-size: 12px;
+  padding: 0.1rem;
+}
+
+.cell .run:hover { color: var(--accent); }
+
+.cell .badge { font-size: 11px; color: var(--amber); }
+.cell.running .badge { color: var(--accent); }
+
+.cell .body { flex: 1; min-width: 0; }
+
+.cell .tools {
+  flex: 0 0 auto;
+  visibility: hidden;
+  display: flex;
+  gap: 0.25rem;
+  align-items: flex-start;
+  padding-top: 0.25rem;
+}
+
+.cell:hover .tools { visibility: visible; }
+
+.cell .tools button {
+  font-size: 11px;
+  color: var(--faint);
+  border: 0;
+  background: none;
+  cursor: pointer;
+  padding: 0.1rem 0.25rem;
+}
+
+.cell .tools button:hover { color: var(--ink); }
+
+/* code cells */
+
+.cell .cm-editor {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--wash);
+  font-size: 13.5px;
+}
+
+.cell .cm-editor.cm-focused { outline: none; border-color: var(--accent); }
+.cell .cm-content { padding: 0.5rem 0; font-family: ui-monospace, 'SF Mono', Menlo, monospace; }
+
+.cell.kind-scratch .cm-editor { border-style: dashed; background: var(--paper); }
+
+.scratch-label {
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--faint);
+  margin-bottom: 0.15rem;
+}
+
+.cell.stale .cm-editor { border-left: 3px solid var(--amber); }
+
+/* outputs */
+
+.cell .output {
+  margin: 0.35rem 0 0;
+  padding: 0.5rem 0.75rem;
+  background: var(--paper);
+  border-left: 3px solid var(--line);
+  font: 12.5px/1.5 ui-monospace, 'SF Mono', Menlo, monospace;
+  white-space: pre-wrap;
+  overflow-x: auto;
+  color: #3a3f47;
+}
+
+.cell .output.error { border-left-color: var(--error); color: var(--error); }
+
+/* text cells */
+
+.cell.kind-text .prose {
+  font-family: Georgia, 'Times New Roman', serif;
+  font-size: 16px;
+  cursor: text;
+  padding: 0.1rem 0;
+}
+
+.cell.kind-text .prose p { margin: 0.4rem 0; }
+.cell.kind-text .prose h1, .cell.kind-text .prose h2, .cell.kind-text .prose h3 { margin: 0.6rem 0 0.3rem; }
+.cell.kind-text .prose .empty { color: var(--faint); font-style: italic; }
+.cell.kind-text .prose code { font-family: ui-monospace, Menlo, monospace; font-size: 0.9em; background: var(--wash); padding: 0.05em 0.3em; border-radius: 4px; }
+
+.cell.kind-text textarea {
+  width: 100%;
+  font: 13.5px/1.5 ui-monospace, Menlo, monospace;
+  border: 1px solid var(--accent);
+  border-radius: 8px;
+  padding: 0.5rem;
+}
+
+/* ---------- toast ---------- */
+
+#toast {
+  position: fixed;
+  bottom: 1.25rem;
+  left: 50%;
+  transform: translateX(-50%);
+  background: var(--ink);
+  color: var(--paper);
+  padding: 0.45rem 0.9rem;
+  border-radius: 8px;
+  font-size: 13px;
+  z-index: 20;
+}

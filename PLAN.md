@@ -69,9 +69,16 @@ teaching mode).
 Done when: a code string runs in a fresh session from the app, stdout
 streams back, errors carry tracebacks, and Stop works.
 
-## Milestone 3 — Document UI (linear execution)
+## Milestone 3 — Document UI (linear execution) ✓
 
-The visible workbench, against the frozen format and working kernel.
+Built: `src/document-view.ts` (CodeMirror cells, markdown text cells,
+staleness badges, streamed outputs written back as `#->` blocks, 40-line
+truncation), `src/file-manager.ts` (File System Access open/save with
+debounced autosave, fallbacks), PWA manifest registering Knuth as a `.py`
+file handler with launch-queue handling, and the GitHub Pages deploy
+workflow. Double-click-a-.py needs the deployed app installed once from
+Chrome; manifest edits need an app uninstall/reinstall to propagate to
+the OS (Plass lesson).
 
 - Cell list rendering: CodeMirror 6 for code cells, plain-CSS markdown for
   text cells (no Plass layout port in v1 — DESIGN.md Q6, decided).

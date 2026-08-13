@@ -120,8 +120,8 @@ and makes pyrmd the computation half.
   face* of a result — what a terminal would show. DataFrames appear as
   pandas' own truncated text repr (full data lives in the session,
   viewed in the data pane, never in the file); figures appear as their
-  `figs/<name>.svg` path reference; long stdout gets capped with a
-  truncation marker (exact marker TBD at Milestone 3). Paper-grade
+  `figs/<name>.svg` path reference; long stdout gets capped at 40 stored
+  lines, ending with a `… (+N more lines)` marker (decided, M3). Paper-grade
   artifacts always travel through the folder contract, never through
   output blocks.
 
