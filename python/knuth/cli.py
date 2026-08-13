@@ -1,7 +1,6 @@
-"""The knuth command. `knuth serve` runs the kernel server in the
-foreground; `knuth agent install|uninstall|status` manages it as a
-background launchd service; `knuth run file.py` (Milestone 5) will be
-the reproducibility runner."""
+"""The knuth command. `knuth run file.py` is the reproducibility runner;
+`knuth serve` runs the kernel server in the foreground; `knuth agent
+install|uninstall|status` manages it as a background launchd service."""
 
 import argparse
 import sys
@@ -23,9 +22,20 @@ def main():
     agent_cmd.add_argument("action", choices=["install", "uninstall", "status"])
     agent_cmd.add_argument("--port", type=int, default=DEFAULT_PORT)
 
+    run_cmd = sub.add_parser(
+        "run",
+        help="reproduce a document: fresh session, program cells top to bottom, "
+        "rewrite outputs and the folder contract",
+    )
+    run_cmd.add_argument("file")
+
     args = parser.parse_args()
 
-    if args.command == "agent":
+    if args.command == "run":
+        from .runner import run_file
+
+        sys.exit(run_file(args.file))
+    elif args.command == "agent":
         if args.action == "install":
             sys.exit(agent.install(args.port))
         elif args.action == "uninstall":

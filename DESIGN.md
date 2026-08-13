@@ -123,6 +123,9 @@ and makes pyrmd the computation half.
   lines in its cell. No start/end delimiters — self-delimiting, so
   nothing can collide with `# %%` scanners, and results diff line by
   line. `#->` lines are machine-owned: rewritten or removed on each run.
+  Memory addresses in reprs are normalized to `0x…` before storing —
+  receipts must be byte-stable across identical runs, and
+  `<object at 0x104f2b3d0>` churn would poison every diff.
 - Complex outputs follow one rule: the output block stores the *text
   face* of a result — what a terminal would show. DataFrames appear as
   pandas' own truncated text repr (full data lives in the session,

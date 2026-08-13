@@ -115,16 +115,17 @@ on recompile with neither app in the loop.
 
 Done when: that demo works.
 
-## Milestone 5 — `knuth run` (CLI)
+## Milestone 5 — `knuth run` (CLI) ✓
 
-The reproducibility check and canonical artifact producer (bare
-`python file.py` parity is explicitly not guarded — DESIGN.md Q2, decided).
-
-- Fresh session, program cells only, top to bottom.
-- Regenerates `values.json` and `figs/`, rewrites output blocks in the
-  file. Nonzero exit on error.
-- Lives with the Python side (pymd_server lineage) so it works headless:
-  `knuth run analysis.py && typst compile paper.typ` is the full pipeline.
+Built: `python/knuth/percent.py` (port of the TS format layer, corpus
+round-trip parity enforced in tests) + `python/knuth/runner.py`. Fresh
+session, program cells only, top to bottom in the document's folder (so
+relative data reads work here), first error stops the run with a nonzero
+exit. Output blocks rewritten as receipts — memory addresses in reprs
+normalized to `0x…` so a re-run is byte-stable — and on a clean run the
+contract regenerates (on failure the previous values.json is kept: the
+contract always reflects the last complete run). Verified:
+`knuth run analysis.py && typst compile paper.typ` end to end.
 
 ## Milestone 6 — Session panes
 

@@ -26,6 +26,8 @@ const md = new MarkdownIt({ html: false, linkify: true });
 const MAX_OUTPUT_LINES = 40;
 
 function truncate(text: string): string {
+  // Memory addresses in reprs change every run; receipts must not churn.
+  text = text.replace(/0x[0-9a-fA-F]{6,}/g, '0x…');
   const lines = text.replace(/\n$/, '').split('\n');
   if (lines.length <= MAX_OUTPUT_LINES) return lines.join('\n');
   const kept = lines.slice(0, MAX_OUTPUT_LINES);

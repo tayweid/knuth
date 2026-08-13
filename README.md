@@ -15,8 +15,13 @@ alongside code in the history.
 
 Named things persist automatically: assign a scalar and it mirrors to
 `values.json`; assign a figure to a name and it lands in `figs/<name>.svg`.
-`knuth run file.py` is the reproducibility check — fresh session, top to
-bottom, regenerate everything.
+`knuth run file.py` is the reproducibility check — fresh session, program
+cells top to bottom, outputs rewritten as receipts, contract regenerated.
+The full build of a paper is one line:
+
+```bash
+knuth run analysis.py && typst compile paper.typ
+```
 
 **Status: v2 rebuild in progress.** The design is in
 [DESIGN.md](./DESIGN.md), the build order in [PLAN.md](./PLAN.md). The v1
