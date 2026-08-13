@@ -30,6 +30,10 @@ jobs:
       - run: npm test
       - run: npm run build -- --base=/knuth/
       - uses: actions/configure-pages@v5
+        with:
+          # Create/enable the Pages site from the workflow itself — the
+          # Settings->Pages UI state has been unreliable for this repo.
+          enablement: true
       - uses: actions/upload-pages-artifact@v3
         with:
           path: dist
