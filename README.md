@@ -1,82 +1,38 @@
-# Knuth (formerly pyrmd)
+# Knuth
 
-> Part of the Claerbout suite with [Plass](https://github.com/tayweid/plass).
-> The v2 redesign lives in [DESIGN.md](./DESIGN.md); the README below
-> describes the v1 Tauri app.
+> Part of the **Claerbout suite** with [Plass](https://github.com/tayweid/plass):
+> Plass owns the paper, Knuth owns the computation. The contract between
+> them is plain files in the project folder — `values.json` and
+> `figs/<name>.svg` — that a stock `typst compile` reads with neither app
+> in the loop.
 
-A WYSIWYG markdown editor with executable Python code cells. Combines Typora-style editing with Jupyter-style computation in a native desktop app.
+Knuth is a computation workbench: a cell-document editor over a live
+Python session. Documents are plain `.py` files in the percent format
+(`# %%` cells), so they open as cell documents in VS Code, Spyder, and
+PyCharm, run under bare `python`, and diff cleanly in git — with outputs
+stored in the file as machine-managed comment blocks, so results change
+alongside code in the history.
 
-- Write prose in a clean, distraction-free editor
-- Execute Python code blocks inline with shared namespace
-- Render LaTeX math (inline and display)
-- Export to PDF or HTML via Pandoc
-- Plain `.md` files — no proprietary format
+Named things persist automatically: assign a scalar and it mirrors to
+`values.json`; assign a figure to a name and it lands in `figs/<name>.svg`.
+`knuth run file.py` is the reproducibility check — fresh session, top to
+bottom, regenerate everything.
 
-Built with Tauri, Milkdown, CodeMirror, and KaTeX.
+**Status: v2 rebuild in progress.** The design is in
+[DESIGN.md](./DESIGN.md), the build order in [PLAN.md](./PLAN.md). The v1
+Tauri app (WYSIWYG markdown with executable cells) lives on the
+[`v1-tauri`](../../tree/v1-tauri) branch, its docs in `archive/v1/`.
 
-## Install
-
-Download the latest release for your platform from [Releases](https://github.com/tayweid/pymd/releases).
-
-**Requirements:** Python 3.11+ with the pymd server:
+## Development
 
 ```bash
-pip install pymd-server
-```
-
-## Build from source
-
-```bash
-# Prerequisites: Node.js 18+, Rust 1.70+, Python 3.11+
-
-# Clone and install
-git clone https://github.com/tayweid/pymd.git
-cd pymd
 npm install
-
-# Install the Python sidecar
-cd python && pip install -e . && cd ..
-
-# Run in dev mode
-npx tauri dev
-
-# Build for release
-npx tauri build
+npm run dev    # Vite dev server on port 5198
+npm test       # format round-trip tests (from Milestone 1)
 ```
 
-The built app will be in `src-tauri/target/release/bundle/`.
-
-## File format
-
-Documents are plain `.md` files. Code blocks with `python exec` are executable:
-
-````markdown
-# My Analysis
-
-Some prose with **formatting** and $E = mc^2$ inline math.
-
-$$
-\int_0^\infty e^{-x} dx = 1
-$$
-
-```python exec
-import pandas as pd
-df = pd.read_csv('data.csv')
-print(df.describe())
-```
-
-Variables persist across cells. Use `{{variable}}` for inline interpolation.
-````
-
-## Keyboard shortcuts
-
-| Shortcut | Action |
-|---|---|
-| Cmd+S | Save |
-| Cmd+Shift+C | Insert code cell |
-| Cmd+E | Export (PDF/HTML) |
-| Shift+Enter | Run code cell |
-| Cmd+Shift+Enter | Run all cells |
+`python/` holds the pymd_server lineage: the local kernel candidate and
+the future home of the `knuth run` CLI.
 
 ## License
 

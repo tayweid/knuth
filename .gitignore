@@ -1,6 +1,5 @@
 # Dependencies
 node_modules/
-target/
 
 # Build output
 dist/
@@ -19,9 +18,6 @@ dist/
 .DS_Store
 Thumbs.db
 
-# Tauri build artifacts
-src-tauri/target/
-
 # Python
 __pycache__/
 *.pyc
@@ -29,10 +25,6 @@ __pycache__/
 *.egg-info/
 .eggs/
 build/
-dist/
-
-# pymd output cache
-*.pymd
 
 # Claude
 .claude/
