@@ -1,5 +1,20 @@
 # pyrmd v2 — the workbench
 
+## Naming (decided)
+
+- **The suite is Claerbout** — for Jon Claerbout, who coined reproducible
+  research: the article is advertising; the scholarship is the complete
+  environment that regenerates it. Only the suite can make that promise,
+  so the suite carries his name. (Never clipped — "Claerbout" whole.)
+- **This app is Knuth** (pyrmd retires as a name) — literate programming
+  is his invention, and the .py-as-prose+code+outputs format below is WEB
+  reborn with a live session. Computation-first, built documents so the
+  computation could be published right.
+- **The typesetter stays Plass** — line breaking with Knuth (1981),
+  thesis on optimal pagination, fonts at PARC. The document man.
+- The pair inside the suite: advisor and student, computation and page,
+  co-authors again — the folder contract is the collaboration.
+
 Design notes from a working session (2026-08-12). Supersedes the direction
 in PLAN.md/SPEC.md where they conflict: the Tauri-era pyrmd tried to be the
 whole workflow in one app; this design splits the workflow across two apps
