@@ -61,7 +61,7 @@ def main():
             kind = msg.get("type")
             if kind == "run":
                 state["id"] = msg["id"]
-                ok, payload = session.run(msg["code"])
+                ok, payload = session.run(msg["code"], scratch=bool(msg.get("scratch")))
                 state["id"] = None
                 if ok:
                     emit({"type": "done", "id": msg["id"], "result": payload})

@@ -1,13 +1,17 @@
-// The cell document: CodeMirror program/scratch cells and markdown text
-// cells over the format layer, wired to the kernel. Linear execution
-// model (DESIGN.md): editing a program cell marks it and everything below
-// stale; "run stale" replays in document order. Outputs stream in live
-// and are written back into the document as "#->" blocks.
+// The cell document: CodeMirror program/scratch cells and always-editable
+// markdown text cells over the format layer, wired to the kernel. Linear
+// execution model (DESIGN.md): editing a program cell marks it and
+// everything below stale; "run stale" replays in document order. Outputs
+// stream in live and are written back into the document as "#->" blocks.
+//
+// Shortcuts (Jupyter-standard): Cmd-Enter run in place, Shift-Enter run
+// and advance (creating a cell at the end), Alt-Enter run and insert
+// below. New cells also come from hover insert strips between cells.
 
 import { minimalSetup, EditorView } from 'codemirror';
-import { keymap } from '@codemirror/view';
+import { keymap, placeholder } from '@codemirror/view';
 import { python } from '@codemirror/lang-python';
-import MarkdownIt from 'markdown-it';
+import { markdown } from '@codemirror/lang-markdown';
 import {
   type Cell,
   type KnuthDocument,
@@ -19,8 +23,6 @@ import {
   outputText,
 } from './format/percent.ts';
 import type { Kernel } from './kernel/kernel.ts';
-
-const md = new MarkdownIt({ html: false, linkify: true });
 
 // Stored-output cap (the DESIGN.md truncation policy).
 const MAX_OUTPUT_LINES = 40;
@@ -37,7 +39,9 @@ function truncate(text: string): string {
 
 interface CellView {
   cell: Cell;
+  /** Wrapper: insert strip + the cell row. */
   root: HTMLElement;
+  row: HTMLElement;
   body: HTMLElement;
   outEl: HTMLPreElement;
   badge: HTMLElement;
@@ -49,6 +53,7 @@ interface CellView {
 export class DocumentView {
   doc: KnuthDocument = parseDocument('# %%\n');
   private views: CellView[] = [];
+  private endZone!: HTMLElement;
 
   constructor(
     private container: HTMLElement,
@@ -65,7 +70,13 @@ export class DocumentView {
     this.views = [];
     this.container.textContent = '';
     this.doc = doc;
-    for (const cell of doc.cells) this.appendView(this.buildView(cell));
+    this.endZone = this.buildZone(null);
+    this.container.append(this.endZone);
+    for (const cell of doc.cells) {
+      const view = this.buildView(cell);
+      this.views.push(view);
+      this.endZone.before(view.root);
+    }
     // A fresh page means a fresh session: nothing has run yet.
     this.markAllStale();
   }
@@ -101,12 +112,16 @@ export class DocumentView {
     v.outEl.textContent = '';
     v.outEl.hidden = false;
     let text = '';
-    const outcome = await this.kernel.run(cellCode(v.cell), {
-      onStream: (_which, chunk) => {
-        text += chunk;
-        v.outEl.textContent = truncate(text);
+    const outcome = await this.kernel.run(
+      cellCode(v.cell),
+      {
+        onStream: (_which, chunk) => {
+          text += chunk;
+          v.outEl.textContent = truncate(text);
+        },
       },
-    });
+      { scratch: v.cell.kind === 'scratch' },
+    );
     if (outcome.ok && outcome.result !== null) {
       text += (text === '' || text.endsWith('\n') ? '' : '\n') + outcome.result;
     }
@@ -127,11 +142,31 @@ export class DocumentView {
     return outcome.ok;
   }
 
+  private runAndAdvance(v: CellView) {
+    void this.runCell(v);
+    this.focusAfter(v, true);
+  }
+
+  private runAndInsertBelow(v: CellView) {
+    void this.runCell(v);
+    this.insertAfter(v, 'program');
+  }
+
+  /** Focus the next cell; optionally create one when v is last. */
+  private focusAfter(v: CellView, createAtEnd: boolean) {
+    const next = this.views[this.views.indexOf(v) + 1];
+    if (next) next.editor?.focus();
+    else if (createAtEnd) this.insertAfter(v, 'program');
+  }
+
   // ---------- construction ----------
 
   private buildView(cell: Cell): CellView {
     const root = document.createElement('div');
-    root.className = `cell kind-${cell.kind}`;
+    root.className = 'cell-wrap';
+
+    const row = document.createElement('div');
+    row.className = `cell kind-${cell.kind}`;
 
     const gutter = document.createElement('div');
     gutter.className = 'gutter';
@@ -142,7 +177,7 @@ export class DocumentView {
     const outEl = document.createElement('pre');
     outEl.className = 'output';
 
-    const v: CellView = { cell, root, body, outEl, badge, stale: false, running: false };
+    const v: CellView = { cell, root, row, body, outEl, badge, stale: false, running: false };
 
     if (cell.kind === 'text') {
       gutter.append(badge);
@@ -151,7 +186,7 @@ export class DocumentView {
       const run = document.createElement('button');
       run.className = 'run';
       run.textContent = '▶';
-      run.title = 'Run cell (Shift-Enter)';
+      run.title = 'Run cell (Cmd-Enter)';
       run.addEventListener('click', () => void this.runCell(v));
       gutter.append(run, badge);
       this.buildCodeBody(v);
@@ -162,17 +197,24 @@ export class DocumentView {
     outEl.hidden = existing === '';
     body.append(outEl);
 
-    root.append(gutter, body, this.buildTools(v));
+    row.append(gutter, body, this.buildTools(v));
+    root.append(this.buildZone(v), row);
     return v;
+  }
+
+  private cellKeymap(v: CellView) {
+    return keymap.of([
+      { key: 'Mod-Enter', run: () => (void this.runCell(v), true) },
+      { key: 'Shift-Enter', run: () => (this.runAndAdvance(v), true) },
+      { key: 'Alt-Enter', run: () => (this.runAndInsertBelow(v), true) },
+    ]);
   }
 
   private buildCodeBody(v: CellView) {
     v.editor = new EditorView({
       doc: cellCode(v.cell),
       extensions: [
-        keymap.of([
-          { key: 'Shift-Enter', run: () => (void this.runCell(v), true) },
-        ]),
+        this.cellKeymap(v),
         minimalSetup,
         python(),
         EditorView.lineWrapping,
@@ -194,27 +236,25 @@ export class DocumentView {
   }
 
   private buildTextBody(v: CellView) {
-    const view = document.createElement('div');
-    view.className = 'prose';
-    const render = () => {
-      const prose = textProse(v.cell).trim();
-      view.innerHTML = prose === '' ? '<p class="empty">Click to write…</p>' : md.render(prose);
-    };
-    render();
-    view.addEventListener('click', () => {
-      const area = document.createElement('textarea');
-      area.value = textProse(v.cell).replace(/\n$/, '');
-      area.rows = Math.max(3, area.value.split('\n').length + 1);
-      view.replaceWith(area);
-      area.focus();
-      area.addEventListener('blur', () => {
-        setProse(v.cell, area.value);
-        this.onChange();
-        render();
-        area.replaceWith(view);
-      });
+    // Text is just text: an always-live markdown editor styled as prose —
+    // click anywhere, type, move with the cursor. No modes.
+    v.editor = new EditorView({
+      doc: textProse(v.cell).replace(/\n$/, ''),
+      extensions: [
+        keymap.of([{ key: 'Shift-Enter', run: () => (this.focusAfter(v, false), true) }]),
+        minimalSetup,
+        markdown(),
+        EditorView.lineWrapping,
+        placeholder('Write…'),
+        EditorView.updateListener.of((update) => {
+          if (!update.docChanged) return;
+          setProse(v.cell, update.state.doc.toString());
+          v.cell.source.push(''); // keep the blank separator line in the raw file
+          this.onChange();
+        }),
+      ],
     });
-    v.body.append(view);
+    v.body.append(v.editor.dom);
   }
 
   private buildTools(v: CellView): HTMLElement {
@@ -227,8 +267,6 @@ export class DocumentView {
       b.addEventListener('click', action);
       tools.append(b);
     };
-    add('+code', 'Insert code cell below', () => this.insertAfter(v, 'program'));
-    add('+text', 'Insert text cell below', () => this.insertAfter(v, 'text'));
     // Program <-> scratch toggle, only when the marker carries no
     // title/attributes we would clobber.
     if (v.cell.marker === '# %%' || v.cell.marker === '# %% scratch') {
@@ -244,27 +282,68 @@ export class DocumentView {
     return tools;
   }
 
+  /** Hover strip that inserts a cell before `v` (or at the end for null). */
+  private buildZone(v: CellView | null): HTMLElement {
+    const zone = document.createElement('div');
+    zone.className = 'insert-zone';
+    const inner = document.createElement('div');
+    inner.className = 'insert-actions';
+    const add = (label: string, kind: 'program' | 'text') => {
+      const b = document.createElement('button');
+      b.textContent = label;
+      b.addEventListener('click', () => {
+        if (v) this.insertBefore(v, kind);
+        else this.insertAtEnd(kind);
+      });
+      inner.append(b);
+    };
+    add('+ Code', 'program');
+    add('+ Text', 'text');
+    zone.append(inner);
+    return zone;
+  }
+
   // ---------- structure edits ----------
 
-  private insertAfter(after: CellView, kind: 'program' | 'text') {
-    const cell: Cell =
-      kind === 'text'
-        ? { kind, marker: '# %% [markdown]', source: ['# '], output: [], trailing: [] }
-        : { kind, marker: '# %%', source: [''], output: [], trailing: [] };
-    // Keep a blank separator line at the end of the cell above.
-    const seg = after.cell.output.length ? after.cell.trailing : after.cell.source;
-    if (seg[seg.length - 1]?.trim() !== '') seg.push('');
+  private newCell(kind: 'program' | 'text'): Cell {
+    return kind === 'text'
+      ? { kind, marker: '# %% [markdown]', source: [''], output: [], trailing: [] }
+      : { kind, marker: '# %%', source: [''], output: [], trailing: [] };
+  }
 
-    const i = this.views.indexOf(after);
-    this.doc.cells.splice(i + 1, 0, cell);
+  /** Keep a blank separator line at the end of the cell above the gap. */
+  private ensureSeparator(prev: CellView | undefined) {
+    if (!prev) return;
+    const seg = prev.cell.output.length ? prev.cell.trailing : prev.cell.source;
+    if (seg[seg.length - 1]?.trim() !== '') seg.push('');
+  }
+
+  private insertAt(i: number, kind: 'program' | 'text') {
+    const cell = this.newCell(kind);
+    this.ensureSeparator(this.views[i - 1]);
+    this.doc.cells.splice(i, 0, cell);
     const view = this.buildView(cell);
-    this.views.splice(i + 1, 0, view);
-    after.root.after(view.root);
+    this.views.splice(i, 0, view);
+    if (i + 1 < this.views.length) this.views[i + 1].root.before(view.root);
+    else this.endZone.before(view.root);
     if (kind === 'program') {
       view.stale = true;
       this.refreshBadge(view);
     }
+    view.editor?.focus();
     this.onChange();
+  }
+
+  private insertAfter(v: CellView, kind: 'program' | 'text') {
+    this.insertAt(this.views.indexOf(v) + 1, kind);
+  }
+
+  private insertBefore(v: CellView, kind: 'program' | 'text') {
+    this.insertAt(this.views.indexOf(v), kind);
+  }
+
+  private insertAtEnd(kind: 'program' | 'text') {
+    this.insertAt(this.views.length, kind);
   }
 
   private remove(v: CellView) {
@@ -275,17 +354,7 @@ export class DocumentView {
     v.root.remove();
     this.markStaleFromIndex(i);
     this.onChange();
-    if (this.views.length === 0) this.setDocKeepingName();
-  }
-
-  private setDocKeepingName() {
-    // Never leave an empty container: a document is at least one cell.
-    const doc = this.doc;
-    const cell: Cell = { kind: 'program', marker: '# %%', source: [''], output: [], trailing: [] };
-    doc.cells.push(cell);
-    const view = this.buildView(cell);
-    this.views.push(view);
-    this.appendView(view);
+    if (this.views.length === 0) this.insertAtEnd('program');
   }
 
   private rebuild(v: CellView) {
@@ -295,10 +364,6 @@ export class DocumentView {
     v.root.replaceWith(fresh.root);
     this.views[this.views.indexOf(v)] = fresh;
     this.refreshBadge(fresh);
-  }
-
-  private appendView(v: CellView) {
-    this.container.append(v.root);
   }
 
   // ---------- staleness ----------
@@ -324,7 +389,7 @@ export class DocumentView {
   private refreshBadge(v: CellView) {
     v.badge.textContent = v.running ? '●' : v.stale ? '○' : '';
     v.badge.title = v.running ? 'running' : v.stale ? 'stale — not run in this session' : '';
-    v.root.classList.toggle('stale', v.stale);
-    v.root.classList.toggle('running', v.running);
+    v.row.classList.toggle('stale', v.stale);
+    v.row.classList.toggle('running', v.running);
   }
 }

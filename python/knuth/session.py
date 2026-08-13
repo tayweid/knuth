@@ -39,6 +39,44 @@ def _persistable(value):
     return value, True
 
 
+def _target_names(target):
+    if isinstance(target, ast.Name):
+        return {target.id}
+    if isinstance(target, (ast.Tuple, ast.List)):
+        names = set()
+        for elt in target.elts:
+            names |= _target_names(elt)
+        return names
+    if isinstance(target, ast.Starred):
+        return _target_names(target.value)
+    return set()
+
+
+def _assigned_names(tree):
+    """Top-level names a cell binds — how scratch state is told apart from
+    program state in the shared v1 namespace."""
+    names = set()
+    for node in tree.body:
+        if isinstance(node, ast.Assign):
+            for target in node.targets:
+                names |= _target_names(target)
+        elif isinstance(node, (ast.AugAssign, ast.AnnAssign, ast.For, ast.AsyncFor)):
+            names |= _target_names(node.target)
+        elif isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+            names.add(node.name)
+        elif isinstance(node, ast.Import):
+            for alias in node.names:
+                names.add((alias.asname or alias.name).split(".")[0])
+        elif isinstance(node, ast.ImportFrom):
+            for alias in node.names:
+                names.add(alias.asname or alias.name)
+        elif isinstance(node, (ast.With, ast.AsyncWith)):
+            for item in node.items:
+                if item.optional_vars is not None:
+                    names |= _target_names(item.optional_vars)
+    return names
+
+
 def _is_figure(value):
     t = type(value)
     return t.__name__ == "Figure" and t.__module__.startswith("matplotlib")
@@ -55,11 +93,16 @@ def _figure_svg(fig):
 class Session:
     def __init__(self):
         self.namespace = {"__name__": "__main__"}
+        # Names bound by scratch cells (shared-namespace v1): visible in
+        # the session, excluded from persistence, badged in the explorer.
+        # A program cell binding the same name reclaims it.
+        self.scratch_names = set()
 
     def reset(self):
         self.namespace = {"__name__": "__main__"}
+        self.scratch_names = set()
 
-    def run(self, code):
+    def run(self, code, scratch=False):
         """Execute a cell. Returns (ok, payload): payload is the repr of the
         last expression (None if the cell ends in a statement or None) on
         success, the formatted traceback on failure."""
@@ -67,6 +110,12 @@ class Session:
             tree = ast.parse(code, "<cell>")
         except SyntaxError as e:
             return False, "".join(traceback.format_exception_only(e))
+
+        assigned = _assigned_names(tree)
+        if scratch:
+            self.scratch_names |= assigned
+        else:
+            self.scratch_names -= assigned
 
         last = None
         if tree.body and isinstance(tree.body[-1], ast.Expr):
@@ -107,6 +156,8 @@ class Session:
             except Exception:
                 preview = "<unrepresentable>"
             entry["preview"] = preview[:80] + ("…" if len(preview) > 80 else "")
+            if name in self.scratch_names:
+                entry["scratch"] = True
             out.append(entry)
         return out
 
@@ -160,6 +211,8 @@ class Session:
         values, figures = {}, {}
         for name, value in self.namespace.items():
             if name.startswith("_") or isinstance(value, types.ModuleType):
+                continue
+            if name in self.scratch_names:  # scratch never persists
                 continue
             if _is_figure(value):
                 try:

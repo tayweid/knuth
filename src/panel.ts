@@ -56,7 +56,9 @@ export class SessionPanel {
       name.textContent = v.name;
       const type = document.createElement('td');
       type.className = 'v-type';
-      type.textContent = v.type + (shapeLabel(v) ? ` ${shapeLabel(v)}` : '');
+      type.textContent =
+        v.type + (shapeLabel(v) ? ` ${shapeLabel(v)}` : '') + (v.scratch ? ' · scratch' : '');
+      if (v.scratch) tr.classList.add('scratch');
       const preview = document.createElement('td');
       preview.className = 'v-preview';
       preview.textContent = v.preview;

@@ -1,229 +1,192 @@
+/* Knuth in the Claerbout reading room (Plass's design language): a warm
+   graphite canvas where the document sheet is the only light; chrome is
+   dark floating glass that sleeps until the mouse comes near. */
+
+@font-face {
+  font-family: 'STIX Two Text';
+  src: url('./fonts/STIXTwoText-Regular.otf');
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'STIX Two Text';
+  src: url('./fonts/STIXTwoText-Italic.otf');
+  font-weight: 400;
+  font-style: italic;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'STIX Two Text';
+  src: url('./fonts/STIXTwoText-Bold.otf');
+  font-weight: 700;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'STIX Two Text';
+  src: url('./fonts/STIXTwoText-BoldItalic.otf');
+  font-weight: 700;
+  font-style: italic;
+  font-display: swap;
+}
+
 :root {
-  --ink: #1a1c20;
-  --faint: #8a8f98;
-  --line: #e4e6ea;
-  --paper: #ffffff;
-  --wash: #f6f7f9;
-  --accent: #3b6ec9;
-  --error: #b00020;
+  /* The reading room (shared with Plass). */
+  --bg: #2b2a2d;
+  --sheet: #ffffff;
+  --ink: #1a1a1a;
+  --ink-soft: #6b6b6b;
+  --line: #e4e2dd;
+  --wash: #f6f5f2;
+  --accent: #305c8a;
+  --error: #a94438;
   --amber: #c98a1d;
+  /* Dark glass chrome. */
+  --glass: color-mix(in srgb, #17161a 80%, transparent);
+  --glass-border: rgba(255, 255, 255, 0.08);
+  --glass-ink: rgba(240, 238, 233, 0.95);
+  --glass-ink-soft: rgba(240, 238, 233, 0.55);
+  --room-pane: #232226;
+  --room-line: rgba(255, 255, 255, 0.07);
+  --room-ink: #d8d6d1;
+  --room-ink-soft: #8f8d88;
+  --serif: 'STIX Two Text', 'Charter', 'Georgia', serif;
+  --mono: ui-monospace, 'SF Mono', 'Menlo', 'Consolas', monospace;
+  --sans: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Helvetica Neue', sans-serif;
 }
 
 * { box-sizing: border-box; }
 
+html, body { margin: 0; height: 100%; }
+
 body {
-  margin: 0;
+  background: var(--bg);
   color: var(--ink);
-  background: var(--paper);
-  font: 15px/1.55 -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  font: 15px/1.55 var(--sans);
+  overflow: hidden;
 }
 
-/* ---------- toolbar ---------- */
+/* ---------- toolbar: dark glass pods over the room ---------- */
 
 #toolbar {
-  position: sticky;
+  position: fixed;
   top: 0;
-  z-index: 10;
+  left: 0;
+  right: 0;
+  height: 58px;
   display: flex;
   align-items: center;
-  gap: 0.5rem;
-  padding: 0.5rem 1rem;
-  background: var(--paper);
-  border-bottom: 1px solid var(--line);
+  gap: 6px;
+  padding: 0 14px;
+  z-index: 10;
 }
 
+.tb-pod {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  height: 40px;
+  padding: 0 6px;
+  background: var(--glass);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid var(--glass-border);
+  border-radius: 12px;
+}
+
+.doc-pod { padding: 0 14px; }
+
 #toolbar .name {
-  font-weight: 600;
-  margin-right: 0.25rem;
+  font-family: var(--mono);
+  font-size: 13px;
+  color: var(--glass-ink);
+  white-space: nowrap;
 }
 
 #toolbar .dirty { color: var(--amber); }
 
-#toolbar button {
-  font: inherit;
-  font-size: 13px;
-  padding: 0.2rem 0.6rem;
-  border: 1px solid var(--line);
-  border-radius: 6px;
-  background: var(--paper);
+.tb-btn {
+  font: 13px/1 var(--sans);
+  color: var(--glass-ink-soft);
+  background: transparent;
+  border: 0;
+  border-radius: 8px;
+  height: 30px;
+  padding: 0 10px;
   cursor: pointer;
+  opacity: 0.55;
+  transition: opacity 0.25s ease, background 0.12s, color 0.12s;
+  white-space: nowrap;
 }
 
-#toolbar button:hover { background: var(--wash); }
+#toolbar:hover .tb-btn { opacity: 1; }
+.tb-btn:hover { background: rgba(255, 255, 255, 0.12); color: var(--glass-ink); }
 
 #toolbar .spacer { flex: 1; }
 
 #kernel-status {
-  font-size: 13px;
-  color: var(--faint);
+  font: 12px/1 var(--sans);
+  color: var(--glass-ink-soft);
+  padding: 0 10px;
+  white-space: nowrap;
 }
 
-#kernel-status.ok::before { content: '● '; color: #2e9e5b; }
-#kernel-status.bad::before { content: '● '; color: var(--error); }
+#kernel-status.ok::before { content: '● '; color: #6ea576; }
+#kernel-status.bad::before { content: '● '; color: #cd6452; }
 
 /* ---------- layout ---------- */
 
 #layout {
   display: flex;
   align-items: stretch;
-  height: calc(100vh - 42px);
+  height: 100vh;
+  padding-top: 58px;
 }
 
 #doc {
   flex: 1;
   min-width: 0;
   overflow-y: auto;
-  padding: 1.5rem 1rem 40vh;
+  padding: 1.25rem 1.5rem 40vh;
 }
 
-#doc > .cell {
+/* The sheet: the one lit surface in the room. */
+#sheet {
   max-width: 52rem;
-  margin-left: auto;
-  margin-right: auto;
-}
-
-/* ---------- session panes ---------- */
-
-#panel {
-  flex: 0 0 360px;
-  display: flex;
-  flex-direction: column;
-  border-left: 1px solid var(--line);
-  background: var(--wash);
-  overflow: hidden;
-}
-
-#panel[hidden] { display: none; }
-
-#panel .pane {
-  display: flex;
-  flex-direction: column;
-  min-height: 0;
-}
-
-#panel .pane.vars { flex: 1; overflow-y: auto; }
-#panel .pane.viewer { flex: 1.2; border-top: 1px solid var(--line); }
-
-.pane-title {
-  font-size: 11px;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  color: var(--faint);
-  padding: 0.5rem 0.75rem 0.35rem;
-}
-
-.pane-empty { padding: 0.25rem 0.75rem; color: var(--faint); font-size: 13px; }
-
-.vars-table {
-  width: 100%;
-  border-collapse: collapse;
-  font: 12.5px/1.5 ui-monospace, 'SF Mono', Menlo, monospace;
-}
-
-.vars-table td {
-  padding: 0.15rem 0.4rem;
-  border-top: 1px solid var(--line);
-  vertical-align: top;
-}
-
-.vars-table td:first-child { padding-left: 0.75rem; }
-.vars-table .v-name { font-weight: 600; white-space: nowrap; }
-.vars-table .v-type { color: var(--faint); white-space: nowrap; }
-.vars-table .v-preview {
-  color: #3a3f47;
-  max-width: 0;
-  width: 100%;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.vars-table tr.viewable { cursor: pointer; }
-.vars-table tr.viewable:hover { background: #eceef2; }
-.vars-table tr.viewable .v-name { color: var(--accent); }
-
-.viewer-head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-}
-
-.viewer-head button {
-  border: 0;
-  background: none;
-  color: var(--faint);
-  cursor: pointer;
-  font-size: 12px;
-}
-
-.viewer-scroll { flex: 1; overflow: auto; background: var(--paper); }
-
-.data-table {
-  border-collapse: collapse;
-  font: 12px/1.45 ui-monospace, 'SF Mono', Menlo, monospace;
-}
-
-.data-table th, .data-table td {
-  padding: 0.15rem 0.55rem;
-  border-bottom: 1px solid var(--line);
-  white-space: nowrap;
-  text-align: right;
-}
-
-.data-table thead th {
-  position: sticky;
-  top: 0;
-  background: var(--wash);
-  color: var(--faint);
-  font-weight: 600;
-  z-index: 1;
-}
-
-.data-table tbody th {
-  color: var(--faint);
-  font-weight: 400;
-  text-align: left;
-  background: var(--wash);
-}
-
-.viewer-foot {
-  padding: 0.35rem 0.75rem;
-  font-size: 12px;
-  color: var(--faint);
-}
-
-.viewer-foot button {
-  font: inherit;
-  border: 1px solid var(--line);
+  margin: 0 auto;
+  background: var(--sheet);
   border-radius: 6px;
-  background: var(--paper);
-  padding: 0.15rem 0.6rem;
-  cursor: pointer;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.35), 0 18px 50px rgba(0, 0, 0, 0.3);
+  padding: 2.25rem 2.5rem 3rem;
+  min-height: 60vh;
 }
+
+/* ---------- cells ---------- */
 
 .cell {
   display: flex;
   gap: 0.6rem;
-  padding: 0.3rem 0;
-  border-radius: 8px;
+  padding: 0.1rem 0;
 }
 
 .cell .gutter {
-  flex: 0 0 2rem;
+  flex: 0 0 1.6rem;
   display: flex;
   flex-direction: column;
   align-items: center;
   gap: 0.2rem;
-  padding-top: 0.25rem;
+  padding-top: 0.3rem;
 }
 
 .cell .run {
   border: 0;
   background: none;
-  color: var(--faint);
+  color: #b9b6af;
   cursor: pointer;
-  font-size: 12px;
+  font-size: 11px;
   padding: 0.1rem;
+  transition: color 0.12s;
 }
 
 .cell .run:hover { color: var(--accent); }
@@ -237,16 +200,16 @@ body {
   flex: 0 0 auto;
   visibility: hidden;
   display: flex;
-  gap: 0.25rem;
+  gap: 0.15rem;
   align-items: flex-start;
-  padding-top: 0.25rem;
+  padding-top: 0.3rem;
 }
 
 .cell:hover .tools { visibility: visible; }
 
 .cell .tools button {
   font-size: 11px;
-  color: var(--faint);
+  color: #b9b6af;
   border: 0;
   background: none;
   cursor: pointer;
@@ -264,69 +227,246 @@ body {
   font-size: 13.5px;
 }
 
-.cell .cm-editor.cm-focused { outline: none; border-color: var(--accent); }
-.cell .cm-content { padding: 0.5rem 0; font-family: ui-monospace, 'SF Mono', Menlo, monospace; }
+.cell .cm-editor.cm-focused { outline: none; border-color: color-mix(in srgb, var(--accent) 55%, var(--line)); }
+.cell .cm-content { padding: 0.5rem 0; font-family: var(--mono); }
+.cell .cm-line { padding: 0 0.75rem; }
 
-.cell.kind-scratch .cm-editor { border-style: dashed; background: var(--paper); }
+.cell.kind-scratch .cm-editor { border-style: dashed; background: var(--sheet); }
 
 .scratch-label {
   font-size: 10px;
   letter-spacing: 0.08em;
   text-transform: uppercase;
-  color: var(--faint);
+  color: #b9b6af;
   margin-bottom: 0.15rem;
 }
 
 .cell.stale .cm-editor { border-left: 3px solid var(--amber); }
 
+/* text cells: just prose on the sheet — no box, no modes */
+
+.cell.kind-text .cm-editor {
+  border: 0;
+  background: transparent;
+  font-size: 17px;
+}
+
+.cell.kind-text .cm-editor.cm-focused { border: 0; }
+
+.cell.kind-text .cm-content {
+  font-family: var(--serif);
+  line-height: 1.6;
+  padding: 0.2rem 0;
+  caret-color: var(--ink);
+}
+
+.cell.kind-text .cm-line { padding: 0; }
+
+.cell.kind-text .cm-placeholder {
+  font-style: italic;
+  color: #b9b6af;
+}
+
 /* outputs */
 
 .cell .output {
-  margin: 0.35rem 0 0;
-  padding: 0.5rem 0.75rem;
-  background: var(--paper);
+  margin: 0.35rem 0 0.15rem;
+  padding: 0.45rem 0.75rem;
+  background: var(--sheet);
   border-left: 3px solid var(--line);
-  font: 12.5px/1.5 ui-monospace, 'SF Mono', Menlo, monospace;
+  font: 12.5px/1.5 var(--mono);
   white-space: pre-wrap;
   overflow-x: auto;
-  color: #3a3f47;
+  color: #3f3d3a;
 }
 
 .cell .output.error { border-left-color: var(--error); color: var(--error); }
 
-/* text cells */
+/* insert strips between cells (Jupyter's hover affordance, quietly) */
 
-.cell.kind-text .prose {
-  font-family: Georgia, 'Times New Roman', serif;
-  font-size: 16px;
-  cursor: text;
-  padding: 0.1rem 0;
+.insert-zone {
+  height: 14px;
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 
-.cell.kind-text .prose p { margin: 0.4rem 0; }
-.cell.kind-text .prose h1, .cell.kind-text .prose h2, .cell.kind-text .prose h3 { margin: 0.6rem 0 0.3rem; }
-.cell.kind-text .prose .empty { color: var(--faint); font-style: italic; }
-.cell.kind-text .prose code { font-family: ui-monospace, Menlo, monospace; font-size: 0.9em; background: var(--wash); padding: 0.05em 0.3em; border-radius: 4px; }
+.insert-zone::before {
+  content: '';
+  position: absolute;
+  left: 2rem;
+  right: 2rem;
+  top: 50%;
+  border-top: 1px solid transparent;
+  transition: border-color 0.15s;
+}
 
-.cell.kind-text textarea {
+.insert-zone:hover::before { border-color: color-mix(in srgb, var(--accent) 35%, transparent); }
+
+.insert-actions {
+  position: relative;
+  display: none;
+  gap: 0.25rem;
+  background: var(--sheet);
+  padding: 0 0.5rem;
+}
+
+.insert-zone:hover .insert-actions { display: inline-flex; }
+
+.insert-actions button {
+  font: 11px/1 var(--sans);
+  color: var(--accent);
+  border: 1px solid color-mix(in srgb, var(--accent) 30%, transparent);
+  border-radius: 999px;
+  background: var(--sheet);
+  padding: 0.25rem 0.6rem;
+  cursor: pointer;
+}
+
+.insert-actions button:hover { background: color-mix(in srgb, var(--accent) 8%, var(--sheet)); }
+
+/* ---------- session panes: dark glass at the room's edge ---------- */
+
+#panel {
+  flex: 0 0 350px;
+  display: flex;
+  flex-direction: column;
+  background: var(--room-pane);
+  border-left: 1px solid var(--room-line);
+  color: var(--room-ink);
+  overflow: hidden;
+}
+
+#panel[hidden] { display: none; }
+
+#panel .pane {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+#panel .pane.vars { flex: 1; overflow-y: auto; }
+#panel .pane.viewer { flex: 1.2; border-top: 1px solid var(--room-line); }
+
+.pane-title {
+  font-size: 10.5px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--room-ink-soft);
+  padding: 0.65rem 0.85rem 0.4rem;
+}
+
+.pane-empty { padding: 0.25rem 0.85rem; color: var(--room-ink-soft); font-size: 12.5px; }
+
+.vars-table {
   width: 100%;
-  font: 13.5px/1.5 ui-monospace, Menlo, monospace;
-  border: 1px solid var(--accent);
-  border-radius: 8px;
-  padding: 0.5rem;
+  border-collapse: collapse;
+  font: 12.5px/1.5 var(--mono);
 }
 
-/* ---------- toast ---------- */
+.vars-table td {
+  padding: 0.18rem 0.4rem;
+  border-top: 1px solid var(--room-line);
+  vertical-align: top;
+}
+
+.vars-table td:first-child { padding-left: 0.85rem; }
+.vars-table .v-name { font-weight: 600; white-space: nowrap; color: var(--room-ink); }
+.vars-table .v-type { color: var(--room-ink-soft); white-space: nowrap; }
+.vars-table .v-preview {
+  color: var(--room-ink-soft);
+  max-width: 0;
+  width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.vars-table tr.scratch .v-name { font-weight: 400; font-style: italic; }
+
+.vars-table tr.viewable { cursor: pointer; }
+.vars-table tr.viewable:hover { background: rgba(255, 255, 255, 0.05); }
+.vars-table tr.viewable .v-name { color: #9db8d6; }
+
+.viewer-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.viewer-head button {
+  border: 0;
+  background: none;
+  color: var(--room-ink-soft);
+  cursor: pointer;
+  font-size: 12px;
+}
+
+.viewer-head button:hover { color: var(--room-ink); }
+
+.viewer-scroll { flex: 1; overflow: auto; }
+
+.data-table {
+  border-collapse: collapse;
+  font: 12px/1.45 var(--mono);
+  color: var(--room-ink);
+}
+
+.data-table th, .data-table td {
+  padding: 0.16rem 0.55rem;
+  border-bottom: 1px solid var(--room-line);
+  white-space: nowrap;
+  text-align: right;
+}
+
+.data-table thead th {
+  position: sticky;
+  top: 0;
+  background: var(--room-pane);
+  color: var(--room-ink-soft);
+  font-weight: 600;
+  z-index: 1;
+}
+
+.data-table tbody th {
+  color: var(--room-ink-soft);
+  font-weight: 400;
+  text-align: left;
+}
+
+.viewer-foot {
+  padding: 0.4rem 0.85rem;
+  font-size: 12px;
+  color: var(--room-ink-soft);
+}
+
+.viewer-foot button {
+  font: 12px/1 var(--sans);
+  border: 1px solid var(--room-line);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--room-ink);
+  padding: 0.25rem 0.7rem;
+  cursor: pointer;
+}
+
+.viewer-foot button:hover { background: rgba(255, 255, 255, 0.07); }
+
+/* ---------- toast: the same dark glass ---------- */
 
 #toast {
   position: fixed;
   bottom: 1.25rem;
   left: 50%;
   transform: translateX(-50%);
-  background: var(--ink);
-  color: var(--paper);
-  padding: 0.45rem 0.9rem;
-  border-radius: 8px;
+  background: var(--glass);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid var(--glass-border);
+  color: var(--glass-ink);
+  padding: 0.45rem 0.95rem;
+  border-radius: 999px;
   font-size: 13px;
   z-index: 20;
 }

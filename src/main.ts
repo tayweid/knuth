@@ -11,17 +11,23 @@ import { SessionPanel } from './panel.ts';
 
 const toolbar = document.getElementById('toolbar')!;
 toolbar.innerHTML = `
-  <span class="name" id="file-name">untitled.py</span>
-  <button id="open" title="Open (Cmd-O)">Open</button>
-  <button id="save" title="Save (Cmd-S)">Save</button>
-  <button id="folder" title="Attach the project folder: values.json and figs/ are kept fresh there for Typst/Plass">Folder…</button>
+  <div class="tb-pod doc-pod"><span class="name" id="file-name">untitled.py</span></div>
+  <div class="tb-pod tb-group">
+    <button class="tb-btn" id="open" title="Open (Cmd-O)">Open</button>
+    <button class="tb-btn" id="save" title="Save (Cmd-S)">Save</button>
+    <button class="tb-btn" id="folder" title="Attach the project folder: values.json and figs/ are kept fresh there for Typst/Plass">Folder…</button>
+  </div>
+  <div class="tb-pod tb-group">
+    <button class="tb-btn" id="run-stale" title="Run stale program cells in order">Run stale</button>
+    <button class="tb-btn" id="run-all" title="Run all program cells from the top">Run all</button>
+    <button class="tb-btn" id="stop" title="Interrupt the running cell">Stop</button>
+    <button class="tb-btn" id="restart" title="Fresh session (kernel process replaced)">Restart</button>
+  </div>
   <span class="spacer"></span>
-  <button id="run-stale">Run stale</button>
-  <button id="run-all">Run all</button>
-  <button id="stop" title="Interrupt the running cell">Stop</button>
-  <button id="restart" title="Fresh session (kernel process replaced)">Restart</button>
-  <button id="toggle-panel" title="Show/hide the session panes">Session</button>
-  <span id="kernel-status">connecting…</span>
+  <div class="tb-pod tb-group">
+    <button class="tb-btn" id="toggle-panel" title="Show/hide the session panes">Session</button>
+    <span id="kernel-status">connecting…</span>
+  </div>
 `;
 
 const $ = (id: string) => document.getElementById(id)!;
@@ -76,7 +82,7 @@ const panel = new SessionPanel($('panel'), kernel);
 if (localStorage.getItem('knuth-panel') === '0') $('panel').hidden = true;
 
 const docView = new DocumentView(
-  $('doc'),
+  $('sheet'),
   kernel,
   () => fileManager?.noteChange(),
   syncArtifacts,

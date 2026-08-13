@@ -29,6 +29,8 @@ export interface NamespaceVar {
   shape?: number[];
   length?: number;
   preview: string;
+  /** Bound by a scratch cell: session-only, never persisted. */
+  scratch?: boolean;
 }
 
 export interface Artifacts {
@@ -50,7 +52,7 @@ export interface TableWindow {
 }
 
 export interface Kernel {
-  run(code: string, handlers?: RunHandlers): Promise<RunOutcome>;
+  run(code: string, handlers?: RunHandlers, opts?: { scratch?: boolean }): Promise<RunOutcome>;
   interrupt(): void;
   restart(): Promise<void>;
   namespace(): Promise<NamespaceVar[]>;
@@ -164,14 +166,18 @@ export class SidecarKernel implements Kernel {
     this.ws!.send(JSON.stringify(msg));
   }
 
-  async run(code: string, handlers?: RunHandlers): Promise<RunOutcome> {
+  async run(
+    code: string,
+    handlers?: RunHandlers,
+    opts?: { scratch?: boolean },
+  ): Promise<RunOutcome> {
     if (!this.connectedReady) {
       return { ok: false, result: null, traceback: 'no kernel connection' };
     }
     const id = this.nextId++;
     return new Promise((resolve) => {
       this.runs.set(id, { handlers, resolve });
-      this.send({ type: 'run', id, code });
+      this.send({ type: 'run', id, code, scratch: opts?.scratch ?? false });
     });
   }
 

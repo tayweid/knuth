@@ -57,6 +57,21 @@ def main():
     values, _ = s.artifacts()
     assert "x" not in values
 
+    # Scratch never persists: bound names stay out of values.json and are
+    # badged in the explorer; a program cell binding the name reclaims it.
+    ok, _ = s.run("probe = 99\nimport math as m", scratch=True)
+    assert ok
+    values, _ = s.artifacts()
+    assert "probe" not in values
+    snap = {v["name"]: v for v in s.snapshot()}
+    assert snap["probe"].get("scratch") is True, snap["probe"]
+    ok, _ = s.run("probe = 100")
+    assert ok
+    values, _ = s.artifacts()
+    assert values["probe"] == 100
+    snap = {v["name"]: v for v in s.snapshot()}
+    assert "scratch" not in snap["probe"]
+
     print("test_artifacts: all assertions passed")
 
 
