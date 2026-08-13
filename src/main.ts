@@ -8,29 +8,7 @@ import { SidecarKernel } from './kernel/kernel.ts';
 import { DocumentView } from './document-view.ts';
 import { FileManager } from './file-manager.ts';
 import { SessionPanel } from './panel.ts';
-
-// Feather-style inline icons, Plass's system (stroke = currentColor);
-// file icons are Plass's own paths so the suite reads as one hand.
-const ICONS: Record<string, string> = {
-  open: '<path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/>',
-  save: '<path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/>',
-  project:
-    '<path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/><circle cx="12" cy="14" r="2.4"/><line x1="12" y1="9.5" x2="12" y2="11.6"/>',
-  plus: '<line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>',
-  code: '<polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/>',
-  scratch:
-    '<rect x="4" y="4" width="16" height="16" rx="2" stroke-dasharray="3.4 2.8"/><line x1="9" y1="12" x2="15" y2="12"/>',
-  text: '<polyline points="4 7 4 4 20 4 20 7"/><line x1="9" y1="20" x2="15" y2="20"/><line x1="12" y1="4" x2="12" y2="20"/>',
-  play: '<polygon points="7 4.5 19 12 7 19.5"/>',
-  playall: '<polygon points="3.5 5 11 12 3.5 19"/><polygon points="13 5 20.5 12 13 19"/>',
-  stop: '<rect x="6.5" y="6.5" width="11" height="11" rx="1.5"/>',
-  restart: '<polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"/>',
-  panel: '<rect x="3" y="3" width="18" height="18" rx="2"/><line x1="15" y1="3" x2="15" y2="21"/>',
-};
-
-function icon(name: string): string {
-  return `<svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${ICONS[name]}</svg>`;
-}
+import { icon } from './icons.ts';
 
 // Plass's hover flyout: the trigger's group lays its labeled icons OVER
 // the trigger — pure :hover, no gap for the cursor to cross.
@@ -192,11 +170,65 @@ fileManager = new FileManager({
 
 fileManager.newDoc();
 
-// The file lifecycle lives in the name slug, one trigger flying out to
-// three; the cells pod does the same for insertion.
-flyout($('doc-pod'), icon('open'), 'File — open, save, project folder', [
+// Recents dropdown: the one inherently dynamic list (Plass's exception
+// to everything-on-the-bar).
+let recentsMenu: HTMLElement | null = null;
+function closeRecentsMenu() {
+  recentsMenu?.remove();
+  recentsMenu = null;
+}
+document.addEventListener('mousedown', (e) => {
+  if (recentsMenu && !recentsMenu.contains(e.target as Node)) closeRecentsMenu();
+});
+
+async function showRecents(anchor: HTMLElement) {
+  if (recentsMenu) {
+    closeRecentsMenu();
+    return;
+  }
+  const entries = await fileManager.recents();
+  const menu = document.createElement('div');
+  menu.className = 'file-menu';
+  if (entries.length === 0) {
+    const empty = document.createElement('div');
+    empty.className = 'file-menu-empty';
+    empty.textContent = 'No recent documents';
+    menu.append(empty);
+  }
+  for (const entry of entries) {
+    const item = document.createElement('button');
+    item.className = 'file-menu-item';
+    item.textContent = entry.name;
+    item.addEventListener('click', () => {
+      closeRecentsMenu();
+      void fileManager.openRecent(entry);
+    });
+    menu.append(item);
+  }
+  const rect = anchor.getBoundingClientRect();
+  menu.style.top = `${rect.bottom + 10}px`;
+  menu.style.left = `${Math.max(8, rect.left - 10)}px`;
+  document.body.append(menu);
+  recentsMenu = menu;
+}
+
+// The file lifecycle lives in the name slug — Plass's set (New, Open,
+// Recent) plus Folder, which only exists because the browser grants the
+// project-directory handle for values.json/figs through a user picker.
+flyout($('doc-pod'), icon('open'), 'File — new, open, recent, project folder', [
+  {
+    glyph: icon('new'),
+    label: 'New',
+    title: 'New document — opens in a new window (its own session)',
+    run: () => void window.open(location.pathname, '_blank'),
+  },
   { glyph: icon('open'), label: 'Open', title: 'Open… (⌘O)', run: () => void fileManager.open() },
-  { glyph: icon('save'), label: 'Save', title: 'Save (⌘S)', run: () => void fileManager.save() },
+  {
+    glyph: icon('clock'),
+    label: 'Recent',
+    title: 'Your documents',
+    run: () => void showRecents($('doc-pod')),
+  },
   {
     glyph: icon('project'),
     label: 'Folder',

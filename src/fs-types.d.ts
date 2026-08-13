@@ -21,6 +21,11 @@ interface FileSystemFileHandle {
   move?(name: string): Promise<void>;
 }
 
+interface FileSystemHandle {
+  queryPermission?(desc?: { mode?: 'read' | 'readwrite' }): Promise<PermissionState>;
+  requestPermission?(desc?: { mode?: 'read' | 'readwrite' }): Promise<PermissionState>;
+}
+
 interface Window {
   showOpenFilePicker?(options?: OpenFilePickerOptions): Promise<FileSystemFileHandle[]>;
   showSaveFilePicker?(options?: SaveFilePickerOptions): Promise<FileSystemFileHandle>;

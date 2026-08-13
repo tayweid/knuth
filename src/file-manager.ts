@@ -19,6 +19,42 @@ const PY_TYPE: FilePickerType[] = [
 
 const NEW_DOC = '# %%\n';
 
+export interface RecentEntry {
+  name: string;
+  time: number;
+  handle: FileSystemFileHandle;
+}
+
+// Minimal IndexedDB kv store: file handles are structured-cloneable, so
+// recents survive across sessions (permission is re-asked on open).
+function db(): Promise<IDBDatabase> {
+  return new Promise((resolve, reject) => {
+    const req = indexedDB.open('knuth-files', 1);
+    req.onupgradeneeded = () => req.result.createObjectStore('kv');
+    req.onsuccess = () => resolve(req.result);
+    req.onerror = () => reject(req.error);
+  });
+}
+
+async function idbGet<T>(key: string): Promise<T | undefined> {
+  const d = await db();
+  return new Promise((resolve, reject) => {
+    const req = d.transaction('kv').objectStore('kv').get(key);
+    req.onsuccess = () => resolve(req.result as T | undefined);
+    req.onerror = () => reject(req.error);
+  });
+}
+
+async function idbSet(key: string, value: unknown): Promise<void> {
+  const d = await db();
+  return new Promise((resolve, reject) => {
+    const tx = d.transaction('kv', 'readwrite');
+    tx.objectStore('kv').put(value, key);
+    tx.oncomplete = () => resolve();
+    tx.onerror = () => reject(tx.error);
+  });
+}
+
 export class FileManager {
   handle: FileSystemFileHandle | null = null;
   /** Project folder: where the contract (values.json, figs/) lands. */
@@ -92,6 +128,51 @@ export class FileManager {
     this.dirty = false;
     this.hooks.onState();
     this.hooks.message(`Opened ${file.name}`);
+    void this.addRecent(handle, file.name);
+  }
+
+  // ---------- recents ----------
+
+  async recents(): Promise<RecentEntry[]> {
+    try {
+      return (await idbGet<RecentEntry[]>('recents')) ?? [];
+    } catch {
+      return [];
+    }
+  }
+
+  private async addRecent(handle: FileSystemFileHandle, name: string) {
+    try {
+      const list = (await idbGet<RecentEntry[]>('recents')) ?? [];
+      const kept: RecentEntry[] = [{ name, time: Date.now(), handle }];
+      for (const entry of list) {
+        if (entry.name === name) continue;
+        kept.push(entry);
+        if (kept.length >= 8) break;
+      }
+      await idbSet('recents', kept);
+    } catch (e) {
+      console.warn('Could not persist recents', e);
+    }
+  }
+
+  /** Reopen a recent file; stored handles need a permission re-grant
+   *  (browsers downgrade them across sessions — the click is our gesture). */
+  async openRecent(entry: RecentEntry) {
+    try {
+      const q = (await entry.handle.queryPermission?.({ mode: 'readwrite' })) ?? 'granted';
+      if (q !== 'granted') {
+        const r = await entry.handle.requestPermission?.({ mode: 'readwrite' });
+        if (r !== 'granted') {
+          this.hooks.message(`No permission to reopen ${entry.name}`);
+          return;
+        }
+      }
+      await this.loadHandle(entry.handle);
+    } catch (e) {
+      console.warn('Recent open failed', e);
+      this.hooks.message(`Could not reopen ${entry.name} — it may have moved`);
+    }
   }
 
   async save() {
@@ -124,6 +205,7 @@ export class FileManager {
       this.dirty = false;
       this.hooks.onState();
       this.hooks.message(`Saved ${handle.name}`);
+      void this.addRecent(handle, handle.name);
     } catch (e) {
       if ((e as DOMException)?.name !== 'AbortError') console.warn(e);
     }

@@ -24,6 +24,7 @@ import {
   outputText,
 } from './format/percent.ts';
 import type { Kernel } from './kernel/kernel.ts';
+import { icon } from './icons.ts';
 
 // Stored-output cap (the DESIGN.md truncation policy).
 const MAX_OUTPUT_LINES = 40;
@@ -53,11 +54,22 @@ interface CellView {
 
 type NewCellKind = 'program' | 'scratch' | 'text';
 
+const KIND_MARKERS: Record<NewCellKind, string> = {
+  program: '# %%',
+  scratch: '# %% scratch',
+  text: '# %% [markdown]',
+};
+
+// Kind conversion never clobbers a marker carrying a title/attributes.
+const BARE_MARKERS = new Set(Object.values(KIND_MARKERS));
+
 export class DocumentView {
   doc: KnuthDocument = parseDocument('# %%\n');
   private views: CellView[] = [];
   private endZone!: HTMLElement;
   private lastFocused: CellView | null = null;
+  /** Esc arms a brief chord: the next key can switch the cell's kind. */
+  private armed: { v: CellView; until: number } | null = null;
 
   constructor(
     private container: HTMLElement,
@@ -69,7 +81,69 @@ export class DocumentView {
     private onRun?: () => void,
     /** A cell was deleted; calling `restore` puts it back. */
     private onCellDeleted?: (restore: () => void) => void,
-  ) {}
+  ) {
+    // The armed Esc chord (Esc, then Y/S/M) is resolved here so it works
+    // regardless of which element ends up with the key event.
+    window.addEventListener(
+      'keydown',
+      (e) => {
+        if (!this.armed || Date.now() > this.armed.until) return;
+        const kind =
+          e.key === 'y' || e.key === 'c'
+            ? 'program'
+            : e.key === 's'
+              ? 'scratch'
+              : e.key === 'm' || e.key === 't'
+                ? 'text'
+                : null;
+        const { v } = this.armed;
+        this.disarm();
+        if (kind) {
+          e.preventDefault();
+          e.stopPropagation();
+          this.convertKind(v, kind);
+        }
+      },
+      { capture: true },
+    );
+  }
+
+  private arm(v: CellView) {
+    this.disarm();
+    this.armed = { v, until: Date.now() + 2000 };
+    v.row.classList.add('armed');
+    window.setTimeout(() => {
+      if (this.armed?.v === v && Date.now() >= this.armed.until) this.disarm();
+    }, 2100);
+  }
+
+  private disarm() {
+    this.armed?.v.row.classList.remove('armed');
+    this.armed = null;
+  }
+
+  /** Switch a cell's kind in place, converting its content. */
+  convertKind(v: CellView, kind: NewCellKind): void {
+    const cell = v.cell;
+    if (cell.kind === kind || !BARE_MARKERS.has(cell.marker)) return;
+    if (cell.kind === 'text' && kind !== 'text') {
+      // Prose becomes code lines.
+      const code = textProse(cell).replace(/\n+$/, '');
+      cell.source = code === '' ? [''] : code.split('\n');
+      cell.source.push('');
+    } else if (cell.kind !== 'text' && kind === 'text') {
+      // Code lines become prose; outputs don't survive becoming text.
+      setProse(cell, cellCode(cell).replace(/\n+$/, ''));
+      cell.source.push('');
+      setOutput(cell, null);
+      cell.output = [];
+    }
+    cell.kind = kind;
+    cell.marker = KIND_MARKERS[kind];
+    const fresh = this.rebuild(v);
+    fresh.editor?.focus();
+    this.onChange();
+  }
 
   setDoc(doc: KnuthDocument) {
     for (const v of this.views) v.editor?.destroy();
@@ -232,7 +306,9 @@ export class DocumentView {
       { key: 'Mod-Enter', run: () => (void this.runCell(v), true) },
       { key: 'Shift-Enter', run: () => (this.runAndAdvance(v), true) },
       { key: 'Alt-Enter', run: () => (this.runAndInsertBelow(v), true) },
+      { key: 'Mod-Shift-Enter', run: () => (this.insertAfter(v, 'program'), true) },
       { key: 'Backspace', run: () => this.backspaceOnEmpty(v) },
+      { key: 'Escape', run: () => (this.arm(v), true) },
     ]);
   }
 
@@ -282,8 +358,10 @@ export class DocumentView {
       doc: textProse(v.cell).replace(/\n$/, ''),
       extensions: [
         keymap.of([
-          { key: 'Shift-Enter', run: () => (this.focusAfter(v, false), true) },
+          { key: 'Shift-Enter', run: () => (this.focusAfter(v, true), true) },
+          { key: 'Mod-Shift-Enter', run: () => (this.insertAfter(v, 'program'), true) },
           { key: 'Backspace', run: () => this.backspaceOnEmpty(v) },
+          { key: 'Escape', run: () => (this.arm(v), true) },
         ]),
         this.trackFocus(v),
         minimalSetup,
@@ -305,23 +383,21 @@ export class DocumentView {
   private buildTools(v: CellView): HTMLElement {
     const tools = document.createElement('div');
     tools.className = 'tools';
-    const add = (label: string, title: string, action: () => void) => {
+    // Kind picker: the cell's identity, switchable in place (also via
+    // Esc then Y/S/M). Hidden for markers carrying titles/attributes.
+    if (!BARE_MARKERS.has(v.cell.marker)) return tools;
+    const kinds: Array<[NewCellKind, string, string]> = [
+      ['program', 'code', 'Code cell (Esc, Y)'],
+      ['scratch', 'scratch', 'Scratch cell — never persists (Esc, S)'],
+      ['text', 'text', 'Text cell (Esc, M)'],
+    ];
+    for (const [kind, glyph, title] of kinds) {
       const b = document.createElement('button');
-      b.textContent = label;
+      b.className = 'kind-pick' + (v.cell.kind === kind ? ' cur' : '');
       b.title = title;
-      b.addEventListener('click', action);
+      b.innerHTML = icon(glyph);
+      b.addEventListener('click', () => this.convertKind(v, kind));
       tools.append(b);
-    };
-    // Program <-> scratch toggle, only when the marker carries no
-    // title/attributes we would clobber.
-    if (v.cell.marker === '# %%' || v.cell.marker === '# %% scratch') {
-      add('⇄', 'Toggle program/scratch', () => {
-        const toScratch = v.cell.kind === 'program';
-        v.cell.kind = toScratch ? 'scratch' : 'program';
-        v.cell.marker = toScratch ? '# %% scratch' : '# %%';
-        this.rebuild(v);
-        this.onChange();
-      });
     }
     return tools;
   }
@@ -416,13 +492,14 @@ export class DocumentView {
     });
   }
 
-  private rebuild(v: CellView) {
+  private rebuild(v: CellView): CellView {
     const fresh = this.buildView(v.cell);
     fresh.stale = v.cell.kind === 'program';
     v.editor?.destroy();
     v.root.replaceWith(fresh.root);
     this.views[this.views.indexOf(v)] = fresh;
     this.refreshBadge(fresh);
+    return fresh;
   }
 
   // ---------- staleness ----------

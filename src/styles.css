@@ -275,6 +275,44 @@ body:has(#panel:not([hidden])) #toolbar {
   margin: 0 auto;
 }
 
+/* Recents dropdown: the same dark card as flyouts, but a list. */
+.file-menu {
+  position: fixed;
+  z-index: 40;
+  display: flex;
+  flex-direction: column;
+  min-width: 200px;
+  padding: 5px;
+  background: color-mix(in srgb, #3a3840 96%, transparent);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 12px;
+  box-shadow: 0 8px 26px rgba(0, 0, 0, 0.5);
+}
+
+.file-menu-item {
+  font: 13px/1.4 var(--sans);
+  color: rgba(240, 238, 233, 0.9);
+  background: transparent;
+  border: 0;
+  border-radius: 7px;
+  padding: 7px 10px;
+  text-align: left;
+  cursor: pointer;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.file-menu-item:hover { background: rgba(255, 255, 255, 0.1); }
+
+.file-menu-empty {
+  font: 12px var(--sans);
+  color: var(--room-ink-soft);
+  padding: 7px 10px;
+}
+
 /* ---------- cells on the bench ---------- */
 
 .cell {
@@ -320,16 +358,23 @@ body:has(#panel:not([hidden])) #toolbar {
 
 .cell:hover .tools { visibility: visible; }
 
-.cell .tools button {
-  font-size: 11px;
-  color: rgba(240, 238, 233, 0.35);
+/* Kind picker: the cell's identity, switchable in place. */
+.cell .tools .kind-pick {
   border: 0;
   background: none;
   cursor: pointer;
-  padding: 0.1rem 0.25rem;
+  color: rgba(240, 238, 233, 0.25);
+  padding: 0.12rem 0.2rem;
+  border-radius: 5px;
 }
 
-.cell .tools button:hover { color: var(--room-ink); }
+.cell .tools .kind-pick .ico { width: 13px; height: 13px; display: block; }
+
+.cell .tools .kind-pick:hover { color: var(--room-ink); background: rgba(255, 255, 255, 0.08); }
+.cell .tools .kind-pick.cur { color: #9db8d6; }
+
+/* Esc armed: the next key (Y/S/M) switches this cell's kind. */
+.cell.armed { outline: 1px dashed rgba(157, 184, 214, 0.5); outline-offset: 3px; border-radius: 8px; }
 
 /* code cells: dark instrument cards, One Dark ink */
 
