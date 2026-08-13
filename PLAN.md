@@ -127,13 +127,17 @@ contract regenerates (on failure the previous values.json is kept: the
 contract always reflects the last complete run). Verified:
 `knuth run analysis.py && typst compile paper.typ` end to end.
 
-## Milestone 6 — Session panes
+## Milestone 6 — Session panes ✓
 
-The RStudio-quality half of the architecture: panes looking into the live
-session, not the document.
-
-- Variable explorer: names, types, shapes from the session namespace.
-- Data viewer: click a DataFrame for a real table view.
+Built: the RStudio-quality half of the architecture — panes looking into
+the live session, not the document. `src/panel.ts` renders the variable
+explorer (name, type, shape, preview; refreshed after every run, restart,
+and reconnect) and the data viewer: click a DataFrame/Series/2-D ndarray
+to open a windowed table view (100 rows per fetch, 200-column cap, sticky
+headers, "More" paging — the full object never leaves the kernel;
+`Session.table()` serves string-rendered windows over the `table`
+protocol message). Toggle with the toolbar "Session" button; state
+persists in localStorage.
 
 ## Later (tracked, not scheduled)
 

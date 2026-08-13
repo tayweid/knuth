@@ -72,6 +72,13 @@ def main():
             elif kind == "artifacts":
                 values, figures = session.artifacts()
                 emit({"type": "artifacts", "values": values, "figures": figures})
+            elif kind == "table":
+                emit({
+                    "type": "table",
+                    **session.table(
+                        msg.get("name", ""), msg.get("offset", 0), msg.get("limit", 100)
+                    ),
+                })
         except KeyboardInterrupt:
             # Interrupt arrived while idle (or between commands): ignore.
             state["id"] = None

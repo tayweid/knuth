@@ -38,12 +38,24 @@ export interface Artifacts {
   figures: Record<string, string>;
 }
 
+export interface TableWindow {
+  name: string;
+  error?: string;
+  columns?: string[];
+  index?: string[];
+  rows?: string[][];
+  total_rows?: number;
+  total_cols?: number;
+  offset?: number;
+}
+
 export interface Kernel {
   run(code: string, handlers?: RunHandlers): Promise<RunOutcome>;
   interrupt(): void;
   restart(): Promise<void>;
   namespace(): Promise<NamespaceVar[]>;
   artifacts(): Promise<Artifacts | null>;
+  table(name: string, offset?: number, limit?: number): Promise<TableWindow | null>;
   close(): void;
 }
 
@@ -63,6 +75,7 @@ export class SidecarKernel implements Kernel {
   private runs = new Map<number, PendingRun>();
   private namespaceWaiters: Array<(vars: NamespaceVar[]) => void> = [];
   private artifactsWaiters: Array<(artifacts: Artifacts | null) => void> = [];
+  private tableWaiters: Array<(window: TableWindow | null) => void> = [];
   private restartWaiters: Array<() => void> = [];
 
   constructor(
@@ -101,6 +114,7 @@ export class SidecarKernel implements Kernel {
     this.runs.clear();
     for (const resolve of this.namespaceWaiters.splice(0)) resolve([]);
     for (const resolve of this.artifactsWaiters.splice(0)) resolve(null);
+    for (const resolve of this.tableWaiters.splice(0)) resolve(null);
     for (const resolve of this.restartWaiters.splice(0)) resolve();
   }
 
@@ -137,6 +151,10 @@ export class SidecarKernel implements Kernel {
       }
       case 'artifacts': {
         this.artifactsWaiters.shift()?.({ values: msg.values, figures: msg.figures });
+        break;
+      }
+      case 'table': {
+        this.tableWaiters.shift()?.(msg);
         break;
       }
     }
@@ -182,6 +200,14 @@ export class SidecarKernel implements Kernel {
     return new Promise((resolve) => {
       this.artifactsWaiters.push(resolve);
       this.send({ type: 'artifacts' });
+    });
+  }
+
+  async table(name: string, offset = 0, limit = 100): Promise<TableWindow | null> {
+    if (!this.connectedReady) return null;
+    return new Promise((resolve) => {
+      this.tableWaiters.push(resolve);
+      this.send({ type: 'table', name, offset, limit });
     });
   }
 

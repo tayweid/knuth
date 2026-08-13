@@ -56,6 +56,8 @@ export class DocumentView {
     private onChange: () => void,
     /** A program cell finished cleanly — namespace/artifacts moved. */
     private onProgramRun?: () => void,
+    /** Any code cell finished (ok or not) — the session may have changed. */
+    private onRun?: () => void,
   ) {}
 
   setDoc(doc: KnuthDocument) {
@@ -121,6 +123,7 @@ export class DocumentView {
     this.refreshBadge(v);
     this.onChange();
     if (outcome.ok && v.cell.kind === 'program') this.onProgramRun?.();
+    this.onRun?.();
     return outcome.ok;
   }
 

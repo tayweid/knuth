@@ -7,6 +7,7 @@ import './styles.css';
 import { SidecarKernel } from './kernel/kernel.ts';
 import { DocumentView } from './document-view.ts';
 import { FileManager } from './file-manager.ts';
+import { SessionPanel } from './panel.ts';
 
 const toolbar = document.getElementById('toolbar')!;
 toolbar.innerHTML = `
@@ -19,6 +20,7 @@ toolbar.innerHTML = `
   <button id="run-all">Run all</button>
   <button id="stop" title="Interrupt the running cell">Stop</button>
   <button id="restart" title="Fresh session (kernel process replaced)">Restart</button>
+  <button id="toggle-panel" title="Show/hide the session panes">Session</button>
   <span id="kernel-status">connecting…</span>
 `;
 
@@ -45,6 +47,7 @@ const kernel = new SidecarKernel(undefined, (state) => {
       toast('Kernel session reset');
     }
     hadSession = true;
+    void panel.refresh();
   } else if (state === 'down') {
     status.textContent = 'no kernel — install: knuth agent install';
     status.title = 'Retrying every 2s. One-time setup: knuth agent install';
@@ -69,11 +72,15 @@ function syncArtifacts() {
   }, 300);
 }
 
+const panel = new SessionPanel($('panel'), kernel);
+if (localStorage.getItem('knuth-panel') === '0') $('panel').hidden = true;
+
 const docView = new DocumentView(
   $('doc'),
   kernel,
   () => fileManager?.noteChange(),
   syncArtifacts,
+  () => void panel.refresh(),
 );
 
 fileManager = new FileManager({
@@ -111,8 +118,15 @@ $('stop').addEventListener('click', () => kernel.interrupt());
 $('restart').addEventListener('click', () => {
   void kernel.restart().then(() => {
     docView.markAllStale();
+    void panel.refresh();
     toast('Fresh session');
   });
+});
+$('toggle-panel').addEventListener('click', () => {
+  const el = $('panel');
+  el.hidden = !el.hidden;
+  localStorage.setItem('knuth-panel', el.hidden ? '0' : '1');
+  if (!el.hidden) void panel.refresh();
 });
 
 window.addEventListener(

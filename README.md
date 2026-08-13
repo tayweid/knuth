@@ -13,6 +13,10 @@ PyCharm, run under bare `python`, and diff cleanly in git — with outputs
 stored in the file as machine-managed comment blocks, so results change
 alongside code in the history.
 
+The session is separate from the document, with panes looking into it
+(the RStudio architecture): a variable explorer shows the live namespace,
+and clicking a DataFrame opens a real windowed table view.
+
 Named things persist automatically: assign a scalar and it mirrors to
 `values.json`; assign a figure to a name and it lands in `figs/<name>.svg`.
 `knuth run file.py` is the reproducibility check — fresh session, program

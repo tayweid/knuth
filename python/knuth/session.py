@@ -13,6 +13,11 @@ import types
 # values.json size guard: a "small serializable" stops being small here.
 MAX_VALUE_JSON = 10_000
 
+# Data viewer windowing: rows per request (clamped) and a column cap so a
+# thousand-column frame can't flood the socket.
+MAX_TABLE_LIMIT = 500
+MAX_TABLE_COLS = 200
+
 
 def _persistable(value):
     """(value, ok): JSON-safe mirror of a namespace value, or ok=False.
@@ -104,6 +109,48 @@ class Session:
             entry["preview"] = preview[:80] + ("…" if len(preview) > 80 else "")
             out.append(entry)
         return out
+
+    def table(self, name, offset=0, limit=100):
+        """A window into a tabular variable for the data viewer:
+        DataFrame, Series (one column), or 2-D ndarray. Cells arrive as
+        strings; the full object never leaves the session."""
+        if name not in self.namespace:
+            return {"name": name, "error": "no such variable"}
+        value = self.namespace[name]
+        t = type(value)
+        mod = t.__module__ or ""
+        offset = max(0, int(offset))
+        limit = max(1, min(int(limit), MAX_TABLE_LIMIT))
+        try:
+            if mod.startswith("pandas") and t.__name__ in ("DataFrame", "Series"):
+                df = value.to_frame() if t.__name__ == "Series" else value
+                total_rows, total_cols = df.shape
+                window = df.iloc[offset : offset + limit, :MAX_TABLE_COLS]
+                columns = [str(c) for c in window.columns]
+                rows = [
+                    [str(x) for x in row]
+                    for row in window.itertuples(index=False, name=None)
+                ]
+                index = [str(i) for i in window.index]
+            elif mod == "numpy" and t.__name__ == "ndarray" and getattr(value, "ndim", 0) == 2:
+                total_rows, total_cols = value.shape
+                window = value[offset : offset + limit, :MAX_TABLE_COLS]
+                columns = [str(i) for i in range(window.shape[1])]
+                rows = [[str(x) for x in r] for r in window]
+                index = [str(i) for i in range(offset, offset + len(rows))]
+            else:
+                return {"name": name, "error": f"{t.__name__} is not tabular"}
+        except Exception as e:
+            return {"name": name, "error": str(e)}
+        return {
+            "name": name,
+            "columns": columns,
+            "index": index,
+            "rows": rows,
+            "total_rows": int(total_rows),
+            "total_cols": int(total_cols),
+            "offset": offset,
+        }
 
     def artifacts(self):
         """The folder contract (DESIGN.md auto-persistence): a JSON-safe
