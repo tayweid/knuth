@@ -673,4 +673,18 @@ body:has(#panel:not([hidden])) #toolbar {
   border-radius: 999px;
   font-size: 13px;
   z-index: 20;
+  white-space: nowrap;
 }
+
+#toast button {
+  font: 12px var(--sans);
+  color: #2c2b29;
+  background: rgba(251, 250, 248, 0.92);
+  border: 0;
+  border-radius: 999px;
+  padding: 0.25rem 0.7rem;
+  margin-left: 0.5rem;
+  cursor: pointer;
+}
+
+#toast button:hover { background: #fff; }

@@ -198,6 +198,8 @@ export class FileManager {
       const handle = await window.showSaveFilePicker!({
         types: PY_TYPE,
         suggestedName: this.name,
+        id: 'knuth-documents',
+        startIn: this.dir ?? undefined,
       });
       this.handle = handle;
       this.name = handle.name;
@@ -248,7 +250,14 @@ export class FileManager {
     }
     let dir: FileSystemDirectoryHandle;
     try {
-      dir = await window.showDirectoryPicker!({ mode: 'readwrite' });
+      dir = await window.showDirectoryPicker!({
+        mode: 'readwrite',
+        id: 'knuth-project',
+        // Open the picker AT the current file's own folder (a launched or
+        // opened file's handle is a valid startIn hint) — the usual case
+        // is one click to confirm.
+        startIn: this.handle ?? undefined,
+      });
     } catch (e) {
       if ((e as DOMException)?.name !== 'AbortError') console.warn(e);
       return false;

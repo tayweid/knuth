@@ -6,14 +6,33 @@ interface FilePickerType {
   accept: Record<string, string[]>;
 }
 
+type PickerStartIn =
+  | FileSystemHandle
+  | 'desktop'
+  | 'documents'
+  | 'downloads'
+  | 'music'
+  | 'pictures'
+  | 'videos';
+
 interface OpenFilePickerOptions {
   types?: FilePickerType[];
   multiple?: boolean;
+  id?: string;
+  startIn?: PickerStartIn;
 }
 
 interface SaveFilePickerOptions {
   types?: FilePickerType[];
   suggestedName?: string;
+  id?: string;
+  startIn?: PickerStartIn;
+}
+
+interface DirectoryPickerOptions {
+  mode?: 'read' | 'readwrite';
+  id?: string;
+  startIn?: PickerStartIn;
 }
 
 interface FileSystemFileHandle {
@@ -33,7 +52,7 @@ interface FileSystemDirectoryHandle {
 interface Window {
   showOpenFilePicker?(options?: OpenFilePickerOptions): Promise<FileSystemFileHandle[]>;
   showSaveFilePicker?(options?: SaveFilePickerOptions): Promise<FileSystemFileHandle>;
-  showDirectoryPicker?(options?: { mode?: 'read' | 'readwrite' }): Promise<FileSystemDirectoryHandle>;
+  showDirectoryPicker?(options?: DirectoryPickerOptions): Promise<FileSystemDirectoryHandle>;
   launchQueue?: {
     setConsumer(consumer: (params: { files: FileSystemHandle[] }) => void): void;
   };

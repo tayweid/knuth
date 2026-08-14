@@ -71,11 +71,20 @@ const $ = (id: string) => document.getElementById(id)!;
 const toastEl = $('toast');
 let toastTimer = 0;
 
-function toast(text: string) {
+function toast(text: string, action?: { label: string; run: () => void }) {
   toastEl.textContent = text;
+  if (action) {
+    const btn = document.createElement('button');
+    btn.textContent = action.label;
+    btn.addEventListener('click', () => {
+      toastEl.hidden = true;
+      action.run();
+    });
+    toastEl.append(' ', btn);
+  }
   toastEl.hidden = false;
   clearTimeout(toastTimer);
-  toastTimer = window.setTimeout(() => (toastEl.hidden = true), 2500);
+  toastTimer = window.setTimeout(() => (toastEl.hidden = true), action ? 8000 : 2500);
 }
 
 const status = $('kernel-status');
@@ -311,9 +320,22 @@ $('file-name').addEventListener('click', () => {
 window.launchQueue?.setConsumer((params) => {
   const file = params.files[0];
   if (file && file.kind === 'file') {
-    void fileManager.loadHandle(file as FileSystemFileHandle).catch((e) => {
-      console.warn('Launched file failed to open', e);
-      toast('Could not open the launched file — try again');
-    });
+    void fileManager
+      .loadHandle(file as FileSystemFileHandle)
+      .then(() => {
+        // Finder launches arrive folderless (a file handle can't reach its
+        // parent) — offer the attach, with the picker already pointing at
+        // the file's own folder via startIn.
+        if (!fileManager.dir) {
+          toast(`Opened ${fileManager.name} — attach its folder for values.json and figs/`, {
+            label: 'Attach folder',
+            run: () => void fileManager.attachFolder().then((ok) => ok && syncArtifacts()),
+          });
+        }
+      })
+      .catch((e) => {
+        console.warn('Launched file failed to open', e);
+        toast('Could not open the launched file — try again');
+      });
   }
 });
