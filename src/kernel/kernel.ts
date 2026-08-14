@@ -33,6 +33,14 @@ export interface NamespaceVar {
   preview: string;
   /** Bound by a scratch cell: session-only, never persisted. */
   scratch?: boolean;
+  /** A figure (or artist with one) sits behind this name. */
+  figure?: boolean;
+}
+
+export interface FigureResult {
+  name: string;
+  svg?: string;
+  error?: string;
 }
 
 export interface Artifacts {
@@ -60,6 +68,7 @@ export interface Kernel {
   namespace(): Promise<NamespaceVar[]>;
   artifacts(): Promise<Artifacts | null>;
   table(name: string, offset?: number, limit?: number): Promise<TableWindow | null>;
+  figure(name: string): Promise<FigureResult | null>;
   close(): void;
 }
 
@@ -93,6 +102,7 @@ export class SidecarKernel implements Kernel {
   private namespaceWaiters: Array<(vars: NamespaceVar[]) => void> = [];
   private artifactsWaiters: Array<(artifacts: Artifacts | null) => void> = [];
   private tableWaiters: Array<(window: TableWindow | null) => void> = [];
+  private figureWaiters: Array<(result: FigureResult | null) => void> = [];
   private restartWaiters: Array<() => void> = [];
 
   constructor(
@@ -133,6 +143,7 @@ export class SidecarKernel implements Kernel {
     for (const resolve of this.namespaceWaiters.splice(0)) resolve([]);
     for (const resolve of this.artifactsWaiters.splice(0)) resolve(null);
     for (const resolve of this.tableWaiters.splice(0)) resolve(null);
+    for (const resolve of this.figureWaiters.splice(0)) resolve(null);
     for (const resolve of this.restartWaiters.splice(0)) resolve();
   }
 
@@ -182,6 +193,10 @@ export class SidecarKernel implements Kernel {
       }
       case 'table': {
         this.tableWaiters.shift()?.(msg);
+        break;
+      }
+      case 'figure': {
+        this.figureWaiters.shift()?.(msg);
         break;
       }
     }
@@ -239,6 +254,14 @@ export class SidecarKernel implements Kernel {
     return new Promise((resolve) => {
       this.tableWaiters.push(resolve);
       this.send({ type: 'table', name, offset, limit });
+    });
+  }
+
+  async figure(name: string): Promise<FigureResult | null> {
+    if (!this.connectedReady) return null;
+    return new Promise((resolve) => {
+      this.figureWaiters.push(resolve);
+      this.send({ type: 'figure', name });
     });
   }
 

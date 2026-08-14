@@ -163,21 +163,43 @@ function repaintName() {
   document.title = fileManager.name;
 }
 
+// During boot restore, setDoc must NOT restart the kernel — the whole
+// point is rejoining the resumed session with its document.
+let restoring = true;
+
 fileManager = new FileManager({
   getDoc: () => docView.doc,
   setDoc: (doc) => {
     docView.setDoc(doc);
     // A different document deserves a fresh session — otherwise the
     // previous document's variables haunt the explorer and values.json.
-    if (kernel.isReady) {
+    if (!restoring && kernel.isReady) {
       void kernel.restart().then(() => void panel.refresh());
     }
   },
   onState: repaintName,
   message: toast,
+  onOpened: () => {
+    if (!fileManager.dir) {
+      toast(`Opened ${fileManager.name} — attach its folder for values.json and figs/`, {
+        label: 'Attach folder',
+        run: () => void fileManager.attachFolder().then((ok) => ok && syncArtifacts()),
+      });
+    }
+  },
 });
 
-fileManager.newDoc();
+void (async () => {
+  const restored = await fileManager.restoreSession();
+  if (!restored) fileManager.newDoc();
+  restoring = false;
+  if (fileManager.pendingHandle) {
+    toast(`Reconnect ${fileManager.pendingHandle.name} to keep autosaving`, {
+      label: 'Reconnect',
+      run: () => void fileManager.reconnect(),
+    });
+  }
+})();
 
 // Recents dropdown: the one inherently dynamic list (Plass's exception
 // to everything-on-the-bar).
@@ -320,22 +342,11 @@ $('file-name').addEventListener('click', () => {
 window.launchQueue?.setConsumer((params) => {
   const file = params.files[0];
   if (file && file.kind === 'file') {
-    void fileManager
-      .loadHandle(file as FileSystemFileHandle)
-      .then(() => {
-        // Finder launches arrive folderless (a file handle can't reach its
-        // parent) — offer the attach, with the picker already pointing at
-        // the file's own folder via startIn.
-        if (!fileManager.dir) {
-          toast(`Opened ${fileManager.name} — attach its folder for values.json and figs/`, {
-            label: 'Attach folder',
-            run: () => void fileManager.attachFolder().then((ok) => ok && syncArtifacts()),
-          });
-        }
-      })
-      .catch((e) => {
-        console.warn('Launched file failed to open', e);
-        toast('Could not open the launched file — try again');
-      });
+    // The folder offer rides the shared onOpened hook (a launched file
+    // handle can't reach its parent; the picker startIn points there).
+    void fileManager.loadHandle(file as FileSystemFileHandle).catch((e) => {
+      console.warn('Launched file failed to open', e);
+      toast('Could not open the launched file — try again');
+    });
   }
 });

@@ -26,6 +26,7 @@ export class SessionPanel {
   private varsBody: HTMLElement;
   private viewer: HTMLElement;
   private current: { name: string; rows: number; total: number } | null = null;
+  private currentFigure: string | null = null;
 
   constructor(
     private root: HTMLElement,
@@ -67,6 +68,10 @@ export class SessionPanel {
         tr.className = 'viewable';
         tr.title = 'Open in the data viewer';
         tr.addEventListener('click', () => void this.open(v.name));
+      } else if (v.figure) {
+        tr.className = 'viewable';
+        tr.title = 'Show the figure';
+        tr.addEventListener('click', () => void this.openFigure(v.name));
       }
       this.varsBody.append(tr);
     }
@@ -75,7 +80,43 @@ export class SessionPanel {
       const still = vars.find((v) => v.name === this.current!.name && isTabular(v));
       if (still) await this.open(this.current.name);
       else this.closeViewer();
+    } else if (this.currentFigure) {
+      const still = vars.find((v) => v.name === this.currentFigure && v.figure);
+      if (still) await this.openFigure(this.currentFigure);
+      else this.closeViewer();
     }
+  }
+
+  /** RStudio-style plot pane: the figure behind a named variable. */
+  async openFigure(name: string): Promise<void> {
+    const result = await this.kernel.figure(name);
+    if (!result || result.error || !result.svg) {
+      this.closeViewer();
+      return;
+    }
+    this.current = null;
+    this.currentFigure = name;
+    this.viewer.hidden = false;
+    this.viewer.textContent = '';
+
+    const head = document.createElement('div');
+    head.className = 'pane-title viewer-head';
+    const title = document.createElement('span');
+    title.textContent = name;
+    const close = document.createElement('button');
+    close.textContent = '✕';
+    close.title = 'Close viewer';
+    close.addEventListener('click', () => this.closeViewer());
+    head.append(title, close);
+
+    const scroller = document.createElement('div');
+    scroller.className = 'viewer-scroll';
+    const card = document.createElement('div');
+    card.className = 'figure';
+    card.innerHTML = result.svg;
+    scroller.append(card);
+
+    this.viewer.append(head, scroller);
   }
 
   async open(name: string): Promise<void> {
@@ -84,6 +125,7 @@ export class SessionPanel {
       this.closeViewer();
       return;
     }
+    this.currentFigure = null;
     this.current = { name, rows: window.rows!.length, total: window.total_rows! };
     this.renderViewer(window, false);
   }
@@ -168,6 +210,7 @@ export class SessionPanel {
 
   private closeViewer(): void {
     this.current = null;
+    this.currentFigure = null;
     this.viewer.hidden = true;
     this.viewer.textContent = '';
   }

@@ -198,6 +198,8 @@ class Session:
             entry["preview"] = preview[:80] + ("…" if len(preview) > 80 else "")
             if name in self.scratch_names:
                 entry["scratch"] = True
+            if _owning_figure(value) is not None:
+                entry["figure"] = True
             out.append(entry)
         return out
 
@@ -242,6 +244,18 @@ class Session:
             "total_cols": int(total_cols),
             "offset": offset,
         }
+
+    def figure(self, name):
+        """Render the figure behind a named variable for the viewer pane."""
+        if name not in self.namespace:
+            return {"name": name, "error": "no such variable"}
+        fig = _owning_figure(self.namespace[name])
+        if fig is None:
+            return {"name": name, "error": f"{type(self.namespace[name]).__name__} has no figure"}
+        try:
+            return {"name": name, "svg": _figure_svg(fig)}
+        except Exception as e:
+            return {"name": name, "error": str(e)}
 
     def artifacts(self):
         """The folder contract (DESIGN.md auto-persistence): a JSON-safe

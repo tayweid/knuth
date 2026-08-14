@@ -76,6 +76,14 @@ def main():
     _, figures = s.artifacts()
     assert "named_ax" in figures, "an axes persists its figure too"
 
+    # Figure viewer support: snapshot flags figure-backed vars; figure()
+    # renders on demand; non-figures answer with an error.
+    snap = {v["name"]: v for v in s.snapshot()}
+    assert snap["p"].get("figure") is True and "figure" not in snap["nums"], snap["p"]
+    res = s.figure("p")
+    assert "<svg" in res.get("svg", ""), res
+    assert "error" in s.figure("nums")
+
     # Regenerate semantics: deleting a name removes it from the mirror.
     s.run("del x")
     values, _ = s.artifacts()

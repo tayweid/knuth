@@ -75,6 +75,8 @@ def main():
             elif kind == "artifacts":
                 values, figures = session.artifacts()
                 emit({"type": "artifacts", "values": values, "figures": figures})
+            elif kind == "figure":
+                emit({"type": "figure", **session.figure(msg.get("name", ""))})
             elif kind == "table":
                 emit({
                     "type": "table",

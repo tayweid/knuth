@@ -667,6 +667,21 @@ body:has(#panel:not([hidden])) #toolbar {
 
 .viewer-scroll { flex: 1; overflow: auto; }
 
+/* Figure pane: the print pinned at the room's edge. */
+#panel .viewer-scroll .figure {
+  background: #fff;
+  border-radius: 6px;
+  padding: 0.5rem;
+  margin: 0.25rem 0.85rem 0.85rem;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.4);
+}
+
+#panel .viewer-scroll .figure svg {
+  display: block;
+  max-width: 100%;
+  height: auto;
+}
+
 .data-table {
   border-collapse: collapse;
   font: 12px/1.45 var(--mono);

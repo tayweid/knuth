@@ -11,6 +11,8 @@ export interface FileHooks {
   /** Name/dirty changed — update chrome. */
   onState(): void;
   message(text: string): void;
+  /** A document was opened from disk (picker, recent, launch). */
+  onOpened?(): void;
 }
 
 const PY_TYPE: FilePickerType[] = [
@@ -61,8 +63,12 @@ export class FileManager {
   dir: FileSystemDirectoryHandle | null = null;
   name = 'untitled.py';
   dirty = false;
+  /** Last session's file awaiting a permission re-grant (needs a user
+   *  gesture) — the document on screen IS this file's latest state. */
+  pendingHandle: FileSystemFileHandle | null = null;
   readonly supportsFS = typeof window.showOpenFilePicker === 'function';
   private saveTimer = 0;
+  private stashTimer = 0;
 
   constructor(private hooks: FileHooks) {
     document.addEventListener('visibilitychange', () => {
@@ -70,7 +76,9 @@ export class FileManager {
     });
   }
 
-  /** Call on every document change: marks dirty, schedules a disk autosave. */
+  /** Call on every document change: marks dirty, schedules a disk autosave
+   *  and a session stash (so reload restores the document alongside the
+   *  resumed kernel session). */
   noteChange() {
     if (!this.dirty) {
       this.dirty = true;
@@ -79,6 +87,71 @@ export class FileManager {
     if (this.handle) {
       clearTimeout(this.saveTimer);
       this.saveTimer = window.setTimeout(() => void this.flush(), 1200);
+    }
+    clearTimeout(this.stashTimer);
+    this.stashTimer = window.setTimeout(() => this.stash(), 400);
+  }
+
+  /** Snapshot to sessionStorage: same lifetime as the kernel session —
+   *  survives reloads of this tab, never shared with a new window. */
+  private stash() {
+    try {
+      sessionStorage.setItem(
+        'knuth-doc',
+        JSON.stringify({
+          name: this.name,
+          dirty: this.dirty,
+          text: serializeDocument(this.hooks.getDoc()),
+        }),
+      );
+    } catch (e) {
+      console.warn('Session stash failed', e);
+    }
+  }
+
+  /** Boot-time restore of the reloaded tab's document; reconnects the
+   *  file/folder handles silently when the browser still grants them. */
+  async restoreSession(): Promise<boolean> {
+    const raw = sessionStorage.getItem('knuth-doc');
+    if (!raw) return false;
+    try {
+      const snap = JSON.parse(raw) as { name: string; dirty: boolean; text: string };
+      this.hooks.setDoc(parseDocument(snap.text));
+      this.name = snap.name;
+      this.dirty = snap.dirty;
+    } catch (e) {
+      console.warn('Session restore failed', e);
+      return false;
+    }
+    try {
+      const last = await idbGet<FileSystemFileHandle>('last');
+      if (last && last.name === this.name) {
+        const q = await last.queryPermission?.({ mode: 'readwrite' });
+        if (q === 'granted') this.handle = last;
+        else this.pendingHandle = last;
+      }
+      const lastDir = await idbGet<FileSystemDirectoryHandle>('lastDir');
+      if (lastDir) {
+        const q = await lastDir.queryPermission?.({ mode: 'readwrite' });
+        if (q === 'granted') this.dir = lastDir;
+      }
+    } catch (e) {
+      console.warn('Handle reconnect failed', e);
+    }
+    this.hooks.onState();
+    return true;
+  }
+
+  /** Re-grant the pending file handle (needs a user gesture). */
+  async reconnect() {
+    const handle = this.pendingHandle;
+    if (!handle) return;
+    const r = await handle.requestPermission?.({ mode: 'readwrite' });
+    if (r === 'granted') {
+      this.handle = handle;
+      this.pendingHandle = null;
+      this.hooks.onState();
+      this.hooks.message(`Autosave reconnected to ${handle.name}`);
     }
   }
 
@@ -101,10 +174,12 @@ export class FileManager {
 
   newDoc() {
     this.handle = null;
+    this.pendingHandle = null;
     this.name = 'untitled.py';
     this.dirty = false;
     this.hooks.setDoc(parseDocument(NEW_DOC));
     this.hooks.onState();
+    this.stash();
   }
 
   async open() {
@@ -129,6 +204,9 @@ export class FileManager {
     this.hooks.onState();
     this.hooks.message(`Opened ${file.name}`);
     void this.addRecent(handle, file.name);
+    void idbSet('last', handle).catch(() => undefined);
+    this.stash();
+    this.hooks.onOpened?.();
   }
 
   // ---------- recents ----------
@@ -208,6 +286,8 @@ export class FileManager {
       this.hooks.onState();
       this.hooks.message(`Saved ${handle.name}`);
       void this.addRecent(handle, handle.name);
+      void idbSet('last', handle).catch(() => undefined);
+      this.stash();
     } catch (e) {
       if ((e as DOMException)?.name !== 'AbortError') console.warn(e);
     }
@@ -263,6 +343,7 @@ export class FileManager {
       return false;
     }
     this.dir = dir;
+    void idbSet('lastDir', dir).catch(() => undefined);
     try {
       if (!this.handle) {
         // Never load over unsaved work: a dirty doc moves in instead.
