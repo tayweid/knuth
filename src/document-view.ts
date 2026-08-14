@@ -164,14 +164,17 @@ export class DocumentView {
     return kind === 'text' ? [markdown(), placeholder('Write…')] : python();
   }
 
-  /** Editor text -> document model, by the cell's current kind. */
+  /** Editor text -> document model, by the cell's current kind. The
+   *  editor never shows separator blank lines; the model re-adds one at
+   *  the end (unless the output block's `trailing` already holds it) so
+   *  the raw file keeps breathing room between cells. */
   private syncModel(v: CellView, text: string) {
     if (v.cell.kind === 'text') {
       setProse(v.cell, text);
-      v.cell.source.push(''); // keep the blank separator line in the raw file
     } else {
-      v.cell.source = text.split('\n');
+      v.cell.source = text.replace(/\n+$/, '').split('\n');
     }
+    if (v.cell.output.length === 0) v.cell.source.push('');
   }
 
   setDoc(doc: KnuthDocument) {
@@ -324,8 +327,11 @@ export class DocumentView {
   }
 
   private buildEditor(v: CellView) {
-    const initial =
-      v.cell.kind === 'text' ? textProse(v.cell).replace(/\n$/, '') : cellCode(v.cell);
+    // Trailing blank lines are inter-cell separators, not content: they
+    // stay in the model and out of the editor (phantom empty lines made
+    // cell heights and spacing uneven).
+    const raw = v.cell.kind === 'text' ? textProse(v.cell) : cellCode(v.cell);
+    const initial = raw.replace(/\n+$/, '');
     v.editor = new EditorView({
       doc: initial,
       extensions: [
@@ -420,23 +426,29 @@ export class DocumentView {
     return tools;
   }
 
-  /** Hover strip that inserts a cell before `v` (or at the end for null). */
+  /** Hover strip that inserts a cell before `v` (or at the end for null):
+   *  a hairline with a small glass pill of kind icons, the same dialect
+   *  as the toolbar and the kind picker. */
   private buildZone(v: CellView | null): HTMLElement {
     const zone = document.createElement('div');
     zone.className = 'insert-zone';
     const inner = document.createElement('div');
     inner.className = 'insert-actions';
-    const add = (label: string, kind: 'program' | 'text') => {
+    const kinds: Array<[NewCellKind, string, string]> = [
+      ['program', 'code', 'Insert code cell'],
+      ['scratch', 'scratch', 'Insert scratch cell'],
+      ['text', 'text', 'Insert text cell'],
+    ];
+    for (const [kind, glyph, title] of kinds) {
       const b = document.createElement('button');
-      b.textContent = label;
+      b.title = title;
+      b.innerHTML = icon(glyph);
       b.addEventListener('click', () => {
         if (v) this.insertBefore(v, kind);
         else this.insertAtEnd(kind);
       });
       inner.append(b);
-    };
-    add('+ Code', 'program');
-    add('+ Text', 'text');
+    }
     zone.append(inner);
     return zone;
   }
