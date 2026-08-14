@@ -64,7 +64,10 @@ body {
   background: var(--bg);
   color: var(--ink);
   font: 15px/1.55 var(--sans);
-  overflow: hidden;
+  /* Below the layout floor the app scrolls sideways instead of crushing
+     (a PWA can't refuse a small window; it can refuse to deform). */
+  overflow-x: auto;
+  overflow-y: hidden;
 }
 
 /* ---------- toolbar: Plass's floating glass pods, verbatim ---------- */
@@ -74,6 +77,7 @@ body {
   top: 0;
   left: 0;
   right: 0;
+  min-width: 640px;
   height: 60px;
   display: flex;
   align-items: center;
@@ -273,7 +277,9 @@ body:has(#panel:not([hidden])) #toolbar {
 
 #doc {
   flex: 1;
-  min-width: 0;
+  /* The floor: toolbar pods (~555px) plus breathing room. The session
+     panel's fixed 350px stacks on top of this. */
+  min-width: 640px;
   overflow-y: auto;
   /* The bar floats over the room; content starts below it and scrolls
      beneath it, Plass-style. */
