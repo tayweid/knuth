@@ -14,7 +14,7 @@ import io
 import json
 import sys
 
-from .session import Session
+from .session import Session, capture_open_figures
 
 
 class _StreamOut(io.TextIOBase):
@@ -63,6 +63,9 @@ def main():
                 state["id"] = msg["id"]
                 ok, payload = session.run(msg["code"], scratch=bool(msg.get("scratch")))
                 state["id"] = None
+                svgs = capture_open_figures()
+                if svgs:
+                    emit({"type": "figures", "id": msg["id"], "svgs": svgs})
                 if ok:
                     emit({"type": "done", "id": msg["id"], "result": payload})
                 else:

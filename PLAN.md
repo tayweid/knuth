@@ -141,6 +141,15 @@ persists in localStorage.
 
 ## Later (tracked, not scheduled)
 
+- Editable DataFrames in the data viewer (Taylor, 2026-08-13): edits must
+  preserve reproducibility by materializing as code appended to a cell
+  (e.g. `df.loc[3, 'wage'] = 12.5`) rather than mutating silently — the
+  viewer becomes a code generator, the document stays the truth.
+- Figure receipts: output blocks referencing `figs/<name>.svg` for named
+  figures (DESIGN.md intends this; display-only capture shipped instead
+  first). Unnamed figures currently display in-app and vanish, matching
+  "if it's given a name, it's saved".
+
 - Scratch cells in a one-way ChainMap namespace (structural enforcement of
   the no-hidden-state rule).
 - Cell-level DAG for staleness precision; possibly opt-in reactive rerun.

@@ -47,6 +47,7 @@ interface CellView {
   row: HTMLElement;
   body: HTMLElement;
   outEl: HTMLPreElement;
+  figsEl: HTMLElement;
   badge: HTMLElement;
   editor?: EditorView;
   /** Language/placeholder live in a compartment so kind switches keep the
@@ -223,6 +224,8 @@ export class DocumentView {
     this.refreshBadge(v);
     v.outEl.textContent = '';
     v.outEl.hidden = false;
+    v.figsEl.textContent = '';
+    v.figsEl.hidden = true;
     let text = '';
     const outcome = await this.kernel.run(
       cellCode(v.cell),
@@ -230,6 +233,16 @@ export class DocumentView {
         onStream: (_which, chunk) => {
           text += chunk;
           v.outEl.textContent = truncate(text);
+        },
+        onFigures: (svgs) => {
+          // The kernel's own SVG renders of the user's figures.
+          for (const svg of svgs) {
+            const holder = document.createElement('div');
+            holder.className = 'figure';
+            holder.innerHTML = svg;
+            v.figsEl.append(holder);
+          }
+          v.figsEl.hidden = svgs.length === 0;
         },
       },
       { scratch: v.cell.kind === 'scratch' },
@@ -288,6 +301,9 @@ export class DocumentView {
     body.className = 'body';
     const outEl = document.createElement('pre');
     outEl.className = 'output';
+    const figsEl = document.createElement('div');
+    figsEl.className = 'cell-figures';
+    figsEl.hidden = true;
 
     const v: CellView = {
       cell,
@@ -295,6 +311,7 @@ export class DocumentView {
       row,
       body,
       outEl,
+      figsEl,
       badge,
       lang: new Compartment(),
       stale: false,
@@ -319,7 +336,7 @@ export class DocumentView {
     const existing = outputText(cell);
     outEl.textContent = existing;
     outEl.hidden = existing === '';
-    body.append(outEl);
+    body.append(figsEl, outEl);
 
     row.append(gutter, body, this.buildTools(v));
     root.append(this.buildZone(v), row);

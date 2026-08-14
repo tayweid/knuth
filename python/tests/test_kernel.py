@@ -138,6 +138,23 @@ async def test_over_websocket():
             _, final = await c.run(7, "x")
             assert final["result"] == "42", final
 
+            # Unnamed pyplot figures arrive as a display event before done.
+            await c.send(
+                type="run",
+                id=20,
+                code="import matplotlib\nmatplotlib.use('Agg')\n"
+                "import matplotlib.pyplot as plt\n_ = plt.plot([1, 2], [3, 4])",
+            )
+            saw_figures = False
+            while True:
+                msg = await asyncio.wait_for(c.recv(), timeout=30)
+                if msg["type"] == "figures" and msg.get("id") == 20:
+                    saw_figures = len(msg["svgs"]) == 1 and "<svg" in msg["svgs"][0]
+                elif msg["type"] in ("done", "error") and msg.get("id") == 20:
+                    assert msg["type"] == "done", msg
+                    break
+            assert saw_figures, "figures event should precede done"
+
             # Session isolation: a different session id gets its OWN kernel.
             async with websockets.connect(f"ws://127.0.0.1:{PORT}") as ws2:
                 c2 = Client(ws2)

@@ -2,7 +2,7 @@
 Run with the project venv: .venv/bin/python python/tests/test_artifacts.py
 """
 
-from knuth.session import Session
+from knuth.session import Session, capture_open_figures
 
 
 def main():
@@ -50,7 +50,31 @@ def main():
     assert ok, tb
     values, figures = s.artifacts()
     assert "fig" in figures and "<svg" in figures["fig"], list(figures)
-    assert "ax" not in figures and "ax" not in values
+    # Artist unwrapping: a named axes persists its owning figure (as fig).
+    assert "ax" in figures and "ax" not in values
+
+    # Display capture: pyplot-style (unnamed) figures render once and are
+    # closed; a NAMED figure still persists via artifacts after closing.
+    capture_open_figures()  # flush figures left open by earlier blocks
+    ok, tb = s.run("plt.figure()\n_ = plt.plot([1, 2], [3, 4])")
+    assert ok, tb
+    svgs = capture_open_figures()
+    assert len(svgs) == 1 and "<svg" in svgs[0], len(svgs)
+    assert capture_open_figures() == [], "figures close after capture"
+    _, figures = s.artifacts()
+    assert "fig" in figures, "named figure persists even after plt.close"
+
+    # Artist unwrapping: naming what plt.plot RETURNS (a list of Line2D)
+    # persists the owning figure — the natural pattern just works.
+    ok, tb = s.run("p = plt.plot([1, 2], [2, 1])")
+    assert ok, tb
+    capture_open_figures()
+    _, figures = s.artifacts()
+    assert "p" in figures and "<svg" in figures["p"], list(figures)
+    ok, tb = s.run("named_ax = fig.gca()")
+    assert ok, tb
+    _, figures = s.artifacts()
+    assert "named_ax" in figures, "an axes persists its figure too"
 
     # Regenerate semantics: deleting a name removes it from the mirror.
     s.run("del x")

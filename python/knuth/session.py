@@ -7,6 +7,7 @@ stdout/stderr redirection is the kernel's job.
 
 import ast
 import json
+import sys
 import traceback
 import types
 
@@ -77,9 +78,48 @@ def _assigned_names(tree):
     return names
 
 
+def capture_open_figures():
+    """Display support (Jupyter-inline semantics): render every open
+    pyplot figure to SVG and close them. Unnamed figures display once and
+    are gone; named Figure objects survive closing and still persist to
+    figs/ via artifacts()."""
+    plt = sys.modules.get("matplotlib.pyplot")
+    if plt is None:
+        return []
+    svgs = []
+    for num in plt.get_fignums():
+        try:
+            svgs.append(_figure_svg(plt.figure(num)))
+        except Exception:
+            pass
+    plt.close("all")
+    return svgs
+
+
 def _is_figure(value):
     t = type(value)
     return t.__name__ == "Figure" and t.__module__.startswith("matplotlib")
+
+
+def _owning_figure(value):
+    """The Figure behind a named value: a Figure itself, any matplotlib
+    artist (`ax`, a Line2D), or a list of artists from one figure — so the
+    natural `p = plt.plot(...)` persists figs/p.svg, not just
+    `fig, ax = plt.subplots()`."""
+    if _is_figure(value):
+        return value
+    fig = getattr(value, "figure", None)
+    if fig is not None and _is_figure(fig):
+        return fig
+    if isinstance(value, (list, tuple)) and value:
+        owners = {
+            id(f): f
+            for f in (getattr(item, "figure", None) for item in value)
+            if f is not None and _is_figure(f)
+        }
+        if len(owners) == 1:
+            return next(iter(owners.values()))
+    return None
 
 
 def _figure_svg(fig):
@@ -214,9 +254,10 @@ class Session:
                 continue
             if name in self.scratch_names:  # scratch never persists
                 continue
-            if _is_figure(value):
+            owning = _owning_figure(value)
+            if owning is not None:
                 try:
-                    figures[name] = _figure_svg(value)
+                    figures[name] = _figure_svg(owning)
                 except Exception:
                     pass
                 continue

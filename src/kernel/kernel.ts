@@ -13,6 +13,8 @@ export type KernelStatus = 'connecting' | 'ready' | 'down';
 
 export interface RunHandlers {
   onStream?(which: StreamWhich, text: string): void;
+  /** Open pyplot figures at run end, rendered to SVG (display-only). */
+  onFigures?(svgs: string[]): void;
 }
 
 export interface RunOutcome {
@@ -154,6 +156,10 @@ export class SidecarKernel implements Kernel {
       }
       case 'stream': {
         this.runs.get(msg.id)?.handlers?.onStream?.(msg.which, msg.text);
+        break;
+      }
+      case 'figures': {
+        this.runs.get(msg.id)?.handlers?.onFigures?.(msg.svgs);
         break;
       }
       case 'done': {

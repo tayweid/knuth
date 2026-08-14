@@ -489,6 +489,31 @@ body:has(#panel:not([hidden])) #toolbar {
   color: var(--room-ink-soft);
 }
 
+/* figures: the one deliberately lit object on the bench — a small white
+   card, like a print pinned to the desk. */
+.cell .cell-figures {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  margin: 0.45rem 0 0.15rem;
+}
+
+.cell .cell-figures .figure {
+  background: #fff;
+  border-radius: 6px;
+  padding: 0.5rem;
+  align-self: flex-start;
+  max-width: 100%;
+  overflow: hidden;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.4);
+}
+
+.cell .cell-figures .figure svg {
+  display: block;
+  max-width: 100%;
+  height: auto;
+}
+
 /* outputs: quiet instrument readout */
 
 .cell .output {
