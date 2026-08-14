@@ -53,6 +53,10 @@ interface CellView {
   figsEl: HTMLElement;
   /** SVGs displayed under this cell (stashed so reloads keep them). */
   figSvgs?: string[];
+  /** The implicit cell zero: a plain script's whole body (or a jupytext
+   *  header) — runnable and editable, but never given a marker or a
+   *  stored output block, so the file stays byte-identical. */
+  isPreamble?: boolean;
   badge: HTMLElement;
   editor?: EditorView;
   /** Language/placeholder live in a compartment so kind switches keep the
@@ -76,6 +80,7 @@ const BARE_MARKERS = new Set(Object.values(KIND_MARKERS));
 export class DocumentView {
   doc: KnuthDocument = parseDocument('# %%\n');
   private views: CellView[] = [];
+  private preambleView: CellView | null = null;
   private endZone!: HTMLElement;
   private lastFocused: CellView | null = null;
   /** Esc arms a brief chord: the next key can switch the cell's kind. */
@@ -177,6 +182,12 @@ export class DocumentView {
    *  the end (unless the output block's `trailing` already holds it) so
    *  the raw file keeps breathing room between cells. */
   private syncModel(v: CellView, text: string) {
+    if (v.isPreamble) {
+      const lines = text.replace(/\n+$/, '').split('\n');
+      if (this.views.length > 0) lines.push('');
+      this.doc.preamble = lines;
+      return;
+    }
     if (v.cell.kind === 'text') {
       setProse(v.cell, text);
     } else {
@@ -187,11 +198,26 @@ export class DocumentView {
 
   setDoc(doc: KnuthDocument) {
     for (const v of this.views) v.editor?.destroy();
+    this.preambleView?.editor?.destroy();
     this.views = [];
+    this.preambleView = null;
     this.container.textContent = '';
     this.doc = doc;
     this.endZone = this.buildZone(null);
     this.container.append(this.endZone);
+    // A plain script (or jupytext header) is the implicit cell zero —
+    // without this, a markerless .py renders as a blank sheet.
+    if (doc.preamble.some((l) => l.trim() !== '')) {
+      const pseudo: Cell = {
+        kind: 'program',
+        marker: '',
+        source: [...doc.preamble],
+        output: [],
+        trailing: [],
+      };
+      this.preambleView = this.buildView(pseudo, true);
+      this.endZone.before(this.preambleView.root);
+    }
     for (const cell of doc.cells) {
       const view = this.buildView(cell);
       this.views.push(view);
@@ -201,15 +227,19 @@ export class DocumentView {
     this.markAllStale();
   }
 
+  private allRunnable(): CellView[] {
+    return this.preambleView ? [this.preambleView, ...this.views] : [...this.views];
+  }
+
   markAllStale() {
-    for (const v of this.views) {
+    for (const v of this.allRunnable()) {
       if (v.cell.kind === 'program') v.stale = true;
       this.refreshBadge(v);
     }
   }
 
   async runAllProgram() {
-    for (const v of [...this.views]) {
+    for (const v of this.allRunnable()) {
       if (v.cell.kind !== 'program') continue;
       const outcome = await this.runCell(v);
       if (!outcome) break; // error or interrupt: stop the replay
@@ -217,7 +247,7 @@ export class DocumentView {
   }
 
   async runStale() {
-    for (const v of [...this.views]) {
+    for (const v of this.allRunnable()) {
       if (v.cell.kind !== 'program' || !v.stale) continue;
       const outcome = await this.runCell(v);
       if (!outcome) break;
@@ -258,17 +288,21 @@ export class DocumentView {
     }
     // Stored output = text readout + figure receipts (figs/<name>.svg
     // paths); the visible pre carries only the text — cards carry figures.
+    // The preamble cell displays but never stores (no marker to anchor
+    // an output block; the file must stay byte-identical).
     const shown = truncate(text);
-    const refs = outcome.ok ? named.map((n) => `figs/${n}.svg`) : [];
-    const stored = [shown, ...refs].filter((s) => s !== '').join('\n');
-    setOutput(v.cell, stored === '' ? null : stored);
+    if (!v.isPreamble) {
+      const refs = outcome.ok ? named.map((n) => `figs/${n}.svg`) : [];
+      const stored = [shown, ...refs].filter((s) => s !== '').join('\n');
+      setOutput(v.cell, stored === '' ? null : stored);
+    }
     v.outEl.textContent = shown;
     v.outEl.hidden = shown === '';
     v.outEl.classList.toggle('error', !outcome.ok);
     v.running = false;
     if (outcome.ok && v.cell.kind === 'program') v.stale = false;
     this.refreshBadge(v);
-    this.onChange();
+    if (!v.isPreamble) this.onChange();
     if (outcome.ok && v.cell.kind === 'program') this.onProgramRun?.();
     this.onRun?.();
     return outcome.ok;
@@ -340,7 +374,7 @@ export class DocumentView {
 
   // ---------- construction ----------
 
-  private buildView(cell: Cell): CellView {
+  private buildView(cell: Cell, isPreamble = false): CellView {
     const root = document.createElement('div');
     root.className = 'cell-wrap';
 
@@ -370,6 +404,7 @@ export class DocumentView {
       lang: new Compartment(),
       stale: false,
       running: false,
+      isPreamble,
     };
 
     // One skeleton for every kind — CSS shows/hides per kind, so a kind
@@ -391,7 +426,9 @@ export class DocumentView {
     this.hydrateOutputs(v);
 
     row.append(gutter, body, this.buildTools(v));
-    root.append(this.buildZone(v), row);
+    // No insert strip above the preamble: nothing can precede cell zero.
+    if (isPreamble) root.append(row);
+    else root.append(this.buildZone(v), row);
     return v;
   }
 
@@ -464,6 +501,19 @@ export class DocumentView {
   /** Backspace in an empty cell deletes it (Jupyter's affordance) and
    *  moves focus up; the deletion is restorable via onCellDeleted. */
   private backspaceOnEmpty(v: CellView): boolean {
+    if (v.isPreamble) {
+      if (v.editor && v.editor.state.doc.length === 0) {
+        this.doc.preamble = [];
+        v.editor.destroy();
+        v.root.remove();
+        this.preambleView = null;
+        if (this.views.length === 0) this.insertAtEnd('program');
+        else this.views[0].editor?.focus();
+        this.onChange();
+        return true;
+      }
+      return false;
+    }
     if (v.editor && v.editor.state.doc.length === 0 && this.views.length > 1) {
       const prev = this.views[this.views.indexOf(v) - 1] ?? this.views[1];
       this.remove(v);
@@ -540,6 +590,11 @@ export class DocumentView {
   private insertAt(i: number, kind: NewCellKind) {
     const cell = this.newCell(kind);
     this.ensureSeparator(this.views[i - 1]);
+    // First cell after a preamble: the preamble supplies the separator.
+    if (i === 0 && this.preambleView) {
+      const p = this.doc.preamble;
+      if (p[p.length - 1]?.trim() !== '') p.push('');
+    }
     this.doc.cells.splice(i, 0, cell);
     const view = this.buildView(cell);
     this.views.splice(i, 0, view);

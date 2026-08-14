@@ -43,8 +43,14 @@ def run_file(file, echo=print):
         echo(f"knuth run: no such file: {file}")
         return 1
     doc = parse_document(path.read_text())
-    program = [c for c in doc.cells if c.kind == "program"]
-    if not program:
+    # The preamble is the implicit cell zero: a plain script (no # %%
+    # markers) runs whole; it gets no output block (nothing to anchor
+    # one to — the file must stay byte-identical apart from receipts).
+    units = []
+    if any(line.strip() for line in doc.preamble):
+        units.append((None, "\n".join(doc.preamble)))
+    units.extend((c, cell_code(c)) for c in doc.cells if c.kind == "program")
+    if not units:
         echo(f"knuth run: {path.name} has no program cells")
         return 1
 
@@ -54,23 +60,27 @@ def run_file(file, echo=print):
     old_cwd = os.getcwd()
     os.chdir(path.parent)
     try:
-        for i, cell in enumerate(program, 1):
+        for i, (cell, code) in enumerate(units, 1):
             buf = io.StringIO()
             with redirect_stdout(buf), redirect_stderr(buf):
-                ok, payload = session.run(cell_code(cell))
+                ok, payload = session.run(code)
             text = buf.getvalue()
             if payload is not None:
                 if text and not text.endswith("\n"):
                     text += "\n"
                 text += payload
-            stored = truncate(text)
-            if ok:
-                # Figure receipts: this cell's named figures, by path —
-                # the same lines the app writes, byte-stable across runs.
-                refs = [f"figs/{n}.svg" for n in session.figure_receipts(session.last_assigned)]
-                stored = "\n".join(s for s in [stored, *refs] if s)
-            set_output(cell, stored if stored else None)
-            echo(f"[{i}/{len(program)}] {'ok' if ok else 'ERROR'}")
+            if cell is not None:
+                stored = truncate(text)
+                if ok:
+                    # Figure receipts: this cell's named figures, by path —
+                    # the same lines the app writes, byte-stable across runs.
+                    refs = [
+                        f"figs/{n}.svg"
+                        for n in session.figure_receipts(session.last_assigned)
+                    ]
+                    stored = "\n".join(s for s in [stored, *refs] if s)
+                set_output(cell, stored if stored else None)
+            echo(f"[{i}/{len(units)}] {'ok' if ok else 'ERROR'}")
             if not ok:
                 echo(payload.rstrip("\n"))
                 failed = True
@@ -86,7 +96,7 @@ def run_file(file, echo=print):
                 figs.mkdir(exist_ok=True)
                 for name, svg in figures.items():
                     (figs / f"{name}.svg").write_text(svg)
-            echo(f"{path.name}: reproduced ({len(program)} cells; values.json"
+            echo(f"{path.name}: reproduced ({len(units)} cells; values.json"
                  + (f", {len(figures)} figure(s)" if figures else "") + ")")
     finally:
         os.chdir(old_cwd)

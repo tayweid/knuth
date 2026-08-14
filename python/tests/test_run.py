@@ -109,6 +109,24 @@ def test_runner():
         empty.write_text("# %% [markdown]\n# words only\n")
         assert run_file(empty, echo=quiet) == 1
 
+        # A plain script (no markers) runs whole as the implicit cell
+        # zero, produces artifacts, and comes back byte-identical.
+        script = tmp / "scene.py"
+        script_text = '#!/usr/bin/env python\nanswer = 6 * 7\nprint("hi")\n'
+        script.write_text(script_text)
+        assert run_file(script, echo=quiet) == 0
+        assert script.read_text() == script_text, "markerless script must stay untouched"
+        values = json.loads((tmp / "values.json").read_text())
+        assert values["answer"] == 42, values
+
+        # Preamble plus cells: the preamble runs first, cells see its names.
+        mixed = tmp / "mixed.py"
+        mixed.write_text("base = 10\n\n# %%\nresult = base + 1\nresult\n")
+        assert run_file(mixed, echo=quiet) == 0
+        doc = parse_document(mixed.read_text())
+        assert doc.preamble[0] == "base = 10", doc.preamble
+        assert doc.cells[0].output == ["#-> 11"], doc.cells[0].output
+
         print("runner: all scenarios passed")
     finally:
         shutil.rmtree(tmp)
