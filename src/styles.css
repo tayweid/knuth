@@ -60,24 +60,30 @@
 
 html, body { margin: 0; height: 100%; }
 
+/* Below the layout floor the app scrolls sideways instead of crushing (a
+   PWA can't refuse a small window; it can refuse to deform). The html
+   element scrolls; the body sizes to the layout, so the absolute toolbar
+   spans the full scrollable width and rides along. */
+html { overflow-x: auto; overflow-y: hidden; }
+
 body {
+  position: relative;
+  min-width: fit-content;
   background: var(--bg);
   color: var(--ink);
   font: 15px/1.55 var(--sans);
-  /* Below the layout floor the app scrolls sideways instead of crushing
-     (a PWA can't refuse a small window; it can refuse to deform). */
-  overflow-x: auto;
-  overflow-y: hidden;
 }
 
 /* ---------- toolbar: Plass's floating glass pods, verbatim ---------- */
 
 #toolbar {
-  position: fixed;
+  /* Absolute in the fit-content body (not fixed): pinned to the top —
+     the page never scrolls vertically — but scrolls horizontally with
+     the layout when the window is below the floor. */
+  position: absolute;
   top: 0;
   left: 0;
   right: 0;
-  min-width: 640px;
   height: 60px;
   display: flex;
   align-items: center;
