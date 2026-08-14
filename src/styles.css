@@ -363,7 +363,7 @@ body:has(#panel:not([hidden])) #toolbar {
    glass-pill dialect, so it doesn't read as the between-cell inserter. */
 .cell .tools {
   position: absolute;
-  right: -0.5rem;
+  right: -1.7rem; /* in the margin beside the card, never over it */
   top: 50%;
   transform: translateY(-50%);
   visibility: hidden;

@@ -117,14 +117,35 @@ let fileManager: FileManager;
 
 // After program cells run, mirror the session into the project folder
 // (values.json + figs/). Debounced so a run-all writes once at the end.
+// With no folder attached, the offer resurfaces here (throttled) — this
+// is the moment the folder actually matters.
 let artifactsTimer = 0;
+let folderOfferAt = 0;
 function syncArtifacts() {
-  if (!fileManager?.dir) return;
+  if (!fileManager?.dir) {
+    if (Date.now() - folderOfferAt > 300_000) {
+      folderOfferAt = Date.now();
+      toast('values.json and figs/ have nowhere to go yet', {
+        label: 'Attach folder',
+        run: attachProjectFolder,
+      });
+    }
+    return;
+  }
   clearTimeout(artifactsTimer);
   artifactsTimer = window.setTimeout(async () => {
     const artifacts = await kernel.artifacts();
     if (artifacts) await fileManager.writeArtifacts(artifacts.values, artifacts.figures);
   }, 300);
+}
+
+function attachProjectFolder() {
+  void fileManager.attachFolder().then((ok) => {
+    if (ok) {
+      syncArtifacts();
+      docView.hydrateAll();
+    }
+  });
 }
 
 const panel = new SessionPanel($('panel'), kernel);
@@ -206,13 +227,7 @@ fileManager = new FileManager({
     if (!fileManager.dir) {
       toast(`Opened ${fileManager.name} — attach its folder for values.json and figs/`, {
         label: 'Attach folder',
-        run: () =>
-          void fileManager.attachFolder().then((ok) => {
-            if (ok) {
-              syncArtifacts();
-              docView.hydrateAll();
-            }
-          }),
+        run: attachProjectFolder,
       });
     }
   },
@@ -278,7 +293,9 @@ async function showRecents(anchor: HTMLElement) {
 // The file lifecycle lives in the name slug — Plass's set (New, Open,
 // Recent) plus Folder, which only exists because the browser grants the
 // project-directory handle for values.json/figs through a user picker.
-flyout($('doc-pod'), icon('open'), 'File — new, open, recent, project folder', [
+// Folder needs no button: Save on a homeless doc IS the folder grant,
+// and opened/launched docs get the attach offer when it matters.
+flyout($('doc-pod'), icon('open'), 'File — new, open, recent', [
   {
     glyph: icon('new'),
     label: 'New',
@@ -286,19 +303,6 @@ flyout($('doc-pod'), icon('open'), 'File — new, open, recent, project folder',
     run: () => void window.open(location.pathname, '_blank'),
   },
   { glyph: icon('open'), label: 'Open', title: 'Open… (⌘O)', run: () => void fileManager.open() },
-  {
-    glyph: icon('project'),
-    label: 'Folder',
-    title:
-      'Open the project folder: one permission covers the document, values.json, and figs/',
-    run: () =>
-          void fileManager.attachFolder().then((ok) => {
-            if (ok) {
-              syncArtifacts();
-              docView.hydrateAll();
-            }
-          }),
-  },
   {
     glyph: icon('clock'),
     label: 'Recent',
