@@ -48,6 +48,8 @@ interface CellView {
   body: HTMLElement;
   outEl: HTMLPreElement;
   figsEl: HTMLElement;
+  /** SVGs displayed under this cell (stashed so reloads keep them). */
+  figSvgs?: string[];
   badge: HTMLElement;
   editor?: EditorView;
   /** Language/placeholder live in a compartment so kind switches keep the
@@ -226,6 +228,7 @@ export class DocumentView {
     v.outEl.hidden = false;
     v.figsEl.textContent = '';
     v.figsEl.hidden = true;
+    v.figSvgs = undefined;
     let text = '';
     const outcome = await this.kernel.run(
       cellCode(v.cell),
@@ -234,16 +237,7 @@ export class DocumentView {
           text += chunk;
           v.outEl.textContent = truncate(text);
         },
-        onFigures: (svgs) => {
-          // The kernel's own SVG renders of the user's figures.
-          for (const svg of svgs) {
-            const holder = document.createElement('div');
-            holder.className = 'figure';
-            holder.innerHTML = svg;
-            v.figsEl.append(holder);
-          }
-          v.figsEl.hidden = svgs.length === 0;
-        },
+        onFigures: (svgs) => this.renderFigures(v, svgs),
       },
       { scratch: v.cell.kind === 'scratch' },
     );
@@ -265,6 +259,32 @@ export class DocumentView {
     if (outcome.ok && v.cell.kind === 'program') this.onProgramRun?.();
     this.onRun?.();
     return outcome.ok;
+  }
+
+  /** The kernel's SVG renders of the user's figures, shown under the cell. */
+  private renderFigures(v: CellView, svgs: string[]) {
+    v.figSvgs = svgs;
+    v.figsEl.textContent = '';
+    for (const svg of svgs) {
+      const holder = document.createElement('div');
+      holder.className = 'figure';
+      holder.innerHTML = svg;
+      v.figsEl.append(holder);
+    }
+    v.figsEl.hidden = svgs.length === 0;
+  }
+
+  /** Per-cell displayed figures, for the session stash. */
+  collectFigures(): Array<string[] | null> {
+    return this.views.map((v) => (v.figSvgs?.length ? v.figSvgs : null));
+  }
+
+  /** Reapply stashed figures after a reload's document restore. */
+  restoreFigures(figures: Array<string[] | null>) {
+    figures.forEach((svgs, i) => {
+      const v = this.views[i];
+      if (v && svgs?.length) this.renderFigures(v, svgs);
+    });
   }
 
   private runAndAdvance(v: CellView) {

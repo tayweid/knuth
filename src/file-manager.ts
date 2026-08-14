@@ -13,6 +13,9 @@ export interface FileHooks {
   message(text: string): void;
   /** A document was opened from disk (picker, recent, launch). */
   onOpened?(): void;
+  /** Displayed figures per cell, for the session stash / its restore. */
+  getFigures?(): Array<string[] | null>;
+  setFigures?(figures: Array<string[] | null>): void;
 }
 
 const PY_TYPE: FilePickerType[] = [
@@ -93,19 +96,35 @@ export class FileManager {
   }
 
   /** Snapshot to sessionStorage: same lifetime as the kernel session —
-   *  survives reloads of this tab, never shared with a new window. */
+   *  survives reloads of this tab, never shared with a new window.
+   *  Displayed figures ride along under a size budget (SVGs are chunky;
+   *  the document text always wins). */
   private stash() {
+    const base = {
+      name: this.name,
+      dirty: this.dirty,
+      text: serializeDocument(this.hooks.getDoc()),
+    };
+    let figures = this.hooks.getFigures?.();
+    if (figures) {
+      let budget = 3_000_000;
+      figures = figures.map((svgs) => {
+        if (!svgs) return null;
+        const size = svgs.reduce((n, s) => n + s.length, 0);
+        if (size > budget) return null;
+        budget -= size;
+        return svgs;
+      });
+    }
     try {
-      sessionStorage.setItem(
-        'knuth-doc',
-        JSON.stringify({
-          name: this.name,
-          dirty: this.dirty,
-          text: serializeDocument(this.hooks.getDoc()),
-        }),
-      );
-    } catch (e) {
-      console.warn('Session stash failed', e);
+      sessionStorage.setItem('knuth-doc', JSON.stringify({ ...base, figures }));
+    } catch {
+      try {
+        // Quota: drop the figures, never the document.
+        sessionStorage.setItem('knuth-doc', JSON.stringify(base));
+      } catch (e) {
+        console.warn('Session stash failed', e);
+      }
     }
   }
 
@@ -115,10 +134,16 @@ export class FileManager {
     const raw = sessionStorage.getItem('knuth-doc');
     if (!raw) return false;
     try {
-      const snap = JSON.parse(raw) as { name: string; dirty: boolean; text: string };
+      const snap = JSON.parse(raw) as {
+        name: string;
+        dirty: boolean;
+        text: string;
+        figures?: Array<string[] | null>;
+      };
       this.hooks.setDoc(parseDocument(snap.text));
       this.name = snap.name;
       this.dirty = snap.dirty;
+      if (snap.figures) this.hooks.setFigures?.(snap.figures);
     } catch (e) {
       console.warn('Session restore failed', e);
       return false;

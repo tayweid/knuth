@@ -179,6 +179,8 @@ fileManager = new FileManager({
   },
   onState: repaintName,
   message: toast,
+  getFigures: () => docView.collectFigures(),
+  setFigures: (figures) => docView.restoreFigures(figures),
   onOpened: () => {
     if (!fileManager.dir) {
       toast(`Opened ${fileManager.name} — attach its folder for values.json and figs/`, {
