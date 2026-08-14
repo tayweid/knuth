@@ -145,10 +145,12 @@ persists in localStorage.
   preserve reproducibility by materializing as code appended to a cell
   (e.g. `df.loc[3, 'wage'] = 12.5`) rather than mutating silently — the
   viewer becomes a code generator, the document stays the truth.
-- Figure receipts: output blocks referencing `figs/<name>.svg` for named
-  figures (DESIGN.md intends this; display-only capture shipped instead
-  first). Unnamed figures currently display in-app and vanish, matching
-  "if it's given a name, it's saved".
+- ~~Figure receipts~~ built (2026-08-14): output blocks carry
+  `figs/<name>.svg` lines for the canonical name of each figure a cell's
+  run touched (direct Figure bindings beat artist references — one file
+  per figure); the app resolves receipts from the project folder on open,
+  `knuth run` writes identical byte-stable lines. Unnamed figures still
+  display-only.
 
 - Scratch cells in a one-way ChainMap namespace (structural enforcement of
   the no-hidden-state rule).

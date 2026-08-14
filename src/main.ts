@@ -134,6 +134,20 @@ if (localStorage.getItem('knuth-panel') === '0') $('panel').hidden = true;
 let pendingRestore: (() => void) | null = null;
 let restoreTimer = 0;
 
+// Resolve a figs/<name>.svg receipt against the attached project folder.
+async function loadFigureFromDir(path: string): Promise<string | null> {
+  const dir = fileManager?.dir;
+  if (!dir) return null;
+  try {
+    const [folder, file] = path.split('/');
+    const figsDir = await dir.getDirectoryHandle(folder);
+    const handle = await figsDir.getFileHandle(file);
+    return await (await handle.getFile()).text();
+  } catch {
+    return null;
+  }
+}
+
 const docView = new DocumentView(
   $('sheet'),
   kernel,
@@ -146,6 +160,7 @@ const docView = new DocumentView(
     restoreTimer = window.setTimeout(() => (pendingRestore = null), 15000);
     toast('Cell deleted — ⌘Z restores it');
   },
+  loadFigureFromDir,
 );
 
 function repaintName() {
@@ -185,7 +200,13 @@ fileManager = new FileManager({
     if (!fileManager.dir) {
       toast(`Opened ${fileManager.name} — attach its folder for values.json and figs/`, {
         label: 'Attach folder',
-        run: () => void fileManager.attachFolder().then((ok) => ok && syncArtifacts()),
+        run: () =>
+          void fileManager.attachFolder().then((ok) => {
+            if (ok) {
+              syncArtifacts();
+              docView.hydrateAll();
+            }
+          }),
       });
     }
   },
@@ -194,6 +215,9 @@ fileManager = new FileManager({
 void (async () => {
   const restored = await fileManager.restoreSession();
   if (!restored) fileManager.newDoc();
+  // The folder handle reconnects after the document renders: resolve
+  // figure receipts now that figs/ is reachable.
+  if (restored && fileManager.dir) docView.hydrateAll();
   restoring = false;
   if (fileManager.pendingHandle) {
     toast(`Reconnect ${fileManager.pendingHandle.name} to keep autosaving`, {
@@ -261,7 +285,13 @@ flyout($('doc-pod'), icon('open'), 'File — new, open, recent, project folder',
     label: 'Folder',
     title:
       'Open the project folder: one permission covers the document, values.json, and figs/',
-    run: () => void fileManager.attachFolder().then((ok) => ok && syncArtifacts()),
+    run: () =>
+          void fileManager.attachFolder().then((ok) => {
+            if (ok) {
+              syncArtifacts();
+              docView.hydrateAll();
+            }
+          }),
   },
   {
     glyph: icon('clock'),

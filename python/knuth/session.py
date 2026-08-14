@@ -137,10 +137,14 @@ class Session:
         # the session, excluded from persistence, badged in the explorer.
         # A program cell binding the same name reclaims it.
         self.scratch_names = set()
+        # Names bound by the most recent run — how figure receipts know
+        # which cell touched which figure.
+        self.last_assigned = set()
 
     def reset(self):
         self.namespace = {"__name__": "__main__"}
         self.scratch_names = set()
+        self.last_assigned = set()
 
     def run(self, code, scratch=False):
         """Execute a cell. Returns (ok, payload): payload is the repr of the
@@ -152,6 +156,7 @@ class Session:
             return False, "".join(traceback.format_exception_only(e))
 
         assigned = _assigned_names(tree)
+        self.last_assigned = assigned
         if scratch:
             self.scratch_names |= assigned
         else:
@@ -257,27 +262,62 @@ class Session:
         except Exception as e:
             return {"name": name, "error": str(e)}
 
+    def figure_bindings(self):
+        """One canonical name per live figure ({name: Figure}): direct
+        Figure bindings beat artist references (fig wins over ax), and
+        namespace order breaks remaining ties — so `fig, ax = subplots()`
+        persists one figs/fig.svg, not a duplicate pair."""
+        candidates = []
+        for name, value in self.namespace.items():
+            if (
+                name.startswith("_")
+                or name in self.scratch_names
+                or isinstance(value, types.ModuleType)
+            ):
+                continue
+            fig = _owning_figure(value)
+            if fig is not None:
+                candidates.append((name, fig, _is_figure(value)))
+        chosen = {}
+        for name, fig, direct in sorted(candidates, key=lambda c: not c[2]):
+            chosen.setdefault(id(fig), (name, fig))
+        return {name: fig for name, fig in chosen.values()}
+
+    def figure_receipts(self, assigned):
+        """Canonical figure names touched by the given bindings — what a
+        cell's output block should reference as figs/<name>.svg."""
+        by_id = {id(fig): name for name, fig in self.figure_bindings().items()}
+        touched = set()
+        for name in assigned:
+            if name not in self.namespace:
+                continue
+            fig = _owning_figure(self.namespace[name])
+            if fig is not None and id(fig) in by_id:
+                touched.add(by_id[id(fig)])
+        return sorted(touched)
+
     def artifacts(self):
         """The folder contract (DESIGN.md auto-persistence): a JSON-safe
         mirror of the namespace for values.json, and named figures rendered
         to SVG text for figs/<name>.svg. Underscore names are private;
         modules and non-serializables (DataFrames included) stay behind."""
-        values, figures = {}, {}
+        values = {}
         for name, value in self.namespace.items():
             if name.startswith("_") or isinstance(value, types.ModuleType):
                 continue
             if name in self.scratch_names:  # scratch never persists
                 continue
-            owning = _owning_figure(value)
-            if owning is not None:
-                try:
-                    figures[name] = _figure_svg(owning)
-                except Exception:
-                    pass
-                continue
+            if _owning_figure(value) is not None:
+                continue  # figures persist under their canonical name below
             mirrored, ok = _persistable(value)
             if ok:
                 values[name] = mirrored
+        figures = {}
+        for name, fig in self.figure_bindings().items():
+            try:
+                figures[name] = _figure_svg(fig)
+            except Exception:
+                pass
         return values, figures
 
     def _format_traceback(self, e):

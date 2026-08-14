@@ -50,8 +50,12 @@ def main():
     assert ok, tb
     values, figures = s.artifacts()
     assert "fig" in figures and "<svg" in figures["fig"], list(figures)
-    # Artist unwrapping: a named axes persists its owning figure (as fig).
-    assert "ax" in figures and "ax" not in values
+    # One canonical name per figure: ax unwraps to fig's figure, so it
+    # neither duplicates the file nor lands in values.
+    assert "ax" not in figures and "ax" not in values
+    receipts = s.figure_receipts({"fig", "ax"})
+    assert receipts == ["fig"], receipts
+    assert s.figure_receipts({"ax"}) == ["fig"], "artist binding resolves to canonical name"
 
     # Display capture: pyplot-style (unnamed) figures render once and are
     # closed; a NAMED figure still persists via artifacts after closing.
@@ -74,7 +78,10 @@ def main():
     ok, tb = s.run("named_ax = fig.gca()")
     assert ok, tb
     _, figures = s.artifacts()
-    assert "named_ax" in figures, "an axes persists its figure too"
+    # named_ax shares fig's figure: canonical name stays fig, and the
+    # receipt for the cell that bound named_ax says so.
+    assert "named_ax" not in figures and "fig" in figures
+    assert s.figure_receipts(s.last_assigned) == ["fig"]
 
     # Figure viewer support: snapshot flags figure-backed vars; figure()
     # renders on demand; non-figures answer with an error.

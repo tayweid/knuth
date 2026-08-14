@@ -80,11 +80,14 @@ def test_runner():
         assert doc.cells[1].output == [], "assignment-only cell has no output"
         assert doc.cells[2].output == ["#-> stale scratch receipt stays"], doc.cells[2].output
         assert doc.cells[3].output == ["#-> total is 6", "#-> 6"], doc.cells[3].output
+        # Figure receipt: the cell that bound fig references its path.
+        assert doc.cells[4].output[-1] == "#-> figs/fig.svg", doc.cells[4].output
 
         values = json.loads((tmp / "values.json").read_text())
         assert values["total"] == 6, values
         assert (tmp / "figs" / "fig.svg").exists()
         assert "<svg" in (tmp / "figs" / "fig.svg").read_text()
+        assert not (tmp / "figs" / "ax.svg").exists(), "one canonical file per figure"
 
         # Idempotence: a second run reproduces the same bytes.
         assert run_file(doc_path, echo=quiet) == 0

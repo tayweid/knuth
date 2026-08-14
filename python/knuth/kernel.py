@@ -64,8 +64,11 @@ def main():
                 ok, payload = session.run(msg["code"], scratch=bool(msg.get("scratch")))
                 state["id"] = None
                 svgs = capture_open_figures()
-                if svgs:
-                    emit({"type": "figures", "id": msg["id"], "svgs": svgs})
+                named = [] if msg.get("scratch") else session.figure_receipts(
+                    session.last_assigned
+                )
+                if svgs or named:
+                    emit({"type": "figures", "id": msg["id"], "svgs": svgs, "named": named})
                 if ok:
                     emit({"type": "done", "id": msg["id"], "result": payload})
                 else:

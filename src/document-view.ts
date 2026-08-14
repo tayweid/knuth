@@ -30,6 +30,9 @@ import { icon } from './icons.ts';
 // Stored-output cap (the DESIGN.md truncation policy).
 const MAX_OUTPUT_LINES = 40;
 
+// Figure receipt lines in output blocks: figs/<name>.svg references.
+const FIG_REF = /^figs\/[\w.-]+\.svg$/;
+
 function truncate(text: string): string {
   // Memory addresses in reprs change every run; receipts must not churn.
   text = text.replace(/0x[0-9a-fA-F]{6,}/g, '0x…');
@@ -88,6 +91,8 @@ export class DocumentView {
     private onRun?: () => void,
     /** A cell was deleted; calling `restore` puts it back. */
     private onCellDeleted?: (restore: () => void) => void,
+    /** Resolve a figs/<name>.svg receipt to SVG text (project folder). */
+    private loadFigure?: (path: string) => Promise<string | null>,
   ) {
     // The armed Esc chord (Esc, then Y/S/M) is resolved here so it works
     // regardless of which element ends up with the key event.
@@ -230,6 +235,7 @@ export class DocumentView {
     v.figsEl.hidden = true;
     v.figSvgs = undefined;
     let text = '';
+    let named: string[] = [];
     const outcome = await this.kernel.run(
       cellCode(v.cell),
       {
@@ -237,7 +243,10 @@ export class DocumentView {
           text += chunk;
           v.outEl.textContent = truncate(text);
         },
-        onFigures: (svgs) => this.renderFigures(v, svgs),
+        onFigures: (svgs, n) => {
+          this.renderFigures(v, svgs);
+          named = n;
+        },
       },
       { scratch: v.cell.kind === 'scratch' },
     );
@@ -247,10 +256,14 @@ export class DocumentView {
     if (!outcome.ok && outcome.traceback) {
       text += (text === '' || text.endsWith('\n') ? '' : '\n') + outcome.traceback;
     }
-    const stored = truncate(text);
+    // Stored output = text readout + figure receipts (figs/<name>.svg
+    // paths); the visible pre carries only the text — cards carry figures.
+    const shown = truncate(text);
+    const refs = outcome.ok ? named.map((n) => `figs/${n}.svg`) : [];
+    const stored = [shown, ...refs].filter((s) => s !== '').join('\n');
     setOutput(v.cell, stored === '' ? null : stored);
-    v.outEl.textContent = stored;
-    v.outEl.hidden = stored === '';
+    v.outEl.textContent = shown;
+    v.outEl.hidden = shown === '';
     v.outEl.classList.toggle('error', !outcome.ok);
     v.running = false;
     if (outcome.ok && v.cell.kind === 'program') v.stale = false;
@@ -259,6 +272,27 @@ export class DocumentView {
     if (outcome.ok && v.cell.kind === 'program') this.onProgramRun?.();
     this.onRun?.();
     return outcome.ok;
+  }
+
+  /** Stored output -> display: text lines to the readout, figure receipt
+   *  lines resolved from the project folder into cards (when possible). */
+  private hydrateOutputs(v: CellView) {
+    const lines = outputText(v.cell).split('\n');
+    const refs = lines.filter((l) => FIG_REF.test(l.trim()));
+    const text = lines.filter((l) => !FIG_REF.test(l.trim())).join('\n');
+    v.outEl.textContent = text;
+    v.outEl.hidden = text === '';
+    if (refs.length > 0 && this.loadFigure) {
+      void Promise.all(refs.map((r) => this.loadFigure!(r.trim()))).then((results) => {
+        const svgs = results.filter((s): s is string => s !== null && s !== '');
+        if (svgs.length > 0) this.renderFigures(v, svgs);
+      });
+    }
+  }
+
+  /** Re-resolve every cell's figure receipts (e.g. after Folder attach). */
+  hydrateAll() {
+    for (const v of this.views) this.hydrateOutputs(v);
   }
 
   /** The kernel's SVG renders of the user's figures, shown under the cell. */
@@ -353,10 +387,8 @@ export class DocumentView {
     body.append(label);
     this.buildEditor(v);
 
-    const existing = outputText(cell);
-    outEl.textContent = existing;
-    outEl.hidden = existing === '';
     body.append(figsEl, outEl);
+    this.hydrateOutputs(v);
 
     row.append(gutter, body, this.buildTools(v));
     root.append(this.buildZone(v), row);

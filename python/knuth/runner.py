@@ -64,6 +64,11 @@ def run_file(file, echo=print):
                     text += "\n"
                 text += payload
             stored = truncate(text)
+            if ok:
+                # Figure receipts: this cell's named figures, by path —
+                # the same lines the app writes, byte-stable across runs.
+                refs = [f"figs/{n}.svg" for n in session.figure_receipts(session.last_assigned)]
+                stored = "\n".join(s for s in [stored, *refs] if s)
             set_output(cell, stored if stored else None)
             echo(f"[{i}/{len(program)}] {'ok' if ok else 'ERROR'}")
             if not ok:
