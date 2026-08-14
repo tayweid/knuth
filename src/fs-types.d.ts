@@ -26,6 +26,10 @@ interface FileSystemHandle {
   requestPermission?(desc?: { mode?: 'read' | 'readwrite' }): Promise<PermissionState>;
 }
 
+interface FileSystemDirectoryHandle {
+  values(): AsyncIterableIterator<FileSystemHandle>;
+}
+
 interface Window {
   showOpenFilePicker?(options?: OpenFilePickerOptions): Promise<FileSystemFileHandle[]>;
   showSaveFilePicker?(options?: SaveFilePickerOptions): Promise<FileSystemFileHandle>;

@@ -237,20 +237,60 @@ export class FileManager {
 
   // ---------- project folder: the contract ----------
 
+  /** The one-grant entry point: a directory handle covers everything in
+   *  it, so attaching the project folder also gives the document a home —
+   *  the newest .py inside is opened (untouched doc), or the current
+   *  document moves in — with no second permission prompt. */
   async attachFolder(): Promise<boolean> {
     if (typeof window.showDirectoryPicker !== 'function') {
       this.hooks.message('Project folders need the File System Access API (Chrome/Edge)');
       return false;
     }
+    let dir: FileSystemDirectoryHandle;
     try {
-      this.dir = await window.showDirectoryPicker!({ mode: 'readwrite' });
-      this.hooks.onState();
-      this.hooks.message(`Project folder: ${this.dir.name} — values.json and figs/ stay fresh`);
-      return true;
+      dir = await window.showDirectoryPicker!({ mode: 'readwrite' });
     } catch (e) {
       if ((e as DOMException)?.name !== 'AbortError') console.warn(e);
       return false;
     }
+    this.dir = dir;
+    try {
+      if (!this.handle) {
+        // Never load over unsaved work: a dirty doc moves in instead.
+        const newest = this.dirty ? null : await this.newestPy(dir);
+        if (newest) {
+          await this.loadHandle(newest);
+        } else {
+          this.handle = await dir.getFileHandle(this.name, { create: true });
+          await this.write(this.handle);
+          this.dirty = false;
+          this.hooks.message(`${this.name} lives in ${dir.name} now`);
+          void this.addRecent(this.handle, this.name);
+        }
+        this.hooks.onState();
+        return true;
+      }
+    } catch (e) {
+      console.warn('Folder adoption failed', e);
+    }
+    this.hooks.onState();
+    this.hooks.message(`Project folder: ${dir.name} — values.json and figs/ stay fresh`);
+    return true;
+  }
+
+  private async newestPy(
+    dir: FileSystemDirectoryHandle,
+  ): Promise<FileSystemFileHandle | null> {
+    let best: { handle: FileSystemFileHandle; time: number } | null = null;
+    for await (const entry of dir.values()) {
+      if (entry.kind !== 'file' || !/\.py$/i.test(entry.name)) continue;
+      const handle = entry as FileSystemFileHandle;
+      const file = await handle.getFile();
+      if (!best || file.lastModified > best.time) {
+        best = { handle, time: file.lastModified };
+      }
+    }
+    return best?.handle ?? null;
   }
 
   /** Materialize the kernel's artifacts into the project folder:

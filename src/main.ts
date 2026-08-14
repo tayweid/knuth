@@ -224,16 +224,17 @@ flyout($('doc-pod'), icon('open'), 'File — new, open, recent, project folder',
   },
   { glyph: icon('open'), label: 'Open', title: 'Open… (⌘O)', run: () => void fileManager.open() },
   {
+    glyph: icon('project'),
+    label: 'Folder',
+    title:
+      'Open the project folder: one permission covers the document, values.json, and figs/',
+    run: () => void fileManager.attachFolder().then((ok) => ok && syncArtifacts()),
+  },
+  {
     glyph: icon('clock'),
     label: 'Recent',
     title: 'Your documents',
     run: () => void showRecents($('doc-pod')),
-  },
-  {
-    glyph: icon('project'),
-    label: 'Folder',
-    title: 'Attach the project folder: values.json and figs/ stay fresh there for Typst/Plass',
-    run: () => void fileManager.attachFolder().then((ok) => ok && syncArtifacts()),
   },
 ]);
 

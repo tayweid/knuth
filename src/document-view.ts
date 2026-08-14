@@ -10,6 +10,7 @@
 
 import { minimalSetup, EditorView } from 'codemirror';
 import { keymap, placeholder } from '@codemirror/view';
+import { Compartment, type Extension } from '@codemirror/state';
 import { python } from '@codemirror/lang-python';
 import { markdown } from '@codemirror/lang-markdown';
 import { oneDark } from '@codemirror/theme-one-dark';
@@ -48,6 +49,9 @@ interface CellView {
   outEl: HTMLPreElement;
   badge: HTMLElement;
   editor?: EditorView;
+  /** Language/placeholder live in a compartment so kind switches keep the
+   *  same editor — and with it, the undo history. */
+  lang: Compartment;
   stale: boolean;
   running: boolean;
 }
@@ -122,27 +126,52 @@ export class DocumentView {
     this.armed = null;
   }
 
-  /** Switch a cell's kind in place, converting its content. */
+  /** Switch a cell's kind in place. The editor (and its undo history)
+   *  survives: only the language compartment and the chrome change. */
   convertKind(v: CellView, kind: NewCellKind): void {
     const cell = v.cell;
-    if (cell.kind === kind || !BARE_MARKERS.has(cell.marker)) return;
-    if (cell.kind === 'text' && kind !== 'text') {
-      // Prose becomes code lines.
-      const code = textProse(cell).replace(/\n+$/, '');
-      cell.source = code === '' ? [''] : code.split('\n');
-      cell.source.push('');
-    } else if (cell.kind !== 'text' && kind === 'text') {
-      // Code lines become prose; outputs don't survive becoming text.
-      setProse(cell, cellCode(cell).replace(/\n+$/, ''));
-      cell.source.push('');
-      setOutput(cell, null);
-      cell.output = [];
-    }
+    if (cell.kind === kind || !BARE_MARKERS.has(cell.marker) || !v.editor) return;
+    const wasText = cell.kind === 'text';
+    const nowText = kind === 'text';
     cell.kind = kind;
     cell.marker = KIND_MARKERS[kind];
-    const fresh = this.rebuild(v);
-    fresh.editor?.focus();
+    if (wasText !== nowText) {
+      if (nowText) {
+        // Outputs don't survive becoming text; trailing blank lines would
+        // turn into '#' lines, so trim them (one undoable step).
+        const text = v.editor.state.doc.toString();
+        const trimmed = text.replace(/\n+$/, '');
+        if (trimmed !== text) {
+          v.editor.dispatch({ changes: { from: trimmed.length, to: text.length } });
+        }
+        setOutput(cell, null);
+        cell.output = [];
+        v.outEl.hidden = true;
+        v.outEl.textContent = '';
+      }
+      v.editor.dispatch({ effects: v.lang.reconfigure(this.langFor(kind)) });
+    }
+    this.syncModel(v, v.editor.state.doc.toString());
+    v.stale = kind === 'program';
+    v.row.className = `cell kind-${kind}`;
+    v.row.querySelector('.tools')?.replaceWith(this.buildTools(v));
+    this.refreshBadge(v);
+    v.editor.focus();
     this.onChange();
+  }
+
+  private langFor(kind: NewCellKind): Extension {
+    return kind === 'text' ? [markdown(), placeholder('Write…')] : python();
+  }
+
+  /** Editor text -> document model, by the cell's current kind. */
+  private syncModel(v: CellView, text: string) {
+    if (v.cell.kind === 'text') {
+      setProse(v.cell, text);
+      v.cell.source.push(''); // keep the blank separator line in the raw file
+    } else {
+      v.cell.source = text.split('\n');
+    }
   }
 
   setDoc(doc: KnuthDocument) {
@@ -257,20 +286,32 @@ export class DocumentView {
     const outEl = document.createElement('pre');
     outEl.className = 'output';
 
-    const v: CellView = { cell, root, row, body, outEl, badge, stale: false, running: false };
+    const v: CellView = {
+      cell,
+      root,
+      row,
+      body,
+      outEl,
+      badge,
+      lang: new Compartment(),
+      stale: false,
+      running: false,
+    };
 
-    if (cell.kind === 'text') {
-      gutter.append(badge);
-      this.buildTextBody(v);
-    } else {
-      const run = document.createElement('button');
-      run.className = 'run';
-      run.textContent = '▶';
-      run.title = 'Run cell (Cmd-Enter)';
-      run.addEventListener('click', () => void this.runCell(v));
-      gutter.append(run, badge);
-      this.buildCodeBody(v);
-    }
+    // One skeleton for every kind — CSS shows/hides per kind, so a kind
+    // switch is a class change, not a rebuild.
+    const run = document.createElement('button');
+    run.className = 'run';
+    run.textContent = '▶';
+    run.title = 'Run cell (Cmd-Enter)';
+    run.addEventListener('click', () => void this.runCell(v));
+    gutter.append(run, badge);
+
+    const label = document.createElement('div');
+    label.className = 'scratch-label';
+    label.textContent = 'scratch';
+    body.append(label);
+    this.buildEditor(v);
 
     const existing = outputText(cell);
     outEl.textContent = existing;
@@ -280,6 +321,29 @@ export class DocumentView {
     row.append(gutter, body, this.buildTools(v));
     root.append(this.buildZone(v), row);
     return v;
+  }
+
+  private buildEditor(v: CellView) {
+    const initial =
+      v.cell.kind === 'text' ? textProse(v.cell).replace(/\n$/, '') : cellCode(v.cell);
+    v.editor = new EditorView({
+      doc: initial,
+      extensions: [
+        this.cellKeymap(v),
+        this.trackFocus(v),
+        minimalSetup,
+        oneDark,
+        v.lang.of(this.langFor(v.cell.kind)),
+        EditorView.lineWrapping,
+        EditorView.updateListener.of((update) => {
+          if (!update.docChanged) return;
+          this.syncModel(v, update.state.doc.toString());
+          this.markStaleFrom(v); // no-op for scratch/text
+          this.onChange();
+        }),
+      ],
+    });
+    v.body.append(v.editor.dom);
   }
 
   /** Insert after the cell the user is (or was last) working in. */
@@ -302,10 +366,20 @@ export class DocumentView {
   }
 
   private cellKeymap(v: CellView) {
+    // One keymap for every kind, branching at press time — the editor
+    // survives kind switches, so its bindings must too.
+    const isText = () => v.cell.kind === 'text';
     return keymap.of([
-      { key: 'Mod-Enter', run: () => (void this.runCell(v), true) },
-      { key: 'Shift-Enter', run: () => (this.runAndAdvance(v), true) },
-      { key: 'Alt-Enter', run: () => (this.runAndInsertBelow(v), true) },
+      { key: 'Mod-Enter', run: () => (isText() ? false : (void this.runCell(v), true)) },
+      {
+        key: 'Shift-Enter',
+        run: () => {
+          if (isText()) this.focusAfter(v, true);
+          else this.runAndAdvance(v);
+          return true;
+        },
+      },
+      { key: 'Alt-Enter', run: () => (isText() ? false : (this.runAndInsertBelow(v), true)) },
       { key: 'Mod-Shift-Enter', run: () => (this.insertAfter(v, 'program'), true) },
       { key: 'Backspace', run: () => this.backspaceOnEmpty(v) },
       { key: 'Escape', run: () => (this.arm(v), true) },
@@ -322,62 +396,6 @@ export class DocumentView {
       return true;
     }
     return false;
-  }
-
-  private buildCodeBody(v: CellView) {
-    v.editor = new EditorView({
-      doc: cellCode(v.cell),
-      extensions: [
-        this.cellKeymap(v),
-        this.trackFocus(v),
-        minimalSetup,
-        oneDark,
-        python(),
-        EditorView.lineWrapping,
-        EditorView.updateListener.of((update) => {
-          if (!update.docChanged) return;
-          v.cell.source = update.state.doc.toString().split('\n');
-          this.markStaleFrom(v);
-          this.onChange();
-        }),
-      ],
-    });
-    v.body.append(v.editor.dom);
-    if (v.cell.kind === 'scratch') {
-      const label = document.createElement('div');
-      label.className = 'scratch-label';
-      label.textContent = 'scratch';
-      v.body.prepend(label);
-    }
-  }
-
-  private buildTextBody(v: CellView) {
-    // Text is just text: an always-live markdown editor styled as prose —
-    // click anywhere, type, move with the cursor. No modes.
-    v.editor = new EditorView({
-      doc: textProse(v.cell).replace(/\n$/, ''),
-      extensions: [
-        keymap.of([
-          { key: 'Shift-Enter', run: () => (this.focusAfter(v, true), true) },
-          { key: 'Mod-Shift-Enter', run: () => (this.insertAfter(v, 'program'), true) },
-          { key: 'Backspace', run: () => this.backspaceOnEmpty(v) },
-          { key: 'Escape', run: () => (this.arm(v), true) },
-        ]),
-        this.trackFocus(v),
-        minimalSetup,
-        oneDark,
-        markdown(),
-        EditorView.lineWrapping,
-        placeholder('Write…'),
-        EditorView.updateListener.of((update) => {
-          if (!update.docChanged) return;
-          setProse(v.cell, update.state.doc.toString());
-          v.cell.source.push(''); // keep the blank separator line in the raw file
-          this.onChange();
-        }),
-      ],
-    });
-    v.body.append(v.editor.dom);
   }
 
   private buildTools(v: CellView): HTMLElement {
@@ -490,16 +508,6 @@ export class DocumentView {
       view.editor?.focus();
       this.onChange();
     });
-  }
-
-  private rebuild(v: CellView): CellView {
-    const fresh = this.buildView(v.cell);
-    fresh.stale = v.cell.kind === 'program';
-    v.editor?.destroy();
-    v.root.replaceWith(fresh.root);
-    this.views[this.views.indexOf(v)] = fresh;
-    this.refreshBadge(fresh);
-    return fresh;
   }
 
   // ---------- staleness ----------
