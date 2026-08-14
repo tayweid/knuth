@@ -284,38 +284,14 @@ export class FileManager {
       return;
     }
     if (!this.handle) {
-      await this.saveAs();
+      // Saving a homeless document IS choosing its project folder: the
+      // one directory grant covers the file, values.json, and figs/.
+      await this.attachFolder('save');
       return;
     }
     await this.write(this.handle);
     this.dirty = false;
     this.hooks.onState();
-  }
-
-  async saveAs() {
-    if (!this.supportsFS) {
-      this.download();
-      return;
-    }
-    try {
-      const handle = await window.showSaveFilePicker!({
-        types: PY_TYPE,
-        suggestedName: this.name,
-        id: 'knuth-documents',
-        startIn: this.dir ?? undefined,
-      });
-      this.handle = handle;
-      this.name = handle.name;
-      await this.write(handle);
-      this.dirty = false;
-      this.hooks.onState();
-      this.hooks.message(`Saved ${handle.name}`);
-      void this.addRecent(handle, handle.name);
-      void idbSet('last', handle).catch(() => undefined);
-      this.stash();
-    } catch (e) {
-      if ((e as DOMException)?.name !== 'AbortError') console.warn(e);
-    }
   }
 
   /** Rename in place (Chromium handle.move); enforces the .py suffix. */
@@ -346,9 +322,9 @@ export class FileManager {
 
   /** The one-grant entry point: a directory handle covers everything in
    *  it, so attaching the project folder also gives the document a home —
-   *  the newest .py inside is opened (untouched doc), or the current
-   *  document moves in — with no second permission prompt. */
-  async attachFolder(): Promise<boolean> {
+   *  the newest .py inside is opened (intent 'open', untouched doc), or
+   *  the current document moves in — with no second permission prompt. */
+  async attachFolder(intent: 'open' | 'save' = 'open'): Promise<boolean> {
     if (typeof window.showDirectoryPicker !== 'function') {
       this.hooks.message('Project folders need the File System Access API (Chrome/Edge)');
       return false;
@@ -371,8 +347,9 @@ export class FileManager {
     void idbSet('lastDir', dir).catch(() => undefined);
     try {
       if (!this.handle) {
-        // Never load over unsaved work: a dirty doc moves in instead.
-        const newest = this.dirty ? null : await this.newestPy(dir);
+        // Never load over unsaved work, and a SAVE never opens someone
+        // else's file: the current document moves in instead.
+        const newest = intent === 'save' || this.dirty ? null : await this.newestPy(dir);
         if (newest) {
           await this.loadHandle(newest);
         } else {

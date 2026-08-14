@@ -323,18 +323,21 @@ body:has(#panel:not([hidden])) #toolbar {
 
 .cell {
   display: flex;
-  gap: 0.6rem;
-  padding: 0.2rem 0;
+  padding: 0.2rem 0 0.2rem 2.2rem;
   position: relative;
 }
 
+/* Out of the flow: a tall gutter must never stretch a short cell (it was
+   adding ~5px of dead space under one-line cards). */
 .cell .gutter {
-  flex: 0 0 1.6rem;
+  position: absolute;
+  left: 0;
+  top: 0.45rem;
+  width: 1.6rem;
   display: flex;
   flex-direction: column;
   align-items: center;
   gap: 0.2rem;
-  padding-top: 0.3rem;
 }
 
 .cell .run {
@@ -355,9 +358,9 @@ body:has(#panel:not([hidden])) #toolbar {
 .cell .body { flex: 1; min-width: 0; }
 
 /* Kind picker: the cell's identity, switchable in place. Floats over the
-   row's right edge OUT of the layout — as a flex child its invisible
-   height inflated short cells and threw off every gap. Same glass pill
-   dialect as the toolbar flyouts. */
+   row's right edge OUT of the layout (a flex child's invisible height
+   inflated short cells). Flat against the room — deliberately NOT the
+   glass-pill dialect, so it doesn't read as the between-cell inserter. */
 .cell .tools {
   position: absolute;
   right: -0.5rem;
@@ -368,13 +371,6 @@ body:has(#panel:not([hidden])) #toolbar {
   flex-direction: column;
   gap: 2px;
   align-items: center;
-  padding: 5px 2px;
-  background: color-mix(in srgb, #3a3840 94%, transparent);
-  backdrop-filter: blur(14px);
-  -webkit-backdrop-filter: blur(14px);
-  border: 1px solid rgba(255, 255, 255, 0.14);
-  border-radius: 999px;
-  box-shadow: 0 5px 18px rgba(0, 0, 0, 0.45);
   z-index: 5;
 }
 
@@ -499,6 +495,11 @@ body:has(#panel:not([hidden])) #toolbar {
   gap: 0.5rem;
   margin: 0.45rem 0 0; /* no bottom margin: keeps inter-cell gaps even */
 }
+
+/* display:flex above out-specifies the UA's [hidden] rule — without this
+   every cell drags an invisible 0.45rem box below its card (the measured
+   7px that pushed insert pills low). */
+.cell .cell-figures[hidden] { display: none; }
 
 .cell .cell-figures .figure {
   background: #fff;
