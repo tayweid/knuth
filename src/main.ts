@@ -196,6 +196,12 @@ fileManager = new FileManager({
   message: toast,
   getFigures: () => docView.collectFigures(),
   setFigures: (figures) => docView.restoreFigures(figures),
+  onSaveBlocked: () => {
+    toast(`Allow saving to ${fileManager.name}?`, {
+      label: 'Allow',
+      run: () => void fileManager.grantWrite(),
+    });
+  },
   onOpened: () => {
     if (!fileManager.dir) {
       toast(`Opened ${fileManager.name} — attach its folder for values.json and figs/`, {

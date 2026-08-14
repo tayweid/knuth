@@ -13,6 +13,9 @@ export interface FileHooks {
   message(text: string): void;
   /** A document was opened from disk (picker, recent, launch). */
   onOpened?(): void;
+  /** Autosave needs a write permission it can only get from a gesture
+   *  (typical after a Finder launch): offer the user a grant button. */
+  onSaveBlocked?(): void;
   /** Displayed figures per cell, for the session stash / its restore. */
   getFigures?(): Array<string[] | null>;
   setFigures?(figures: Array<string[] | null>): void;
@@ -180,14 +183,38 @@ export class FileManager {
     }
   }
 
+  private writeBlockedNotified = false;
+
   private async flush() {
     if (!this.handle || !this.dirty) return;
     try {
       await this.write(this.handle);
       this.dirty = false;
+      this.writeBlockedNotified = false;
       this.hooks.onState();
     } catch (e) {
-      console.warn('Autosave failed', e);
+      // Chrome only shows write-permission prompts during user gestures,
+      // so a timer-driven autosave on a freshly launched file gets
+      // NotAllowedError until the user grants once. Surface it (once).
+      if ((e as DOMException)?.name === 'NotAllowedError') {
+        if (!this.writeBlockedNotified) {
+          this.writeBlockedNotified = true;
+          this.hooks.onSaveBlocked?.();
+        }
+      } else {
+        console.warn('Autosave failed', e);
+      }
+    }
+  }
+
+  /** Grant write access to the current file (call from a user gesture). */
+  async grantWrite() {
+    if (!this.handle) return;
+    const r = await this.handle.requestPermission?.({ mode: 'readwrite' });
+    if (r === 'granted') {
+      this.writeBlockedNotified = false;
+      await this.flush();
+      this.hooks.message(`Saving to ${this.name}`);
     }
   }
 
@@ -226,6 +253,7 @@ export class FileManager {
     this.handle = handle;
     this.name = file.name;
     this.dirty = false;
+    this.writeBlockedNotified = false;
     this.hooks.onState();
     this.hooks.message(`Opened ${file.name}`);
     void this.addRecent(handle, file.name);
