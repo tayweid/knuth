@@ -148,14 +148,13 @@ body:has(#panel:not([hidden])) #toolbar {
 
 .tb-btn .ico { width: 19px; height: 19px; display: block; }
 
-/* Word tags under buttons (Plass): light glass, dark ink, hover-revealed. */
+/* Word tags on buttons (Plass): light glass chips, dark ink, revealed on
+   hover — shared by the toolbar, the between-cell inserter, and the kind
+   picker (positioned per context below). */
 .tb-btn { position: relative; }
 
-.tb-btn .lbl {
+.lbl {
   position: absolute;
-  top: calc(100% + 6px);
-  left: 50%;
-  transform: translateX(-50%);
   font: 11px var(--sans);
   color: #2c2b29;
   background: rgba(251, 250, 248, 0.92);
@@ -172,8 +171,21 @@ body:has(#panel:not([hidden])) #toolbar {
   z-index: 20;
 }
 
-.tb-btn:hover .lbl,
-.tb-btn:focus-visible .lbl {
+.tb-btn .lbl,
+.insert-actions button .lbl {
+  top: calc(100% + 6px);
+  left: 50%;
+  transform: translateX(-50%);
+}
+
+/* The picker stacks vertically: its labels point back toward the cell. */
+.kind-pick .lbl {
+  right: calc(100% + 8px);
+  top: 50%;
+  transform: translateY(-50%);
+}
+
+:is(.tb-btn, .insert-actions button, .kind-pick):is(:hover, :focus-visible) > .lbl {
   opacity: 1;
 }
 
@@ -266,6 +278,9 @@ body:has(#panel:not([hidden])) #toolbar {
   /* The bar floats over the room; content starts below it and scrolls
      beneath it, Plass-style. */
   padding: calc(60px + 1.5rem) 1.5rem 40vh;
+  /* Container so cells can center the kind picker in the free margin
+     between the card column and the session panel (cqw units). */
+  container-type: inline-size;
 }
 
 /* The bench: Knuth works directly on the room's surface — the lit white
@@ -363,9 +378,12 @@ body:has(#panel:not([hidden])) #toolbar {
    glass-pill dialect, so it doesn't read as the between-cell inserter. */
 .cell .tools {
   position: absolute;
-  right: -1.7rem; /* in the margin beside the card, never over it */
+  /* Centered in the free margin between the card column and the session
+     seam: half of (container width - cell width)/2 plus half the doc
+     padding, measured from the cell's right edge. */
+  left: calc(100% + (100cqw - 100%) / 4 + 0.75rem);
   top: 50%;
-  transform: translateY(-50%);
+  transform: translate(-50%, -50%);
   visibility: hidden;
   display: flex;
   flex-direction: column;
@@ -374,9 +392,21 @@ body:has(#panel:not([hidden])) #toolbar {
   z-index: 5;
 }
 
+/* Hover bridge: the right margin counts as part of the cell, so the
+   picker doesn't vanish while the cursor crosses the gap toward it. */
+.cell::after {
+  content: '';
+  position: absolute;
+  left: 100%;
+  top: 0;
+  bottom: 0;
+  width: calc((100cqw - 100%) / 2 + 1.5rem);
+}
+
 .cell:hover .tools { visibility: visible; }
 
 .cell .tools .kind-pick {
+  position: relative;
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -575,6 +605,7 @@ body:has(#panel:not([hidden])) #toolbar {
 }
 
 .insert-actions button {
+  position: relative;
   display: inline-flex;
   align-items: center;
   justify-content: center;

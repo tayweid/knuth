@@ -479,16 +479,16 @@ export class DocumentView {
     // Kind picker: the cell's identity, switchable in place (also via
     // Esc then Y/S/M). Hidden for markers carrying titles/attributes.
     if (!BARE_MARKERS.has(v.cell.marker)) return tools;
-    const kinds: Array<[NewCellKind, string, string]> = [
-      ['program', 'code', 'Code cell (Esc, Y)'],
-      ['scratch', 'scratch', 'Scratch cell — never persists (Esc, S)'],
-      ['text', 'text', 'Text cell (Esc, M)'],
+    const kinds: Array<[NewCellKind, string, string, string]> = [
+      ['program', 'code', 'Code', 'Code cell (Esc, Y)'],
+      ['scratch', 'scratch', 'Scratch', 'Scratch cell — never persists (Esc, S)'],
+      ['text', 'text', 'Text', 'Text cell (Esc, M)'],
     ];
-    for (const [kind, glyph, title] of kinds) {
+    for (const [kind, glyph, label, title] of kinds) {
       const b = document.createElement('button');
       b.className = 'kind-pick' + (v.cell.kind === kind ? ' cur' : '');
       b.title = title;
-      b.innerHTML = icon(glyph);
+      b.innerHTML = `${icon(glyph)}<span class="lbl">${label}</span>`;
       b.addEventListener('click', () => this.convertKind(v, kind));
       tools.append(b);
     }
@@ -503,15 +503,15 @@ export class DocumentView {
     zone.className = 'insert-zone';
     const inner = document.createElement('div');
     inner.className = 'insert-actions';
-    const kinds: Array<[NewCellKind, string, string]> = [
-      ['program', 'code', 'Insert code cell'],
-      ['scratch', 'scratch', 'Insert scratch cell'],
-      ['text', 'text', 'Insert text cell'],
+    const kinds: Array<[NewCellKind, string, string, string]> = [
+      ['program', 'code', 'Code', 'Insert code cell'],
+      ['scratch', 'scratch', 'Scratch', 'Insert scratch cell'],
+      ['text', 'text', 'Text', 'Insert text cell'],
     ];
-    for (const [kind, glyph, title] of kinds) {
+    for (const [kind, glyph, label, title] of kinds) {
       const b = document.createElement('button');
       b.title = title;
-      b.innerHTML = icon(glyph);
+      b.innerHTML = `${icon(glyph)}<span class="lbl">${label}</span>`;
       b.addEventListener('click', () => {
         if (v) this.insertBefore(v, kind);
         else this.insertAtEnd(kind);
