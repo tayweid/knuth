@@ -9,7 +9,7 @@
 // converges to 'ready'.
 
 export type StreamWhich = 'stdout' | 'stderr';
-export type KernelStatus = 'connecting' | 'ready' | 'down' | 'incompatible';
+export type KernelStatus = 'connecting' | 'ready' | 'down' | 'incompatible' | 'unauthorized';
 
 export interface RunHandlers {
   onStream?(which: StreamWhich, text: string): void;
@@ -76,6 +76,7 @@ export interface Kernel {
 export const DEFAULT_KERNEL_URL = 'ws://127.0.0.1:5197';
 export const PROTOCOL_VERSION = 1;
 const RECONNECT_MS = 2000;
+const CAPABILITY_KEY = 'knuth-agent-capability';
 
 interface PendingRun {
   handlers?: RunHandlers;
@@ -99,6 +100,8 @@ export class SidecarKernel implements Kernel {
   private ws: WebSocket | null = null;
   private connectedReady = false;
   private closed = false;
+  private awaitingPair = false;
+  private reattachAfterClose = false;
   private nextId = 1;
   private runs = new Map<number, PendingRun>();
   private namespaceWaiters: Array<(vars: NamespaceVar[]) => void> = [];
@@ -129,18 +132,27 @@ export class SidecarKernel implements Kernel {
           type: 'attach',
           protocol: PROTOCOL_VERSION,
           session: sessionId(),
+          capability: localStorage.getItem(CAPABILITY_KEY),
         }),
       ),
     );
     ws.addEventListener('message', (ev) => this.dispatch(JSON.parse(ev.data)));
     // 'error' is always followed by 'close'; one path handles both.
-    ws.addEventListener('close', () => this.dropped());
+    ws.addEventListener('close', () => this.dropped(ws));
   }
 
-  private dropped(): void {
-    if (this.closed) return;
+  private dropped(ws: WebSocket): void {
+    // An older socket can finish closing after a replacement is already live.
+    if (this.ws !== ws) return;
+    this.ws = null;
+    if (this.closed || this.awaitingPair) return;
     this.connectedReady = false;
     this.failPending('kernel connection lost');
+    if (this.reattachAfterClose) {
+      this.reattachAfterClose = false;
+      this.connect();
+      return;
+    }
     this.onStatus?.('down');
     setTimeout(() => this.connect(), RECONNECT_MS);
   }
@@ -172,6 +184,10 @@ export class SidecarKernel implements Kernel {
       }
       case 'incompatible': {
         this.rejectIncompatible(msg.protocol);
+        break;
+      }
+      case 'unauthorized': {
+        this.rejectUnauthorized();
         break;
       }
       case 'ready': {
@@ -219,6 +235,37 @@ export class SidecarKernel implements Kernel {
         this.figureWaiters.shift()?.(msg);
         break;
       }
+      case 'protocol_error': {
+        this.rejectRequest(msg);
+        break;
+      }
+    }
+  }
+
+  private rejectRequest(msg: any): void {
+    const reason = typeof msg.error === 'string' ? msg.error : 'invalid kernel request';
+    switch (msg.request) {
+      case 'run': {
+        const pending = this.runs.get(msg.id);
+        pending?.resolve({ ok: false, result: null, traceback: reason });
+        this.runs.delete(msg.id);
+        break;
+      }
+      case 'namespace':
+        this.namespaceWaiters.shift()?.([]);
+        break;
+      case 'artifacts':
+        this.artifactsWaiters.shift()?.(null);
+        break;
+      case 'table':
+        this.tableWaiters.shift()?.(null);
+        break;
+      case 'figure':
+        this.figureWaiters.shift()?.(null);
+        break;
+      case 'restart':
+        this.restartWaiters.shift()?.();
+        break;
     }
   }
 
@@ -230,6 +277,31 @@ export class SidecarKernel implements Kernel {
     );
     this.onStatus?.('incompatible');
     this.ws?.close(1002, 'unsupported protocol version');
+  }
+
+  private rejectUnauthorized(): void {
+    this.awaitingPair = true;
+    this.connectedReady = false;
+    localStorage.removeItem(CAPABILITY_KEY);
+    this.failPending('kernel pairing required');
+    this.onStatus?.('unauthorized');
+    this.ws?.close(4401, 'pairing required');
+  }
+
+  pair(capability: string): void {
+    const normalized = capability.trim();
+    if (!normalized) return;
+    localStorage.setItem(CAPABILITY_KEY, normalized);
+    this.awaitingPair = false;
+    if (this.ws && this.ws.readyState < WebSocket.CLOSING) {
+      // Close first so the server sees the session as resumable rather than an
+      // active duplicate tab, which would intentionally fork its namespace.
+      this.reattachAfterClose = true;
+      this.connectedReady = false;
+      this.ws.close(1000, 're-pairing');
+    } else {
+      this.connect();
+    }
   }
 
   private send(msg: object): void {

@@ -92,6 +92,7 @@ let hadSession = false;
 const kernel = new SidecarKernel(undefined, (state, resumed) => {
   if (state === 'ready') {
     status.textContent = 'kernel';
+    status.title = 'Click to pair or replace this browser capability';
     status.className = 'ok';
     if (resumed && !hadSession) {
       // Reloaded tab reattached to its living session.
@@ -111,9 +112,37 @@ const kernel = new SidecarKernel(undefined, (state, resumed) => {
     status.textContent = 'kernel/app versions do not match';
     status.title = 'Update and restart the Knuth agent, then reload the app';
     status.className = 'bad';
+  } else if (state === 'unauthorized') {
+    status.textContent = 'kernel pairing required';
+    status.title = 'Run: knuth agent pair';
+    status.className = 'bad';
+    toast('Pair this browser with the local Knuth agent', {
+      label: 'Pair',
+      run: pairKernel,
+    });
   } else {
     status.textContent = 'connecting…';
     status.className = '';
+  }
+});
+
+function pairKernel() {
+  const capability = window.prompt(
+    'Run `knuth agent pair` in a terminal, then paste the capability here:',
+  );
+  if (capability?.trim()) {
+    kernel.pair(capability);
+    toast('Pairing with the local agent…');
+  }
+}
+
+status.tabIndex = 0;
+status.setAttribute('role', 'button');
+status.addEventListener('click', pairKernel);
+status.addEventListener('keydown', (event) => {
+  if (event.key === 'Enter' || event.key === ' ') {
+    event.preventDefault();
+    pairKernel();
   }
 });
 

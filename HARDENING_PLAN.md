@@ -40,10 +40,72 @@ checklist.
 - Verified that the updated local app still connects to the currently running
   legacy-v1 agent in a real browser.
 
-The real-browser baseline is now present. Phase 0 still needs malicious SVG
-fixtures immediately before the renderer change and the complete installed-PWA
-manual checklist. Phase 1 still needs capability pairing; origin checks alone
-do not fully protect a release hosted on a shared GitHub Pages origin.
+The real-browser baseline and malicious SVG fixtures are now present. Phase 0
+still needs the complete installed-PWA manual checklist. Phase 1 pairing is
+implemented but must not be activated for release while the app remains on a
+shared GitHub Pages origin.
+
+2026-08-16 — Capability pairing and inert figure rendering:
+
+- Added a stable 256-bit per-install capability stored in an owner-only config
+  directory/file (`0700`/`0600`), with no-follow file access, race-safe
+  creation, atomic rotation, explicit display, and launch-agent restart on
+  rotation.
+- Required the capability before session lookup or process creation. Missing
+  and incorrect capabilities fail with a pairing-specific close path; valid
+  credentials preserve reload, resume, restart, and duplicated-tab behavior.
+- Added an app pairing state that stops reconnect loops, clears rejected
+  credentials, accepts an explicitly pasted capability, and reconnects without
+  a page reload.
+- Replaced both raw SVG `innerHTML` paths with centralized DOMPurify SVG
+  sanitization plus Blob-backed `<img>` rendering. Blob URLs are revoked when
+  figures or panes are replaced.
+- Added a malicious SVG browser fixture covering scripts, event attributes,
+  `foreignObject`, JavaScript links, external images, CSS imports, and external
+  paint URLs. It verifies no execution and no unexpected network request.
+- Added a restrictive meta CSP and no-referrer policy as immediate defense in
+  depth. The final dedicated host must still send the equivalent policy as
+  response headers, including header-only directives.
+- Verified the pairing-capable/CSP-enabled app against the still-running
+  legacy agent without restarting or changing that live agent.
+
+Capability enforcement is implemented but deliberately not activated on the
+installed agent yet. Activation must be coordinated with deployment of the
+matching app and a dedicated production origin; storing the capability on the
+shared `tayweid.github.io` origin is not an acceptable final release boundary.
+
+2026-08-16 — Dedicated production origin selected:
+
+- Set the canonical production origin to `https://knuth.tayweid.io` and removed
+  the shared `https://tayweid.github.io` origin from the sidecar allowlist.
+- Made the Pages build path-relative so the same artifact works at the custom
+  domain root and added the repository CNAME declaration.
+- Added tests accepting the exact production origin while rejecting the old
+  shared origin and a hostname-suffix lookalike.
+- Added `DEPLOYMENT.md` with GitHub/DNS configuration and a no-downtime
+  app-pair-agent cutover. The live legacy agent remains untouched until that
+  checklist is intentionally executed.
+
+2026-08-16 — Bounded protocol and process lifecycle:
+
+- Made the installed agent's default allowlist production-only. Local Vite
+  origins now require an explicit `knuth serve --origin ...` development
+  opt-in and remain protected by the independent pairing capability.
+- Named and enforced handshake, inbound frame/queue, code, identifier,
+  response, live-session, and concurrent-start limits instead of relying on
+  incidental WebSocket defaults.
+- Added server-side request shape/range validation and correlated
+  `protocol_error` responses. Malformed JSON, arrays, unknown commands, and
+  invalid table fields no longer reach or crash the kernel subprocess.
+- Bounded combined stdout/stderr per run, result and traceback sizes, figure
+  count/size, large protocol responses, and the browser's retained live output.
+  Normal payloads are unchanged; limit events fail or truncate explicitly.
+- Reserved session identities before process startup and added shutdown guards,
+  closing a simultaneous-attach race and ensuring failed/dropped connections
+  do not orphan a subprocess.
+- Added attack regressions for oversized frames, Unicode credential probes,
+  malformed requests, live-session exhaustion, concurrent duplicate attaches,
+  output chunking, UTF-8 truncation, and a huge single browser output line.
 
 ## Release security model
 
@@ -87,17 +149,19 @@ Session IDs are routing identifiers, not credentials. Binding the server to
 `127.0.0.1` is necessary but not sufficient: arbitrary websites can attempt
 cross-site WebSocket connections to loopback services.
 
-## Release blockers
+## Remaining release blockers
 
-The public release is blocked on the following work:
+The highest-risk original blockers—pre-spawn authorization, inert SVG
+rendering, explicit initial resource limits, mandatory CI, and protocol
+version negotiation—are implemented. Public release still requires:
 
-- Authenticate and authorize the browser-to-sidecar connection before a
-  kernel process is created.
-- Remove direct insertion of SVG strings with `innerHTML`.
-- Add bounded resource and message handling at the protocol boundary.
-- Put Python, browser, and security regression tests in CI.
-- Add protocol version negotiation so an auto-updated PWA cannot silently
-  drive an incompatible installed sidecar.
+- completing the protocol schema/correlation work and kernel-death handling;
+- atomic artifact writes and generated-figure ownership semantics;
+- production response headers (GitHub Pages alone cannot provide header-only
+  CSP directives such as `frame-ancestors`);
+- security/disclosure documentation, dependency pinning, diagnostics, and the
+  installed-PWA/launch-agent smoke checklist;
+- an independent attack pass over the release candidate.
 
 ## Phase 0: freeze current behavior behind tests
 

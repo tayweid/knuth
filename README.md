@@ -13,6 +13,9 @@ PyCharm, run under bare `python`, and diff cleanly in git — with outputs
 stored in the file as machine-managed comment blocks, so results change
 alongside code in the history.
 
+The production PWA is served from `https://knuth.tayweid.io`. Secure custom
+domain and agent-pairing setup is documented in [DEPLOYMENT.md](./DEPLOYMENT.md).
+
 The session is separate from the document, with panes looking into it
 (the RStudio architecture): a variable explorer shows the live namespace,
 and clicking a DataFrame opens a real windowed table view.
@@ -47,7 +50,10 @@ One-time kernel setup, so the server is simply always there:
 
 ```bash
 .venv/bin/knuth agent install   # launchd service: starts at login, restarts on exit
+.venv/bin/knuth agent pair      # copy once into the app's Pair action
 .venv/bin/knuth agent status    # or uninstall
+.venv/bin/knuth agent restart   # activate an update (clears the live session)
+.venv/bin/knuth agent rotate-token # revoke paired browsers and restart the agent
 ```
 
 ## Development
@@ -60,13 +66,14 @@ npx playwright install chromium # one-time browser test setup
 npm run test:browser             # real-browser regression tests
 
 python3 -m venv .venv && .venv/bin/pip install -e 'python[test]'
-.venv/bin/knuth serve                        # kernel server on ws://127.0.0.1:5197
-.venv/bin/python -m pytest python/tests      # Python unit + end-to-end tests
+.venv/bin/knuth serve --origin http://127.0.0.1:5198 # explicit Vite origin
+.venv/bin/python -m pytest python/tests              # Python unit + end-to-end tests
 ```
 
-The sidecar accepts WebSocket upgrades only from Knuth's exact release and
-local-development origins. A custom deployment can override the defaults with
-one or more `knuth serve --origin https://exact.example` arguments.
+The installed sidecar accepts WebSocket upgrades only from Knuth's exact
+release origin. Development and custom deployments opt into each additional
+origin explicitly with one or more `knuth serve --origin
+https://exact.example` arguments.
 
 `python/` is the `knuth` package: the live session, the kernel
 subprocess and WebSocket server behind `knuth serve`, and the future

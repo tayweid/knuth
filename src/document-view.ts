@@ -26,20 +26,26 @@ import {
 } from './format/percent.ts';
 import type { Kernel } from './kernel/kernel.ts';
 import { icon } from './icons.ts';
+import { clearSafeSvgImages, createSafeSvgImage } from './safe-svg.ts';
 
 // Stored-output cap (the DESIGN.md truncation policy).
 const MAX_OUTPUT_LINES = 40;
+const MAX_LIVE_OUTPUT_CHARS = 100_000;
 
 // Figure receipt lines in output blocks: figs/<name>.svg references.
 const FIG_REF = /^figs\/[\w.-]+\.svg$/;
 
-function truncate(text: string): string {
+function truncate(text: string, limitReached = false): string {
   // Memory addresses in reprs change every run; receipts must not churn.
   text = text.replace(/0x[0-9a-fA-F]{6,}/g, '0x…');
   const lines = text.replace(/\n$/, '').split('\n');
-  if (lines.length <= MAX_OUTPUT_LINES) return lines.join('\n');
+  if (lines.length <= MAX_OUTPUT_LINES && !limitReached) return lines.join('\n');
   const kept = lines.slice(0, MAX_OUTPUT_LINES);
-  kept.push(`… (+${lines.length - MAX_OUTPUT_LINES} more lines)`);
+  if (limitReached) {
+    kept.push('… (output display limit reached)');
+  } else {
+    kept.push(`… (+${lines.length - MAX_OUTPUT_LINES} more lines)`);
+  }
   return kept.join('\n');
 }
 
@@ -197,7 +203,11 @@ export class DocumentView {
   }
 
   setDoc(doc: KnuthDocument) {
-    for (const v of this.views) v.editor?.destroy();
+    for (const v of this.views) {
+      clearSafeSvgImages(v.figsEl);
+      v.editor?.destroy();
+    }
+    if (this.preambleView) clearSafeSvgImages(this.preambleView.figsEl);
     this.preambleView?.editor?.destroy();
     this.views = [];
     this.preambleView = null;
@@ -261,17 +271,27 @@ export class DocumentView {
     this.refreshBadge(v);
     v.outEl.textContent = '';
     v.outEl.hidden = false;
-    v.figsEl.textContent = '';
+    clearSafeSvgImages(v.figsEl);
     v.figsEl.hidden = true;
     v.figSvgs = undefined;
     let text = '';
+    let outputLimitReached = false;
+    const appendOutput = (chunk: string) => {
+      const available = MAX_LIVE_OUTPUT_CHARS - text.length;
+      if (available <= 0) {
+        outputLimitReached = true;
+        return;
+      }
+      text += chunk.slice(0, available);
+      if (chunk.length > available) outputLimitReached = true;
+    };
     let named: string[] = [];
     const outcome = await this.kernel.run(
       cellCode(v.cell),
       {
         onStream: (_which, chunk) => {
-          text += chunk;
-          v.outEl.textContent = truncate(text);
+          appendOutput(chunk);
+          v.outEl.textContent = truncate(text, outputLimitReached);
         },
         onFigures: (svgs, n) => {
           this.renderFigures(v, svgs);
@@ -281,16 +301,16 @@ export class DocumentView {
       { scratch: v.cell.kind === 'scratch' },
     );
     if (outcome.ok && outcome.result !== null) {
-      text += (text === '' || text.endsWith('\n') ? '' : '\n') + outcome.result;
+      appendOutput((text === '' || text.endsWith('\n') ? '' : '\n') + outcome.result);
     }
     if (!outcome.ok && outcome.traceback) {
-      text += (text === '' || text.endsWith('\n') ? '' : '\n') + outcome.traceback;
+      appendOutput((text === '' || text.endsWith('\n') ? '' : '\n') + outcome.traceback);
     }
     // Stored output = text readout + figure receipts (figs/<name>.svg
     // paths); the visible pre carries only the text — cards carry figures.
     // The preamble cell displays but never stores (no marker to anchor
     // an output block; the file must stay byte-identical).
-    const shown = truncate(text);
+    const shown = truncate(text, outputLimitReached);
     if (!v.isPreamble) {
       const refs = outcome.ok ? named.map((n) => `figs/${n}.svg`) : [];
       const stored = [shown, ...refs].filter((s) => s !== '').join('\n');
@@ -332,14 +352,18 @@ export class DocumentView {
   /** The kernel's SVG renders of the user's figures, shown under the cell. */
   private renderFigures(v: CellView, svgs: string[]) {
     v.figSvgs = svgs;
-    v.figsEl.textContent = '';
+    clearSafeSvgImages(v.figsEl);
+    let rendered = 0;
     for (const svg of svgs) {
+      const image = createSafeSvgImage(svg);
+      if (!image) continue;
       const holder = document.createElement('div');
       holder.className = 'figure';
-      holder.innerHTML = svg;
+      holder.append(image);
       v.figsEl.append(holder);
+      rendered += 1;
     }
-    v.figsEl.hidden = svgs.length === 0;
+    v.figsEl.hidden = rendered === 0;
   }
 
   /** Per-cell displayed figures, for the session stash. */

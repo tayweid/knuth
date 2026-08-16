@@ -1,6 +1,7 @@
 """Session checks and the full server/kernel stack over a real WebSocket."""
 
 import asyncio
+from contextlib import suppress
 import json
 import socket
 import subprocess
@@ -9,13 +10,21 @@ import time
 
 import pytest
 import websockets
-from websockets.exceptions import InvalidHandshake
+from websockets.exceptions import ConnectionClosed, InvalidHandshake
 
+from knuth.config import load_or_create_capability
+from knuth.limits import MAX_INBOUND_MESSAGE_BYTES
 from knuth.session import Session
-from knuth.server import PROTOCOL_VERSION
+from knuth.server import DEFAULT_ALLOWED_ORIGINS, KernelProcess, PROTOCOL_VERSION, serve
 
 
 TEST_ORIGIN = "http://127.0.0.1:5198"
+PRODUCTION_ORIGIN = "https://knuth.tayweid.io"
+TEST_CAPABILITY = load_or_create_capability()
+
+
+def test_release_origins_exclude_shared_and_development_hosts():
+    assert DEFAULT_ALLOWED_ORIGINS == (PRODUCTION_ORIGIN,)
 
 
 def test_session():
@@ -48,6 +57,13 @@ def free_port():
         return sock.getsockname()[1]
 
 
+def server_command(port, *extra, origins=(TEST_ORIGIN,)):
+    command = [sys.executable, "-m", "knuth", "serve", "--port", str(port), *extra]
+    for origin in origins:
+        command.extend(("--origin", origin))
+    return command
+
+
 class Client:
     def __init__(self, ws):
         self.ws = ws
@@ -60,7 +76,12 @@ class Client:
 
     async def attach(self, session):
         """Handshake; returns the `attached` message (session, resumed)."""
-        await self.send(type="attach", protocol=PROTOCOL_VERSION, session=session)
+        await self.send(
+            type="attach",
+            protocol=PROTOCOL_VERSION,
+            capability=TEST_CAPABILITY,
+            session=session,
+        )
         while True:
             msg = await self.recv()
             if msg["type"] == "attached":
@@ -87,7 +108,7 @@ class Client:
 async def check_over_websocket():
     port = free_port()
     server = subprocess.Popen(
-        [sys.executable, "-m", "knuth", "serve", "--port", str(port)],
+        server_command(port),
         stdout=subprocess.DEVNULL,
         stderr=subprocess.DEVNULL,
     )
@@ -221,7 +242,7 @@ async def check_grace_reap():
     """Past the grace period the session is truly gone: fresh kernel."""
     port = free_port()
     server = subprocess.Popen(
-        [sys.executable, "-m", "knuth", "serve", "--port", str(port), "--grace", "1"],
+        server_command(port, "--grace", "1"),
         stdout=subprocess.DEVNULL,
         stderr=subprocess.DEVNULL,
     )
@@ -271,13 +292,13 @@ async def check_origin_and_protocol_rejection():
     port = free_port()
     url = f"ws://127.0.0.1:{port}"
     server = subprocess.Popen(
-        [sys.executable, "-m", "knuth", "serve", "--port", str(port)],
+        server_command(port, origins=(TEST_ORIGIN, PRODUCTION_ORIGIN)),
         stdout=subprocess.DEVNULL,
         stderr=subprocess.DEVNULL,
     )
     try:
-        # Wait for readiness through an allowed origin, then close without an
-        # attach message. No kernel is created by this probe.
+        # Wait for readiness through each allowed origin, then close without
+        # an attach message. No kernel is created by these probes.
         deadline = time.monotonic() + 10
         while True:
             try:
@@ -289,7 +310,15 @@ async def check_origin_and_protocol_rejection():
                     raise
                 await asyncio.sleep(0.1)
 
-        for origin in ("https://attacker.example", None):
+        production_probe = await websockets.connect(url, origin=PRODUCTION_ORIGIN)
+        await production_probe.close()
+
+        for origin in (
+            "https://attacker.example",
+            "https://knuth.tayweid.io.attacker.example",
+            "https://tayweid.github.io",
+            None,
+        ):
             with pytest.raises(InvalidHandshake):
                 if origin is None:
                     await websockets.connect(url)
@@ -297,10 +326,49 @@ async def check_origin_and_protocol_rejection():
                     await websockets.connect(url, origin=origin)
 
         sid = "security-boundary-test"
+        for supplied in (
+            None,
+            "wrong-capability-that-cannot-authorize",
+            "not-ascii-\N{LOCK}",
+        ):
+            async with websockets.connect(url, origin=TEST_ORIGIN) as ws:
+                attach = {
+                    "type": "attach",
+                    "protocol": PROTOCOL_VERSION,
+                    "session": sid,
+                }
+                if supplied is not None:
+                    attach["capability"] = supplied
+                await ws.send(json.dumps(attach))
+                unauthorized = json.loads(await ws.recv())
+                assert unauthorized["type"] == "unauthorized", unauthorized
+
+        # The explicit frame limit applies before JSON parsing or process creation.
+        async with websockets.connect(url, origin=TEST_ORIGIN) as ws:
+            await ws.send("x" * (MAX_INBOUND_MESSAGE_BYTES + 1))
+            with pytest.raises(ConnectionClosed):
+                await ws.recv()
+            await ws.wait_closed()
+            assert ws.close_code == 1009, ws.close_code
+
+        # Even an authorized handshake can't smuggle an unbounded/non-string id.
+        async with websockets.connect(url, origin=TEST_ORIGIN) as ws:
+            await ws.send(json.dumps({
+                "type": "attach",
+                "protocol": PROTOCOL_VERSION,
+                "capability": TEST_CAPABILITY,
+                "session": {"not": "a routing id"},
+            }))
+            with pytest.raises(ConnectionClosed):
+                await ws.recv()
+            await ws.wait_closed()
+            assert ws.close_code == 1002, ws.close_code
+
         async with websockets.connect(url, origin=TEST_ORIGIN) as ws:
             await ws.send(json.dumps({
                 "type": "attach",
                 "protocol": PROTOCOL_VERSION + 1,
+                "capability": TEST_CAPABILITY,
                 "session": sid,
             }))
             incompatible = json.loads(await ws.recv())
@@ -313,6 +381,27 @@ async def check_origin_and_protocol_rejection():
             attached = await client.attach(sid)
             assert attached["resumed"] is False, attached
             await client.wait_ready()
+
+            # Invalid post-attach requests return bounded errors and don't kill
+            # either the WebSocket or its kernel process.
+            await ws.send("{")
+            error = json.loads(await ws.recv())
+            assert error == {"type": "protocol_error", "error": "invalid JSON request"}
+
+            await ws.send(json.dumps([]))
+            error = json.loads(await ws.recv())
+            assert error["type"] == "protocol_error", error
+
+            await client.send(type="table", name="x", offset="zero", limit=100)
+            error = await client.recv()
+            assert error["type"] == "protocol_error" and error["request"] == "table", error
+
+            await client.send(type="not-a-command")
+            error = await client.recv()
+            assert error["type"] == "protocol_error", error
+
+            _, final = await client.run(1, "40 + 2")
+            assert final["type"] == "done" and final["result"] == "42", final
     finally:
         server.terminate()
         server.wait(timeout=5)
@@ -320,3 +409,122 @@ async def check_origin_and_protocol_rejection():
 
 def test_origin_and_protocol_rejection():
     asyncio.run(check_origin_and_protocol_rejection())
+
+
+async def check_live_session_limit():
+    """New sessions stop at the cap; an existing session remains usable."""
+    port = free_port()
+    url = f"ws://127.0.0.1:{port}"
+    server_task = asyncio.create_task(
+        serve(
+            port,
+            grace=1,
+            origins=(TEST_ORIGIN,),
+            capability=TEST_CAPABILITY,
+            max_sessions=1,
+            max_concurrent_starts=1,
+        )
+    )
+    first = None
+    try:
+        deadline = time.monotonic() + 10
+        while first is None:
+            try:
+                first = await websockets.connect(url, origin=TEST_ORIGIN)
+            except OSError:
+                if time.monotonic() > deadline:
+                    raise
+                await asyncio.sleep(0.05)
+
+        client = Client(first)
+        await client.attach("only-session")
+        await client.wait_ready()
+
+        async with websockets.connect(url, origin=TEST_ORIGIN) as second:
+            other = Client(second)
+            await other.send(
+                type="attach",
+                protocol=PROTOCOL_VERSION,
+                capability=TEST_CAPABILITY,
+                session="one-too-many",
+            )
+            busy = await other.recv()
+            assert busy["type"] == "server_busy", busy
+            await second.wait_closed()
+            assert second.close_code == 1013, second.close_code
+
+        _, final = await client.run(1, "6 * 7")
+        assert final["type"] == "done" and final["result"] == "42", final
+    finally:
+        if first is not None:
+            await first.close()
+        server_task.cancel()
+        with suppress(asyncio.CancelledError):
+            await server_task
+
+
+def test_live_session_limit():
+    asyncio.run(check_live_session_limit())
+
+
+async def check_simultaneous_duplicate_attach(monkeypatch):
+    """Concurrent first attaches with one id fork instead of racing/leaking."""
+    original_start = KernelProcess.start
+    both_starting = asyncio.Event()
+    starts = 0
+
+    async def delayed_start(kernel):
+        nonlocal starts
+        starts += 1
+        if starts == 2:
+            both_starting.set()
+        await asyncio.wait_for(both_starting.wait(), timeout=5)
+        await original_start(kernel)
+
+    monkeypatch.setattr(KernelProcess, "start", delayed_start)
+    port = free_port()
+    url = f"ws://127.0.0.1:{port}"
+    server_task = asyncio.create_task(
+        serve(
+            port,
+            grace=1,
+            origins=(TEST_ORIGIN,),
+            capability=TEST_CAPABILITY,
+            max_sessions=2,
+            max_concurrent_starts=2,
+        )
+    )
+    sockets = []
+    try:
+        deadline = time.monotonic() + 10
+        while not sockets:
+            try:
+                sockets.append(await websockets.connect(url, origin=TEST_ORIGIN))
+            except OSError:
+                if time.monotonic() > deadline:
+                    raise
+                await asyncio.sleep(0.05)
+        sockets.append(await websockets.connect(url, origin=TEST_ORIGIN))
+        clients = [Client(ws) for ws in sockets]
+        await asyncio.gather(*(
+            client.send(
+                type="attach",
+                protocol=PROTOCOL_VERSION,
+                capability=TEST_CAPABILITY,
+                session="simultaneous-id",
+            )
+            for client in clients
+        ))
+        attached = await asyncio.gather(*(client.recv() for client in clients))
+        assert {message["type"] for message in attached} == {"attached"}
+        assert len({message["session"] for message in attached}) == 2, attached
+        await asyncio.gather(*(client.wait_ready() for client in clients))
+    finally:
+        await asyncio.gather(*(ws.close() for ws in sockets), return_exceptions=True)
+        server_task.cancel()
+        with suppress(asyncio.CancelledError):
+            await server_task
+
+
+def test_simultaneous_duplicate_attach(monkeypatch):
+    asyncio.run(check_simultaneous_duplicate_attach(monkeypatch))

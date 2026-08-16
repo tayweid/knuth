@@ -78,16 +78,18 @@ def _assigned_names(tree):
     return names
 
 
-def capture_open_figures():
-    """Display support (Jupyter-inline semantics): render every open
-    pyplot figure to SVG and close them. Unnamed figures display once and
-    are gone; named Figure objects survive closing and still persist to
-    figs/ via artifacts()."""
+def capture_open_figures(max_figures=None):
+    """Display support (Jupyter-inline semantics): render open pyplot
+    figures to SVG and close all of them. A caller may cap the rendered count;
+    named Figure objects survive closing and still persist via artifacts()."""
     plt = sys.modules.get("matplotlib.pyplot")
     if plt is None:
         return []
     svgs = []
-    for num in plt.get_fignums():
+    numbers = plt.get_fignums()
+    if max_figures is not None:
+        numbers = numbers[:max_figures]
+    for num in numbers:
         try:
             svgs.append(_figure_svg(plt.figure(num)))
         except Exception:

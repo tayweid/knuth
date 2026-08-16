@@ -553,7 +553,7 @@ body:has(#panel:not([hidden])) #toolbar {
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.4);
 }
 
-.cell .cell-figures .figure svg {
+.cell .cell-figures .figure img {
   display: block;
   max-width: 100%;
   height: auto;
@@ -725,7 +725,7 @@ body:has(#panel:not([hidden])) #toolbar {
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.4);
 }
 
-#panel .viewer-scroll .figure svg {
+#panel .viewer-scroll .figure img {
   display: block;
   max-width: 100%;
   height: auto;

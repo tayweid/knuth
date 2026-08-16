@@ -28,7 +28,7 @@ jobs:
       - run: npm test
       - run: npx playwright install --with-deps chromium
       - run: npm run test:browser
-      - run: npm run build -- --base=/knuth/
+      - run: npm run build
 
   python:
     runs-on: ubuntu-latest
@@ -58,7 +58,7 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm test
-      - run: npm run build -- --base=/knuth/
+      - run: npm run build
       - uses: actions/configure-pages@v5
         with:
           # Create/enable the Pages site from the workflow itself — the

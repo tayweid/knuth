@@ -12,6 +12,8 @@ import subprocess
 import sys
 from pathlib import Path
 
+from .config import capability_path, load_or_create_capability, rotate_capability
+
 LABEL = "com.claerbout.knuth"
 PLIST = Path.home() / "Library" / "LaunchAgents" / f"{LABEL}.plist"
 LOG = Path.home() / "Library" / "Logs" / "knuth.log"
@@ -29,6 +31,7 @@ def install(port):
     if sys.platform != "darwin":
         print("knuth agent currently supports macOS (launchd) only")
         return 1
+    load_or_create_capability()
     uninstall(quiet=True)
     PLIST.parent.mkdir(parents=True, exist_ok=True)
     plist = {
@@ -49,6 +52,7 @@ def install(port):
     _launchctl("kickstart", f"{_domain()}/{LABEL}")
     print(f"Installed {LABEL}: kernel server on ws://127.0.0.1:{port}")
     print(f"Runs at login, restarts on exit. Log: {LOG}")
+    print("Pair the browser once with: knuth agent pair")
     return 0
 
 
@@ -70,5 +74,41 @@ def status():
         (line.strip() for line in result.stdout.splitlines() if "state =" in line),
         "state unknown",
     )
-    print(f"{LABEL}: installed, {state}. Log: {LOG}")
+    pairing = "pairing capability configured" if capability_path().exists() else "not paired"
+    print(f"{LABEL}: installed, {state}, {pairing}. Log: {LOG}")
+    return 0
+
+
+def restart():
+    if sys.platform != "darwin":
+        print("knuth agent currently supports macOS (launchd) only")
+        return 1
+    result = _launchctl("kickstart", "-k", f"{_domain()}/{LABEL}")
+    if result.returncode != 0:
+        print(f"Could not restart {LABEL}: {result.stderr.strip()}")
+        return 1
+    print(f"Restarted {LABEL}; the previous live session was cleared.")
+    return 0
+
+
+def pair():
+    capability = load_or_create_capability()
+    print("Paste this capability into Knuth's Pair action:")
+    print(capability)
+    print("Treat it like a local password. Rotate it with: knuth agent rotate-token")
+    return 0
+
+
+def rotate_token():
+    rotate_capability()
+    print("Knuth pairing capability rotated.")
+    restarted = False
+    if sys.platform == "darwin":
+        result = _launchctl("kickstart", "-k", f"{_domain()}/{LABEL}")
+        restarted = result.returncode == 0
+    if restarted:
+        print("The agent restarted; existing browser capabilities are revoked.")
+    else:
+        print("Restart any foreground agent to apply the rotation.")
+    print("Run `knuth agent pair` to pair browsers again.")
     return 0

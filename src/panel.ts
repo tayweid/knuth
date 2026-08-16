@@ -5,6 +5,7 @@
 // and the full object never leaves the kernel.
 
 import type { Kernel, NamespaceVar, TableWindow } from './kernel/kernel.ts';
+import { clearSafeSvgImages, createSafeSvgImage } from './safe-svg.ts';
 
 const PAGE = 100;
 
@@ -94,10 +95,15 @@ export class SessionPanel {
       this.closeViewer();
       return;
     }
+    const image = createSafeSvgImage(result.svg, name);
+    if (!image) {
+      this.closeViewer();
+      return;
+    }
     this.current = null;
     this.currentFigure = name;
     this.viewer.hidden = false;
-    this.viewer.textContent = '';
+    clearSafeSvgImages(this.viewer);
 
     const head = document.createElement('div');
     head.className = 'pane-title viewer-head';
@@ -113,7 +119,7 @@ export class SessionPanel {
     scroller.className = 'viewer-scroll';
     const card = document.createElement('div');
     card.className = 'figure';
-    card.innerHTML = result.svg;
+    card.append(image);
     scroller.append(card);
 
     this.viewer.append(head, scroller);
@@ -142,7 +148,7 @@ export class SessionPanel {
     this.viewer.hidden = false;
     let scroller: HTMLElement;
     if (!append) {
-      this.viewer.textContent = '';
+      clearSafeSvgImages(this.viewer);
 
       const head = document.createElement('div');
       head.className = 'pane-title viewer-head';
@@ -212,6 +218,6 @@ export class SessionPanel {
     this.current = null;
     this.currentFigure = null;
     this.viewer.hidden = true;
-    this.viewer.textContent = '';
+    clearSafeSvgImages(this.viewer);
   }
 }

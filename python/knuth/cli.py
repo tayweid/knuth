@@ -31,7 +31,10 @@ def main():
     )
 
     agent_cmd = sub.add_parser("agent", help="manage the background kernel service (launchd)")
-    agent_cmd.add_argument("action", choices=["install", "uninstall", "status"])
+    agent_cmd.add_argument(
+        "action",
+        choices=["install", "uninstall", "status", "restart", "pair", "rotate-token"],
+    )
     agent_cmd.add_argument("--port", type=int, default=DEFAULT_PORT)
 
     run_cmd = sub.add_parser(
@@ -52,8 +55,14 @@ def main():
             sys.exit(agent.install(args.port))
         elif args.action == "uninstall":
             sys.exit(agent.uninstall())
-        else:
+        elif args.action == "status":
             sys.exit(agent.status())
+        elif args.action == "restart":
+            sys.exit(agent.restart())
+        elif args.action == "pair":
+            sys.exit(agent.pair())
+        else:
+            sys.exit(agent.rotate_token())
     else:
         serve_main(
             getattr(args, "port", DEFAULT_PORT),
