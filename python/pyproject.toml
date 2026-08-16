@@ -11,9 +11,20 @@ dependencies = [
     "websockets>=13.0",
 ]
 
+[project.optional-dependencies]
+test = [
+    "matplotlib>=3.8",
+    "numpy>=1.26",
+    "pandas>=2.1",
+    "pytest>=8.0",
+]
+
 [project.scripts]
 knuth = "knuth.cli:main"
 
 [tool.setuptools.packages.find]
 where = ["."]
 include = ["knuth*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

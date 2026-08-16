@@ -56,11 +56,17 @@ One-time kernel setup, so the server is simply always there:
 npm install
 npm run dev    # Vite dev server on port 5198
 npm test       # format round-trip tests
+npx playwright install chromium # one-time browser test setup
+npm run test:browser             # real-browser regression tests
 
-python3 -m venv .venv && .venv/bin/pip install -e python/
+python3 -m venv .venv && .venv/bin/pip install -e 'python[test]'
 .venv/bin/knuth serve                        # kernel server on ws://127.0.0.1:5197
-.venv/bin/python python/tests/test_kernel.py # kernel end-to-end tests
+.venv/bin/python -m pytest python/tests      # Python unit + end-to-end tests
 ```
+
+The sidecar accepts WebSocket upgrades only from Knuth's exact release and
+local-development origins. A custom deployment can override the defaults with
+one or more `knuth serve --origin https://exact.example` arguments.
 
 `python/` is the `knuth` package: the live session, the kernel
 subprocess and WebSocket server behind `knuth serve`, and the future

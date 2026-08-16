@@ -9,7 +9,7 @@
 // converges to 'ready'.
 
 export type StreamWhich = 'stdout' | 'stderr';
-export type KernelStatus = 'connecting' | 'ready' | 'down';
+export type KernelStatus = 'connecting' | 'ready' | 'down' | 'incompatible';
 
 export interface RunHandlers {
   onStream?(which: StreamWhich, text: string): void;
@@ -74,6 +74,7 @@ export interface Kernel {
 }
 
 export const DEFAULT_KERNEL_URL = 'ws://127.0.0.1:5197';
+export const PROTOCOL_VERSION = 1;
 const RECONNECT_MS = 2000;
 
 interface PendingRun {
@@ -122,7 +123,15 @@ export class SidecarKernel implements Kernel {
     this.onStatus?.('connecting');
     const ws = new WebSocket(this.url);
     this.ws = ws;
-    ws.addEventListener('open', () => ws.send(JSON.stringify({ type: 'attach', session: sessionId() })));
+    ws.addEventListener('open', () =>
+      ws.send(
+        JSON.stringify({
+          type: 'attach',
+          protocol: PROTOCOL_VERSION,
+          session: sessionId(),
+        }),
+      ),
+    );
     ws.addEventListener('message', (ev) => this.dispatch(JSON.parse(ev.data)));
     // 'error' is always followed by 'close'; one path handles both.
     ws.addEventListener('close', () => this.dropped());
@@ -151,8 +160,18 @@ export class SidecarKernel implements Kernel {
   private dispatch(msg: any): void {
     switch (msg.type) {
       case 'attached': {
+        // A missing field is the one-release legacy-v1 compatibility path.
+        const serverProtocol = msg.protocol ?? PROTOCOL_VERSION;
+        if (serverProtocol !== PROTOCOL_VERSION) {
+          this.rejectIncompatible(serverProtocol);
+          break;
+        }
         // A duplicated tab forks: the server hands us a fresh identity.
         if (msg.session) sessionStorage.setItem('knuth-session', msg.session);
+        break;
+      }
+      case 'incompatible': {
+        this.rejectIncompatible(msg.protocol);
         break;
       }
       case 'ready': {
@@ -201,6 +220,16 @@ export class SidecarKernel implements Kernel {
         break;
       }
     }
+  }
+
+  private rejectIncompatible(serverProtocol: unknown): void {
+    this.closed = true;
+    this.connectedReady = false;
+    this.failPending(
+      `incompatible kernel protocol (app ${PROTOCOL_VERSION}, server ${String(serverProtocol)})`,
+    );
+    this.onStatus?.('incompatible');
+    this.ws?.close(1002, 'unsupported protocol version');
   }
 
   private send(msg: object): void {

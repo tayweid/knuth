@@ -1,11 +1,9 @@
-"""Artifacts (the folder contract): what persists, what stays behind.
-Run with the project venv: .venv/bin/python python/tests/test_artifacts.py
-"""
+"""Artifacts (the folder contract): what persists and what stays behind."""
 
 from knuth.session import Session, capture_open_figures
 
 
-def main():
+def test_artifacts():
     s = Session()
     ok, _ = s.run(
         "import numpy as np\n"
@@ -110,9 +108,3 @@ def main():
     assert values["probe"] == 100
     snap = {v["name"]: v for v in s.snapshot()}
     assert "scratch" not in snap["probe"]
-
-    print("test_artifacts: all assertions passed")
-
-
-if __name__ == "__main__":
-    main()

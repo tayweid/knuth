@@ -8,14 +8,16 @@
     "dev": "vite",
     "build": "tsc --noEmit && vite build",
     "preview": "vite preview",
-    "test": "tsx src/format/round-trip.test.ts"
+    "test": "node --import tsx src/format/round-trip.test.ts",
+    "test:browser": "playwright test"
   },
   "devDependencies": {
+    "@playwright/test": "^1.62.1",
     "@types/markdown-it": "^14.1.2",
     "@types/node": "^26.1.1",
     "tsx": "^4.23.0",
     "typescript": "^5.6.2",
-    "vite": "^5.4.8"
+    "vite": "^8.2.1"
   },
   "dependencies": {
     "@codemirror/lang-markdown": "^6.5.2",

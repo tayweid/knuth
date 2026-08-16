@@ -107,6 +107,10 @@ const kernel = new SidecarKernel(undefined, (state, resumed) => {
     status.textContent = 'no kernel — install: knuth agent install';
     status.title = 'Retrying every 2s. One-time setup: knuth agent install';
     status.className = 'bad';
+  } else if (state === 'incompatible') {
+    status.textContent = 'kernel/app versions do not match';
+    status.title = 'Update and restart the Knuth agent, then reload the app';
+    status.className = 'bad';
   } else {
     status.textContent = 'connecting…';
     status.className = '';

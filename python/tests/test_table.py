@@ -1,11 +1,9 @@
-"""Data viewer windows (Session.table). Run with the project venv:
-.venv/bin/python python/tests/test_table.py
-"""
+"""Data viewer windowing through Session.table."""
 
 from knuth.session import Session
 
 
-def main():
+def test_table_windows():
     s = Session()
     ok, tb = s.run(
         "import numpy as np\n"
@@ -40,9 +38,3 @@ def main():
 
     assert "error" in s.table("x"), "scalars are not tabular"
     assert "error" in s.table("missing")
-
-    print("test_table: all assertions passed")
-
-
-if __name__ == "__main__":
-    main()

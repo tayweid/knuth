@@ -1,21 +1,21 @@
-"""End-to-end kernel tests: Session unit checks, then the full stack over a
-real WebSocket (server + kernel subprocess): streaming, persistence,
-tracebacks, namespace snapshots, interrupt, restart.
-
-Run with the project venv: .venv/bin/python python/tests/test_kernel.py
-"""
+"""Session checks and the full server/kernel stack over a real WebSocket."""
 
 import asyncio
 import json
+import socket
 import subprocess
 import sys
 import time
 
+import pytest
 import websockets
+from websockets.exceptions import InvalidHandshake
 
 from knuth.session import Session
+from knuth.server import PROTOCOL_VERSION
 
-PORT = 5123
+
+TEST_ORIGIN = "http://127.0.0.1:5198"
 
 
 def test_session():
@@ -40,7 +40,12 @@ def test_session():
     s.reset()
     ok, tb = s.run("x")
     assert not ok and "NameError" in tb, tb
-    print("session: ok")
+
+
+def free_port():
+    with socket.socket() as sock:
+        sock.bind(("127.0.0.1", 0))
+        return sock.getsockname()[1]
 
 
 class Client:
@@ -55,7 +60,7 @@ class Client:
 
     async def attach(self, session):
         """Handshake; returns the `attached` message (session, resumed)."""
-        await self.send(type="attach", session=session)
+        await self.send(type="attach", protocol=PROTOCOL_VERSION, session=session)
         while True:
             msg = await self.recv()
             if msg["type"] == "attached":
@@ -79,9 +84,10 @@ class Client:
                 return streams, msg
 
 
-async def test_over_websocket():
+async def check_over_websocket():
+    port = free_port()
     server = subprocess.Popen(
-        [sys.executable, "-m", "knuth", "serve", "--port", str(PORT)],
+        [sys.executable, "-m", "knuth", "serve", "--port", str(port)],
         stdout=subprocess.DEVNULL,
         stderr=subprocess.DEVNULL,
     )
@@ -90,7 +96,9 @@ async def test_over_websocket():
         deadline = time.monotonic() + 10
         while ws is None:
             try:
-                ws = await websockets.connect(f"ws://127.0.0.1:{PORT}")
+                ws = await websockets.connect(
+                    f"ws://127.0.0.1:{port}", origin=TEST_ORIGIN
+                )
             except OSError:
                 if time.monotonic() > deadline:
                     raise
@@ -99,6 +107,7 @@ async def test_over_websocket():
         async with ws:
             c = Client(ws)
             attached = await c.attach(SID)
+            assert attached["protocol"] == PROTOCOL_VERSION, attached
             assert attached["session"] == SID and attached["resumed"] is False, attached
             await c.wait_ready()
 
@@ -156,7 +165,9 @@ async def test_over_websocket():
             assert saw_figures, "figures event should precede done"
 
             # Session isolation: a different session id gets its OWN kernel.
-            async with websockets.connect(f"ws://127.0.0.1:{PORT}") as ws2:
+            async with websockets.connect(
+                f"ws://127.0.0.1:{port}", origin=TEST_ORIGIN
+            ) as ws2:
                 c2 = Client(ws2)
                 await c2.attach("test-session-2")
                 await c2.wait_ready()
@@ -164,7 +175,9 @@ async def test_over_websocket():
                 assert final["type"] == "error" and "NameError" in final["traceback"], final
 
             # A duplicated tab (same id, actively held) forks, never steals.
-            async with websockets.connect(f"ws://127.0.0.1:{PORT}") as ws3:
+            async with websockets.connect(
+                f"ws://127.0.0.1:{port}", origin=TEST_ORIGIN
+            ) as ws3:
                 c3 = Client(ws3)
                 attached = await c3.attach(SID)
                 assert attached["session"] != SID and attached["resumed"] is False, attached
@@ -188,7 +201,9 @@ async def test_over_websocket():
 
         # Reload survival: the tab is gone but the session id reclaims the
         # still-warm kernel within the grace period.
-        async with websockets.connect(f"ws://127.0.0.1:{PORT}") as ws4:
+        async with websockets.connect(
+            f"ws://127.0.0.1:{port}", origin=TEST_ORIGIN
+        ) as ws4:
             c4 = Client(ws4)
             attached = await c4.attach(SID)
             assert attached["resumed"] is True, attached
@@ -197,15 +212,14 @@ async def test_over_websocket():
             _, final = await c4.run(1, "marker")
             assert final["result"] == "7", final
 
-        print("websocket end-to-end: ok")
     finally:
         server.terminate()
-        server.wait()
+        server.wait(timeout=5)
 
 
-async def test_grace_reap():
+async def check_grace_reap():
     """Past the grace period the session is truly gone: fresh kernel."""
-    port = PORT + 1
+    port = free_port()
     server = subprocess.Popen(
         [sys.executable, "-m", "knuth", "serve", "--port", str(port), "--grace", "1"],
         stdout=subprocess.DEVNULL,
@@ -216,7 +230,9 @@ async def test_grace_reap():
         deadline = time.monotonic() + 10
         while ws is None:
             try:
-                ws = await websockets.connect(f"ws://127.0.0.1:{port}")
+                ws = await websockets.connect(
+                    f"ws://127.0.0.1:{port}", origin=TEST_ORIGIN
+                )
             except OSError:
                 if time.monotonic() > deadline:
                     raise
@@ -228,21 +244,79 @@ async def test_grace_reap():
             _, final = await c.run(1, "z = 5")
             assert final["type"] == "done", final
         await asyncio.sleep(2.5)
-        async with websockets.connect(f"ws://127.0.0.1:{port}") as ws2:
+        async with websockets.connect(
+            f"ws://127.0.0.1:{port}", origin=TEST_ORIGIN
+        ) as ws2:
             c2 = Client(ws2)
             attached = await c2.attach("reap-me")
             assert attached["resumed"] is False, attached
             await c2.wait_ready()
             _, final = await c2.run(1, "z")
             assert final["type"] == "error" and "NameError" in final["traceback"], final
-        print("grace reap: ok")
     finally:
         server.terminate()
-        server.wait()
+        server.wait(timeout=5)
 
 
-if __name__ == "__main__":
-    test_session()
-    asyncio.run(test_over_websocket())
-    asyncio.run(test_grace_reap())
-    print("test_kernel: all assertions passed")
+def test_over_websocket():
+    asyncio.run(check_over_websocket())
+
+
+def test_grace_reap():
+    asyncio.run(check_grace_reap())
+
+
+async def check_origin_and_protocol_rejection():
+    """Hostile origins and unknown versions fail before session creation."""
+    port = free_port()
+    url = f"ws://127.0.0.1:{port}"
+    server = subprocess.Popen(
+        [sys.executable, "-m", "knuth", "serve", "--port", str(port)],
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+    )
+    try:
+        # Wait for readiness through an allowed origin, then close without an
+        # attach message. No kernel is created by this probe.
+        deadline = time.monotonic() + 10
+        while True:
+            try:
+                probe = await websockets.connect(url, origin=TEST_ORIGIN)
+                await probe.close()
+                break
+            except OSError:
+                if time.monotonic() > deadline:
+                    raise
+                await asyncio.sleep(0.1)
+
+        for origin in ("https://attacker.example", None):
+            with pytest.raises(InvalidHandshake):
+                if origin is None:
+                    await websockets.connect(url)
+                else:
+                    await websockets.connect(url, origin=origin)
+
+        sid = "security-boundary-test"
+        async with websockets.connect(url, origin=TEST_ORIGIN) as ws:
+            await ws.send(json.dumps({
+                "type": "attach",
+                "protocol": PROTOCOL_VERSION + 1,
+                "session": sid,
+            }))
+            incompatible = json.loads(await ws.recv())
+            assert incompatible["type"] == "incompatible", incompatible
+            assert incompatible["protocol"] == PROTOCOL_VERSION, incompatible
+
+        # The rejected attempts did not reserve or resume the claimed session.
+        async with websockets.connect(url, origin=TEST_ORIGIN) as ws:
+            client = Client(ws)
+            attached = await client.attach(sid)
+            assert attached["resumed"] is False, attached
+            await client.wait_ready()
+    finally:
+        server.terminate()
+        server.wait(timeout=5)
+
+
+def test_origin_and_protocol_rejection():
+    asyncio.run(check_origin_and_protocol_rejection())

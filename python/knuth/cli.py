@@ -23,6 +23,12 @@ def main():
         default=120,
         help="seconds a disconnected session stays alive for reattach (default 120)",
     )
+    serve.add_argument(
+        "--origin",
+        action="append",
+        dest="origins",
+        help="exact allowed browser origin (repeatable; overrides release defaults)",
+    )
 
     agent_cmd = sub.add_parser("agent", help="manage the background kernel service (launchd)")
     agent_cmd.add_argument("action", choices=["install", "uninstall", "status"])
@@ -49,7 +55,11 @@ def main():
         else:
             sys.exit(agent.status())
     else:
-        serve_main(getattr(args, "port", DEFAULT_PORT), getattr(args, "grace", 120))
+        serve_main(
+            getattr(args, "port", DEFAULT_PORT),
+            getattr(args, "grace", 120),
+            getattr(args, "origins", None),
+        )
 
 
 if __name__ == "__main__":
