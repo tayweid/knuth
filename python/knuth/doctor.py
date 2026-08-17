@@ -8,25 +8,27 @@ import sys
 
 import websockets
 
-from .config import capability_path, load_or_create_capability
-from .hosted import HOSTED_APP_ORIGIN, PAIRING_REQUEST_TIMEOUT
-from .server import PROTOCOL_VERSION
+from .hosted import app_url
+from .server import PROTOCOL_VERSION, local_origins
+
+STATUS_TIMEOUT = 2
 
 
-async def _engine_status(port, capability):
+async def _engine_status(port):
     try:
         async with websockets.connect(
             f"ws://127.0.0.1:{port}",
-            origin=HOSTED_APP_ORIGIN,
-            open_timeout=PAIRING_REQUEST_TIMEOUT,
-            close_timeout=PAIRING_REQUEST_TIMEOUT,
+            # The engine trusts the origin it serves the app on; this asks
+            # as that page would.
+            origin=local_origins(port)[0],
+            open_timeout=STATUS_TIMEOUT,
+            close_timeout=STATUS_TIMEOUT,
         ) as ws:
             await ws.send(json.dumps({
                 "type": "status",
                 "protocol": PROTOCOL_VERSION,
-                "capability": capability,
             }))
-            raw = await asyncio.wait_for(ws.recv(), timeout=PAIRING_REQUEST_TIMEOUT)
+            raw = await asyncio.wait_for(ws.recv(), timeout=STATUS_TIMEOUT)
     except (ConnectionRefusedError, OSError):
         return None
     except (asyncio.TimeoutError, websockets.exceptions.WebSocketException) as exc:
@@ -41,8 +43,6 @@ async def _engine_status(port, capability):
         response_type = result.get("type") if isinstance(result, dict) else None
         if response_type == "incompatible":
             raise RuntimeError("the running engine uses an incompatible protocol")
-        if response_type == "unauthorized":
-            raise RuntimeError("the running engine uses a different pairing capability")
         raise RuntimeError("the engine returned an invalid status response")
     return result
 
@@ -60,20 +60,13 @@ def run_doctor(port=5197):
     print(f"Python: {platform.python_version()} ({sys.executable})")
     print(f"Platform: {platform.platform()}")
     try:
-        capability = load_or_create_capability()
-    except (OSError, RuntimeError) as exc:
-        print(f"Capability: INVALID ({exc})")
-        return 1
-    print(f"Capability: valid owner configuration at {capability_path()}")
-
-    try:
-        status = asyncio.run(_engine_status(port, capability))
+        status = asyncio.run(_engine_status(port))
     except RuntimeError as exc:
         print(f"Engine: ERROR ({exc})")
         return 1
     if status is None:
         print(f"Engine: not running on 127.0.0.1:{port}")
-        print("Start it with: knuth app --hosted")
+        print("Start it with: knuth app")
         return 1
     print(
         f"Engine: Knuth {status.get('version', 'unknown')}, "
@@ -90,6 +83,6 @@ def run_doctor(port=5197):
             f"running engine is {engine_version}. Update/restart the engine."
         )
         return 1
-    print(f"Hosted origin: {HOSTED_APP_ORIGIN}")
-    print("Diagnostics complete; no capability or document content was printed.")
+    print(f"App: {app_url(port)}")
+    print("Diagnostics complete; no document content was printed.")
     return 0

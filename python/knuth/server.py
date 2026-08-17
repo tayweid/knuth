@@ -8,18 +8,13 @@ reattaching with the same id resumes it, variables intact. A window
 closed for good is never reclaimed and gets reaped.
 
 This server also serves the app itself, on the same port, through the
-handshake's `process_request` hook (see web.py and SAME_ORIGIN.md). A page
-it served shares its origin, and the Origin check on the upgrade already
-proves the browser loaded that page from this process — so such a client
-needs no credential at all. Cross-origin clients (the hosted build) still
-present the durable capability or a short-lived pairing token.
+handshake's `process_request` hook (see web.py and SAME_ORIGIN.md). That is
+the whole authentication story: the exact Origin check on the upgrade proves
+the browser loaded the page from this process, so there is no secret to
+deliver, store, diverge, or lose. Nothing else may open the socket.
 
-The HTTP upgrade is accepted only from exact Knuth app origins. Handshake:
-the client's first message is `attach{protocol, capability, pairing, session}`.
-The optional short-lived pairing token can bootstrap the durable browser
-capability without ever placing that durable secret in a URL. The server
-authenticates either credential before process creation and replies
-`attached{protocol, session, resumed}` (echoing a fresh id if the claimed one
+Handshake: the client's first message is `attach{protocol, session}`. The
+server replies `attached{protocol, session, resumed}` (echoing a fresh id if the claimed one
 is actively held — a duplicated tab forks, it doesn't steal), then either
 synthesizes `ready{resumed:true}` for a resumed kernel or lets the fresh
 kernel's own `ready` flow through. Every later request is shape- and
@@ -30,17 +25,14 @@ import asyncio
 import importlib.metadata
 import json
 import os
-import secrets
 import signal
 import subprocess
 import sys
-import time
 import uuid
 
 import websockets
 
 from . import web
-from .config import load_or_create_capability
 from .limits import (
     HANDSHAKE_TIMEOUT_SECONDS,
     MAX_CODE_BYTES,
@@ -57,28 +49,21 @@ from .session import MAX_TABLE_LIMIT
 
 GRACE_SECONDS = 120
 PROTOCOL_VERSION = 2
-PAIRING_TOKEN_BYTES = 32
-PAIRING_TOKEN_CHARS = 43
-PAIRING_TTL_SECONDS = 300
 
 # Origin matching is exact and happens during the WebSocket HTTP upgrade,
-# before handler() can create a kernel. Release defaults are production-only;
-# loopback development origins require an explicit CLI opt-in.
-DEFAULT_ALLOWED_ORIGINS = (
-    "https://knuth.tayweid.io",
-)
-DEVELOPMENT_ORIGINS = (
-    "http://127.0.0.1:5198",
-    "http://localhost:5198",
-)
+# before handler() can create a kernel. The engine serves its own app, so the
+# only origin it trusts by default is its own address; anything else has to
+# be named explicitly with --origin (the vite dev server, mainly).
+DEFAULT_ALLOWED_ORIGINS = ()
 
 
 def local_origins(port):
     """The origins this engine serves the app on — its own address.
 
-    A page fetched from here shares the engine's origin, so it needs no
-    capability: the Origin check already proves the browser loaded it from
-    this process. See SAME_ORIGIN.md.
+    Because the page comes from here, the Origin check on the upgrade is the
+    whole authentication story: it proves the browser loaded the page from
+    this process. There is no secret to deliver, store, or lose, which is
+    the entire point of SAME_ORIGIN.md.
     """
     return (f"http://127.0.0.1:{port}", f"http://localhost:{port}")
 
@@ -88,65 +73,6 @@ def _package_version():
         return importlib.metadata.version("knuth")
     except importlib.metadata.PackageNotFoundError:
         return "source checkout"
-
-
-class PairingBroker:
-    """Issue and consume one active, short-lived browser bootstrap token.
-
-    Issuing a token revokes the previous unconsumed token. Consumption is
-    constant-time and single-use. The broker lives only in the server process;
-    the durable per-install capability remains in the owner-only config file.
-    """
-
-    def __init__(self, ttl_seconds=PAIRING_TTL_SECONDS):
-        if ttl_seconds <= 0:
-            raise ValueError("pairing token lifetime must be positive")
-        self.ttl_seconds = ttl_seconds
-        self._token = None
-        self._expires_at = 0.0
-
-    def issue(self):
-        self._token = secrets.token_urlsafe(PAIRING_TOKEN_BYTES)
-        self._expires_at = time.monotonic() + self.ttl_seconds
-        return self._token
-
-    @property
-    def pending(self):
-        """Whether an issued token is still unspent and unexpired.
-
-        The launcher polls this to learn whether the browser it opened
-        actually received the pairing URL, rather than trusting that a
-        window appeared. Reading it reveals no secret.
-        """
-        return self._token is not None and time.monotonic() <= self._expires_at
-
-    def consume(self, candidate):
-        expected = self._token
-        well_formed = (
-            isinstance(candidate, str)
-            and candidate.isascii()
-            and len(candidate) == PAIRING_TOKEN_CHARS
-        )
-        matches = bool(
-            expected is not None
-            and well_formed
-            and secrets.compare_digest(candidate, expected)
-        )
-        if not matches:
-            return False
-        valid = time.monotonic() <= self._expires_at
-        self._token = None
-        self._expires_at = 0.0
-        return valid
-
-
-def _capability_matches(candidate, expected):
-    return bool(
-        isinstance(candidate, str)
-        and candidate.isascii()
-        and len(candidate) == len(expected)
-        and secrets.compare_digest(candidate, expected)
-    )
 
 
 class KernelProcess:
@@ -291,9 +217,7 @@ async def serve(
     port,
     grace=GRACE_SECONDS,
     origins=None,
-    capability=None,
     *,
-    pairing_broker=None,
     on_ready=None,
     max_sessions=MAX_LIVE_SESSIONS,
     max_concurrent_starts=MAX_CONCURRENT_KERNEL_STARTS,
@@ -302,17 +226,16 @@ async def serve(
     sessions = {}
     starting_sids = set()
     start_slots = asyncio.Semaphore(max_concurrent_starts)
+    # We are bound to this port, so nothing else can be serving pages at
+    # this origin while we run — the Origin is ours by construction, whether
+    # or not this install carries a build to serve. (A page served by some
+    # other process on this port *before* we started could still be open in
+    # a browser; that is the one gap, and it is not worth a secret.)
     served_origins = local_origins(port)
-    allowed_origins = tuple(origins or DEFAULT_ALLOWED_ORIGINS)
-    if web.available(web_root):
-        # Only trust our own address when we are actually the one serving
-        # the page there; otherwise the origin proves nothing.
-        allowed_origins = tuple(dict.fromkeys(allowed_origins + served_origins))
-        trusted_origins = frozenset(served_origins)
-    else:
-        trusted_origins = frozenset()
-    agent_capability = capability or load_or_create_capability()
-    pairings = pairing_broker or PairingBroker()
+    allowed_origins = tuple(dict.fromkeys(
+        tuple(origins or DEFAULT_ALLOWED_ORIGINS) + served_origins
+    ))
+    trusted_origins = frozenset(served_origins)
 
     def same_origin(ws):
         request = getattr(ws, "request", None)
@@ -349,9 +272,8 @@ async def serve(
             return
 
         if first.get("type") == "status":
-            if not _capability_matches(first.get("capability"), agent_capability):
-                await ws.send(json.dumps({"type": "unauthorized"}))
-                await ws.close(code=4401, reason="status authorization required")
+            if not same_origin(ws):
+                await ws.close(code=4401, reason="status is local-origin only")
                 return
             await ws.send(json.dumps({
                 "type": "status",
@@ -363,60 +285,14 @@ async def serve(
             await ws.close(code=1000, reason="status reported")
             return
 
-        if first.get("type") == "create_pairing":
-            if not _capability_matches(first.get("capability"), agent_capability):
-                await ws.send(json.dumps({"type": "unauthorized"}))
-                await ws.close(code=4401, reason="pairing authorization required")
-                return
-            token = pairings.issue()
-            await ws.send(json.dumps({
-                "type": "pairing_created",
-                "protocol": PROTOCOL_VERSION,
-                "token": token,
-                "expires_in": pairings.ttl_seconds,
-            }))
-            await ws.close(code=1000, reason="pairing created")
-            return
-
-        if first.get("type") == "pairing_status":
-            if not _capability_matches(first.get("capability"), agent_capability):
-                await ws.send(json.dumps({"type": "unauthorized"}))
-                await ws.close(code=4401, reason="pairing authorization required")
-                return
-            await ws.send(json.dumps({
-                "type": "pairing_status",
-                "protocol": PROTOCOL_VERSION,
-                "pending": pairings.pending,
-            }))
-            await ws.close(code=1000, reason="pairing status reported")
-            return
-
         if first.get("type") != "attach":
             await ws.close(code=1002, reason="expected attach handshake")
             return
 
-        supplied_capability = first.get("capability")
-        # A page this engine served is already proven by its Origin. Control
-        # requests above (status, create_pairing, pairing_status) stay
-        # capability-gated — those are owner verbs, not app traffic.
-        authorized = same_origin(ws) or _capability_matches(
-            supplied_capability, agent_capability
-        )
-        supplied_pairing = first.get("pairing")
-        bootstrapped = False
-        if not authorized and supplied_pairing is not None:
-            bootstrapped = pairings.consume(supplied_pairing)
-            authorized = bootstrapped
-        elif authorized and supplied_pairing is not None:
-            # A correctly paired browser may still arrive through a fresh
-            # launch URL. Consume that URL token so it cannot be replayed.
-            pairings.consume(supplied_pairing)
-        if not authorized:
-            response_type = (
-                "pairing_expired" if supplied_pairing is not None else "unauthorized"
-            )
-            await ws.send(json.dumps({"type": response_type}))
-            await ws.close(code=4401, reason="pairing required")
+        # The Origin check already ran during the upgrade; restated here
+        # because this is where a kernel process would get created.
+        if not same_origin(ws):
+            await ws.close(code=4401, reason="attach is local-origin only")
             return
 
         supplied_sid = first.get("session")
@@ -470,12 +346,6 @@ async def serve(
 
         session.ws = ws
         try:
-            if bootstrapped:
-                await ws.send(json.dumps({
-                    "type": "paired",
-                    "protocol": PROTOCOL_VERSION,
-                    "capability": agent_capability,
-                }))
             await ws.send(json.dumps({
                 "type": "attached",
                 "protocol": PROTOCOL_VERSION,
@@ -578,9 +448,7 @@ def main(
     port=5197,
     grace=GRACE_SECONDS,
     origins=None,
-    capability=None,
     *,
-    pairing_broker=None,
     on_ready=None,
 ):
     try:
@@ -588,8 +456,6 @@ def main(
             port,
             grace,
             origins,
-            capability,
-            pairing_broker=pairing_broker,
             on_ready=on_ready,
         ))
     except KeyboardInterrupt:

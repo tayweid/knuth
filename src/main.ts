@@ -94,7 +94,6 @@ const status = $('kernel-status');
 const onboarding = new Onboarding(
   $('onboarding'),
   $('install-app') as HTMLButtonElement,
-  pairKernel,
 );
 let hadSession = false;
 let kernelState: Parameters<typeof onboarding.setState>[0] = 'connecting';
@@ -103,7 +102,7 @@ const kernel = new SidecarKernel(undefined, (state, resumed) => {
   onboarding.setState(state);
   if (state === 'ready') {
     status.textContent = 'kernel';
-    status.title = 'Click to pair or replace this browser capability';
+    status.title = 'Connected to the local Python engine';
     status.className = 'ok';
     if (resumed && !hadSession) {
       // Reloaded tab reattached to its living session.
@@ -117,23 +116,11 @@ const kernel = new SidecarKernel(undefined, (state, resumed) => {
     void panel.refresh();
   } else if (state === 'down') {
     status.textContent = 'Python engine unavailable';
-    status.title = 'Run: knuth app --hosted';
+    status.title = 'Run: knuth app';
     status.className = 'bad';
   } else if (state === 'incompatible') {
     status.textContent = 'kernel/app versions do not match';
     status.title = 'Update and restart the Knuth agent, then reload the app';
-    status.className = 'bad';
-  } else if (state === 'unauthorized') {
-    status.textContent = 'kernel pairing required';
-    status.title = 'Run: knuth agent pair';
-    status.className = 'bad';
-    toast('Pair this browser with the local Knuth agent', {
-      label: 'Pair',
-      run: pairKernel,
-    });
-  } else if (state === 'pairing_expired') {
-    status.textContent = 'kernel pairing link expired';
-    status.title = 'Run: knuth app --hosted';
     status.className = 'bad';
   } else {
     status.textContent = 'connecting…';
@@ -141,21 +128,10 @@ const kernel = new SidecarKernel(undefined, (state, resumed) => {
   }
 });
 
-function pairKernel() {
-  const capability = window.prompt(
-    'Run `knuth agent pair` in a terminal, then paste the capability here:',
-  );
-  if (capability?.trim()) {
-    kernel.pair(capability);
-    toast('Pairing with the local agent…');
-  }
-}
-
 status.tabIndex = 0;
 status.setAttribute('role', 'button');
 function activateKernelStatus() {
-  if (kernelState === 'ready' || kernelState === 'unauthorized') pairKernel();
-  else onboarding.show();
+  if (kernelState !== 'ready') onboarding.show();
 }
 status.addEventListener('click', activateKernelStatus);
 status.addEventListener('keydown', (event) => {

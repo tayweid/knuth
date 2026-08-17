@@ -1,7 +1,5 @@
 """Redacted diagnostic command behavior."""
 
-from pathlib import Path
-
 from knuth import doctor
 
 
@@ -10,10 +8,7 @@ def _finish_coroutine(coroutine, result):
     return result
 
 
-def test_doctor_reports_compatible_engine_without_printing_capability(monkeypatch, capsys):
-    capability = "s" * 43
-    monkeypatch.setattr(doctor, "load_or_create_capability", lambda: capability)
-    monkeypatch.setattr(doctor, "capability_path", lambda: Path("/safe/config/capability"))
+def test_doctor_reports_a_compatible_engine(monkeypatch, capsys):
     monkeypatch.setattr(doctor, "_installed_version", lambda: "2.0.0rc1")
     monkeypatch.setattr(
         doctor.asyncio,
@@ -30,12 +25,10 @@ def test_doctor_reports_compatible_engine_without_printing_capability(monkeypatc
     assert doctor.run_doctor() == 0
     output = capsys.readouterr().out
     assert "protocol 2" in output and "sessions 1/8" in output
-    assert capability not in output
+    assert "http://127.0.0.1:5197/" in output
 
 
 def test_doctor_explains_when_engine_is_not_running(monkeypatch, capsys):
-    monkeypatch.setattr(doctor, "load_or_create_capability", lambda: "s" * 43)
-    monkeypatch.setattr(doctor, "capability_path", lambda: Path("/safe/config/capability"))
     monkeypatch.setattr(
         doctor.asyncio,
         "run",
@@ -45,4 +38,21 @@ def test_doctor_explains_when_engine_is_not_running(monkeypatch, capsys):
     assert doctor.run_doctor(8123) == 1
     output = capsys.readouterr().out
     assert "not running on 127.0.0.1:8123" in output
-    assert "knuth app --hosted" in output
+    assert "knuth app" in output
+
+
+def test_doctor_asks_as_the_page_the_engine_serves(monkeypatch):
+    """The status verb is local-origin only, so doctor must speak as one."""
+    captured = {}
+
+    def fake_connect(url, *, origin, **options):
+        captured["url"] = url
+        captured["origin"] = origin
+        raise ConnectionRefusedError
+
+    monkeypatch.setattr(doctor.websockets, "connect", fake_connect)
+    assert doctor.asyncio.run(doctor._engine_status(8123)) is None
+    assert captured == {
+        "url": "ws://127.0.0.1:8123",
+        "origin": "http://127.0.0.1:8123",
+    }

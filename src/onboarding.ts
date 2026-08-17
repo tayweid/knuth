@@ -18,17 +18,17 @@ const COMMANDS: Record<Platform, { label: string; install: string; module: strin
   macos: {
     label: 'macOS',
     install: `python3 -m pip install --upgrade --force-reinstall "${sourceRequirement}"`,
-    module: 'python3 -m knuth app --hosted',
+    module: 'python3 -m knuth app',
   },
   windows: {
     label: 'Windows',
     install: `py -m pip install --upgrade --force-reinstall "${sourceRequirement}"`,
-    module: 'py -m knuth app --hosted',
+    module: 'py -m knuth app',
   },
   linux: {
     label: 'Linux',
     install: `python3 -m pip install --upgrade --force-reinstall "${sourceRequirement}"`,
-    module: 'python3 -m knuth app --hosted',
+    module: 'python3 -m knuth app',
   },
 };
 
@@ -65,7 +65,6 @@ export class Onboarding {
   private installPrompt: InstallPromptEvent | null = null;
   private title: HTMLElement;
   private detail: HTMLElement;
-  private setupHeading: HTMLElement;
   private installCommand: HTMLElement;
   private moduleCommand: HTMLElement;
   private installAction: HTMLButtonElement;
@@ -73,7 +72,6 @@ export class Onboarding {
   constructor(
     private root: HTMLElement,
     private toolbarInstall: HTMLButtonElement,
-    private manualPair: () => void,
   ) {
     root.innerHTML = `
       <div class="onboarding-card">
@@ -90,21 +88,10 @@ export class Onboarding {
           <section class="onboarding-step">
             <span class="step-number">1</span>
             <div>
-              <h2 id="engine-setup-heading">Install the local engine</h2>
-              <p>Requires Python 3.11 or newer. This installs the engine directly from Knuth’s matching GitHub revision.</p>
-              <div class="command-row">
-                <code id="engine-install-command"></code>
-                <button type="button" class="command-copy">Copy</button>
-              </div>
-            </div>
-          </section>
-          <section class="onboarding-step">
-            <span class="step-number">2</span>
-            <div>
               <h2>Start Knuth</h2>
-              <p>The command starts Python locally and securely pairs this browser.</p>
+              <p>The engine runs Python locally and serves this page.</p>
               <div class="command-row">
-                <code>knuth app --hosted</code>
+                <code>knuth app</code>
                 <button type="button" class="command-copy">Copy</button>
               </div>
               <details>
@@ -114,6 +101,17 @@ export class Onboarding {
                   <button type="button" class="command-copy">Copy</button>
                 </div>
               </details>
+            </div>
+          </section>
+          <section class="onboarding-step">
+            <span class="step-number">2</span>
+            <div>
+              <h2>Update the local engine</h2>
+              <p>Only needed if the engine is out of date. Installs it from Knuth’s matching GitHub revision.</p>
+              <div class="command-row">
+                <code id="engine-install-command"></code>
+                <button type="button" class="command-copy">Copy</button>
+              </div>
             </div>
           </section>
           <section class="onboarding-step onboarding-install-step">
@@ -126,15 +124,14 @@ export class Onboarding {
           </section>
         </div>
         <footer class="onboarding-foot">
-          The website cannot execute terminal commands. It only connects to the paired engine on <code>127.0.0.1</code>.
-          <button type="button" id="manual-pair">Pair manually</button>
+          This page is served by the engine on <code>127.0.0.1</code>. Your
+          documents and Python session never leave this computer.
         </footer>
       </div>
     `;
 
     this.title = root.querySelector('#onboarding-title')!;
     this.detail = root.querySelector('#onboarding-detail')!;
-    this.setupHeading = root.querySelector('#engine-setup-heading')!;
     this.installCommand = root.querySelector('#engine-install-command')!;
     this.moduleCommand = root.querySelector('#engine-module-command')!;
     this.installAction = root.querySelector('#onboarding-install')!;
@@ -156,7 +153,6 @@ export class Onboarding {
       this.dismissed = true;
       root.hidden = true;
     });
-    root.querySelector('#manual-pair')!.addEventListener('click', manualPair);
     for (const button of root.querySelectorAll<HTMLButtonElement>('.command-copy')) {
       button.addEventListener('click', () => {
         const command = button.previousElementSibling?.textContent ?? '';
@@ -193,23 +189,16 @@ export class Onboarding {
     if (state === 'connecting') return;
     if (!this.dismissed) this.root.hidden = false;
 
-    this.setupHeading.textContent = state === 'incompatible' ? 'Update the local engine' : 'Install the local engine';
-    if (state === 'down') {
-      this.title.textContent = 'Start the local Python engine';
-      this.detail.textContent =
-        'Knuth’s interface is ready. Install and start the engine to run cells with your local Python packages.';
-    } else if (state === 'incompatible') {
+    if (state === 'incompatible') {
       this.title.textContent = 'Update the local Python engine';
       this.detail.textContent =
-        'The installed engine and this web app use different protocol versions. Update it, then start Knuth again.';
-    } else if (state === 'pairing_expired') {
-      this.title.textContent = 'The secure pairing link expired';
-      this.detail.textContent =
-        'Run the start command again to create a fresh five-minute pairing link, or pair manually.';
+        'This page and the running engine use different protocol versions. ' +
+        'Update the engine, then start Knuth again.';
     } else {
-      this.title.textContent = 'Pair this browser';
+      this.title.textContent = 'Start the local Python engine';
       this.detail.textContent =
-        'A local engine answered, but this browser has not been authorized. Start Knuth again or use manual pairing.';
+        'This window is running from its cache. Start the engine to run cells ' +
+        'with your local Python packages.';
     }
   }
 

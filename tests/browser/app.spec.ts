@@ -1,12 +1,16 @@
 import { expect, test } from '@playwright/test';
 
+type WindowWithProbe = typeof window & {
+  __knuthSocketUrl?: string;
+  __knuthRefuseConnections?: boolean;
+  __knuthRecordAttach?: (msg: Record<string, unknown>) => void;
+};
+
 const FIGURE_SVG = `
 <svg xmlns="http://www.w3.org/2000/svg" width="240" height="120" viewBox="0 0 240 120">
   <rect width="240" height="120" fill="#f7f4ed"/>
   <path d="M20 100 L80 55 L140 75 L220 20" fill="none" stroke="#336699" stroke-width="4"/>
 </svg>`;
-const TEST_CAPABILITY = 'c'.repeat(43);
-const TEST_PAIRING = 'p'.repeat(43);
 const MALICIOUS_SVG = `
 <svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink"
      width="240" height="120" onload="window.__knuthSvgExecuted = 'onload'">
@@ -25,9 +29,7 @@ const MALICIOUS_SVG = `
 </svg>`;
 
 test.beforeEach(async ({ page }) => {
-  await page.addInitScript(({ figureSvg, capability, pairing }) => {
-    localStorage.setItem('knuth-agent-capability', capability);
-
+  await page.addInitScript(({ figureSvg }) => {
     class MockWebSocket extends EventTarget {
       static readonly CONNECTING = 0;
       static readonly OPEN = 1;
@@ -40,13 +42,16 @@ test.beforeEach(async ({ page }) => {
       constructor(url: string | URL) {
         super();
         this.url = String(url);
-        // Every kernel socket is a session the server may fork. (Vite's own
-        // HMR socket goes through this mock too, so count only the engine.)
-        if (this.url.includes('127.0.0.1:5197')) {
-          const counted = window as typeof window & { __knuthSocketCount?: number };
-          counted.__knuthSocketCount = (counted.__knuthSocketCount ?? 0) + 1;
-        }
+        const probe = window as WindowWithProbe;
+        // Vite's own HMR socket goes through this mock too; only the engine
+        // socket is the app's.
+        if (!this.url.includes('/@vite')) probe.__knuthSocketUrl = this.url;
         window.setTimeout(() => {
+          if (probe.__knuthRefuseConnections && !this.url.includes('/@vite')) {
+            this.readyState = MockWebSocket.CLOSED;
+            this.dispatchEvent(new CloseEvent('close'));
+            return;
+          }
           this.readyState = MockWebSocket.OPEN;
           this.dispatchEvent(new Event('open'));
         });
@@ -55,14 +60,8 @@ test.beforeEach(async ({ page }) => {
       send(raw: string) {
         const msg = JSON.parse(raw);
         if (msg.type === 'attach') {
-          if (msg.capability !== capability && msg.pairing !== pairing) {
-            this.reply({ type: msg.pairing ? 'pairing_expired' : 'unauthorized' });
-            window.setTimeout(() => this.close());
-            return;
-          }
-          if (msg.capability !== capability) {
-            this.reply({ type: 'paired', protocol: msg.protocol, capability });
-          }
+          const record = (window as WindowWithProbe).__knuthRecordAttach;
+          if (record) record(msg);
           this.reply({
             type: 'attached',
             protocol: msg.protocol,
@@ -125,7 +124,7 @@ test.beforeEach(async ({ page }) => {
       configurable: true,
       value: MockWebSocket,
     });
-  }, { figureSvg: FIGURE_SVG, capability: TEST_CAPABILITY, pairing: TEST_PAIRING });
+  }, { figureSvg: FIGURE_SVG });
 });
 
 test('boots against the kernel protocol and renders a normal figure', async ({ page }) => {
@@ -146,133 +145,46 @@ test('boots against the kernel protocol and renders a normal figure', async ({ p
   await expect(page.locator('.viewer .figure svg')).toHaveCount(0);
 });
 
-test('pairs after an authorization rejection without reloading', async ({ page }) => {
-  await page.addInitScript(() => localStorage.removeItem('knuth-agent-capability'));
+test('connects with no credential, to the origin that served the page', async ({ page }) => {
+  const attaches: Array<Record<string, unknown>> = [];
+  await page.exposeFunction('__knuthRecordAttach', (msg: Record<string, unknown>) => {
+    attaches.push(msg);
+  });
   await page.goto('/');
-
-  await expect(page.locator('#kernel-status')).toHaveText('kernel pairing required');
-  page.once('dialog', (dialog) => dialog.accept(TEST_CAPABILITY));
-  await page.getByRole('button', { name: 'Pair', exact: true }).click();
 
   await expect(page.locator('#kernel-status')).toHaveText('kernel');
-  await expect(page.getByText('chart', { exact: true })).toBeVisible();
+  expect(attaches).toHaveLength(1);
+  expect(attaches[0]).not.toHaveProperty('capability');
+  expect(attaches[0]).not.toHaveProperty('pairing');
+  const socketUrl = await page.evaluate(() => (window as WindowWithProbe).__knuthSocketUrl);
+  expect(socketUrl, 'the socket goes back to this page\'s own origin')
+    .toBe(`ws://${new URL(page.url()).host}`);
 });
 
-test('automatically exchanges and scrubs a one-time pairing fragment', async ({ page }) => {
-  await page.addInitScript(() => localStorage.removeItem('knuth-agent-capability'));
-  await page.goto(`/#pair=${TEST_PAIRING}`);
-
+test('nothing about pairing survives in storage', async ({ page }) => {
+  await page.goto('/');
   await expect(page.locator('#kernel-status')).toHaveText('kernel');
-  expect(new URL(page.url()).hash).toBe('');
-  const stored = await page.evaluate(() => localStorage.getItem('knuth-agent-capability'));
-  expect(stored).toBe(TEST_CAPABILITY);
+
+  const keys = await page.evaluate(() => Object.keys(localStorage));
+  expect(keys).not.toContain('knuth-agent-capability');
 });
 
-test('spends a pairing fragment that arrives in an already-open window', async ({ page }) => {
-  // The OS hands a launch URL to the window that is already up, so only the
-  // fragment changes and nothing reloads — the case a Finder double-click hits.
-  await page.addInitScript(() => localStorage.removeItem('knuth-agent-capability'));
-  await page.goto('/');
-  await expect(page.locator('#kernel-status')).toHaveText('kernel pairing required');
-
-  await page.evaluate((token) => {
-    window.location.hash = `pair=${token}`;
-  }, TEST_PAIRING);
-
-  await expect(page.locator('#kernel-status')).toHaveText('kernel');
-  expect(new URL(page.url()).hash).toBe('');
-  const stored = await page.evaluate(() => localStorage.getItem('knuth-agent-capability'));
-  expect(stored).toBe(TEST_CAPABILITY);
-});
-
-test('an unpaired window recovers when another one pairs the profile', async ({ page }) => {
-  await page.addInitScript(() => localStorage.removeItem('knuth-agent-capability'));
-  await page.goto('/');
-  await expect(page.locator('#kernel-status')).toHaveText('kernel pairing required');
-
-  // What a second window pairing this origin looks like from here.
-  await page.evaluate((capability) => {
-    localStorage.setItem('knuth-agent-capability', capability);
-    window.dispatchEvent(new StorageEvent('storage', {
-      key: 'knuth-agent-capability',
-      newValue: capability,
-    }));
-  }, TEST_CAPABILITY);
-
-  await expect(page.locator('#kernel-status')).toHaveText('kernel');
-});
-
-test('a rejected attach does not unpair the whole browser', async ({ page }) => {
-  // The capability is shared by every window on this origin, so discarding it
-  // on one rejection strands the browser — including every later file-handler
-  // launch — with no way back except the terminal.
-  const STALE = 's'.repeat(43);
-  await page.addInitScript((stale) => {
-    localStorage.setItem('knuth-agent-capability', stale);
-  }, STALE);
+test('waits for an engine that is not running yet, then connects', async ({ page }) => {
+  // A window restored from the service worker cache with no engine behind it:
+  // it must explain itself and keep trying, not die.
+  await page.addInitScript(() => {
+    (window as WindowWithProbe).__knuthRefuseConnections = true;
+  });
   await page.goto('/');
 
-  await expect(page.locator('#kernel-status')).toHaveText('kernel pairing required');
-  const stored = await page.evaluate(() => localStorage.getItem('knuth-agent-capability'));
-  expect(stored, 'the rejected credential must survive').toBe(STALE);
-});
+  await expect(page.locator('#kernel-status')).toHaveText('Python engine unavailable');
+  await expect(page.getByRole('heading', { name: 'Start the local Python engine' })).toBeVisible();
+  await expect(page.getByText('knuth app', { exact: true }).first()).toBeVisible();
 
-test('an unpaired window heals without a reload or a storage event', async ({ page }) => {
-  // A file-handler launch opens a window with no pairing fragment. If the
-  // capability then lands in this profile without a storage event reaching
-  // here — a fresh window, a paired sibling already closed — the slow
-  // pairing retry is the only thing that ever picks it up.
-  test.slow(); // deliberately waits out one PAIRING_RETRY_MS
-  await page.addInitScript(() => localStorage.removeItem('knuth-agent-capability'));
-  await page.goto('/');
-
-  const status = page.locator('#kernel-status');
-  await expect(status).toHaveText('kernel pairing required');
-  await expect(page.getByRole('heading', { name: 'Pair this browser' })).toBeVisible();
-
-  await page.evaluate(
-    (capability) => localStorage.setItem('knuth-agent-capability', capability),
-    TEST_CAPABILITY,
-  );
-
-  await expect(status).toHaveText('kernel', { timeout: 30_000 });
-  const sockets = await page.evaluate(
-    () => (window as typeof window & { __knuthSocketCount?: number }).__knuthSocketCount,
-  );
-  expect(sockets, 'one rejected attach, then one that pairs').toBe(2);
-});
-
-test('explains an expired automatic pairing without retrying forever', async ({ page }) => {
-  await page.addInitScript(() => localStorage.removeItem('knuth-agent-capability'));
-  await page.goto('/#pair=expired-token');
-
-  await expect(page.locator('#kernel-status')).toHaveText('kernel pairing link expired');
-  await expect(page.getByRole('heading', { name: 'The secure pairing link expired' })).toBeVisible();
-  expect(new URL(page.url()).hash).toBe('');
-});
-
-test('shows cross-platform install and start commands when pairing is required', async ({ page }) => {
-  await page.addInitScript(() => localStorage.removeItem('knuth-agent-capability'));
-  await page.goto('/');
-
-  await expect(page.getByRole('heading', { name: 'Pair this browser' })).toBeVisible();
-  await page.getByRole('tab', { name: 'Windows' }).click();
-  await expect(page.locator('#engine-install-command')).toHaveText(
-    'py -m pip install --upgrade --force-reinstall "knuth @ https://github.com/tayweid/knuth/archive/refs/heads/main.zip#subdirectory=python"',
-  );
-  await expect(page.getByText('knuth app --hosted', { exact: true }).first()).toBeVisible();
-});
-
-test('re-pairs an active app through a close-then-reattach', async ({ page }) => {
-  await page.goto('/');
-  const status = page.locator('#kernel-status');
-  await expect(status).toHaveText('kernel');
-
-  page.once('dialog', (dialog) => dialog.accept(TEST_CAPABILITY));
-  await status.click();
-
-  await expect(page.locator('#kernel-status')).toHaveText('kernel');
-  await expect(page.getByText('chart', { exact: true })).toBeVisible();
+  await page.evaluate(() => {
+    (window as WindowWithProbe).__knuthRefuseConnections = false;
+  });
+  await expect(page.locator('#kernel-status')).toHaveText('kernel', { timeout: 15_000 });
 });
 
 test('bounds a single extremely long output line in browser memory', async ({ page }) => {

@@ -6,18 +6,15 @@
 // (or restart underneath it), so a lost/failed connection retries every
 // 2s and status changes surface through onStatus. The server sends a
 // `ready` snapshot to late-joining clients, so connecting at any time
-// converges to 'ready'. An unpaired window retries too, just slowly and
-// quietly, because pairing can complete somewhere this window never hears
-// about — and an OS file-handler launch opens exactly such a window.
+// converges to 'ready'.
+//
+// The engine serves this page, so the socket goes back to the origin the
+// page came from and needs no credential — the server's Origin check is
+// the authentication (SAME_ORIGIN.md). A page restored from the service
+// worker cache with no engine running simply retries until one appears.
 
 export type StreamWhich = 'stdout' | 'stderr';
-export type KernelStatus =
-  | 'connecting'
-  | 'ready'
-  | 'down'
-  | 'incompatible'
-  | 'unauthorized'
-  | 'pairing_expired';
+export type KernelStatus = 'connecting' | 'ready' | 'down' | 'incompatible';
 
 export interface RunHandlers {
   onStream?(which: StreamWhich, text: string): void;
@@ -81,33 +78,15 @@ export interface Kernel {
   close(): void;
 }
 
-export const DEFAULT_KERNEL_URL = 'ws://127.0.0.1:5197';
+/** The engine that served this page. Deriving it keeps the app working on
+ *  whatever port the engine was started with, rather than a baked-in one. */
+export function kernelUrl(): string {
+  const scheme = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+  return `${scheme}//${window.location.host}`;
+}
+
 export const PROTOCOL_VERSION = 2;
 const RECONNECT_MS = 2000;
-// Pairing is a human step, so retrying it fast would only churn. Retrying it
-// never is worse: an OS file-handler launch opens an unpaired window that no
-// storage event may ever reach, and today that window stays dead until a
-// reload. A slow retry lets pairing done anywhere else eventually land.
-const PAIRING_RETRY_MS = 15000;
-const CAPABILITY_KEY = 'knuth-agent-capability';
-
-function consumePairingFragment(): string | null {
-  const fragment = new URLSearchParams(window.location.hash.slice(1));
-  const pairing = fragment.get('pair');
-  if (pairing === null) return null;
-
-  // Fragments are not sent to the web host, and removing this one immediately
-  // keeps the short-lived token out of later screenshots and copied links.
-  fragment.delete('pair');
-  const rest = fragment.toString();
-  history.replaceState(
-    null,
-    '',
-    `${window.location.pathname}${window.location.search}${rest ? `#${rest}` : ''}`,
-  );
-  const normalized = pairing.trim();
-  return normalized && normalized.length <= 256 ? normalized : null;
-}
 
 interface PendingRun {
   handlers?: RunHandlers;
@@ -116,10 +95,7 @@ interface PendingRun {
 
 type ServerEvent =
   | { type: 'attached'; protocol: number; session: string; resumed: boolean }
-  | { type: 'paired'; protocol: number; capability: string }
   | { type: 'incompatible'; protocol: number }
-  | { type: 'unauthorized' }
-  | { type: 'pairing_expired' }
   | { type: 'ready'; resumed?: boolean; id?: number }
   | { type: 'stream'; id: number; which: StreamWhich; text: string }
   | { type: 'figures'; id: number; svgs: string[]; named: string[] }
@@ -180,14 +156,8 @@ function parseServerEvent(value: unknown): ServerEvent | null {
     case 'attached':
       return typeof event.protocol === 'number' && typeof event.session === 'string' &&
         typeof event.resumed === 'boolean' ? event as ServerEvent : null;
-    case 'paired':
-      return typeof event.protocol === 'number' && typeof event.capability === 'string'
-        ? event as ServerEvent : null;
     case 'incompatible':
       return typeof event.protocol === 'number' ? event as ServerEvent : null;
-    case 'unauthorized':
-    case 'pairing_expired':
-      return event as ServerEvent;
     case 'ready':
       return (event.resumed === undefined || typeof event.resumed === 'boolean') &&
         (event.id === undefined || isRequestId(event.id)) ? event as ServerEvent : null;
@@ -253,9 +223,6 @@ export class SidecarKernel implements Kernel {
   private ws: WebSocket | null = null;
   private connectedReady = false;
   private closed = false;
-  private awaitingPair = false;
-  private reattachAfterClose = false;
-  private pairingToken = consumePairingFragment();
   private retryTimer = 0;
   private nextId = 1;
   private runs = new Map<number, PendingRun>();
@@ -264,24 +231,10 @@ export class SidecarKernel implements Kernel {
   private tableWaiters = new Map<number, (window: TableWindow | null) => void>();
   private figureWaiters = new Map<number, (result: FigureResult | null) => void>();
   private restartWaiters = new Map<number, () => void>();
-  private storageListener = (event: StorageEvent) => {
-    if (event.key === CAPABILITY_KEY && event.newValue && this.awaitingPair) {
-      // `knuth app --hosted` may open a second tab. Pairing there updates
-      // origin storage; an already-installed PWA should recover too.
-      this.pair(event.newValue);
-    }
-  };
-  // A launch URL can land in a window that is already open, where the OS or
-  // browser changes only the fragment and nothing reloads. The initial read
-  // happened at construction, so catch the later ones here.
-  private hashListener = () => this.pairWithFragment();
-
   constructor(
-    private url: string = DEFAULT_KERNEL_URL,
+    private url: string = kernelUrl(),
     private onStatus?: (status: KernelStatus, resumed?: boolean) => void,
   ) {
-    window.addEventListener('storage', this.storageListener);
-    window.addEventListener('hashchange', this.hashListener);
     this.connect();
   }
 
@@ -298,9 +251,7 @@ export class SidecarKernel implements Kernel {
   private connect(): void {
     clearTimeout(this.retryTimer);
     if (this.closed) return;
-    // A silent pairing retry must not flicker the toolbar back to
-    // 'connecting…' over the pairing message the user is reading.
-    if (!this.awaitingPair) this.onStatus?.('connecting');
+    this.onStatus?.('connecting');
     const ws = new WebSocket(this.url);
     this.ws = ws;
     ws.addEventListener('open', () =>
@@ -309,8 +260,6 @@ export class SidecarKernel implements Kernel {
           type: 'attach',
           protocol: PROTOCOL_VERSION,
           session: sessionId(),
-          capability: localStorage.getItem(CAPABILITY_KEY),
-          pairing: this.pairingToken,
         }),
       ),
     );
@@ -350,19 +299,8 @@ export class SidecarKernel implements Kernel {
     if (this.ws !== ws) return;
     this.ws = null;
     if (this.closed) return;
-    if (this.awaitingPair) {
-      // Keep the pairing message up, but keep looking: the capability may
-      // arrive in this profile without a storage event reaching this window.
-      this.scheduleConnect(PAIRING_RETRY_MS);
-      return;
-    }
     this.connectedReady = false;
     this.failPending('kernel connection lost');
-    if (this.reattachAfterClose) {
-      this.reattachAfterClose = false;
-      this.connect();
-      return;
-    }
     this.onStatus?.('down');
     this.scheduleConnect(RECONNECT_MS);
   }
@@ -396,35 +334,6 @@ export class SidecarKernel implements Kernel {
         if (msg.session) sessionStorage.setItem('knuth-session', msg.session);
         break;
       }
-      case 'paired': {
-        if (msg.protocol !== PROTOCOL_VERSION) {
-          this.rejectIncompatible(msg.protocol);
-          break;
-        }
-        if (
-          typeof msg.capability !== 'string' ||
-          !/^[A-Za-z0-9_-]{43}$/.test(msg.capability)
-        ) {
-          this.rejectUnauthorized('unauthorized');
-          break;
-        }
-        localStorage.setItem(CAPABILITY_KEY, msg.capability);
-        this.pairingToken = null;
-        break;
-      }
-      case 'incompatible': {
-        this.rejectIncompatible(msg.protocol);
-        break;
-      }
-      case 'unauthorized': {
-        this.rejectUnauthorized('unauthorized');
-        break;
-      }
-      case 'pairing_expired': {
-        this.pairingToken = null;
-        this.rejectUnauthorized('pairing_expired');
-        break;
-      }
       case 'ready': {
         if (this.connectedReady) {
           // A ready while already ready is a completed restart: in-flight
@@ -436,8 +345,6 @@ export class SidecarKernel implements Kernel {
           restarted?.();
         }
         this.connectedReady = true;
-        // Authorized after all — a later drop is an ordinary drop again.
-        this.awaitingPair = false;
         this.onStatus?.('ready', msg.resumed === true);
         break;
       }
@@ -545,52 +452,6 @@ export class SidecarKernel implements Kernel {
     this.ws?.close(1002, 'unsupported protocol version');
   }
 
-  private rejectUnauthorized(status: 'unauthorized' | 'pairing_expired'): void {
-    const alreadyShown = this.awaitingPair;
-    this.awaitingPair = true;
-    this.connectedReady = false;
-    // The capability stays. One engine saying no is not proof the credential
-    // is dead, and it is shared by every window on this origin — so deleting
-    // it turns a single rejected socket into an unpaired browser, including
-    // every future file-handler launch, recoverable only from a terminal.
-    // A stale capability costs nothing: it fails, this wall appears, and
-    // pairing overwrites it. Losing a good one costs the user the app.
-    this.failPending('kernel pairing required');
-    // A retry that lands on the same wall keeps the first, more specific
-    // explanation rather than rewriting it every fifteen seconds.
-    if (!alreadyShown) this.onStatus?.(status);
-    this.ws?.close(4401, 'pairing required');
-  }
-
-  pair(capability: string): void {
-    const normalized = capability.trim();
-    if (!normalized) return;
-    localStorage.setItem(CAPABILITY_KEY, normalized);
-    this.pairingToken = null;
-    this.reconnectWithNewCredential();
-  }
-
-  /** Spend a `#pair=` token that arrived after this window was already up. */
-  private pairWithFragment(): void {
-    const token = consumePairingFragment();
-    if (!token) return;
-    this.pairingToken = token;
-    this.reconnectWithNewCredential();
-  }
-
-  private reconnectWithNewCredential(): void {
-    this.awaitingPair = false;
-    if (this.ws && this.ws.readyState < WebSocket.CLOSING) {
-      // Close first so the server sees the session as resumable rather than an
-      // active duplicate tab, which would intentionally fork its namespace.
-      this.reattachAfterClose = true;
-      this.connectedReady = false;
-      this.ws.close(1000, 're-pairing');
-    } else {
-      this.connect();
-    }
-  }
-
   private send(msg: object): void {
     this.ws!.send(JSON.stringify(msg));
   }
@@ -662,8 +523,6 @@ export class SidecarKernel implements Kernel {
   close(): void {
     this.closed = true;
     clearTimeout(this.retryTimer);
-    window.removeEventListener('storage', this.storageListener);
-    window.removeEventListener('hashchange', this.hashListener);
     this.ws?.close();
   }
 }

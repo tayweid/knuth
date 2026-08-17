@@ -181,14 +181,18 @@ nothing, not installable. One installable app, served locally.
 ## Migration
 
 Each step is shippable on its own; the app keeps working throughout.
+Steps 1 and 2 are done (2026-08-17).
 
-1. **Serve assets from the engine.** `process_request` + package data. The
+1. **DONE — Serve assets from the engine.** `process_request` + package data. The
    app still pairs exactly as it does today. Verifies the serving path in
    isolation.
-2. **Same-origin handshake.** Origin check only (plus the optional injected
-   token). Delete `PairingBroker`, `pairing_status`, `config.py`, the
-   delivery machinery, and the pairing states in `kernel.ts` and
-   `onboarding.ts`.
+2. **DONE — Same-origin handshake.** Origin check only; no token was added
+   (see Security — it earns little once the page and engine share an origin,
+   and it is easy to add later). Deleted `PairingBroker`, `pairing_status`,
+   `create_pairing`, `config.py`, the delivery machinery, `knuth agent pair`,
+   `rotate-token`, and every pairing state in `kernel.ts` / `onboarding.ts`.
+   Net: 306 insertions, 1466 deletions. The kernel URL and the page's CSP
+   now derive from the serving origin, so the engine works on any port.
 3. **Package the frontend** into the wheel; update the install command; drop
    the Pages build to demo-only.
 4. **Install locally as a PWA**, confirm `.py` handlers and the offline

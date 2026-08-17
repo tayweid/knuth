@@ -1,8 +1,9 @@
 "use strict";
 
 // Network-first avoids pinning an old UI/engine protocol while retaining the
-// non-sensitive application shell for offline document editing. Localhost
-// WebSockets are a different origin and are never visible to this worker.
+// application shell — which is what lets a file-handler launch open, and say
+// so, when the engine is not running. The engine serves this page, so a pip
+// upgrade changes these bytes; the cache must never win over the network.
 const CACHE_NAME = "knuth-app-shell-v1";
 const APP_SHELL = [
   "./",

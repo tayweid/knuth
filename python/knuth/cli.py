@@ -30,12 +30,7 @@ def main():
 
     app_cmd = sub.add_parser(
         "app",
-        help="start the local engine and securely open the hosted Knuth PWA",
-    )
-    app_cmd.add_argument(
-        "--hosted",
-        action="store_true",
-        help="open the canonical hosted PWA (currently the only app frontend)",
+        help="start the local engine and open the Knuth app it serves",
     )
     app_cmd.add_argument("--port", type=int, default=DEFAULT_PORT)
     app_cmd.add_argument(
@@ -47,7 +42,7 @@ def main():
     app_cmd.add_argument(
         "--no-browser",
         action="store_true",
-        help="start the engine without opening a browser (manual pairing required)",
+        help="start the engine without opening a browser",
     )
 
     agent_cmd = sub.add_parser(
@@ -56,7 +51,7 @@ def main():
     )
     agent_cmd.add_argument(
         "action",
-        choices=["install", "uninstall", "status", "restart", "pair", "rotate-token"],
+        choices=["install", "uninstall", "status", "restart"],
     )
     agent_cmd.add_argument("--port", type=int, default=DEFAULT_PORT)
 
@@ -84,8 +79,6 @@ def main():
 
         return run_doctor(args.port)
     elif args.command == "app":
-        if not args.hosted:
-            parser.error("`knuth app` currently requires --hosted")
         from .hosted import run_hosted
 
         sys.exit(run_hosted(
@@ -100,12 +93,8 @@ def main():
             sys.exit(agent.uninstall())
         elif args.action == "status":
             sys.exit(agent.status())
-        elif args.action == "restart":
-            sys.exit(agent.restart())
-        elif args.action == "pair":
-            sys.exit(agent.pair())
         else:
-            sys.exit(agent.rotate_token())
+            sys.exit(agent.restart())
     elif args.command == "serve":
         serve_main(
             args.port,
