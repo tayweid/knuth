@@ -12,6 +12,7 @@ Commands in: run{id,code} | namespace{id}
 
 import io
 import json
+import signal
 import sys
 
 from .limits import (
@@ -31,6 +32,16 @@ from .session import Session, capture_open_figures
 
 class OutputLimitExceeded(RuntimeError):
     """Stop a run whose stdout/stderr would otherwise grow without bound."""
+
+
+def _raise_keyboard_interrupt(_signum, _frame):
+    """Give Windows Ctrl-Break the same cell-interrupt semantics as SIGINT."""
+    raise KeyboardInterrupt
+
+
+def _install_interrupt_handler():
+    if sys.platform == "win32":
+        signal.signal(signal.SIGBREAK, _raise_keyboard_interrupt)
 
 
 def _utf8_size(text):
@@ -84,6 +95,7 @@ class _StreamOut(io.TextIOBase):
 
 
 def main():
+    _install_interrupt_handler()
     real_stdout = sys.stdout
     stdin = sys.stdin
 

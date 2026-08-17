@@ -12,6 +12,7 @@ import pytest
 import websockets
 from websockets.exceptions import ConnectionClosed, InvalidHandshake
 
+from knuth import kernel as kernel_module
 from knuth.config import load_or_create_capability
 from knuth.doctor import _engine_status
 from knuth.hosted import _request_pairing_from_running_engine
@@ -42,6 +43,37 @@ async def closing_websocket(ws):
 
 def test_release_origins_exclude_shared_and_development_hosts():
     assert DEFAULT_ALLOWED_ORIGINS == (PRODUCTION_ORIGIN,)
+
+
+def test_windows_interrupt_uses_ctrl_break(monkeypatch):
+    expected_signal = object()
+    sent = []
+    kernel = KernelProcess()
+    kernel.proc = type("Process", (), {"send_signal": sent.append})()
+    monkeypatch.setattr("knuth.server.sys.platform", "win32")
+    monkeypatch.setattr(
+        "knuth.server.signal.CTRL_BREAK_EVENT", expected_signal, raising=False
+    )
+
+    kernel.interrupt()
+
+    assert sent == [expected_signal]
+
+
+def test_windows_kernel_maps_ctrl_break_to_keyboard_interrupt(monkeypatch):
+    expected_signal = object()
+    installed = []
+    monkeypatch.setattr(kernel_module.sys, "platform", "win32")
+    monkeypatch.setattr(kernel_module.signal, "SIGBREAK", expected_signal, raising=False)
+    monkeypatch.setattr(
+        kernel_module.signal,
+        "signal",
+        lambda received, handler: installed.append((received, handler)),
+    )
+
+    kernel_module._install_interrupt_handler()
+
+    assert installed == [(expected_signal, kernel_module._raise_keyboard_interrupt)]
 
 
 def test_pairing_broker_is_single_use_and_expires(monkeypatch):

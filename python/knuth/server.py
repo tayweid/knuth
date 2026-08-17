@@ -128,7 +128,7 @@ class KernelProcess:
     async def start(self):
         platform_options = {}
         if sys.platform == "win32":
-            # A new process group lets the parent deliver Ctrl-C to this
+            # A new process group lets the parent deliver Ctrl-Break to this
             # interpreter without terminating the foreground Knuth launcher.
             platform_options["creationflags"] = subprocess.CREATE_NEW_PROCESS_GROUP
         self.proc = await asyncio.create_subprocess_exec(
@@ -151,7 +151,7 @@ class KernelProcess:
     def interrupt(self):
         try:
             interrupt_signal = (
-                signal.CTRL_C_EVENT if sys.platform == "win32" else signal.SIGINT
+                signal.CTRL_BREAK_EVENT if sys.platform == "win32" else signal.SIGINT
             )
             self.proc.send_signal(interrupt_signal)
         except (ProcessLookupError, ValueError):
