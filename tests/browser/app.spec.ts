@@ -40,6 +40,12 @@ test.beforeEach(async ({ page }) => {
       constructor(url: string | URL) {
         super();
         this.url = String(url);
+        // Every kernel socket is a session the server may fork. (Vite's own
+        // HMR socket goes through this mock too, so count only the engine.)
+        if (this.url.includes('127.0.0.1:5197')) {
+          const counted = window as typeof window & { __knuthSocketCount?: number };
+          counted.__knuthSocketCount = (counted.__knuthSocketCount ?? 0) + 1;
+        }
         window.setTimeout(() => {
           this.readyState = MockWebSocket.OPEN;
           this.dispatchEvent(new Event('open'));
@@ -160,6 +166,65 @@ test('automatically exchanges and scrubs a one-time pairing fragment', async ({ 
   expect(new URL(page.url()).hash).toBe('');
   const stored = await page.evaluate(() => localStorage.getItem('knuth-agent-capability'));
   expect(stored).toBe(TEST_CAPABILITY);
+});
+
+test('spends a pairing fragment that arrives in an already-open window', async ({ page }) => {
+  // The OS hands a launch URL to the window that is already up, so only the
+  // fragment changes and nothing reloads — the case a Finder double-click hits.
+  await page.addInitScript(() => localStorage.removeItem('knuth-agent-capability'));
+  await page.goto('/');
+  await expect(page.locator('#kernel-status')).toHaveText('kernel pairing required');
+
+  await page.evaluate((token) => {
+    window.location.hash = `pair=${token}`;
+  }, TEST_PAIRING);
+
+  await expect(page.locator('#kernel-status')).toHaveText('kernel');
+  expect(new URL(page.url()).hash).toBe('');
+  const stored = await page.evaluate(() => localStorage.getItem('knuth-agent-capability'));
+  expect(stored).toBe(TEST_CAPABILITY);
+});
+
+test('an unpaired window recovers when another one pairs the profile', async ({ page }) => {
+  await page.addInitScript(() => localStorage.removeItem('knuth-agent-capability'));
+  await page.goto('/');
+  await expect(page.locator('#kernel-status')).toHaveText('kernel pairing required');
+
+  // What a second window pairing this origin looks like from here.
+  await page.evaluate((capability) => {
+    localStorage.setItem('knuth-agent-capability', capability);
+    window.dispatchEvent(new StorageEvent('storage', {
+      key: 'knuth-agent-capability',
+      newValue: capability,
+    }));
+  }, TEST_CAPABILITY);
+
+  await expect(page.locator('#kernel-status')).toHaveText('kernel');
+});
+
+test('an unpaired window heals without a reload or a storage event', async ({ page }) => {
+  // A file-handler launch opens a window with no pairing fragment. If the
+  // capability then lands in this profile without a storage event reaching
+  // here — a fresh window, a paired sibling already closed — the slow
+  // pairing retry is the only thing that ever picks it up.
+  test.slow(); // deliberately waits out one PAIRING_RETRY_MS
+  await page.addInitScript(() => localStorage.removeItem('knuth-agent-capability'));
+  await page.goto('/');
+
+  const status = page.locator('#kernel-status');
+  await expect(status).toHaveText('kernel pairing required');
+  await expect(page.getByRole('heading', { name: 'Pair this browser' })).toBeVisible();
+
+  await page.evaluate(
+    (capability) => localStorage.setItem('knuth-agent-capability', capability),
+    TEST_CAPABILITY,
+  );
+
+  await expect(status).toHaveText('kernel', { timeout: 30_000 });
+  const sockets = await page.evaluate(
+    () => (window as typeof window & { __knuthSocketCount?: number }).__knuthSocketCount,
+  );
+  expect(sockets, 'one rejected attach, then one that pairs').toBe(2);
 });
 
 test('explains an expired automatic pairing without retrying forever', async ({ page }) => {

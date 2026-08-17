@@ -6,7 +6,9 @@
 // (or restart underneath it), so a lost/failed connection retries every
 // 2s and status changes surface through onStatus. The server sends a
 // `ready` snapshot to late-joining clients, so connecting at any time
-// converges to 'ready'.
+// converges to 'ready'. An unpaired window retries too, just slowly and
+// quietly, because pairing can complete somewhere this window never hears
+// about — and an OS file-handler launch opens exactly such a window.
 
 export type StreamWhich = 'stdout' | 'stderr';
 export type KernelStatus =
@@ -82,6 +84,11 @@ export interface Kernel {
 export const DEFAULT_KERNEL_URL = 'ws://127.0.0.1:5197';
 export const PROTOCOL_VERSION = 2;
 const RECONNECT_MS = 2000;
+// Pairing is a human step, so retrying it fast would only churn. Retrying it
+// never is worse: an OS file-handler launch opens an unpaired window that no
+// storage event may ever reach, and today that window stays dead until a
+// reload. A slow retry lets pairing done anywhere else eventually land.
+const PAIRING_RETRY_MS = 15000;
 const CAPABILITY_KEY = 'knuth-agent-capability';
 
 function consumePairingFragment(): string | null {
@@ -249,6 +256,9 @@ export class SidecarKernel implements Kernel {
   private awaitingPair = false;
   private reattachAfterClose = false;
   private pairingToken = consumePairingFragment();
+  /** The credential this socket presented, so only it gets discarded. */
+  private sentCapability: string | null = null;
+  private retryTimer = 0;
   private nextId = 1;
   private runs = new Map<number, PendingRun>();
   private namespaceWaiters = new Map<number, (vars: NamespaceVar[]) => void>();
@@ -263,12 +273,17 @@ export class SidecarKernel implements Kernel {
       this.pair(event.newValue);
     }
   };
+  // A launch URL can land in a window that is already open, where the OS or
+  // browser changes only the fragment and nothing reloads. The initial read
+  // happened at construction, so catch the later ones here.
+  private hashListener = () => this.pairWithFragment();
 
   constructor(
     private url: string = DEFAULT_KERNEL_URL,
     private onStatus?: (status: KernelStatus, resumed?: boolean) => void,
   ) {
     window.addEventListener('storage', this.storageListener);
+    window.addEventListener('hashchange', this.hashListener);
     this.connect();
   }
 
@@ -276,22 +291,32 @@ export class SidecarKernel implements Kernel {
     return this.connectedReady;
   }
 
+  /** One pending reconnect at a time: a second socket would fork a session. */
+  private scheduleConnect(delay: number): void {
+    clearTimeout(this.retryTimer);
+    this.retryTimer = window.setTimeout(() => this.connect(), delay);
+  }
+
   private connect(): void {
+    clearTimeout(this.retryTimer);
     if (this.closed) return;
-    this.onStatus?.('connecting');
+    // A silent pairing retry must not flicker the toolbar back to
+    // 'connecting…' over the pairing message the user is reading.
+    if (!this.awaitingPair) this.onStatus?.('connecting');
     const ws = new WebSocket(this.url);
     this.ws = ws;
-    ws.addEventListener('open', () =>
+    ws.addEventListener('open', () => {
+      this.sentCapability = localStorage.getItem(CAPABILITY_KEY);
       ws.send(
         JSON.stringify({
           type: 'attach',
           protocol: PROTOCOL_VERSION,
           session: sessionId(),
-          capability: localStorage.getItem(CAPABILITY_KEY),
+          capability: this.sentCapability,
           pairing: this.pairingToken,
         }),
-      ),
-    );
+      );
+    });
     ws.addEventListener('message', (ev) => this.receive(ws, ev.data));
     // 'error' is always followed by 'close'; one path handles both.
     ws.addEventListener('close', () => this.dropped(ws));
@@ -327,7 +352,13 @@ export class SidecarKernel implements Kernel {
     // An older socket can finish closing after a replacement is already live.
     if (this.ws !== ws) return;
     this.ws = null;
-    if (this.closed || this.awaitingPair) return;
+    if (this.closed) return;
+    if (this.awaitingPair) {
+      // Keep the pairing message up, but keep looking: the capability may
+      // arrive in this profile without a storage event reaching this window.
+      this.scheduleConnect(PAIRING_RETRY_MS);
+      return;
+    }
     this.connectedReady = false;
     this.failPending('kernel connection lost');
     if (this.reattachAfterClose) {
@@ -336,7 +367,7 @@ export class SidecarKernel implements Kernel {
       return;
     }
     this.onStatus?.('down');
-    setTimeout(() => this.connect(), RECONNECT_MS);
+    this.scheduleConnect(RECONNECT_MS);
   }
 
   private failPending(reason: string): void {
@@ -408,6 +439,8 @@ export class SidecarKernel implements Kernel {
           restarted?.();
         }
         this.connectedReady = true;
+        // Authorized after all — a later drop is an ordinary drop again.
+        this.awaitingPair = false;
         this.onStatus?.('ready', msg.resumed === true);
         break;
       }
@@ -516,11 +549,18 @@ export class SidecarKernel implements Kernel {
   }
 
   private rejectUnauthorized(status: 'unauthorized' | 'pairing_expired'): void {
+    const alreadyShown = this.awaitingPair;
     this.awaitingPair = true;
     this.connectedReady = false;
-    localStorage.removeItem(CAPABILITY_KEY);
+    // Discard only the credential this socket actually presented: another
+    // window may have paired us while this attach was in flight.
+    if (localStorage.getItem(CAPABILITY_KEY) === this.sentCapability) {
+      localStorage.removeItem(CAPABILITY_KEY);
+    }
     this.failPending('kernel pairing required');
-    this.onStatus?.(status);
+    // A retry that lands on the same wall keeps the first, more specific
+    // explanation rather than rewriting it every fifteen seconds.
+    if (!alreadyShown) this.onStatus?.(status);
     this.ws?.close(4401, 'pairing required');
   }
 
@@ -529,6 +569,18 @@ export class SidecarKernel implements Kernel {
     if (!normalized) return;
     localStorage.setItem(CAPABILITY_KEY, normalized);
     this.pairingToken = null;
+    this.reconnectWithNewCredential();
+  }
+
+  /** Spend a `#pair=` token that arrived after this window was already up. */
+  private pairWithFragment(): void {
+    const token = consumePairingFragment();
+    if (!token) return;
+    this.pairingToken = token;
+    this.reconnectWithNewCredential();
+  }
+
+  private reconnectWithNewCredential(): void {
     this.awaitingPair = false;
     if (this.ws && this.ws.readyState < WebSocket.CLOSING) {
       // Close first so the server sees the session as resumable rather than an
@@ -611,7 +663,9 @@ export class SidecarKernel implements Kernel {
 
   close(): void {
     this.closed = true;
+    clearTimeout(this.retryTimer);
     window.removeEventListener('storage', this.storageListener);
+    window.removeEventListener('hashchange', this.hashListener);
     this.ws?.close();
   }
 }
