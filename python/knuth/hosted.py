@@ -2,6 +2,8 @@
 
 import asyncio
 import json
+import subprocess
+import sys
 import webbrowser
 
 import websockets
@@ -31,10 +33,27 @@ def _launch_url(token):
     return f"{HOSTED_APP_URL}#pair={token}"
 
 
+def _open_macos_installed_app(url):
+    """Open the installed PWA so its own storage receives the pairing token."""
+    if sys.platform != "darwin":
+        return False
+    try:
+        result = subprocess.run(
+            ["open", "-a", "Knuth", url],
+            capture_output=True,
+            timeout=5,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return False
+    return result.returncode == 0
+
+
 def _open_hosted_app(token, open_browser):
     print(f"Opening {HOSTED_APP_URL}")
-    if open_browser and webbrowser.open(_launch_url(token)):
-        return
+    if open_browser:
+        url = _launch_url(token)
+        if _open_macos_installed_app(url) or webbrowser.open(url):
+            return
     if open_browser:
         print("Could not open a browser automatically.")
     print(f"Open {HOSTED_APP_URL} and use its manual Pair action.")

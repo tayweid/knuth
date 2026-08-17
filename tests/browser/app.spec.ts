@@ -178,7 +178,7 @@ test('shows cross-platform install and start commands when pairing is required',
   await expect(page.getByRole('heading', { name: 'Pair this browser' })).toBeVisible();
   await page.getByRole('tab', { name: 'Windows' }).click();
   await expect(page.locator('#engine-install-command')).toHaveText(
-    'py -m pip install --upgrade "knuth @ https://github.com/tayweid/knuth/archive/refs/heads/main.zip#subdirectory=python"',
+    'py -m pip install --upgrade --force-reinstall "knuth @ https://github.com/tayweid/knuth/archive/refs/heads/main.zip#subdirectory=python"',
   );
   await expect(page.getByText('knuth app --hosted', { exact: true }).first()).toBeVisible();
 });

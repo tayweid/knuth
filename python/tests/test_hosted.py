@@ -60,6 +60,43 @@ def test_hosted_reuses_a_running_engine(monkeypatch):
     assert opened == [("p" * 43, False)]
 
 
+def test_macos_launcher_opens_installed_pwa_with_pairing_fragment(monkeypatch):
+    calls = []
+    monkeypatch.setattr(hosted.sys, "platform", "darwin")
+    monkeypatch.setattr(
+        hosted.subprocess,
+        "run",
+        lambda command, **options: calls.append((command, options))
+        or type("Result", (), {"returncode": 0})(),
+    )
+    monkeypatch.setattr(
+        hosted.webbrowser,
+        "open",
+        lambda _url: pytest.fail("installed PWA should be preferred"),
+    )
+
+    hosted._open_hosted_app("p" * 43, True)
+
+    assert calls == [
+        (
+            ["open", "-a", "Knuth", f"https://knuth.tayweid.io/#pair={'p' * 43}"],
+            {"capture_output": True, "timeout": 5},
+        )
+    ]
+
+
+def test_launcher_falls_back_to_default_browser_without_installed_pwa(monkeypatch):
+    monkeypatch.setattr(hosted, "_open_macos_installed_app", lambda _url: False)
+    opened = []
+    monkeypatch.setattr(
+        hosted.webbrowser, "open", lambda url: opened.append(url) or True
+    )
+
+    hosted._open_hosted_app("p" * 43, True)
+
+    assert opened == [f"https://knuth.tayweid.io/#pair={'p' * 43}"]
+
+
 def test_cli_dispatches_hosted_app(monkeypatch):
     called = []
     monkeypatch.setattr(

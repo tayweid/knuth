@@ -17,17 +17,17 @@ const sourceRequirement =
 const COMMANDS: Record<Platform, { label: string; install: string; module: string }> = {
   macos: {
     label: 'macOS',
-    install: `python3 -m pip install --upgrade "${sourceRequirement}"`,
+    install: `python3 -m pip install --upgrade --force-reinstall "${sourceRequirement}"`,
     module: 'python3 -m knuth app --hosted',
   },
   windows: {
     label: 'Windows',
-    install: `py -m pip install --upgrade "${sourceRequirement}"`,
+    install: `py -m pip install --upgrade --force-reinstall "${sourceRequirement}"`,
     module: 'py -m knuth app --hosted',
   },
   linux: {
     label: 'Linux',
-    install: `python3 -m pip install --upgrade "${sourceRequirement}"`,
+    install: `python3 -m pip install --upgrade --force-reinstall "${sourceRequirement}"`,
     module: 'python3 -m knuth app --hosted',
   },
 };

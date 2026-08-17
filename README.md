@@ -44,23 +44,24 @@ cannot reach a compatible local engine.
 macOS and Linux:
 
 ```bash
-python3 -m pip install --upgrade "knuth @ https://github.com/tayweid/knuth/archive/refs/heads/main.zip#subdirectory=python"
+python3 -m pip install --upgrade --force-reinstall "knuth @ https://github.com/tayweid/knuth/archive/refs/heads/main.zip#subdirectory=python"
 knuth app --hosted
 ```
 
 Windows:
 
 ```powershell
-py -m pip install --upgrade "knuth @ https://github.com/tayweid/knuth/archive/refs/heads/main.zip#subdirectory=python"
+py -m pip install --upgrade --force-reinstall "knuth @ https://github.com/tayweid/knuth/archive/refs/heads/main.zip#subdirectory=python"
 knuth app --hosted
 ```
 
 The hosted page pins the install URL to the exact commit used for that deployed
 web app; the `main` URL above follows the latest repository version. The second
 command starts the Python engine on localhost, opens the hosted
-app, and securely pairs that browser. Keep the terminal open while using
-Knuth; `Ctrl-C` stops the foreground engine. If the console entry point is not
-on `PATH`, use `python3 -m knuth app --hosted` on macOS/Linux or
+app, and securely pairs that browser. On macOS it prefers an installed
+`Knuth.app`, so Finder-launched files share the same pairing. Keep the terminal
+open while using Knuth; `Ctrl-C` stops the foreground engine. If the console
+entry point is not on `PATH`, use `python3 -m knuth app --hosted` on macOS/Linux or
 `py -m knuth app --hosted` on Windows.
 
 PWA installation is optional. In Chromium browsers it also registers Knuth as
