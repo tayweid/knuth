@@ -7,7 +7,7 @@ compatible with Python, VS Code, Spyder, PyCharm, and other tools.
 Install and launch the hosted app:
 
 ```bash
-python -m pip install knuth
+python -m pip install "knuth @ https://github.com/tayweid/knuth/archive/refs/heads/main.zip#subdirectory=python"
 knuth app --hosted
 ```
 

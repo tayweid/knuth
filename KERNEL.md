@@ -30,9 +30,9 @@ and VS Code notebooks are all a UI in front of a real interpreter process.
 
 **What it costs**
 - Requires Python plus our package on the machine. First run is
-  `pip install knuth` (or `uvx knuth`, which makes this nearly painless)
-  and the app has to find/launch/manage the process — version mismatches
-  and port conflicts are our support burden.
+  the GitHub install command shown by the hosted app, and the app has to
+  find/launch/manage the process — version mismatches and port conflicts are
+  our support burden.
 - "Open a web page" is not enough; someone without Python installed can't
   use it. Fine for us; a real barrier if Knuth ever wants to onboard a
   student in one click.

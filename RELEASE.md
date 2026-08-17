@@ -1,26 +1,17 @@
 # Public release checklist
 
 The web app is deployed independently from the Python package. A public
-release is complete only when the hosted app, protocol version, and PyPI wheel
-have passed the same release-candidate tests.
+release is complete only when the hosted app, protocol version, and GitHub
+release distributions have passed the same release-candidate tests.
 
 ## One-time maintainer setup
 
-1. Create a PyPI account with two-factor authentication.
-2. At <https://pypi.org/manage/account/publishing/>, register a pending trusted
-   publisher with:
-
-   - PyPI project name: `knuth`
-   - GitHub owner: `tayweid`
-   - Repository: `knuth`
-   - Workflow: `release.yml`
-   - Environment: `pypi`
-
-3. In GitHub, create an environment named `pypi` and require your approval for
-   deployments from it. Do not create or store a long-lived PyPI API token.
-4. Protect `main` and require the deployment workflow to pass before merging.
-5. Keep private vulnerability reporting enabled under repository security
+1. Protect `main` and require the deployment workflow to pass before merging.
+2. Keep private vulnerability reporting enabled under repository security
    settings.
+3. Do not add package-registry credentials. The release workflow uses the
+   repository-scoped GitHub token only to attach built distributions to the
+   matching GitHub release.
 
 ## Every release
 
@@ -50,18 +41,19 @@ have passed the same release-candidate tests.
 6. Create a GitHub release whose tag is exactly `v` plus the Python package
    version. Publishing that release starts `.github/workflows/release.yml`.
    The workflow refuses development versions and mismatched tags.
-7. Approve the `pypi` environment only after reviewing the build job and its
-   pinned workflow actions. PyPI will publish provenance attestations through
-   Trusted Publishing.
-8. In a clean environment, run:
+7. Review the workflow result and confirm that its wheel and source archive are
+   attached to the GitHub release.
+8. In a clean environment, install the attached wheel and run:
 
    ```bash
-   python -m pip install knuth
+   python -m pip install https://github.com/tayweid/knuth/releases/download/v2.0.0/knuth-2.0.0-py3-none-any.whl
    knuth app --hosted
    ```
 
-9. Confirm the package page, repository links, license, install command,
-   automatic pairing, upgrade path, and vulnerability-reporting link.
+9. Confirm the release assets, repository links, license, install command,
+   automatic pairing, upgrade path, and vulnerability-reporting link. Also
+   verify that the hosted onboarding command contains the commit deployed by
+   the successful Pages workflow.
 
-PyPI releases are immutable. If a release is bad, publish a new version; never
-attempt to replace an existing distribution file.
+Treat published tags and release assets as immutable. If a release is bad,
+publish a new version; never replace an existing distribution file.

@@ -7,20 +7,27 @@ interface InstallPromptEvent extends Event {
   userChoice: Promise<{ outcome: 'accepted' | 'dismissed' }>;
 }
 
+const configuredSourceRef = import.meta.env.VITE_KNUTH_SOURCE_REF ?? '';
+const sourceRef = /^[0-9a-f]{40}$/.test(configuredSourceRef)
+  ? configuredSourceRef
+  : 'refs/heads/main';
+const sourceRequirement =
+  `knuth @ https://github.com/tayweid/knuth/archive/${sourceRef}.zip#subdirectory=python`;
+
 const COMMANDS: Record<Platform, { label: string; install: string; module: string }> = {
   macos: {
     label: 'macOS',
-    install: 'python3 -m pip install --upgrade knuth',
+    install: `python3 -m pip install --upgrade "${sourceRequirement}"`,
     module: 'python3 -m knuth app --hosted',
   },
   windows: {
     label: 'Windows',
-    install: 'py -m pip install --upgrade knuth',
+    install: `py -m pip install --upgrade "${sourceRequirement}"`,
     module: 'py -m knuth app --hosted',
   },
   linux: {
     label: 'Linux',
-    install: 'python3 -m pip install --upgrade knuth',
+    install: `python3 -m pip install --upgrade "${sourceRequirement}"`,
     module: 'python3 -m knuth app --hosted',
   },
 };
@@ -84,7 +91,7 @@ export class Onboarding {
             <span class="step-number">1</span>
             <div>
               <h2 id="engine-setup-heading">Install the local engine</h2>
-              <p>Run this in a terminal. It installs or updates only the Python package.</p>
+              <p>Requires Python 3.11 or newer. This installs the engine directly from Knuth’s matching GitHub revision.</p>
               <div class="command-row">
                 <code id="engine-install-command"></code>
                 <button type="button" class="command-copy">Copy</button>

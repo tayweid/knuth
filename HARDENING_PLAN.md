@@ -128,8 +128,8 @@ operating system.
   expiry, resource-limit, SVG, and clickjacking fixtures.
 - Pinned third-party workflow actions by commit, added weekly Dependabot review
   for npm, pip, and Actions, tested the minimum supported WebSocket library in
-  CI, and added an OIDC-only PyPI Trusted Publishing workflow with immutable
-  tag/version checks.
+  CI, and added a GitHub Release packaging workflow with immutable tag/version
+  checks.
 - Added `knuth doctor`, backed by an authenticated read-only status handshake,
   to report package/engine versions, protocol, port, session count, Python
   executable, and capability-file health without exposing the capability,
@@ -191,8 +191,8 @@ external or manual gates:
   not a claim that this header requirement is met;
 - run the installed-PWA/launcher smoke checklist on macOS, Windows, and Linux,
   including the optional macOS launch agent;
-- configure the PyPI Trusted Publisher and protected GitHub `pypi` environment,
-  then publish only after the cross-platform release commit is green; and
+- publish GitHub release assets only after the cross-platform release commit
+  is green; and
 - commission an independent attack pass over the release candidate.
 
 ## Phase 0: freeze current behavior behind tests

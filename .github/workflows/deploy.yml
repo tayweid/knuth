@@ -31,6 +31,8 @@ jobs:
       - run: npx playwright install --with-deps chromium
       - run: npm run test:browser
       - run: npm run build
+        env:
+          VITE_KNUTH_SOURCE_REF: ${{ github.sha }}
 
   python:
     runs-on: ${{ matrix.os }}
@@ -101,6 +103,8 @@ jobs:
       - run: npm ci
       - run: npm test
       - run: npm run build
+        env:
+          VITE_KNUTH_SOURCE_REF: ${{ github.sha }}
       - uses: actions/configure-pages@983d7736d9b0ae728b81ab479565c72886d7745b # v5
         with:
           # Create/enable the Pages site from the workflow itself — the

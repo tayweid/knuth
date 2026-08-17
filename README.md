@@ -44,18 +44,20 @@ cannot reach a compatible local engine.
 macOS and Linux:
 
 ```bash
-python3 -m pip install --upgrade knuth
+python3 -m pip install --upgrade "knuth @ https://github.com/tayweid/knuth/archive/refs/heads/main.zip#subdirectory=python"
 knuth app --hosted
 ```
 
 Windows:
 
 ```powershell
-py -m pip install --upgrade knuth
+py -m pip install --upgrade "knuth @ https://github.com/tayweid/knuth/archive/refs/heads/main.zip#subdirectory=python"
 knuth app --hosted
 ```
 
-The second command starts the Python engine on localhost, opens the hosted
+The hosted page pins the install URL to the exact commit used for that deployed
+web app; the `main` URL above follows the latest repository version. The second
+command starts the Python engine on localhost, opens the hosted
 app, and securely pairs that browser. Keep the terminal open while using
 Knuth; `Ctrl-C` stops the foreground engine. If the console entry point is not
 on `PATH`, use `python3 -m knuth app --hosted` on macOS/Linux or
@@ -104,7 +106,7 @@ release origin. Development and custom deployments opt into each additional
 origin explicitly with one or more `knuth serve --origin
 https://exact.example` arguments.
 
-`python/` is the published `knuth` package: the hosted launcher, live session,
+`python/` is the distributed `knuth` package: the hosted launcher, live session,
 kernel subprocess, WebSocket server, background-agent helper, and the
 reproducibility runner behind `knuth run`.
 
