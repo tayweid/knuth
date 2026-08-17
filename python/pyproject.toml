@@ -53,5 +53,10 @@ knuth = "knuth.cli:main"
 where = ["."]
 include = ["knuth*"]
 
+# The built app, staged by `npm run build:engine`. The engine serves it
+# from its own port, so it must ride along in the wheel (SAME_ORIGIN.md).
+[tool.setuptools.package-data]
+knuth = ["web/**"]
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]

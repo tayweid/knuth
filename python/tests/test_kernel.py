@@ -748,3 +748,113 @@ async def check_simultaneous_duplicate_attach(monkeypatch):
 
 def test_simultaneous_duplicate_attach(monkeypatch):
     asyncio.run(check_simultaneous_duplicate_attach(monkeypatch))
+
+
+async def check_same_origin_needs_no_credential(web_root):
+    """A page the engine served is proven by its Origin, not by a secret.
+
+    This is the whole point of SAME_ORIGIN.md: no capability file, no pairing
+    token, nothing to deliver or lose. Other origins are unaffected.
+    """
+    port = free_port()
+    url = f"ws://127.0.0.1:{port}"
+    served = f"http://127.0.0.1:{port}"
+    server_task = asyncio.create_task(
+        serve(
+            port,
+            grace=1,
+            origins=(PRODUCTION_ORIGIN,),
+            capability=TEST_CAPABILITY,
+            web_root=web_root,
+        )
+    )
+    try:
+        deadline = time.monotonic() + 10
+        while True:
+            try:
+                probe = await websockets.connect(url, origin=served)
+                break
+            except OSError:
+                if time.monotonic() > deadline:
+                    raise
+                await asyncio.sleep(0.05)
+
+        async with closing_websocket(probe):
+            client = Client(probe)
+            await client.send(
+                type="attach",
+                protocol=PROTOCOL_VERSION,
+                capability=None,
+                pairing=None,
+                session="same-origin",
+            )
+            attached = await client.recv()
+            assert attached["type"] == "attached", attached
+            await client.wait_ready()
+
+        # The hosted origin is still a stranger and still needs the capability.
+        async with websockets.connect(url, origin=PRODUCTION_ORIGIN) as hosted_ws:
+            hosted = Client(hosted_ws)
+            await hosted.send(
+                type="attach",
+                protocol=PROTOCOL_VERSION,
+                capability=None,
+                pairing=None,
+                session="hosted-no-capability",
+            )
+            refused = await hosted.recv()
+            assert refused == {"type": "unauthorized"}, refused
+
+        # And an unrelated origin never reaches the handshake at all.
+        with pytest.raises((InvalidHandshake, OSError)):
+            await websockets.connect(url, origin="https://evil.example")
+    finally:
+        server_task.cancel()
+        with suppress(asyncio.CancelledError):
+            await server_task
+
+
+def test_same_origin_needs_no_credential(tmp_path):
+    (tmp_path / "index.html").write_text("<!doctype html>")
+    asyncio.run(check_same_origin_needs_no_credential(tmp_path))
+
+
+def test_local_origin_is_not_trusted_without_a_served_app(tmp_path):
+    """Our own address proves nothing when we are not the one serving it."""
+    from knuth import web
+
+    assert web.available(tmp_path) is False
+    asyncio.run(check_local_origin_rejected_without_app(tmp_path))
+
+
+async def check_local_origin_rejected_without_app(web_root):
+    port = free_port()
+    url = f"ws://127.0.0.1:{port}"
+    served = f"http://127.0.0.1:{port}"
+    server_task = asyncio.create_task(
+        serve(
+            port,
+            grace=1,
+            origins=(PRODUCTION_ORIGIN,),
+            capability=TEST_CAPABILITY,
+            web_root=web_root,
+        )
+    )
+    try:
+        deadline = time.monotonic() + 10
+        while True:
+            try:
+                probe = await websockets.connect(url, origin=PRODUCTION_ORIGIN)
+                await probe.close()
+                break
+            except OSError:
+                if time.monotonic() > deadline:
+                    raise
+                await asyncio.sleep(0.05)
+
+        with pytest.raises((InvalidHandshake, OSError)):
+            await websockets.connect(url, origin=served)
+    finally:
+        server_task.cancel()
+        with suppress(asyncio.CancelledError):
+            await server_task

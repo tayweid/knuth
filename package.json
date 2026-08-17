@@ -8,6 +8,7 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc --noEmit && vite build",
+    "build:engine": "npm run build && node scripts/stage-web.mjs",
     "preview": "vite preview",
     "test": "node --import tsx src/format/round-trip.test.ts",
     "test:browser": "playwright test"

@@ -7,6 +7,13 @@ sleep, network blip) leaves its kernel alive for a grace period; a client
 reattaching with the same id resumes it, variables intact. A window
 closed for good is never reclaimed and gets reaped.
 
+This server also serves the app itself, on the same port, through the
+handshake's `process_request` hook (see web.py and SAME_ORIGIN.md). A page
+it served shares its origin, and the Origin check on the upgrade already
+proves the browser loaded that page from this process — so such a client
+needs no credential at all. Cross-origin clients (the hosted build) still
+present the durable capability or a short-lived pairing token.
+
 The HTTP upgrade is accepted only from exact Knuth app origins. Handshake:
 the client's first message is `attach{protocol, capability, pairing, session}`.
 The optional short-lived pairing token can bootstrap the durable browser
@@ -32,6 +39,7 @@ import uuid
 
 import websockets
 
+from . import web
 from .config import load_or_create_capability
 from .limits import (
     HANDSHAKE_TIMEOUT_SECONDS,
@@ -63,6 +71,16 @@ DEVELOPMENT_ORIGINS = (
     "http://127.0.0.1:5198",
     "http://localhost:5198",
 )
+
+
+def local_origins(port):
+    """The origins this engine serves the app on — its own address.
+
+    A page fetched from here shares the engine's origin, so it needs no
+    capability: the Origin check already proves the browser loaded it from
+    this process. See SAME_ORIGIN.md.
+    """
+    return (f"http://127.0.0.1:{port}", f"http://localhost:{port}")
 
 
 def _package_version():
@@ -279,13 +297,27 @@ async def serve(
     on_ready=None,
     max_sessions=MAX_LIVE_SESSIONS,
     max_concurrent_starts=MAX_CONCURRENT_KERNEL_STARTS,
+    web_root=None,
 ):
     sessions = {}
     starting_sids = set()
     start_slots = asyncio.Semaphore(max_concurrent_starts)
+    served_origins = local_origins(port)
     allowed_origins = tuple(origins or DEFAULT_ALLOWED_ORIGINS)
+    if web.available(web_root):
+        # Only trust our own address when we are actually the one serving
+        # the page there; otherwise the origin proves nothing.
+        allowed_origins = tuple(dict.fromkeys(allowed_origins + served_origins))
+        trusted_origins = frozenset(served_origins)
+    else:
+        trusted_origins = frozenset()
     agent_capability = capability or load_or_create_capability()
     pairings = pairing_broker or PairingBroker()
+
+    def same_origin(ws):
+        request = getattr(ws, "request", None)
+        origin = request.headers.get("Origin") if request else None
+        return origin in trusted_origins
 
     async def reap_later(sid):
         await asyncio.sleep(grace)
@@ -364,7 +396,12 @@ async def serve(
             return
 
         supplied_capability = first.get("capability")
-        authorized = _capability_matches(supplied_capability, agent_capability)
+        # A page this engine served is already proven by its Origin. Control
+        # requests above (status, create_pairing, pairing_status) stay
+        # capability-gated — those are owner verbs, not app traffic.
+        authorized = same_origin(ws) or _capability_matches(
+            supplied_capability, agent_capability
+        )
         supplied_pairing = first.get("pairing")
         bootstrapped = False
         if not authorized and supplied_pairing is not None:
@@ -505,6 +542,7 @@ async def serve(
             "127.0.0.1",
             port,
             origins=allowed_origins,
+            process_request=lambda connection, request: web.respond(request, web_root),
             max_size=MAX_INBOUND_MESSAGE_BYTES,
             max_queue=MAX_INBOUND_MESSAGE_QUEUE,
         ):
@@ -516,6 +554,8 @@ async def serve(
                 f"{grace}s reattach grace)",
                 flush=True,
             )
+            if web.available(web_root):
+                print(f"knuth app on http://127.0.0.1:{port}", flush=True)
             await asyncio.get_running_loop().create_future()
     finally:
         # Foreground shutdown and test cancellation must not orphan subprocesses.
