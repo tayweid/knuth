@@ -15,7 +15,7 @@ from websockets.exceptions import ConnectionClosed, InvalidHandshake
 from knuth import kernel as kernel_module
 from knuth.config import load_or_create_capability
 from knuth.doctor import _engine_status
-from knuth.hosted import _request_pairing_from_running_engine
+from knuth.hosted import _query_pairing_pending, _request_pairing_from_running_engine
 from knuth.limits import MAX_INBOUND_MESSAGE_BYTES
 from knuth.session import Session
 from knuth.server import (
@@ -580,6 +580,13 @@ async def check_pairing_bootstrap():
         token = await _request_pairing_from_running_engine(port, TEST_CAPABILITY)
         assert isinstance(token, str) and len(token) == 43, token
 
+        # The launcher confirms delivery against this, instead of trusting
+        # that opening a browser window means the token arrived.
+        assert await _query_pairing_pending(port, TEST_CAPABILITY) is True
+        assert await _query_pairing_pending(port, "w" * 43) is None, (
+            "pairing state must not answer without the owner capability"
+        )
+
         async with websockets.connect(url, origin=TEST_ORIGIN) as paired_ws:
             paired_client = Client(paired_ws)
             await paired_client.send(
@@ -598,6 +605,10 @@ async def check_pairing_bootstrap():
             attached = await paired_client.recv()
             assert attached["type"] == "attached", attached
             await paired_client.wait_ready()
+
+        assert await _query_pairing_pending(port, TEST_CAPABILITY) is False, (
+            "a spent token must read as delivered"
+        )
 
         async with websockets.connect(url, origin=TEST_ORIGIN) as replay_ws:
             replay = Client(replay_ws)

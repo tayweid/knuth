@@ -92,6 +92,16 @@ class PairingBroker:
         self._expires_at = time.monotonic() + self.ttl_seconds
         return self._token
 
+    @property
+    def pending(self):
+        """Whether an issued token is still unspent and unexpired.
+
+        The launcher polls this to learn whether the browser it opened
+        actually received the pairing URL, rather than trusting that a
+        window appeared. Reading it reveals no secret.
+        """
+        return self._token is not None and time.monotonic() <= self._expires_at
+
     def consume(self, candidate):
         expected = self._token
         well_formed = (
@@ -334,6 +344,19 @@ async def serve(
                 "expires_in": pairings.ttl_seconds,
             }))
             await ws.close(code=1000, reason="pairing created")
+            return
+
+        if first.get("type") == "pairing_status":
+            if not _capability_matches(first.get("capability"), agent_capability):
+                await ws.send(json.dumps({"type": "unauthorized"}))
+                await ws.close(code=4401, reason="pairing authorization required")
+                return
+            await ws.send(json.dumps({
+                "type": "pairing_status",
+                "protocol": PROTOCOL_VERSION,
+                "pending": pairings.pending,
+            }))
+            await ws.close(code=1000, reason="pairing status reported")
             return
 
         if first.get("type") != "attach":

@@ -89,7 +89,10 @@ same interface, not an architectural rewrite. Deferring it costs nothing.
 - Protocol messages (v2): the initial `attach` requires the exact protocol
   version plus either the durable capability or a single-use pairing token.
   A trusted CLI may request that token with an authenticated
-  `create_pairing` handshake. After attachment, `run{id, code}` →
+  `create_pairing` handshake, and ask whether it has been spent yet with an
+  authenticated `pairing_status` — the launcher confirms that a browser
+  really received the pairing link rather than trusting that a window
+  opened. After attachment, `run{id, code}` →
   `stream{id, text, which}`* → `done{id, result?}` | `error{id, traceback}`.
   `restart`, `namespace`, `artifacts`, `table`, and `figure` also carry a
   request ID echoed by their response; `interrupt` is intentionally one-way.

@@ -1,6 +1,8 @@
 """Cross-platform hosted-launcher and CLI behavior."""
 
+import plistlib
 import sys
+import threading
 
 import pytest
 
@@ -22,8 +24,8 @@ def test_hosted_starts_foreground_server_and_opens_after_bind(monkeypatch):
     opened = []
     monkeypatch.setattr(
         hosted,
-        "_open_hosted_app",
-        lambda token, open_browser: opened.append((token, open_browser)),
+        "_deliver_in_background",
+        lambda token, open_browser, _is_pending: opened.append((token, open_browser)),
     )
     served = []
 
@@ -49,7 +51,7 @@ def test_hosted_reuses_a_running_engine(monkeypatch):
     monkeypatch.setattr(
         hosted,
         "_open_hosted_app",
-        lambda token, open_browser: opened.append((token, open_browser)),
+        lambda token, open_browser, **options: opened.append((token, open_browser)),
     )
     monkeypatch.setattr(
         hosted,
@@ -60,9 +62,27 @@ def test_hosted_reuses_a_running_engine(monkeypatch):
     assert opened == [("p" * 43, False)]
 
 
-def test_macos_launcher_opens_installed_pwa_with_pairing_fragment(monkeypatch):
+PAIRING_URL = f"https://knuth.tayweid.io/#pair={'p' * 43}"
+
+
+def _spent_after(calls):
+    """A pairing-state probe that reports the token spent after N polls."""
+    remaining = [calls]
+
+    def pending():
+        if remaining[0] <= 0:
+            return False
+        remaining[0] -= 1
+        return True
+
+    return pending
+
+
+def test_macos_launcher_opens_the_browser_that_installed_the_app(monkeypatch):
+    """The shim cannot carry a URL; its browser can, and holds the storage."""
     calls = []
-    monkeypatch.setattr(hosted.sys, "platform", "darwin")
+    monkeypatch.setattr(hosted, "DELIVERY_POLL_SECONDS", 0)
+    monkeypatch.setattr(hosted, "_installed_app_browser", lambda: "com.google.Chrome")
     monkeypatch.setattr(
         hosted.subprocess,
         "run",
@@ -72,29 +92,126 @@ def test_macos_launcher_opens_installed_pwa_with_pairing_fragment(monkeypatch):
     monkeypatch.setattr(
         hosted.webbrowser,
         "open",
-        lambda _url: pytest.fail("installed PWA should be preferred"),
+        lambda _url: pytest.fail("the app's own browser should be enough"),
     )
 
-    hosted._open_hosted_app("p" * 43, True)
-
+    # Confirmation waits for the browser rather than trusting the launch.
+    assert hosted._open_hosted_app("p" * 43, True, is_pending=_spent_after(1)) is True
     assert calls == [
         (
-            ["open", "-a", "Knuth", f"https://knuth.tayweid.io/#pair={'p' * 43}"],
+            ["open", "-b", "com.google.Chrome", PAIRING_URL],
             {"capture_output": True, "timeout": 5},
         )
     ]
 
 
-def test_launcher_falls_back_to_default_browser_without_installed_pwa(monkeypatch):
-    monkeypatch.setattr(hosted, "_open_macos_installed_app", lambda _url: False)
+def test_launcher_uses_the_default_browser_without_an_installed_app(monkeypatch):
+    monkeypatch.setattr(hosted, "_installed_app_browser", lambda: None)
     opened = []
     monkeypatch.setattr(
         hosted.webbrowser, "open", lambda url: opened.append(url) or True
     )
 
-    hosted._open_hosted_app("p" * 43, True)
+    assert hosted._open_hosted_app("p" * 43, True, is_pending=_spent_after(0)) is True
+    assert opened == [PAIRING_URL]
 
-    assert opened == [f"https://knuth.tayweid.io/#pair={'p' * 43}"]
+
+def test_launcher_escalates_when_a_browser_never_spends_the_token(monkeypatch):
+    """A window that opened is not a browser that paired."""
+    monkeypatch.setattr(hosted, "DELIVERY_TIMEOUT_SECONDS", 0)
+    monkeypatch.setattr(hosted, "_installed_app_browser", lambda: "com.google.Chrome")
+    monkeypatch.setattr(
+        hosted.subprocess,
+        "run",
+        lambda command, **options: type("Result", (), {"returncode": 0})(),
+    )
+    opened = []
+    monkeypatch.setattr(
+        hosted.webbrowser, "open", lambda url: opened.append(url) or True
+    )
+
+    # The shim's browser opens but never pairs; the default browser then does.
+    assert hosted._open_hosted_app("p" * 43, True, is_pending=_spent_after(1)) is True
+    assert opened == [PAIRING_URL], "must fall through to the next route"
+
+
+def test_launcher_reports_manual_pairing_when_no_browser_pairs(monkeypatch, capsys):
+    monkeypatch.setattr(hosted, "DELIVERY_TIMEOUT_SECONDS", 0)
+    monkeypatch.setattr(hosted, "_installed_app_browser", lambda: None)
+    monkeypatch.setattr(hosted.webbrowser, "open", lambda _url: True)
+
+    assert hosted._open_hosted_app("p" * 43, True, is_pending=lambda: True) is False
+    printed = capsys.readouterr().out
+    assert "did not complete pairing" in printed
+    assert "knuth agent pair" in printed
+
+
+def test_launcher_stops_after_one_window_when_pairing_state_is_unknown(monkeypatch):
+    """An engine too old to report pairing state must not spray windows."""
+    monkeypatch.setattr(hosted, "_installed_app_browser", lambda: None)
+    opened = []
+    monkeypatch.setattr(
+        hosted.webbrowser, "open", lambda url: opened.append(url) or True
+    )
+
+    assert hosted._open_hosted_app("p" * 43, True, is_pending=None) is False
+    assert opened == [PAIRING_URL]
+
+
+def test_background_delivery_runs_off_the_event_loop_thread(monkeypatch):
+    """Waiting for the browser must never block the server accepting it."""
+    calls = []
+    monkeypatch.setattr(
+        hosted,
+        "_open_hosted_app",
+        lambda token, open_browser, is_pending: calls.append(
+            (token, open_browser, is_pending(), threading.current_thread())
+        ),
+    )
+
+    thread = hosted._deliver_in_background("p" * 43, True, lambda: False)
+    thread.join(timeout=5)
+
+    assert calls == [("p" * 43, True, False, thread)]
+    assert thread is not threading.current_thread()
+
+
+def test_installed_app_browser_reads_the_shim(monkeypatch, tmp_path):
+    monkeypatch.setattr(hosted.sys, "platform", "darwin")
+    missing = tmp_path / "empty"
+    shim = tmp_path / "apps" / hosted.APP_SHIM_NAME / "Contents"
+    shim.mkdir(parents=True)
+    with open(shim / "Info.plist", "wb") as handle:
+        plistlib.dump({"CrBundleIdentifier": "com.brave.Browser"}, handle)
+    monkeypatch.setattr(
+        hosted, "APP_SHIM_DIRECTORIES", (missing, tmp_path / "apps")
+    )
+
+    assert hosted._installed_app_browser() == "com.brave.Browser"
+
+
+def test_installed_app_browser_is_none_without_a_shim(monkeypatch, tmp_path):
+    monkeypatch.setattr(hosted.sys, "platform", "darwin")
+    monkeypatch.setattr(hosted, "APP_SHIM_DIRECTORIES", (tmp_path,))
+
+    assert hosted._installed_app_browser() is None
+
+
+def test_installed_app_browser_is_macos_only(monkeypatch):
+    monkeypatch.setattr(hosted.sys, "platform", "win32")
+    # Not iterable: scanning for a macOS shim elsewhere would raise, not pass.
+    monkeypatch.setattr(hosted, "APP_SHIM_DIRECTORIES", None)
+
+    assert hosted._installed_app_browser() is None
+
+
+def test_launcher_skips_browsers_entirely_with_no_browser(monkeypatch, capsys):
+    monkeypatch.setattr(
+        hosted.webbrowser, "open", lambda _url: pytest.fail("--no-browser opens nothing")
+    )
+
+    assert hosted._open_hosted_app("p" * 43, False) is False
+    assert "manual Pair action" in capsys.readouterr().out
 
 
 def test_cli_dispatches_hosted_app(monkeypatch):
