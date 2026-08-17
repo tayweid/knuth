@@ -256,8 +256,6 @@ export class SidecarKernel implements Kernel {
   private awaitingPair = false;
   private reattachAfterClose = false;
   private pairingToken = consumePairingFragment();
-  /** The credential this socket presented, so only it gets discarded. */
-  private sentCapability: string | null = null;
   private retryTimer = 0;
   private nextId = 1;
   private runs = new Map<number, PendingRun>();
@@ -305,18 +303,17 @@ export class SidecarKernel implements Kernel {
     if (!this.awaitingPair) this.onStatus?.('connecting');
     const ws = new WebSocket(this.url);
     this.ws = ws;
-    ws.addEventListener('open', () => {
-      this.sentCapability = localStorage.getItem(CAPABILITY_KEY);
+    ws.addEventListener('open', () =>
       ws.send(
         JSON.stringify({
           type: 'attach',
           protocol: PROTOCOL_VERSION,
           session: sessionId(),
-          capability: this.sentCapability,
+          capability: localStorage.getItem(CAPABILITY_KEY),
           pairing: this.pairingToken,
         }),
-      );
-    });
+      ),
+    );
     ws.addEventListener('message', (ev) => this.receive(ws, ev.data));
     // 'error' is always followed by 'close'; one path handles both.
     ws.addEventListener('close', () => this.dropped(ws));
@@ -552,11 +549,12 @@ export class SidecarKernel implements Kernel {
     const alreadyShown = this.awaitingPair;
     this.awaitingPair = true;
     this.connectedReady = false;
-    // Discard only the credential this socket actually presented: another
-    // window may have paired us while this attach was in flight.
-    if (localStorage.getItem(CAPABILITY_KEY) === this.sentCapability) {
-      localStorage.removeItem(CAPABILITY_KEY);
-    }
+    // The capability stays. One engine saying no is not proof the credential
+    // is dead, and it is shared by every window on this origin — so deleting
+    // it turns a single rejected socket into an unpaired browser, including
+    // every future file-handler launch, recoverable only from a terminal.
+    // A stale capability costs nothing: it fails, this wall appears, and
+    // pairing overwrites it. Losing a good one costs the user the app.
     this.failPending('kernel pairing required');
     // A retry that lands on the same wall keeps the first, more specific
     // explanation rather than rewriting it every fifteen seconds.

@@ -202,6 +202,21 @@ test('an unpaired window recovers when another one pairs the profile', async ({ 
   await expect(page.locator('#kernel-status')).toHaveText('kernel');
 });
 
+test('a rejected attach does not unpair the whole browser', async ({ page }) => {
+  // The capability is shared by every window on this origin, so discarding it
+  // on one rejection strands the browser — including every later file-handler
+  // launch — with no way back except the terminal.
+  const STALE = 's'.repeat(43);
+  await page.addInitScript((stale) => {
+    localStorage.setItem('knuth-agent-capability', stale);
+  }, STALE);
+  await page.goto('/');
+
+  await expect(page.locator('#kernel-status')).toHaveText('kernel pairing required');
+  const stored = await page.evaluate(() => localStorage.getItem('knuth-agent-capability'));
+  expect(stored, 'the rejected credential must survive').toBe(STALE);
+});
+
 test('an unpaired window heals without a reload or a storage event', async ({ page }) => {
   // A file-handler launch opens a window with no pairing fragment. If the
   // capability then lands in this profile without a storage event reaching
