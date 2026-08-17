@@ -1,5 +1,6 @@
 """Secure local capability creation and rotation."""
 
+import os
 import stat
 
 import pytest
@@ -14,16 +15,19 @@ def test_capability_lifecycle(tmp_path, monkeypatch):
     path = capability_path()
     assert len(first) == 43
     assert path.read_text(encoding="ascii").strip() == first
-    assert stat.S_IMODE(path.stat().st_mode) == 0o600
-    assert stat.S_IMODE(path.parent.stat().st_mode) == 0o700
+    if os.name != "nt":
+        assert stat.S_IMODE(path.stat().st_mode) == 0o600
+        assert stat.S_IMODE(path.parent.stat().st_mode) == 0o700
     assert load_or_create_capability() == first
 
     second = rotate_capability()
     assert second != first
     assert load_or_create_capability() == second
-    assert stat.S_IMODE(path.stat().st_mode) == 0o600
+    if os.name != "nt":
+        assert stat.S_IMODE(path.stat().st_mode) == 0o600
 
 
+@pytest.mark.skipif(os.name == "nt", reason="Windows uses profile ACLs, not POSIX modes")
 def test_capability_rejects_unsafe_permissions(tmp_path, monkeypatch):
     monkeypatch.setenv("KNUTH_CONFIG_DIR", str(tmp_path / "config"))
     load_or_create_capability()
