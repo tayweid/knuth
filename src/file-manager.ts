@@ -26,6 +26,48 @@ const PY_TYPE: FilePickerType[] = [
 ];
 
 const NEW_DOC = '# %%\n';
+const ARTIFACT_MANIFEST = '.knuth-artifacts.json';
+const MAX_FIGURE_NAME_BYTES = 128;
+const WINDOWS_RESERVED_NAMES = new Set([
+  'CON',
+  'PRN',
+  'AUX',
+  'NUL',
+  ...Array.from({ length: 9 }, (_, index) => `COM${index + 1}`),
+  ...Array.from({ length: 9 }, (_, index) => `LPT${index + 1}`),
+]);
+
+function isSafeFigureName(name: string): boolean {
+  return (
+    name.length > 0 &&
+    !name.startsWith('_') &&
+    /^\p{ID_Start}\p{ID_Continue}*$/u.test(name) &&
+    name === name.normalize('NFC') &&
+    new TextEncoder().encode(name).byteLength <= MAX_FIGURE_NAME_BYTES &&
+    !WINDOWS_RESERVED_NAMES.has(name.toUpperCase())
+  );
+}
+
+function parseOwnedFigureNames(raw: string): Set<string> {
+  try {
+    const data = JSON.parse(raw) as unknown;
+    if (!data || typeof data !== 'object') return new Set();
+    const manifest = data as { version?: unknown; figures?: unknown };
+    if (manifest.version !== 1 || !Array.isArray(manifest.figures)) return new Set();
+    const names = new Set<string>();
+    for (const path of manifest.figures) {
+      if (typeof path !== 'string' || !path.startsWith('figs/') || !path.endsWith('.svg')) {
+        return new Set();
+      }
+      const name = path.slice('figs/'.length, -'.svg'.length);
+      if (!isSafeFigureName(name) || path !== `figs/${name}.svg`) return new Set();
+      names.add(name);
+    }
+    return names;
+  } catch {
+    return new Set();
+  }
+}
 
 export interface RecentEntry {
   name: string;
@@ -418,17 +460,55 @@ export class FileManager {
   async writeArtifacts(values: Record<string, unknown>, figures: Record<string, string>) {
     if (!this.dir) return;
     try {
+      const names = Object.keys(figures).sort();
+      const currentNames = new Set(names);
+      const collisionKeys = new Set<string>();
+      for (const name of names) {
+        const collisionKey = name.toLocaleLowerCase('en-US');
+        if (!isSafeFigureName(name) || collisionKeys.has(collisionKey)) {
+          throw new Error(`unsafe or colliding figure artifact name: ${JSON.stringify(name)}`);
+        }
+        collisionKeys.add(collisionKey);
+      }
+      const previous = await this.readOwnedFigureNames(this.dir);
+
       await this.writeFile(this.dir, 'values.json', JSON.stringify(values, null, 2) + '\n');
-      const names = Object.keys(figures);
-      if (names.length > 0) {
+      if (names.length > 0 || previous.size > 0) {
         const figs = await this.dir.getDirectoryHandle('figs', { create: true });
         for (const name of names) {
           await this.writeFile(figs, `${name}.svg`, figures[name]);
         }
+        for (const name of previous) {
+          if (currentNames.has(name)) continue;
+          try {
+            await figs.removeEntry(`${name}.svg`);
+          } catch (error) {
+            if ((error as DOMException)?.name !== 'NotFoundError') throw error;
+          }
+        }
       }
+      const manifest = JSON.stringify(
+        { version: 1, figures: names.map((name) => `figs/${name}.svg`) },
+        null,
+        2,
+      ) + '\n';
+      // Commit ownership last: it never claims a file that was not already
+      // written successfully, and pre-manifest SVGs are never inferred.
+      await this.writeFile(this.dir, ARTIFACT_MANIFEST, manifest);
     } catch (e) {
       console.warn('Contract write failed', e);
       this.hooks.message('Could not write to the project folder');
+    }
+  }
+
+  private async readOwnedFigureNames(dir: FileSystemDirectoryHandle): Promise<Set<string>> {
+    try {
+      const handle = await dir.getFileHandle(ARTIFACT_MANIFEST);
+      return parseOwnedFigureNames(await (await handle.getFile()).text());
+    } catch {
+      // Migration and malformed-manifest behavior is intentionally safe:
+      // without a trustworthy record, Knuth owns nothing and deletes nothing.
+      return new Set();
     }
   }
 

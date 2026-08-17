@@ -11,6 +11,8 @@ import sys
 import traceback
 import types
 
+from .artifacts import is_safe_figure_name
+
 # values.json size guard: a "small serializable" stops being small here.
 MAX_VALUE_JSON = 10_000
 
@@ -187,7 +189,11 @@ class Session:
         excluded."""
         out = []
         for name, value in self.namespace.items():
-            if name.startswith("_") or isinstance(value, types.ModuleType):
+            if (
+                not isinstance(name, str)
+                or name.startswith("_")
+                or isinstance(value, types.ModuleType)
+            ):
                 continue
             entry = {"name": name, "type": type(value).__name__}
             shape = getattr(value, "shape", None)
@@ -272,7 +278,7 @@ class Session:
         candidates = []
         for name, value in self.namespace.items():
             if (
-                name.startswith("_")
+                not is_safe_figure_name(name)
                 or name in self.scratch_names
                 or isinstance(value, types.ModuleType)
             ):
@@ -283,7 +289,15 @@ class Session:
         chosen = {}
         for name, fig, direct in sorted(candidates, key=lambda c: not c[2]):
             chosen.setdefault(id(fig), (name, fig))
-        return {name: fig for name, fig in chosen.values()}
+        bindings = {}
+        filesystem_names = set()
+        for name, fig in chosen.values():
+            collision_key = name.casefold()
+            if collision_key in filesystem_names:
+                continue
+            filesystem_names.add(collision_key)
+            bindings[name] = fig
+        return bindings
 
     def figure_receipts(self, assigned):
         """Canonical figure names touched by the given bindings — what a
@@ -305,7 +319,11 @@ class Session:
         modules and non-serializables (DataFrames included) stay behind."""
         values = {}
         for name, value in self.namespace.items():
-            if name.startswith("_") or isinstance(value, types.ModuleType):
+            if (
+                not isinstance(name, str)
+                or name.startswith("_")
+                or isinstance(value, types.ModuleType)
+            ):
                 continue
             if name in self.scratch_names:  # scratch never persists
                 continue

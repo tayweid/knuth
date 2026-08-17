@@ -5,7 +5,8 @@ const FIGURE_SVG = `
   <rect width="240" height="120" fill="#f7f4ed"/>
   <path d="M20 100 L80 55 L140 75 L220 20" fill="none" stroke="#336699" stroke-width="4"/>
 </svg>`;
-const TEST_CAPABILITY = 'browser-test-capability-that-is-long-enough-to-use';
+const TEST_CAPABILITY = 'c'.repeat(43);
+const TEST_PAIRING = 'p'.repeat(43);
 const MALICIOUS_SVG = `
 <svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink"
      width="240" height="120" onload="window.__knuthSvgExecuted = 'onload'">
@@ -24,7 +25,7 @@ const MALICIOUS_SVG = `
 </svg>`;
 
 test.beforeEach(async ({ page }) => {
-  await page.addInitScript(({ figureSvg, capability }) => {
+  await page.addInitScript(({ figureSvg, capability, pairing }) => {
     localStorage.setItem('knuth-agent-capability', capability);
 
     class MockWebSocket extends EventTarget {
@@ -48,10 +49,13 @@ test.beforeEach(async ({ page }) => {
       send(raw: string) {
         const msg = JSON.parse(raw);
         if (msg.type === 'attach') {
-          if (msg.capability !== capability) {
-            this.reply({ type: 'unauthorized' });
+          if (msg.capability !== capability && msg.pairing !== pairing) {
+            this.reply({ type: msg.pairing ? 'pairing_expired' : 'unauthorized' });
             window.setTimeout(() => this.close());
             return;
+          }
+          if (msg.capability !== capability) {
+            this.reply({ type: 'paired', protocol: msg.protocol, capability });
           }
           this.reply({
             type: 'attached',
@@ -61,8 +65,14 @@ test.beforeEach(async ({ page }) => {
           });
           this.reply({ type: 'ready' });
         } else if (msg.type === 'namespace') {
+          const testWindow = window as typeof window & { __knuthMalformedNamespace?: boolean };
+          if (testWindow.__knuthMalformedNamespace) {
+            this.reply({ type: 'namespace', id: msg.id, vars: 'not an array' });
+            return;
+          }
           this.reply({
             type: 'namespace',
+            id: msg.id,
             vars: [
               {
                 name: 'chart',
@@ -76,6 +86,7 @@ test.beforeEach(async ({ page }) => {
           const testWindow = window as typeof window & { __knuthTestFigureSvg?: string };
           this.reply({
             type: 'figure',
+            id: msg.id,
             name: msg.name,
             svg: testWindow.__knuthTestFigureSvg ?? figureSvg,
           });
@@ -108,7 +119,7 @@ test.beforeEach(async ({ page }) => {
       configurable: true,
       value: MockWebSocket,
     });
-  }, { figureSvg: FIGURE_SVG, capability: TEST_CAPABILITY });
+  }, { figureSvg: FIGURE_SVG, capability: TEST_CAPABILITY, pairing: TEST_PAIRING });
 });
 
 test('boots against the kernel protocol and renders a normal figure', async ({ page }) => {
@@ -139,6 +150,37 @@ test('pairs after an authorization rejection without reloading', async ({ page }
 
   await expect(page.locator('#kernel-status')).toHaveText('kernel');
   await expect(page.getByText('chart', { exact: true })).toBeVisible();
+});
+
+test('automatically exchanges and scrubs a one-time pairing fragment', async ({ page }) => {
+  await page.addInitScript(() => localStorage.removeItem('knuth-agent-capability'));
+  await page.goto(`/#pair=${TEST_PAIRING}`);
+
+  await expect(page.locator('#kernel-status')).toHaveText('kernel');
+  expect(new URL(page.url()).hash).toBe('');
+  const stored = await page.evaluate(() => localStorage.getItem('knuth-agent-capability'));
+  expect(stored).toBe(TEST_CAPABILITY);
+});
+
+test('explains an expired automatic pairing without retrying forever', async ({ page }) => {
+  await page.addInitScript(() => localStorage.removeItem('knuth-agent-capability'));
+  await page.goto('/#pair=expired-token');
+
+  await expect(page.locator('#kernel-status')).toHaveText('kernel pairing link expired');
+  await expect(page.getByRole('heading', { name: 'The secure pairing link expired' })).toBeVisible();
+  expect(new URL(page.url()).hash).toBe('');
+});
+
+test('shows cross-platform install and start commands when pairing is required', async ({ page }) => {
+  await page.addInitScript(() => localStorage.removeItem('knuth-agent-capability'));
+  await page.goto('/');
+
+  await expect(page.getByRole('heading', { name: 'Pair this browser' })).toBeVisible();
+  await page.getByRole('tab', { name: 'Windows' }).click();
+  await expect(page.locator('#engine-install-command')).toHaveText(
+    'py -m pip install --upgrade knuth',
+  );
+  await expect(page.getByText('knuth app --hosted', { exact: true }).first()).toBeVisible();
 });
 
 test('re-pairs an active app through a close-then-reattach', async ({ page }) => {
@@ -198,4 +240,24 @@ test('renders malicious SVG as a sanitized inert image', async ({ page }) => {
     /<script|foreignObject|\son\w+=|javascript:|attacker\.example/i,
   );
   await expect(page.locator('.viewer .figure svg')).toHaveCount(0);
+});
+
+test('refuses to initialize when another page embeds the app', async ({ page }) => {
+  await page.setContent('<iframe title="embedded Knuth" src="http://127.0.0.1:5198/"></iframe>');
+
+  const embedded = page.frameLocator('iframe[title="embedded Knuth"]');
+  await expect(
+    embedded.getByText('For your security, open Knuth directly in its own window.'),
+  ).toBeVisible();
+  await expect(embedded.locator('#toolbar')).toHaveCount(0);
+});
+
+test('fails closed on a malformed event from the local engine', async ({ page }) => {
+  await page.addInitScript(() => {
+    (window as typeof window & { __knuthMalformedNamespace?: boolean })
+      .__knuthMalformedNamespace = true;
+  });
+  await page.goto('/');
+
+  await expect(page.locator('#kernel-status')).toHaveText('Python engine unavailable');
 });

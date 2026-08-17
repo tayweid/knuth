@@ -37,31 +37,30 @@ References:
 - [Verifying a GitHub Pages custom domain](https://docs.github.com/en/pages/configuring-a-custom-domain-for-your-github-pages-site/verifying-your-custom-domain-for-github-pages)
 - [Securing a GitHub Pages site with HTTPS](https://docs.github.com/en/pages/getting-started-with-github-pages/securing-your-github-pages-site-with-https)
 
-## No-downtime app and agent cutover
+## Hosted-launcher release smoke test
 
-The app and agent changes are deliberately compatible with the currently
-running legacy agent. Follow this order after the custom domain serves the
-updated build:
+Run this checklist against every release candidate after the custom domain
+serves the updated build:
 
-1. Finish or save any live computation. The final agent restart clears its
-   in-memory Python session.
-2. Open `https://knuth.tayweid.io/` in Chrome and install it as a PWA.
-3. Run `.venv/bin/knuth agent pair` in the repository. Copy the displayed
-   capability.
-4. In the new PWA, click the **kernel** status label and paste the capability.
-   The legacy agent ignores the additional credential, so the app remains
-   usable before cutover.
-5. Run `.venv/bin/knuth agent restart`. The restarted server now enforces the
-   dedicated origin, protocol version, and capability.
-6. Reload the new PWA. Confirm the status returns to **kernel**, run a harmless
-   cell, restart the kernel from the toolbar, and confirm the session pane and
-   a figure still work.
-7. Remove the old `tayweid.github.io/knuth/` PWA installation once the new one
-   handles `.py` files correctly.
+1. Build and install the wheel in a clean Python 3.11+ virtual environment.
+2. Open `https://knuth.tayweid.io/` with no engine running. Confirm the
+   onboarding card selects the correct operating system and its PWA install
+   action appears when the browser offers installation.
+3. Run `knuth app --hosted`. Confirm it opens the canonical domain, removes the
+   `#pair=…` fragment immediately, reaches **kernel**, and does not print or
+   persist either pairing secret.
+4. Run a harmless cell, interrupt a loop, restart the kernel, reload within
+   the grace period, and confirm the session pane and a figure still work.
+5. Close the foreground command and confirm the app reports the unavailable
+   engine, then rerun it and confirm automatic reconnection.
+6. Repeat the launcher and interrupt checks on macOS, Windows, and Linux.
+7. Install the PWA, launch it independently, and repeat the stop/start cycle.
+8. On macOS, separately verify `knuth agent install`, `status`, `restart`,
+   automatic pairing through `knuth app --hosted`, and `uninstall`.
 
-If pairing fails, run `.venv/bin/knuth agent pair` again and replace the value
-by clicking the kernel status. `knuth agent rotate-token` revokes all paired
-browsers and restarts an installed launch agent.
+If automatic pairing fails, run `knuth agent pair` and use the app's manual
+Pair action. `knuth agent rotate-token` revokes all paired browsers and
+restarts an installed macOS launch agent.
 
 ## Release checks
 
@@ -72,7 +71,29 @@ npm test
 npm run test:browser
 npm run build
 .venv/bin/python -m pytest python/tests
+.venv/bin/python -m pip install pip-audit==2.10.1
+.venv/bin/python -m pip_audit -r python/requirements-audit.txt
 ```
 
 GitHub Actions runs the same frontend, browser, build, and Python gates before
 publishing the Pages artifact.
+
+## Stable-release response-header gate
+
+GitHub Pages does not provide repository-configurable HTTP response headers.
+Knuth therefore enforces the directives GitHub Pages can support through a
+meta CSP and refuses to initialize inside a frame at runtime. Before calling a
+release stable, serve the same static `dist/` artifact from, or proxy it
+through, a provider that can add at least:
+
+```text
+Content-Security-Policy: default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; font-src 'self'; img-src 'self' blob: data:; connect-src 'self' blob: ws://127.0.0.1:5197; manifest-src 'self'; worker-src 'self' blob:; object-src 'none'; base-uri 'none'; form-action 'none'; frame-src 'none'; frame-ancestors 'none'
+Referrer-Policy: no-referrer
+Permissions-Policy: camera=(), microphone=(), geolocation=(), payment=(), usb=()
+X-Content-Type-Options: nosniff
+```
+
+Keep the public URL exactly `https://knuth.tayweid.io`; changing the origin
+also changes browser storage and the sidecar authorization boundary. Verify
+the deployed headers with `curl -I https://knuth.tayweid.io/` and rerun the
+browser suite through the final host.

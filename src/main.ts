@@ -3,12 +3,14 @@
 // synchronously inside setConsumer, so everything it touches must
 // already be live (hard-won Plass lesson).
 
+import './frame-guard.ts';
 import './styles.css';
 import { SidecarKernel } from './kernel/kernel.ts';
 import { DocumentView } from './document-view.ts';
 import { FileManager } from './file-manager.ts';
 import { SessionPanel } from './panel.ts';
 import { icon } from './icons.ts';
+import { Onboarding } from './onboarding.ts';
 
 // Plass's hover flyout: the trigger's group lays its labeled icons OVER
 // the trigger — pure :hover, no gap for the cursor to cross.
@@ -63,6 +65,7 @@ toolbar.innerHTML = `
   </div>
   <div class="tb-pod tb-group">
     ${labeled('toggle-panel', icon('panel'), 'Session', 'Show/hide the session panes')}
+    <button type="button" id="install-app" hidden>Install</button>
     <span id="kernel-status">connecting…</span>
   </div>
 `;
@@ -88,8 +91,16 @@ function toast(text: string, action?: { label: string; run: () => void }) {
 }
 
 const status = $('kernel-status');
+const onboarding = new Onboarding(
+  $('onboarding'),
+  $('install-app') as HTMLButtonElement,
+  pairKernel,
+);
 let hadSession = false;
+let kernelState: Parameters<typeof onboarding.setState>[0] = 'connecting';
 const kernel = new SidecarKernel(undefined, (state, resumed) => {
+  kernelState = state;
+  onboarding.setState(state);
   if (state === 'ready') {
     status.textContent = 'kernel';
     status.title = 'Click to pair or replace this browser capability';
@@ -105,8 +116,8 @@ const kernel = new SidecarKernel(undefined, (state, resumed) => {
     hadSession = true;
     void panel.refresh();
   } else if (state === 'down') {
-    status.textContent = 'no kernel — install: knuth agent install';
-    status.title = 'Retrying every 2s. One-time setup: knuth agent install';
+    status.textContent = 'Python engine unavailable';
+    status.title = 'Run: knuth app --hosted';
     status.className = 'bad';
   } else if (state === 'incompatible') {
     status.textContent = 'kernel/app versions do not match';
@@ -120,6 +131,10 @@ const kernel = new SidecarKernel(undefined, (state, resumed) => {
       label: 'Pair',
       run: pairKernel,
     });
+  } else if (state === 'pairing_expired') {
+    status.textContent = 'kernel pairing link expired';
+    status.title = 'Run: knuth app --hosted';
+    status.className = 'bad';
   } else {
     status.textContent = 'connecting…';
     status.className = '';
@@ -138,11 +153,15 @@ function pairKernel() {
 
 status.tabIndex = 0;
 status.setAttribute('role', 'button');
-status.addEventListener('click', pairKernel);
+function activateKernelStatus() {
+  if (kernelState === 'ready' || kernelState === 'unauthorized') pairKernel();
+  else onboarding.show();
+}
+status.addEventListener('click', activateKernelStatus);
 status.addEventListener('keydown', (event) => {
   if (event.key === 'Enter' || event.key === ' ') {
     event.preventDefault();
-    pairKernel();
+    activateKernelStatus();
   }
 });
 
@@ -425,3 +444,11 @@ window.launchQueue?.setConsumer((params) => {
     });
   }
 });
+
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', () => {
+    void navigator.serviceWorker.register('./sw.js', { scope: './' }).catch((error) => {
+      console.warn('Knuth service worker registration failed', error);
+    });
+  });
+}

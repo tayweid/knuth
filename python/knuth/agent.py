@@ -57,6 +57,10 @@ def install(port):
 
 
 def uninstall(quiet=False):
+    if sys.platform != "darwin":
+        if not quiet:
+            print("knuth agent currently supports macOS (launchd) only")
+        return 1
     _launchctl("bootout", f"{_domain()}/{LABEL}")
     existed = PLIST.exists()
     PLIST.unlink(missing_ok=True)
@@ -66,6 +70,10 @@ def uninstall(quiet=False):
 
 
 def status():
+    if sys.platform != "darwin":
+        print("knuth agent currently supports macOS (launchd) only")
+        print("Use `knuth app --hosted` for the cross-platform foreground engine.")
+        return 1
     result = _launchctl("print", f"{_domain()}/{LABEL}")
     if result.returncode != 0:
         print(f"{LABEL}: not installed (knuth agent install)")

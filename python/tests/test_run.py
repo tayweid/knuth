@@ -3,6 +3,10 @@
 import json
 from pathlib import Path
 
+import pytest
+
+import knuth.runner as runner
+from knuth.artifacts import MANIFEST_NAME, owned_figure_names
 from knuth.percent import parse_document, serialize_document
 from knuth.runner import run_file
 
@@ -119,3 +123,53 @@ def test_runner(tmp_path):
     doc = parse_document(mixed.read_text())
     assert doc.preamble[0] == "base = 10", doc.preamble
     assert doc.cells[0].output == ["#-> 11"], doc.cells[0].output
+
+
+def test_runner_owns_only_manifested_figures(tmp_path):
+    document = tmp_path / "figures.py"
+    document.write_text(
+        "# %%\n"
+        "import matplotlib\n"
+        "matplotlib.use('Agg')\n"
+        "import matplotlib.pyplot as plt\n"
+        "plot = plt.figure()\n"
+    )
+    quiet = lambda *_: None
+    assert run_file(document, echo=quiet) == 0
+    generated = tmp_path / "figs" / "plot.svg"
+    assert generated.exists()
+    assert owned_figure_names((tmp_path / MANIFEST_NAME).read_text()) == {"plot"}
+
+    user_svg = tmp_path / "figs" / "user-owned.svg"
+    user_svg.write_text("<svg><!-- mine --></svg>")
+    document.write_text("# %%\nanswer = 42\n")
+    assert run_file(document, echo=quiet) == 0
+    assert not generated.exists(), "a stale Knuth-owned SVG should be removed"
+    assert user_svg.exists(), "an unmanifested user SVG must never be deleted"
+    assert owned_figure_names((tmp_path / MANIFEST_NAME).read_text()) == set()
+
+    # Migration: a project with no ownership manifest keeps every old SVG.
+    legacy = tmp_path / "legacy"
+    (legacy / "figs").mkdir(parents=True)
+    legacy_svg = legacy / "figs" / "old.svg"
+    legacy_svg.write_text("<svg/>")
+    legacy_doc = legacy / "analysis.py"
+    legacy_doc.write_text("# %%\nvalue = 1\n")
+    assert run_file(legacy_doc, echo=quiet) == 0
+    assert legacy_svg.exists()
+
+
+def test_atomic_write_never_exposes_a_partial_destination(tmp_path, monkeypatch):
+    destination = tmp_path / "receipt.py"
+    destination.write_text("last complete bytes\n")
+
+    def interrupted_replace(source, target):
+        assert Path(target).read_text() == "last complete bytes\n"
+        raise OSError("simulated interruption before replace")
+
+    monkeypatch.setattr(runner.os, "replace", interrupted_replace)
+    with pytest.raises(OSError, match="simulated interruption"):
+        runner._atomic_write(destination, "new complete bytes\n")
+
+    assert destination.read_text() == "last complete bytes\n"
+    assert list(tmp_path.glob(".receipt.py.*.tmp")) == []

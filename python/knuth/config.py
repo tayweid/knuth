@@ -22,6 +22,10 @@ def config_dir():
         return Path(override).expanduser()
     if sys.platform == "darwin":
         return Path.home() / "Library" / "Application Support" / "Knuth"
+    if sys.platform == "win32":
+        app_data = os.environ.get("APPDATA")
+        root = Path(app_data) if app_data else Path.home() / "AppData" / "Roaming"
+        return root / "Knuth"
     return Path(os.environ.get("XDG_CONFIG_HOME", Path.home() / ".config")) / "knuth"
 
 
@@ -38,11 +42,20 @@ def _prepare_dir():
     else:
         if not stat.S_ISDIR(info.st_mode) or directory.is_symlink():
             raise RuntimeError(f"Knuth config path is not a directory: {directory}")
-    directory.chmod(0o700)
+    # Windows protects the per-user roaming profile with ACL inheritance;
+    # POSIX permission bits are neither authoritative nor reliably preserved.
+    if os.name != "nt":
+        directory.chmod(0o700)
     return directory
 
 
 def _read_capability(path):
+    try:
+        path_info = path.lstat()
+    except FileNotFoundError:
+        raise
+    if stat.S_ISLNK(path_info.st_mode):
+        raise RuntimeError(f"Knuth capability must not be a symlink: {path}")
     flags = os.O_RDONLY
     if hasattr(os, "O_NOFOLLOW"):
         flags |= os.O_NOFOLLOW
@@ -51,7 +64,7 @@ def _read_capability(path):
         info = os.fstat(fd)
         if not stat.S_ISREG(info.st_mode):
             raise RuntimeError(f"Knuth capability is not a regular file: {path}")
-        if stat.S_IMODE(info.st_mode) != 0o600:
+        if os.name != "nt" and stat.S_IMODE(info.st_mode) != 0o600:
             raise RuntimeError(f"Knuth capability permissions must be 0600: {path}")
         with os.fdopen(fd, encoding="ascii") as file:
             fd = None

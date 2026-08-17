@@ -1,7 +1,7 @@
 """Session checks and the full server/kernel stack over a real WebSocket."""
 
 import asyncio
-from contextlib import suppress
+from contextlib import asynccontextmanager, suppress
 import json
 import socket
 import subprocess
@@ -13,9 +13,17 @@ import websockets
 from websockets.exceptions import ConnectionClosed, InvalidHandshake
 
 from knuth.config import load_or_create_capability
+from knuth.doctor import _engine_status
+from knuth.hosted import _request_pairing_from_running_engine
 from knuth.limits import MAX_INBOUND_MESSAGE_BYTES
 from knuth.session import Session
-from knuth.server import DEFAULT_ALLOWED_ORIGINS, KernelProcess, PROTOCOL_VERSION, serve
+from knuth.server import (
+    DEFAULT_ALLOWED_ORIGINS,
+    KernelProcess,
+    PROTOCOL_VERSION,
+    PairingBroker,
+    serve,
+)
 
 
 TEST_ORIGIN = "http://127.0.0.1:5198"
@@ -23,8 +31,34 @@ PRODUCTION_ORIGIN = "https://knuth.tayweid.io"
 TEST_CAPABILITY = load_or_create_capability()
 
 
+@asynccontextmanager
+async def closing_websocket(ws):
+    """Close an already-awaited client across websockets 13 through current."""
+    try:
+        yield ws
+    finally:
+        await ws.close()
+
+
 def test_release_origins_exclude_shared_and_development_hosts():
     assert DEFAULT_ALLOWED_ORIGINS == (PRODUCTION_ORIGIN,)
+
+
+def test_pairing_broker_is_single_use_and_expires(monkeypatch):
+    now = [100.0]
+    monkeypatch.setattr("knuth.server.time.monotonic", lambda: now[0])
+    broker = PairingBroker(ttl_seconds=5)
+
+    first = broker.issue()
+    second = broker.issue()
+    assert first != second
+    assert not broker.consume(first), "issuing a new token must revoke the previous one"
+    assert broker.consume(second)
+    assert not broker.consume(second), "a pairing token must be single-use"
+
+    expired = broker.issue()
+    now[0] += 6
+    assert not broker.consume(expired)
 
 
 def test_session():
@@ -125,7 +159,7 @@ async def check_over_websocket():
                     raise
                 await asyncio.sleep(0.1)
         SID = "test-session-1"
-        async with ws:
+        async with closing_websocket(ws):
             c = Client(ws)
             attached = await c.attach(SID)
             assert attached["protocol"] == PROTOCOL_VERSION, attached
@@ -151,10 +185,11 @@ async def check_over_websocket():
             assert final["result"] == "42", final
 
             # Namespace snapshot.
-            await c.send(type="namespace")
+            await c.send(type="namespace", id=30)
             msg = await c.recv()
             names = {v["name"]: v for v in msg["vars"]}
-            assert msg["type"] == "namespace" and names["x"]["preview"] == "42", msg
+            assert msg["type"] == "namespace" and msg["id"] == 30, msg
+            assert names["x"]["preview"] == "42", msg
 
             # Interrupt: stop an infinite loop, session stays usable.
             await c.send(type="run", id=6, code="import time\nwhile True: time.sleep(0.05)")
@@ -210,10 +245,11 @@ async def check_over_websocket():
             assert final["result"] == "42", final
 
             # Restart: fresh process, empty namespace.
-            await c.send(type="restart")
+            await c.send(type="restart", id=31)
             while True:
                 msg = await asyncio.wait_for(c.recv(), timeout=10)
                 if msg["type"] == "ready":
+                    assert msg["id"] == 31, msg
                     break
             _, final = await c.run(8, "x")
             assert final["type"] == "error" and "NameError" in final["traceback"], final
@@ -258,7 +294,7 @@ async def check_grace_reap():
                 if time.monotonic() > deadline:
                     raise
                 await asyncio.sleep(0.1)
-        async with ws:
+        async with closing_websocket(ws):
             c = Client(ws)
             await c.attach("reap-me")
             await c.wait_ready()
@@ -285,6 +321,62 @@ def test_over_websocket():
 
 def test_grace_reap():
     asyncio.run(check_grace_reap())
+
+
+async def check_unexpected_kernel_exit():
+    """A crashed interpreter fails visibly and cannot leave a dead session."""
+    port = free_port()
+    server = subprocess.Popen(
+        server_command(port),
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+    )
+    try:
+        deadline = time.monotonic() + 10
+        while True:
+            try:
+                ws = await websockets.connect(
+                    f"ws://127.0.0.1:{port}", origin=TEST_ORIGIN
+                )
+                break
+            except OSError:
+                if time.monotonic() > deadline:
+                    raise
+                await asyncio.sleep(0.1)
+
+        sid = "crashing-session"
+        async with closing_websocket(ws):
+            client = Client(ws)
+            await client.attach(sid)
+            await client.wait_ready()
+            await client.send(type="run", id=1, code="import os\nos._exit(23)")
+            while True:
+                event = await asyncio.wait_for(client.recv(), timeout=5)
+                if event["type"] == "kernel_exit":
+                    assert event["returncode"] == 23, event
+                    break
+            with pytest.raises(ConnectionClosed):
+                await client.recv()
+
+        # Let the first handler finish removing the dead session. The same
+        # routing id must then create a clean process, never "resume" death.
+        await asyncio.sleep(0.1)
+        async with websockets.connect(
+            f"ws://127.0.0.1:{port}", origin=TEST_ORIGIN
+        ) as replacement:
+            client = Client(replacement)
+            attached = await client.attach(sid)
+            assert attached["session"] == sid and attached["resumed"] is False, attached
+            await client.wait_ready()
+            _, final = await client.run(2, "6 * 7")
+            assert final["type"] == "done" and final["result"] == "42", final
+    finally:
+        server.terminate()
+        server.wait(timeout=5)
+
+
+def test_unexpected_kernel_exit():
+    asyncio.run(check_unexpected_kernel_exit())
 
 
 async def check_origin_and_protocol_rejection():
@@ -392,9 +484,15 @@ async def check_origin_and_protocol_rejection():
             error = json.loads(await ws.recv())
             assert error["type"] == "protocol_error", error
 
-            await client.send(type="table", name="x", offset="zero", limit=100)
+            await client.send(type="table", id=40, name="x", offset="zero", limit=100)
             error = await client.recv()
             assert error["type"] == "protocol_error" and error["request"] == "table", error
+            assert error["id"] == 40, error
+
+            await client.send(type="namespace")
+            error = await client.recv()
+            assert error["type"] == "protocol_error", error
+            assert error["request"] == "namespace" and "id" not in error, error
 
             await client.send(type="not-a-command")
             error = await client.recv()
@@ -409,6 +507,85 @@ async def check_origin_and_protocol_rejection():
 
 def test_origin_and_protocol_rejection():
     asyncio.run(check_origin_and_protocol_rejection())
+
+
+async def check_pairing_bootstrap():
+    """A one-time token transfers, but never replaces, the durable secret."""
+    port = free_port()
+    url = f"ws://127.0.0.1:{port}"
+    server_task = asyncio.create_task(
+        serve(
+            port,
+            grace=1,
+            origins=(TEST_ORIGIN, PRODUCTION_ORIGIN),
+            capability=TEST_CAPABILITY,
+            pairing_broker=PairingBroker(ttl_seconds=30),
+        )
+    )
+    try:
+        deadline = time.monotonic() + 10
+        while True:
+            try:
+                control = await websockets.connect(url, origin=TEST_ORIGIN)
+                break
+            except OSError:
+                if time.monotonic() > deadline:
+                    raise
+                await asyncio.sleep(0.05)
+
+        async with closing_websocket(control):
+            await control.send(json.dumps({
+                "type": "status",
+                "protocol": PROTOCOL_VERSION,
+                "capability": TEST_CAPABILITY,
+            }))
+            status = json.loads(await control.recv())
+            assert status["type"] == "status" and status["protocol"] == PROTOCOL_VERSION
+            assert status["sessions"] == 0, "status must not create a kernel"
+
+        status = await _engine_status(port, TEST_CAPABILITY)
+        assert status["type"] == "status" and status["sessions"] == 0, status
+        token = await _request_pairing_from_running_engine(port, TEST_CAPABILITY)
+        assert isinstance(token, str) and len(token) == 43, token
+
+        async with websockets.connect(url, origin=TEST_ORIGIN) as paired_ws:
+            paired_client = Client(paired_ws)
+            await paired_client.send(
+                type="attach",
+                protocol=PROTOCOL_VERSION,
+                capability=None,
+                pairing=token,
+                session="bootstrap-session",
+            )
+            paired = await paired_client.recv()
+            assert paired == {
+                "type": "paired",
+                "protocol": PROTOCOL_VERSION,
+                "capability": TEST_CAPABILITY,
+            }, paired
+            attached = await paired_client.recv()
+            assert attached["type"] == "attached", attached
+            await paired_client.wait_ready()
+
+        async with websockets.connect(url, origin=TEST_ORIGIN) as replay_ws:
+            replay = Client(replay_ws)
+            await replay.send(
+                type="attach",
+                protocol=PROTOCOL_VERSION,
+                capability=None,
+                pairing=token,
+                session="replay-must-not-create-a-kernel",
+            )
+            rejected = await replay.recv()
+            assert rejected == {"type": "pairing_expired"}, rejected
+    finally:
+        server_task.cancel()
+        with suppress(asyncio.CancelledError):
+            await server_task
+
+
+def test_pairing_bootstrap():
+    asyncio.run(check_pairing_bootstrap())
 
 
 async def check_live_session_limit():

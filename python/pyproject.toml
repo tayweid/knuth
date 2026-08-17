@@ -1,15 +1,42 @@
 [build-system]
-requires = ["setuptools>=68"]
+requires = ["setuptools>=77"]
 build-backend = "setuptools.build_meta"
 
 [project]
 name = "knuth"
 version = "2.0.0.dev0"
 description = "Knuth kernel sidecar: the live-session server and reproducibility runner of the Claerbout suite"
+readme = "README.md"
+license = "MIT"
+license-files = ["LICENSE"]
+authors = [
+    { name = "Taylor J Weidman" },
+]
 requires-python = ">=3.11"
+keywords = ["reproducible-research", "python", "pwa", "literate-programming"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Environment :: Console",
+    "Intended Audience :: Science/Research",
+    "Operating System :: MacOS",
+    "Operating System :: Microsoft :: Windows",
+    "Operating System :: POSIX :: Linux",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3 :: Only",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
+    "Topic :: Scientific/Engineering",
+]
 dependencies = [
     "websockets>=13.0",
 ]
+
+[project.urls]
+Homepage = "https://knuth.tayweid.io"
+Repository = "https://github.com/tayweid/knuth"
+Issues = "https://github.com/tayweid/knuth/issues"
 
 [project.optional-dependencies]
 test = [

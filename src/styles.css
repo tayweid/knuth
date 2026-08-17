@@ -273,6 +273,217 @@ body:has(#panel:not([hidden])) #toolbar {
 #kernel-status.ok::before { content: '● '; color: #6ea576; }
 #kernel-status.bad::before { content: '● '; color: #cd6452; }
 
+#install-app {
+  font: 11px/1 var(--sans);
+  color: var(--glass-ink);
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid var(--glass-border);
+  border-radius: 999px;
+  padding: 0.4rem 0.7rem;
+  cursor: pointer;
+}
+
+#install-app:hover { background: rgba(255, 255, 255, 0.15); }
+#install-app[hidden] { display: none; }
+
+/* ---------- first-run engine and PWA onboarding ---------- */
+
+#onboarding {
+  position: fixed;
+  inset: 60px 0 0;
+  z-index: 9;
+  display: grid;
+  place-items: start center;
+  overflow: auto;
+  padding: 2rem 1.5rem 5rem;
+  background: color-mix(in srgb, var(--bg) 88%, transparent);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  color: var(--room-ink);
+}
+
+#onboarding[hidden] { display: none; }
+
+.onboarding-card {
+  width: min(680px, calc(100vw - 3rem));
+  min-width: 560px;
+  background: #201f23;
+  border: 1px solid var(--glass-border);
+  border-radius: 18px;
+  box-shadow: 0 24px 70px rgba(0, 0, 0, 0.42);
+  overflow: hidden;
+}
+
+.onboarding-head {
+  display: flex;
+  gap: 1.5rem;
+  align-items: flex-start;
+  padding: 1.6rem 1.75rem 1.35rem;
+  border-bottom: 1px solid var(--room-line);
+}
+
+.onboarding-head > div { flex: 1; }
+
+.onboarding-kicker {
+  color: #9db8d6;
+  font: 10px/1.3 var(--sans);
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  margin-bottom: 0.4rem;
+}
+
+.onboarding-head h1 {
+  color: var(--glass-ink);
+  font: 600 22px/1.25 var(--serif);
+  margin: 0;
+}
+
+.onboarding-head p {
+  color: var(--room-ink-soft);
+  font-size: 13px;
+  margin: 0.45rem 0 0;
+}
+
+.onboarding-dismiss {
+  color: var(--room-ink-soft);
+  background: transparent;
+  border: 0;
+  border-radius: 6px;
+  font-size: 22px;
+  line-height: 1;
+  padding: 0.15rem 0.35rem;
+  cursor: pointer;
+}
+
+.onboarding-dismiss:hover { color: var(--room-ink); background: rgba(255, 255, 255, 0.07); }
+
+.onboarding-platforms {
+  display: flex;
+  gap: 0.25rem;
+  padding: 0.85rem 1.75rem;
+  border-bottom: 1px solid var(--room-line);
+}
+
+.onboarding-platforms button {
+  color: var(--room-ink-soft);
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 999px;
+  padding: 0.35rem 0.8rem;
+  font: 12px var(--sans);
+  cursor: pointer;
+}
+
+.onboarding-platforms button:hover { color: var(--room-ink); }
+.onboarding-platforms button.selected {
+  color: var(--glass-ink);
+  background: rgba(255, 255, 255, 0.08);
+  border-color: var(--glass-border);
+}
+
+.onboarding-step {
+  display: grid;
+  grid-template-columns: 28px minmax(0, 1fr);
+  gap: 0.85rem;
+  padding: 1.2rem 1.75rem;
+  border-bottom: 1px solid var(--room-line);
+}
+
+.onboarding-step .step-number {
+  display: grid;
+  place-items: center;
+  align-self: start;
+  width: 25px;
+  height: 25px;
+  color: #9db8d6;
+  border: 1px solid var(--room-line);
+  border-radius: 50%;
+  font: 11px var(--sans);
+}
+
+.onboarding-step h2 {
+  color: var(--glass-ink);
+  font: 600 14px/1.4 var(--sans);
+  margin: 0.1rem 0 0.2rem;
+}
+
+.onboarding-step h2 span {
+  color: var(--room-ink-soft);
+  font-size: 11px;
+  font-weight: 400;
+}
+
+.onboarding-step p {
+  color: var(--room-ink-soft);
+  font-size: 12px;
+  margin: 0 0 0.7rem;
+}
+
+.command-row {
+  display: flex;
+  align-items: stretch;
+  min-width: 0;
+  background: #141316;
+  border: 1px solid var(--room-line);
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.command-row code {
+  flex: 1;
+  min-width: 0;
+  padding: 0.62rem 0.75rem;
+  color: #d5d2cc;
+  font: 11.5px/1.5 var(--mono);
+  overflow-x: auto;
+  white-space: nowrap;
+}
+
+.command-copy {
+  color: var(--room-ink);
+  background: rgba(255, 255, 255, 0.04);
+  border: 0;
+  border-left: 1px solid var(--room-line);
+  padding: 0 0.8rem;
+  font: 11px var(--sans);
+  cursor: pointer;
+}
+
+.command-copy:hover { background: rgba(255, 255, 255, 0.1); }
+
+.onboarding-step details { margin-top: 0.55rem; }
+.onboarding-step summary {
+  color: var(--room-ink-soft);
+  font-size: 11px;
+  cursor: pointer;
+}
+.onboarding-step summary code { font: inherit; }
+.command-row-secondary { margin-top: 0.45rem; }
+
+#onboarding-install,
+#manual-pair {
+  color: var(--glass-ink);
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid var(--glass-border);
+  border-radius: 999px;
+  padding: 0.4rem 0.8rem;
+  font: 11px var(--sans);
+  cursor: pointer;
+}
+
+#onboarding-install:hover,
+#manual-pair:hover { background: rgba(255, 255, 255, 0.14); }
+#onboarding-install[hidden] { display: none; }
+
+.onboarding-foot {
+  color: var(--room-ink-soft);
+  padding: 0.9rem 1.75rem;
+  font-size: 11px;
+}
+
+.onboarding-foot code { color: var(--room-ink); font-family: var(--mono); }
+.onboarding-foot #manual-pair { float: right; margin: -0.25rem 0 -0.25rem 1rem; }
+
 /* ---------- layout ---------- */
 
 #layout {

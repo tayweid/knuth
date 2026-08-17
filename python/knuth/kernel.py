@@ -6,8 +6,8 @@ stdout carries only protocol events. SIGINT lands here as KeyboardInterrupt:
 during a run it surfaces as an `error` event, while idle it is swallowed.
 
 Events out: ready | stream{id,which,text} | done{id,result} |
-            error{id,traceback} | namespace{vars}
-Commands in: run{id,code} | namespace{}
+            error{id,traceback} | namespace{id,vars}
+Commands in: run{id,code} | namespace{id}
 """
 
 import io
@@ -165,24 +165,31 @@ def main():
                     emit(event)
                 state["id"] = None
             elif kind == "namespace":
-                event = {"type": "namespace", "vars": session.snapshot()}
+                event = {"type": "namespace", "id": msg["id"], "vars": session.snapshot()}
                 if _event_size(event) <= MAX_NAMESPACE_RESPONSE_BYTES:
                     emit(event)
                 else:
                     emit({
                         "type": "protocol_error",
                         "request": "namespace",
+                        "id": msg["id"],
                         "error": "namespace response exceeds the configured limit",
                     })
             elif kind == "artifacts":
                 values, figures = session.artifacts()
-                event = {"type": "artifacts", "values": values, "figures": figures}
+                event = {
+                    "type": "artifacts",
+                    "id": msg["id"],
+                    "values": values,
+                    "figures": figures,
+                }
                 if _event_size(event) <= MAX_ARTIFACT_RESPONSE_BYTES:
                     emit(event)
                 else:
                     emit({
                         "type": "protocol_error",
                         "request": "artifacts",
+                        "id": msg["id"],
                         "error": "artifact response exceeds the configured limit",
                     })
             elif kind == "figure":
@@ -192,10 +199,11 @@ def main():
                         "name": result["name"],
                         "error": "figure exceeds the configured display limit",
                     }
-                emit({"type": "figure", **result})
+                emit({"type": "figure", "id": msg["id"], **result})
             elif kind == "table":
                 event = {
                     "type": "table",
+                    "id": msg["id"],
                     **session.table(
                         msg.get("name", ""), msg.get("offset", 0), msg.get("limit", 100)
                     ),
@@ -206,6 +214,7 @@ def main():
                     emit({
                         "type": "protocol_error",
                         "request": "table",
+                        "id": msg["id"],
                         "error": "table response exceeds the configured limit",
                     })
         except KeyboardInterrupt:

@@ -1,5 +1,10 @@
 """Artifacts (the folder contract): what persists and what stays behind."""
 
+import json
+
+import pytest
+
+from knuth.artifacts import is_safe_figure_name, manifest_text, owned_figure_names
 from knuth.session import Session, capture_open_figures
 
 
@@ -108,3 +113,31 @@ def test_artifacts():
     assert values["probe"] == 100
     snap = {v["name"]: v for v in s.snapshot()}
     assert "scratch" not in snap["probe"]
+
+
+@pytest.mark.parametrize("name", ["fig", "plot_2", "café", "Διάγραμμα"])
+def test_portable_figure_names(name):
+    assert is_safe_figure_name(name)
+
+
+@pytest.mark.parametrize(
+    "name",
+    ["", "_private", "../escape", "a/b", ".", "CON", "Lpt9", "e\u0301", "x" * 129],
+)
+def test_unsafe_figure_names_are_rejected(name):
+    assert not is_safe_figure_name(name)
+
+
+def test_manifest_parser_fails_closed():
+    raw = manifest_text({"fig", "café"})
+    assert owned_figure_names(raw) == {"fig", "café"}
+    assert owned_figure_names('{"version": 1, "figures": ["figs/../owned.svg"]}') == set()
+    assert owned_figure_names(json.dumps({"version": 999, "figures": ["figs/fig.svg"]})) == set()
+
+
+def test_non_string_globals_cannot_break_namespace_or_artifacts():
+    session = Session()
+    ok, error = session.run("globals()[7] = 'unusual but legal'")
+    assert ok, error
+    assert session.snapshot() == []
+    assert session.artifacts() == ({}, {})

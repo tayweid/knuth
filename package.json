@@ -2,6 +2,7 @@
   "name": "knuth",
   "private": true,
   "version": "2.0.0-dev",
+  "license": "MIT",
   "type": "module",
   "description": "Computation workbench of the Claerbout suite: .py cell documents with a live session, auto-persisted values and figures",
   "scripts": {

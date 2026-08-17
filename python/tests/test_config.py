@@ -4,7 +4,7 @@ import stat
 
 import pytest
 
-from knuth.config import capability_path, load_or_create_capability, rotate_capability
+from knuth.config import capability_path, config_dir, load_or_create_capability, rotate_capability
 
 
 def test_capability_lifecycle(tmp_path, monkeypatch):
@@ -45,3 +45,10 @@ def test_capability_rejects_malformed_content(tmp_path, monkeypatch, content):
 
     with pytest.raises(RuntimeError, match="capability is invalid"):
         load_or_create_capability()
+
+
+def test_windows_uses_roaming_application_data(tmp_path, monkeypatch):
+    monkeypatch.delenv("KNUTH_CONFIG_DIR", raising=False)
+    monkeypatch.setenv("APPDATA", str(tmp_path / "Roaming"))
+    monkeypatch.setattr("knuth.config.sys.platform", "win32")
+    assert config_dir() == tmp_path / "Roaming" / "Knuth"

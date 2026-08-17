@@ -86,10 +86,16 @@ same interface, not an architectural rewrite. Deferring it costs nothing.
   stdout/stderr capture, tracebacks), WebSocket server speaking a small
   JSON protocol, interrupt via signal, restart via process replacement.
 - `src/kernel/`: the Kernel interface and its WebSocket client.
-- Protocol messages (v1): `run{id, code}` →
-  `stream{id, text, which}`* → `done{id, result?}` | `error{id, traceback}`;
-  `interrupt`, `restart`; `namespace` → snapshot (name, type, shape) —
-  this last one is what Milestones 4 and 6 hook into.
+- Protocol messages (v2): the initial `attach` requires the exact protocol
+  version plus either the durable capability or a single-use pairing token.
+  A trusted CLI may request that token with an authenticated
+  `create_pairing` handshake. After attachment, `run{id, code}` →
+  `stream{id, text, which}`* → `done{id, result?}` | `error{id, traceback}`.
+  `restart`, `namespace`, `artifacts`, `table`, and `figure` also carry a
+  request ID echoed by their response; `interrupt` is intentionally one-way.
+  Every inbound request and outbound browser event is shape-validated. An
+  unexpected subprocess exit fails pending work, removes the dead session,
+  and allows the next connection to start cleanly.
 
 Done when: from the app, a code string runs in a fresh session, stdout
 streams back live, errors carry tracebacks, and Stop actually stops a

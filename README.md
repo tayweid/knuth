@@ -30,31 +30,60 @@ The full build of a paper is one line:
 knuth run analysis.py && typst compile paper.typ
 ```
 
-**Status: v2 rebuild in progress.** The design is in
-[DESIGN.md](./DESIGN.md), the build order in [PLAN.md](./PLAN.md). The v1
+**Status: v2 public-release candidate.** The design is in
+[DESIGN.md](./DESIGN.md), the build history in [PLAN.md](./PLAN.md). The v1
 Tauri app (WYSIWYG markdown with executable cells) lives on the
 [`v1-tauri`](../../tree/v1-tauri) branch, its docs in `archive/v1/`.
 
-## Install as an app (Chrome)
+## Install and launch
 
-Knuth is a PWA registered as a handler for `.py` files: once the deployed
-app is installed from Chrome (⋮ → Cast, save and share → Install), macOS
-offers Knuth for double-clicked `.py` files, which arrive via the launch
-queue. Manifest changes only propagate to the OS after an app
-uninstall/reinstall. Deploy = push `main`: `.github/workflows/deploy.yml`
-publishes to GitHub Pages. The kernel stays local either way — the page
-connects to the kernel server on localhost, and reconnects automatically
-if it comes and goes.
+Open [knuth.tayweid.io](https://knuth.tayweid.io). The page offers PWA
+installation and shows the commands for the current operating system when it
+cannot reach a compatible local engine.
 
-One-time kernel setup, so the server is simply always there:
+macOS and Linux:
 
 ```bash
-.venv/bin/knuth agent install   # launchd service: starts at login, restarts on exit
-.venv/bin/knuth agent pair      # copy once into the app's Pair action
-.venv/bin/knuth agent status    # or uninstall
-.venv/bin/knuth agent restart   # activate an update (clears the live session)
-.venv/bin/knuth agent rotate-token # revoke paired browsers and restart the agent
+python3 -m pip install --upgrade knuth
+knuth app --hosted
 ```
+
+Windows:
+
+```powershell
+py -m pip install --upgrade knuth
+knuth app --hosted
+```
+
+The second command starts the Python engine on localhost, opens the hosted
+app, and securely pairs that browser. Keep the terminal open while using
+Knuth; `Ctrl-C` stops the foreground engine. If the console entry point is not
+on `PATH`, use `python3 -m knuth app --hosted` on macOS/Linux or
+`py -m knuth app --hosted` on Windows.
+
+PWA installation is optional. In Chromium browsers it also registers Knuth as
+a handler for `.py` files. The Python engine remains local whether Knuth runs
+in a browser tab or an installed window.
+
+### Optional macOS background agent
+
+The cross-platform foreground command is the default. macOS users who want an
+engine that starts at login can additionally use:
+
+```bash
+knuth agent install
+knuth agent status
+knuth agent restart
+knuth agent uninstall
+```
+
+`knuth agent pair` displays the durable capability for manual recovery, and
+`knuth agent rotate-token` revokes all paired browsers.
+
+If the page and engine do not connect, run `knuth doctor`. It reports the
+installed version, Python executable, redacted capability-file health, local
+port state, protocol version, and live-session count without printing the
+capability or document contents.
 
 ## Development
 
@@ -75,10 +104,16 @@ release origin. Development and custom deployments opt into each additional
 origin explicitly with one or more `knuth serve --origin
 https://exact.example` arguments.
 
-`python/` is the `knuth` package: the live session, the kernel
-subprocess and WebSocket server behind `knuth serve`, and the future
-home of `knuth run`.
+`python/` is the published `knuth` package: the hosted launcher, live session,
+kernel subprocess, WebSocket server, background-agent helper, and the
+reproducibility runner behind `knuth run`.
+
+## Security
+
+Please report vulnerabilities privately rather than opening a public issue.
+The supported-version policy, threat-model boundary, and reporting process are
+in [SECURITY.md](./SECURITY.md).
 
 ## License
 
-MIT
+[MIT](./LICENSE) © 2026 Taylor J Weidman

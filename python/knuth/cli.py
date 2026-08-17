@@ -1,6 +1,4 @@
-"""The knuth command. `knuth run file.py` is the reproducibility runner;
-`knuth serve` runs the kernel server in the foreground; `knuth agent
-install|uninstall|status` manages it as a background launchd service."""
+"""The Knuth command-line interface."""
 
 import argparse
 import sys
@@ -30,7 +28,32 @@ def main():
         help="exact allowed browser origin (repeatable; overrides release defaults)",
     )
 
-    agent_cmd = sub.add_parser("agent", help="manage the background kernel service (launchd)")
+    app_cmd = sub.add_parser(
+        "app",
+        help="start the local engine and securely open the hosted Knuth PWA",
+    )
+    app_cmd.add_argument(
+        "--hosted",
+        action="store_true",
+        help="open the canonical hosted PWA (currently the only app frontend)",
+    )
+    app_cmd.add_argument("--port", type=int, default=DEFAULT_PORT)
+    app_cmd.add_argument(
+        "--grace",
+        type=int,
+        default=120,
+        help="seconds a disconnected session stays alive for reattach (default 120)",
+    )
+    app_cmd.add_argument(
+        "--no-browser",
+        action="store_true",
+        help="start the engine without opening a browser (manual pairing required)",
+    )
+
+    agent_cmd = sub.add_parser(
+        "agent",
+        help="manage the optional background kernel service (macOS launchd)",
+    )
     agent_cmd.add_argument(
         "action",
         choices=["install", "uninstall", "status", "restart", "pair", "rotate-token"],
@@ -44,12 +67,32 @@ def main():
     )
     run_cmd.add_argument("file")
 
+    doctor_cmd = sub.add_parser(
+        "doctor",
+        help="report redacted package, pairing, port, and protocol diagnostics",
+    )
+    doctor_cmd.add_argument("--port", type=int, default=DEFAULT_PORT)
+
     args = parser.parse_args()
 
     if args.command == "run":
         from .runner import run_file
 
         sys.exit(run_file(args.file))
+    elif args.command == "doctor":
+        from .doctor import run_doctor
+
+        return run_doctor(args.port)
+    elif args.command == "app":
+        if not args.hosted:
+            parser.error("`knuth app` currently requires --hosted")
+        from .hosted import run_hosted
+
+        sys.exit(run_hosted(
+            args.port,
+            args.grace,
+            open_browser=not args.no_browser,
+        ))
     elif args.command == "agent":
         if args.action == "install":
             sys.exit(agent.install(args.port))
@@ -63,13 +106,16 @@ def main():
             sys.exit(agent.pair())
         else:
             sys.exit(agent.rotate_token())
-    else:
+    elif args.command == "serve":
         serve_main(
-            getattr(args, "port", DEFAULT_PORT),
-            getattr(args, "grace", 120),
-            getattr(args, "origins", None),
+            args.port,
+            args.grace,
+            args.origins,
         )
+    else:
+        parser.print_help()
+        return 2
 
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())

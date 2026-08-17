@@ -1,6 +1,7 @@
 # Knuth security and maintainability hardening plan
 
-Status: proposed release plan, 2026-08-16
+Status: implementation substantially complete; external release gates remain,
+2026-08-16
 
 This plan hardens the existing local-sidecar design without changing Knuth's
 core workflow: a public PWA edits `.py` cell documents and, after an explicit
@@ -16,7 +17,7 @@ that behavior is captured in tests before security-sensitive boundaries move.
   not make reproducibility receipts nondeterministic.
 - Made frontend tests use a direct Node entry point that works in restricted
   environments without a temporary IPC listener.
-- Added frontend build/test and Python 3.11/3.13 test gates ahead of deployment.
+- Added frontend build/test and Python 3.11/3.14 test gates ahead of deployment.
 - Verified the frontend tests and build plus all seven Python tests locally.
 
 Still required before Phase 0 is complete: malicious-content browser fixtures
@@ -30,20 +31,17 @@ checklist.
 - Upgraded Vite 5 to Vite 8 after the browser dependency audit exposed a
   high-severity development-server path-disclosure advisory and an esbuild
   cross-origin advisory. The updated dependency graph audits cleanly.
-- Added protocol version fields and explicit incompatible-version handling,
-  with a documented one-release legacy-v1 compatibility path to avoid breaking
-  an installed older agent during rollout.
+- Added protocol version fields and explicit incompatible-version handling.
+  Protocol v2 now fails closed rather than guessing how to talk to a legacy
+  agent.
 - Added exact WebSocket origin enforcement during the HTTP upgrade, before any
-  kernel can be created. Current GitHub Pages and fixed local-development
-  origins are allowed; hostile and missing origins are covered by integration
-  tests.
-- Verified that the updated local app still connects to the currently running
-  legacy-v1 agent in a real browser.
+  kernel can be created. The dedicated production origin is the sole default;
+  hostile, lookalike, shared-host, and missing origins are covered by
+  integration tests.
 
 The real-browser baseline and malicious SVG fixtures are now present. Phase 0
-still needs the complete installed-PWA manual checklist. Phase 1 pairing is
-implemented but must not be activated for release while the app remains on a
-shared GitHub Pages origin.
+still needs the complete installed-PWA manual checklist on each supported
+operating system.
 
 2026-08-16 — Capability pairing and inert figure rendering:
 
@@ -66,13 +64,9 @@ shared GitHub Pages origin.
 - Added a restrictive meta CSP and no-referrer policy as immediate defense in
   depth. The final dedicated host must still send the equivalent policy as
   response headers, including header-only directives.
-- Verified the pairing-capable/CSP-enabled app against the still-running
-  legacy agent without restarting or changing that live agent.
-
-Capability enforcement is implemented but deliberately not activated on the
-installed agent yet. Activation must be coordinated with deployment of the
-matching app and a dedicated production origin; storing the capability on the
-shared `tayweid.github.io` origin is not an acceptable final release boundary.
+- Added a five-minute, single-use bootstrap token so `knuth app --hosted`
+  opens and pairs the dedicated PWA without exposing the durable capability in
+  a URL, terminal, process argument, or server log.
 
 2026-08-16 — Dedicated production origin selected:
 
@@ -82,9 +76,8 @@ shared `tayweid.github.io` origin is not an acceptable final release boundary.
   domain root and added the repository CNAME declaration.
 - Added tests accepting the exact production origin while rejecting the old
   shared origin and a hostname-suffix lookalike.
-- Added `DEPLOYMENT.md` with GitHub/DNS configuration and a no-downtime
-  app-pair-agent cutover. The live legacy agent remains untouched until that
-  checklist is intentionally executed.
+- Added `DEPLOYMENT.md` with GitHub/DNS configuration and a cross-platform
+  hosted-launcher smoke checklist. The canonical domain is live over HTTPS.
 
 2026-08-16 — Bounded protocol and process lifecycle:
 
@@ -106,6 +99,41 @@ shared `tayweid.github.io` origin is not an acceptable final release boundary.
 - Added attack regressions for oversized frames, Unicode credential probes,
   malformed requests, live-session exhaustion, concurrent duplicate attaches,
   output chunking, UTF-8 truncation, and a huge single browser output line.
+
+2026-08-16 — Public reporting and license baseline:
+
+- Added the standard MIT license and declared it in npm package metadata.
+- Added a project-specific `SECURITY.md` covering the supported pre-release
+  channel, private GitHub reporting, response expectations, safe testing,
+  sensitive-data handling, and Knuth's trusted-Python/non-sandbox boundary.
+- Private vulnerability reporting must also be enabled in the repository's
+  GitHub **Settings → Advanced Security**; the repository file and the GitHub
+  reporting channel are separate controls.
+
+2026-08-16 — Cross-platform launcher, protocol resilience, and artifacts:
+
+- Added `knuth app --hosted` for macOS, Windows, and Linux. It starts a
+  foreground loopback engine, opens the canonical PWA only after binding, and
+  reuses a compatible installed agent without starting another process.
+- Added correlated IDs to every request/response pair, full browser-side event
+  shape validation, explicit unexpected-kernel-exit events, clean dead-session
+  removal, awaited task cancellation, and regression coverage for a process
+  that terminates inside a run.
+- Added transactional per-file CLI writes and browser `createWritable` commits,
+  strict portable figure names, and a versioned ownership manifest updated
+  last. Stale Knuth-owned SVGs are removed; unmanifested/user-owned SVGs and
+  pre-manifest projects are preserved.
+- Added a network-first service worker, stable PWA identity, cross-platform
+  install/onboarding UI, a framing refusal guard, and end-to-end pairing,
+  expiry, resource-limit, SVG, and clickjacking fixtures.
+- Pinned third-party workflow actions by commit, added weekly Dependabot review
+  for npm, pip, and Actions, tested the minimum supported WebSocket library in
+  CI, and added an OIDC-only PyPI Trusted Publishing workflow with immutable
+  tag/version checks.
+- Added `knuth doctor`, backed by an authenticated read-only status handshake,
+  to report package/engine versions, protocol, port, session count, Python
+  executable, and capability-file health without exposing the capability,
+  code, output, environment, or documents.
 
 ## Release security model
 
@@ -151,17 +179,21 @@ cross-site WebSocket connections to loopback services.
 
 ## Remaining release blockers
 
-The highest-risk original blockers—pre-spawn authorization, inert SVG
-rendering, explicit initial resource limits, mandatory CI, and protocol
-version negotiation—are implemented. Public release still requires:
+The repository-level blockers—pre-spawn authorization, inert SVG rendering,
+explicit resource limits, version negotiation, request correlation, kernel
+death, durable artifacts, CI, disclosure, licensing, dependency-update review,
+and release automation—are implemented. Public release still requires these
+external or manual gates:
 
-- completing the protocol schema/correlation work and kernel-death handling;
-- atomic artifact writes and generated-figure ownership semantics;
-- production response headers (GitHub Pages alone cannot provide header-only
-  CSP directives such as `frame-ancestors`);
-- security/disclosure documentation, dependency pinning, diagnostics, and the
-  installed-PWA/launch-agent smoke checklist;
-- an independent attack pass over the release candidate.
+- choose a host/proxy capable of production security response headers. GitHub
+  Pages does not emit header-only CSP directives such as `frame-ancestors`;
+  the current meta CSP and tested runtime framing refusal are defense in depth,
+  not a claim that this header requirement is met;
+- run the installed-PWA/launcher smoke checklist on macOS, Windows, and Linux,
+  including the optional macOS launch agent;
+- configure the PyPI Trusted Publisher and protected GitHub `pypi` environment,
+  then publish only after the cross-platform release commit is green; and
+- commission an independent attack pass over the release candidate.
 
 ## Phase 0: freeze current behavior behind tests
 

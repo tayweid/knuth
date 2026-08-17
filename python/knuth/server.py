@@ -8,8 +8,10 @@ reattaching with the same id resumes it, variables intact. A window
 closed for good is never reclaimed and gets reaped.
 
 The HTTP upgrade is accepted only from exact Knuth app origins. Handshake:
-the client's first message is `attach{protocol, capability, session}`. The
-server authenticates it before process creation and replies
+the client's first message is `attach{protocol, capability, pairing, session}`.
+The optional short-lived pairing token can bootstrap the durable browser
+capability without ever placing that durable secret in a URL. The server
+authenticates either credential before process creation and replies
 `attached{protocol, session, resumed}` (echoing a fresh id if the claimed one
 is actively held — a duplicated tab forks, it doesn't steal), then either
 synthesizes `ready{resumed:true}` for a resumed kernel or lets the fresh
@@ -18,11 +20,14 @@ size-validated before it reaches this session's kernel.
 """
 
 import asyncio
+import importlib.metadata
 import json
 import os
 import secrets
 import signal
+import subprocess
 import sys
+import time
 import uuid
 
 import websockets
@@ -43,7 +48,10 @@ from .limits import (
 from .session import MAX_TABLE_LIMIT
 
 GRACE_SECONDS = 120
-PROTOCOL_VERSION = 1
+PROTOCOL_VERSION = 2
+PAIRING_TOKEN_BYTES = 32
+PAIRING_TOKEN_CHARS = 43
+PAIRING_TTL_SECONDS = 300
 
 # Origin matching is exact and happens during the WebSocket HTTP upgrade,
 # before handler() can create a kernel. Release defaults are production-only;
@@ -57,11 +65,72 @@ DEVELOPMENT_ORIGINS = (
 )
 
 
+def _package_version():
+    try:
+        return importlib.metadata.version("knuth")
+    except importlib.metadata.PackageNotFoundError:
+        return "source checkout"
+
+
+class PairingBroker:
+    """Issue and consume one active, short-lived browser bootstrap token.
+
+    Issuing a token revokes the previous unconsumed token. Consumption is
+    constant-time and single-use. The broker lives only in the server process;
+    the durable per-install capability remains in the owner-only config file.
+    """
+
+    def __init__(self, ttl_seconds=PAIRING_TTL_SECONDS):
+        if ttl_seconds <= 0:
+            raise ValueError("pairing token lifetime must be positive")
+        self.ttl_seconds = ttl_seconds
+        self._token = None
+        self._expires_at = 0.0
+
+    def issue(self):
+        self._token = secrets.token_urlsafe(PAIRING_TOKEN_BYTES)
+        self._expires_at = time.monotonic() + self.ttl_seconds
+        return self._token
+
+    def consume(self, candidate):
+        expected = self._token
+        well_formed = (
+            isinstance(candidate, str)
+            and candidate.isascii()
+            and len(candidate) == PAIRING_TOKEN_CHARS
+        )
+        matches = bool(
+            expected is not None
+            and well_formed
+            and secrets.compare_digest(candidate, expected)
+        )
+        if not matches:
+            return False
+        valid = time.monotonic() <= self._expires_at
+        self._token = None
+        self._expires_at = 0.0
+        return valid
+
+
+def _capability_matches(candidate, expected):
+    return bool(
+        isinstance(candidate, str)
+        and candidate.isascii()
+        and len(candidate) == len(expected)
+        and secrets.compare_digest(candidate, expected)
+    )
+
+
 class KernelProcess:
     def __init__(self):
         self.proc = None
 
     async def start(self):
+        platform_options = {}
+        if sys.platform == "win32":
+            # A new process group lets the parent deliver Ctrl-C to this
+            # interpreter without terminating the foreground Knuth launcher.
+            platform_options["creationflags"] = subprocess.CREATE_NEW_PROCESS_GROUP
         self.proc = await asyncio.create_subprocess_exec(
             sys.executable,
             "-u",
@@ -71,7 +140,8 @@ class KernelProcess:
             stdout=asyncio.subprocess.PIPE,
             limit=MAX_KERNEL_EVENT_BYTES,
             # Headless matplotlib: no GUI windows from a background service.
-            env={"MPLBACKEND": "Agg", **os.environ},
+            env={**os.environ, "MPLBACKEND": "Agg"},
+            **platform_options,
         )
 
     async def send(self, msg):
@@ -80,8 +150,11 @@ class KernelProcess:
 
     def interrupt(self):
         try:
-            self.proc.send_signal(signal.SIGINT)
-        except ProcessLookupError:
+            interrupt_signal = (
+                signal.CTRL_C_EVENT if sys.platform == "win32" else signal.SIGINT
+            )
+            self.proc.send_signal(interrupt_signal)
+        except (ProcessLookupError, ValueError):
             pass
 
     def kill(self):
@@ -128,10 +201,11 @@ def _validate_request(msg):
         "table",
     }:
         return "unknown request type"
-    if kind == "run":
+    if kind != "interrupt":
         request_id = msg.get("id")
         if type(request_id) is not int or not 0 <= request_id <= MAX_REQUEST_ID:
-            return "run id must be a non-negative safe integer"
+            return f"{kind} id must be a non-negative safe integer"
+    if kind == "run":
         code = msg.get("code")
         if not isinstance(code, str):
             return "run code must be a string"
@@ -153,16 +227,36 @@ def _validate_request(msg):
     return None
 
 
-async def _pump(kernel, ws):
-    """Forward this kernel's event lines to the currently attached client."""
+async def _pump(kernel, ws, ready_id=None):
+    """Forward kernel events and report an unexpected subprocess exit."""
     while True:
         line = await kernel.proc.stdout.readline()
         if not line:
             break
+        if ready_id is not None:
+            try:
+                event = json.loads(line)
+            except ValueError:
+                event = None
+            if isinstance(event, dict) and event.get("type") == "ready":
+                event["id"] = ready_id
+                line = (json.dumps(event) + "\n").encode()
+                ready_id = None
         try:
             await ws.send(line.decode())
         except websockets.exceptions.ConnectionClosed:
-            break
+            return
+
+    returncode = await kernel.proc.wait()
+    try:
+        await ws.send(json.dumps({
+            "type": "kernel_exit",
+            "error": "Python engine exited unexpectedly",
+            "returncode": returncode,
+        }))
+        await ws.close(code=1011, reason="kernel process exited")
+    except websockets.exceptions.ConnectionClosed:
+        pass
 
 
 async def serve(
@@ -171,6 +265,8 @@ async def serve(
     origins=None,
     capability=None,
     *,
+    pairing_broker=None,
+    on_ready=None,
     max_sessions=MAX_LIVE_SESSIONS,
     max_concurrent_starts=MAX_CONCURRENT_KERNEL_STARTS,
 ):
@@ -179,6 +275,7 @@ async def serve(
     start_slots = asyncio.Semaphore(max_concurrent_starts)
     allowed_origins = tuple(origins or DEFAULT_ALLOWED_ORIGINS)
     agent_capability = capability or load_or_create_capability()
+    pairings = pairing_broker or PairingBroker()
 
     async def reap_later(sid):
         await asyncio.sleep(grace)
@@ -195,14 +292,11 @@ async def serve(
         except (asyncio.TimeoutError, ValueError, websockets.exceptions.ConnectionClosed):
             await ws.close(code=1002, reason="invalid or missing attach handshake")
             return
-        if not isinstance(first, dict) or first.get("type") != "attach":
-            await ws.close(code=1002, reason="expected attach handshake")
+        if not isinstance(first, dict):
+            await ws.close(code=1002, reason="expected handshake object")
             return
 
-        # Transitional compatibility: a missing field is legacy protocol 1.
-        # Explicit unknown versions fail closed. Remove the fallback after one
-        # coordinated app/agent release has shipped.
-        client_protocol = first.get("protocol", PROTOCOL_VERSION)
+        client_protocol = first.get("protocol")
         if type(client_protocol) is not int or client_protocol != PROTOCOL_VERSION:
             await ws.send(json.dumps({
                 "type": "incompatible",
@@ -212,15 +306,56 @@ async def serve(
             await ws.close(code=1002, reason="unsupported protocol version")
             return
 
+        if first.get("type") == "status":
+            if not _capability_matches(first.get("capability"), agent_capability):
+                await ws.send(json.dumps({"type": "unauthorized"}))
+                await ws.close(code=4401, reason="status authorization required")
+                return
+            await ws.send(json.dumps({
+                "type": "status",
+                "protocol": PROTOCOL_VERSION,
+                "version": _package_version(),
+                "sessions": len(sessions) + len(starting_sids),
+                "max_sessions": max_sessions,
+            }))
+            await ws.close(code=1000, reason="status reported")
+            return
+
+        if first.get("type") == "create_pairing":
+            if not _capability_matches(first.get("capability"), agent_capability):
+                await ws.send(json.dumps({"type": "unauthorized"}))
+                await ws.close(code=4401, reason="pairing authorization required")
+                return
+            token = pairings.issue()
+            await ws.send(json.dumps({
+                "type": "pairing_created",
+                "protocol": PROTOCOL_VERSION,
+                "token": token,
+                "expires_in": pairings.ttl_seconds,
+            }))
+            await ws.close(code=1000, reason="pairing created")
+            return
+
+        if first.get("type") != "attach":
+            await ws.close(code=1002, reason="expected attach handshake")
+            return
+
         supplied_capability = first.get("capability")
-        authorized = (
-            isinstance(supplied_capability, str)
-            and supplied_capability.isascii()
-            and len(supplied_capability) == len(agent_capability)
-            and secrets.compare_digest(supplied_capability, agent_capability)
-        )
+        authorized = _capability_matches(supplied_capability, agent_capability)
+        supplied_pairing = first.get("pairing")
+        bootstrapped = False
+        if not authorized and supplied_pairing is not None:
+            bootstrapped = pairings.consume(supplied_pairing)
+            authorized = bootstrapped
+        elif authorized and supplied_pairing is not None:
+            # A correctly paired browser may still arrive through a fresh
+            # launch URL. Consume that URL token so it cannot be replayed.
+            pairings.consume(supplied_pairing)
         if not authorized:
-            await ws.send(json.dumps({"type": "unauthorized"}))
+            response_type = (
+                "pairing_expired" if supplied_pairing is not None else "unauthorized"
+            )
+            await ws.send(json.dumps({"type": response_type}))
             await ws.close(code=4401, reason="pairing required")
             return
 
@@ -275,6 +410,12 @@ async def serve(
 
         session.ws = ws
         try:
+            if bootstrapped:
+                await ws.send(json.dumps({
+                    "type": "paired",
+                    "protocol": PROTOCOL_VERSION,
+                    "capability": agent_capability,
+                }))
             await ws.send(json.dumps({
                 "type": "attached",
                 "protocol": PROTOCOL_VERSION,
@@ -301,18 +442,39 @@ async def serve(
                     session.kernel.interrupt()
                 elif kind == "restart":
                     session.pump_task.cancel()
+                    await asyncio.gather(session.pump_task, return_exceptions=True)
                     await session.kernel.stop()
                     session.kernel = KernelProcess()
-                    await session.kernel.start()
-                    session.pump_task = asyncio.create_task(_pump(session.kernel, ws))
+                    try:
+                        async with start_slots:
+                            await session.kernel.start()
+                    except Exception:
+                        sessions.pop(sid, None)
+                        await session.kernel.stop()
+                        await ws.send(json.dumps({
+                            "type": "kernel_exit",
+                            "id": msg["id"],
+                            "error": "Python engine failed to restart",
+                        }))
+                        await ws.close(code=1011, reason="kernel failed to restart")
+                        return
+                    session.pump_task = asyncio.create_task(
+                        _pump(session.kernel, ws, ready_id=msg["id"])
+                    )
                 else:
                     await session.kernel.send(msg)
         finally:
             if session.pump_task:
                 session.pump_task.cancel()
+                await asyncio.gather(session.pump_task, return_exceptions=True)
             if sessions.get(sid) is session:
-                session.ws = None
-                session.reap_task = asyncio.create_task(reap_later(sid))
+                process = session.kernel.proc
+                if process is not None and process.returncode is not None:
+                    sessions.pop(sid, None)
+                    await session.kernel.stop()
+                else:
+                    session.ws = None
+                    session.reap_task = asyncio.create_task(reap_later(sid))
 
     try:
         async with websockets.serve(
@@ -323,6 +485,8 @@ async def serve(
             max_size=MAX_INBOUND_MESSAGE_BYTES,
             max_queue=MAX_INBOUND_MESSAGE_QUEUE,
         ):
+            if on_ready:
+                on_ready()
             print(
                 f"knuth kernel server on ws://127.0.0.1:{port} "
                 f"(protocol {PROTOCOL_VERSION}, up to {max_sessions} sessions, "
@@ -347,8 +511,23 @@ async def serve(
         )
 
 
-def main(port=5197, grace=GRACE_SECONDS, origins=None, capability=None):
+def main(
+    port=5197,
+    grace=GRACE_SECONDS,
+    origins=None,
+    capability=None,
+    *,
+    pairing_broker=None,
+    on_ready=None,
+):
     try:
-        asyncio.run(serve(port, grace, origins, capability))
+        asyncio.run(serve(
+            port,
+            grace,
+            origins,
+            capability,
+            pairing_broker=pairing_broker,
+            on_ready=on_ready,
+        ))
     except KeyboardInterrupt:
         pass

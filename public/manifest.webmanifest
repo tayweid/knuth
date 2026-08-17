@@ -2,6 +2,7 @@
   "name": "Knuth",
   "short_name": "Knuth",
   "description": "Computation workbench: .py cell documents over a live Python session",
+  "id": "./",
   "start_url": "./",
   "scope": "./",
   "display": "standalone",
