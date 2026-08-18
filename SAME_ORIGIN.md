@@ -178,6 +178,51 @@ Consequences to design around:
 DECIDED: the hosted build stays as a **demo** — readable, runnable against
 nothing, not installable. One installable app, served locally.
 
+## Who receives the double-click
+
+A web page cannot start a program; that is the one thing browsers exist to
+prevent. So the installed PWA can open on a double-click but can never start
+the engine. Something has to have started it first.
+
+Two ways to close that, and we considered both:
+
+- **A native `.app` launcher** that owns the `.py` association, starts the
+  engine, then opens the window. Works from cold with nothing running —
+  verified: `osacompile` builds one with no dependencies and no Xcode, and it
+  receives the file path. But it is a *second* registration: two "Knuth"
+  entries in Spotlight and the Applications folder, next to the PWA.
+- **The launchd agent**, which keeps the engine running from login, so the
+  double-click always finds one.
+
+DECIDED: the agent, not a launcher app. One icon in the Dock — the PWA's own,
+separate from Chrome, with its own ⌘-Tab entry — is worth more than avoiding
+an idle Python process, and `agent.py` already exists. It is also the
+ordinary pattern for this shape of tool (Docker, Ollama, Syncthing).
+
+When the engine is *not* running, the double-click still opens the app: the
+service worker serves the shell and the file arrives from the OS, not the
+server (both measured in the spike). The window shows the document and the
+one command to start the engine, and the client's 2s reconnect means it heals
+itself the moment that command runs — no reload, no second double-click.
+
+## First run
+
+Two commands and one optional click, the same shape as
+`pip install jupyter` + `jupyter notebook`:
+
+1. `pip install knuth`
+2. `knuth app` — starts the engine, opens the app, and asks **once** whether
+   to keep it running at login (that is `knuth agent install`, folded in
+   rather than a separate command the user has to know about)
+3. Optional: click **Install** in the app window for the icon and the
+   tab-less window. Skipped, everything still works in a tab.
+
+DECIDED: no separate `knuth agent install` step in the documented flow. A
+setup step a user can skip and then not understand why double-click fails is
+worse than one prompt at the only moment it makes sense.
+
+None of it recurs. After first run the loop is: double-click a `.py`.
+
 ## Migration
 
 Each step is shippable on its own; the app keeps working throughout.

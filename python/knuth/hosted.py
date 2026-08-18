@@ -9,9 +9,14 @@ See SAME_ORIGIN.md.
 """
 
 import socket
+import sys
+import time
 import webbrowser
 
+from . import agent, state
 from .server import GRACE_SECONDS, main as serve_main
+
+ASKED_KEY = "asked-about-login-agent"
 
 
 def app_url(port):
@@ -22,6 +27,47 @@ def _port_is_taken(port):
     """Whether something already listens on the loopback port."""
     with socket.socket() as probe:
         return probe.connect_ex(("127.0.0.1", port)) == 0
+
+
+def _offer_login_agent(port):
+    """Ask once whether to keep the engine running at login.
+
+    Returns True when the agent now owns the engine, so the caller should not
+    start a second one.
+
+    Double-clicking a .py opens the app but cannot start the engine — a page
+    cannot launch a program. The agent is what makes that work, so the only
+    moment worth asking is the first time someone starts Knuth. Asking twice
+    would be nagging; never asking leaves a broken double-click the user has
+    no way to diagnose.
+    """
+    if sys.platform != "darwin" or state.get(ASKED_KEY):
+        return False
+    if agent.is_installed():
+        state.set(ASKED_KEY, True)
+        return False
+    if not (sys.stdin and sys.stdin.isatty()):
+        return False
+
+    print()
+    print("Keep Knuth running in the background, so double-clicking a .py file")
+    print("opens it without starting Knuth first?")
+    try:
+        answer = input("[Y/n] ").strip().lower()
+    except (EOFError, KeyboardInterrupt):
+        print()
+        return False
+    state.set(ASKED_KEY, True)
+    if answer not in ("", "y", "yes"):
+        print("Skipped. Run `knuth agent install` later if you change your mind.")
+        return False
+    if agent.install(port) != 0:
+        return False
+    # The agent is the engine now; this command has nothing left to serve.
+    deadline = time.monotonic() + 10
+    while not _port_is_taken(port) and time.monotonic() < deadline:
+        time.sleep(0.1)
+    return True
 
 
 def run_hosted(port=5197, grace=GRACE_SECONDS, *, open_browser=True):
@@ -42,6 +88,12 @@ def run_hosted(port=5197, grace=GRACE_SECONDS, *, open_browser=True):
 
     if _port_is_taken(port):
         print(f"Using the Knuth engine already running on port {port}.")
+        show(url)
+        return 0
+
+    # Asked before anything is serving: input() must never block the event
+    # loop, and an accepted agent takes this port for itself.
+    if _offer_login_agent(port):
         show(url)
         return 0
 

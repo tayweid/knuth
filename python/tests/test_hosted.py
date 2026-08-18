@@ -121,3 +121,70 @@ def test_cli_without_a_command_shows_help_instead_of_starting_server(
 
     assert cli.main() == 2
     assert "usage: knuth" in capsys.readouterr().out
+
+
+def _isatty(monkeypatch, value=True):
+    monkeypatch.setattr(hosted.sys, "stdin", type("Stdin", (), {"isatty": lambda _s: value})())
+
+
+def test_first_run_offers_the_login_agent_and_lets_it_take_over(monkeypatch, tmp_path):
+    """Accepting means the agent is the engine — do not start a second one."""
+    monkeypatch.setenv("KNUTH_CONFIG_DIR", str(tmp_path))
+    monkeypatch.setattr(hosted.sys, "platform", "darwin")
+    _isatty(monkeypatch)
+    monkeypatch.setattr(hosted.agent, "is_installed", lambda: False)
+    installed = []
+    monkeypatch.setattr(hosted.agent, "install", lambda port: installed.append(port) or 0)
+    monkeypatch.setattr(hosted, "input", lambda _prompt: "y", raising=False)
+    taken = iter([False, True])
+    monkeypatch.setattr(hosted, "_port_is_taken", lambda _port: next(taken, True))
+    monkeypatch.setattr(hosted.webbrowser, "open", lambda _url: True)
+    monkeypatch.setattr(
+        hosted,
+        "serve_main",
+        lambda *args, **kwargs: pytest.fail("the agent owns the engine now"),
+    )
+
+    assert hosted.run_hosted(5197) == 0
+    assert installed == [5197]
+
+
+def test_declining_starts_the_foreground_engine_and_is_not_asked_twice(
+    monkeypatch, tmp_path, capsys
+):
+    monkeypatch.setenv("KNUTH_CONFIG_DIR", str(tmp_path))
+    monkeypatch.setattr(hosted.sys, "platform", "darwin")
+    _isatty(monkeypatch)
+    monkeypatch.setattr(hosted.agent, "is_installed", lambda: False)
+    monkeypatch.setattr(
+        hosted.agent, "install", lambda port: pytest.fail("declined means declined")
+    )
+    monkeypatch.setattr(hosted, "input", lambda _prompt: "n", raising=False)
+    monkeypatch.setattr(hosted, "_port_is_taken", lambda _port: False)
+    monkeypatch.setattr(hosted.webbrowser, "open", lambda _url: True)
+    served = []
+    monkeypatch.setattr(
+        hosted, "serve_main", lambda port, grace, **o: served.append(port) or o["on_ready"]()
+    )
+
+    assert hosted.run_hosted(5197) == 0
+    assert served == [5197]
+    assert "knuth agent install" in capsys.readouterr().out
+
+    # Second run: the question is settled, so it is never asked again.
+    monkeypatch.setattr(
+        hosted, "input", lambda _prompt: pytest.fail("asked twice")
+    )
+    assert hosted.run_hosted(5197) == 0
+
+
+def test_a_non_interactive_run_is_never_prompted(monkeypatch, tmp_path):
+    monkeypatch.setenv("KNUTH_CONFIG_DIR", str(tmp_path))
+    monkeypatch.setattr(hosted.sys, "platform", "darwin")
+    _isatty(monkeypatch, value=False)
+    monkeypatch.setattr(hosted.agent, "is_installed", lambda: False)
+    monkeypatch.setattr(
+        hosted, "input", lambda _prompt: pytest.fail("no tty, no prompt"), raising=False
+    )
+
+    assert hosted._offer_login_agent(5197) is False

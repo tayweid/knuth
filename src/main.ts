@@ -95,6 +95,22 @@ const onboarding = new Onboarding(
   $('onboarding'),
   $('install-app') as HTMLButtonElement,
 );
+// The install click is what gives Knuth its own icon and a tab-less window.
+// It is optional, so it lives in the toolbar — but a toolbar button nobody
+// notices is the same as no offer at all. Surface it once, when the app is
+// working and the browser says it can be installed.
+const INSTALL_OFFERED = 'knuth-install-offered';
+window.addEventListener('beforeinstallprompt', () => {
+  if (localStorage.getItem(INSTALL_OFFERED)) return;
+  localStorage.setItem(INSTALL_OFFERED, '1');
+  window.setTimeout(() => {
+    toast('Install Knuth for its own icon and window', {
+      label: 'Install',
+      run: () => ($('install-app') as HTMLButtonElement).click(),
+    });
+  }, 1200);
+});
+
 let hadSession = false;
 let kernelState: Parameters<typeof onboarding.setState>[0] = 'connecting';
 const kernel = new SidecarKernel(undefined, (state, resumed) => {

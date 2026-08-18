@@ -94,3 +94,9 @@ def restart():
         return 1
     print(f"Restarted {LABEL}; the previous live session was cleared.")
     return 0
+
+
+def is_installed():
+    if sys.platform != "darwin":
+        return False
+    return PLIST.exists()
