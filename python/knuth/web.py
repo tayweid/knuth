@@ -97,7 +97,10 @@ def respond(request, root=None):
     if request.headers.get("Upgrade", "").lower() == "websocket":
         return None
     if not available(root):
-        return None
+        # Falling through here would hand the page request to the WebSocket
+        # handshake, which answers "you cannot access a WebSocket server
+        # directly with a browser" — true, and useless. Say the real thing.
+        return _no_app_installed()
 
     method = getattr(request, "method", "GET")
     if method not in {"GET", "HEAD"}:
@@ -119,6 +122,38 @@ def respond(request, root=None):
         "Frame-Options": "DENY",
     })
     return Response(200, "OK", headers, b"" if method == "HEAD" else body)
+
+
+NO_APP_PAGE = """<!doctype html>
+<meta charset="utf-8">
+<title>Knuth — no app bundled</title>
+<style>
+  body { font: 16px/1.6 ui-sans-serif, system-ui, sans-serif; background: #2b2a2d;
+         color: #e8e6e3; margin: 0; display: grid; place-items: center; min-height: 100vh; }
+  main { max-width: 34rem; padding: 2rem; }
+  code { background: #1f1e22; padding: .15rem .4rem; border-radius: 4px; }
+  pre { background: #1f1e22; padding: 1rem; border-radius: 8px; overflow-x: auto; }
+</style>
+<main>
+  <h1>The engine is running, but no app is bundled with it</h1>
+  <p>Python is answering on this port — the interface is what is missing. That
+  happens when Knuth is installed from a source tree whose frontend was never
+  built.</p>
+  <p>From a checkout:</p>
+  <pre>npm install &amp;&amp; npm run build:engine</pre>
+  <p>then restart the engine. Cells still run through
+  <code>knuth run</code> in the meantime.</p>
+</main>
+"""
+
+
+def _no_app_installed():
+    body = NO_APP_PAGE.encode()
+    return Response(503, "Service Unavailable", Headers({
+        "Content-Type": "text/html; charset=utf-8",
+        "Content-Length": str(len(body)),
+        "Cache-Control": "no-store",
+    }), body)
 
 
 def _error(status, phrase, allow=None):

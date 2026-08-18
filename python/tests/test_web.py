@@ -94,6 +94,19 @@ def test_websocket_upgrades_are_left_alone(root):
     assert web.respond(request, root) is None, "the kernel socket is not a page"
 
 
-def test_an_install_without_a_build_serves_nothing(tmp_path):
+def test_an_install_without_a_build_explains_itself(tmp_path):
+    """Never fall through to the WebSocket handshake for a page request.
+
+    Its rejection ("you cannot access a WebSocket server directly with a
+    browser") is true and tells the user nothing about what to do.
+    """
     assert web.available(tmp_path) is False
-    assert web.respond(FakeRequest("/"), tmp_path) is None
+    response = web.respond(FakeRequest("/"), tmp_path)
+    assert response.status_code == 503
+    assert b"no app is bundled" in response.body
+    assert b"build:engine" in response.body
+
+
+def test_the_kernel_socket_still_gets_through_without_a_build(tmp_path):
+    request = FakeRequest("/", headers={"Upgrade": "websocket"})
+    assert web.respond(request, tmp_path) is None
