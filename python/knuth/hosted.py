@@ -9,6 +9,7 @@ See SAME_ORIGIN.md.
 """
 
 import socket
+import subprocess
 import sys
 import time
 import webbrowser
@@ -17,10 +18,45 @@ from . import agent, state
 from .server import GRACE_SECONDS, main as serve_main
 
 ASKED_KEY = "asked-about-login-agent"
+BROWSER_KEY = "browser"
+
+# The default browser is the right default, but it is not always where the
+# app can be installed — installing a PWA is a browser feature and they do
+# not all offer it. So the choice is settable, and remembered.
+MACOS_BUNDLE_IDS = {
+    "chrome": "com.google.Chrome",
+    "arc": "company.thebrowser.browser",
+    "edge": "com.microsoft.edgemac",
+    "brave": "com.brave.Browser",
+    "safari": "com.apple.Safari",
+    "firefox": "org.mozilla.firefox",
+}
 
 
 def app_url(port):
     return f"http://127.0.0.1:{port}/"
+
+
+def open_in(url, browser=None):
+    """Open url in the named browser, or the system default. True if opened."""
+    if browser and browser != "default":
+        if sys.platform == "darwin":
+            target = MACOS_BUNDLE_IDS.get(browser.lower())
+            flag = "-b" if target else "-a"
+            try:
+                result = subprocess.run(
+                    ["open", flag, target or browser, url],
+                    capture_output=True,
+                    timeout=10,
+                )
+            except (OSError, subprocess.SubprocessError):
+                return False
+            return result.returncode == 0
+        try:
+            return webbrowser.get(browser).open(url)
+        except webbrowser.Error:
+            return False
+    return webbrowser.open(url)
 
 
 def _port_is_taken(port):
@@ -70,21 +106,25 @@ def _offer_login_agent(port):
     return True
 
 
-def run_hosted(port=5197, grace=GRACE_SECONDS, *, open_browser=True):
+def run_hosted(port=5197, grace=GRACE_SECONDS, *, open_browser=True, browser=None):
     """Serve the app and keep the engine in the foreground.
 
     If an engine already owns the port, this just opens the app against it
     and returns; the running one keeps serving.
     """
     url = app_url(port)
+    if browser:
+        state.set(BROWSER_KEY, browser)
+    chosen = browser or state.get(BROWSER_KEY)
 
     def show(url):
         if not open_browser:
             print(f"The app is at {url}")
-        elif webbrowser.open(url):
-            print(f"Opening {url}")
+        elif open_in(url, chosen):
+            where = f" in {chosen}" if chosen and chosen != "default" else ""
+            print(f"Opening {url}{where}")
         else:
-            print(f"Could not open a browser automatically. Open {url}")
+            print(f"Could not open {chosen or 'a browser'} automatically. Open {url}")
 
     if _port_is_taken(port):
         print(f"Using the Knuth engine already running on port {port}.")

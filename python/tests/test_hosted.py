@@ -89,15 +89,20 @@ def test_cli_dispatches_app(monkeypatch):
     monkeypatch.setattr(
         hosted,
         "run_hosted",
-        lambda port, grace, *, open_browser: called.append((port, grace, open_browser)) or 0,
+        lambda port, grace, *, open_browser, browser: called.append(
+            (port, grace, open_browser, browser)
+        ) or 0,
     )
     monkeypatch.setattr(
-        sys, "argv", ["knuth", "app", "--port", "8123", "--grace", "9", "--no-browser"]
+        sys,
+        "argv",
+        ["knuth", "app", "--port", "8123", "--grace", "9", "--no-browser",
+         "--browser", "chrome"],
     )
     with pytest.raises(SystemExit) as exit_info:
         cli.main()
     assert exit_info.value.code == 0
-    assert called == [(8123, 9, False)]
+    assert called == [(8123, 9, False, "chrome")]
 
 
 def test_cli_no_longer_offers_pairing_verbs(monkeypatch, capsys):
@@ -188,3 +193,53 @@ def test_a_non_interactive_run_is_never_prompted(monkeypatch, tmp_path):
     )
 
     assert hosted._offer_login_agent(5197) is False
+
+
+def test_browser_choice_is_remembered(monkeypatch, tmp_path):
+    """The default browser is not always one that can install the app."""
+    monkeypatch.setenv("KNUTH_CONFIG_DIR", str(tmp_path))
+    monkeypatch.setattr(hosted.sys, "platform", "darwin")
+    monkeypatch.setattr(hosted, "_port_is_taken", lambda _port: True)
+    monkeypatch.setattr(
+        hosted.webbrowser, "open", lambda _url: pytest.fail("must not use the default")
+    )
+    calls = []
+    monkeypatch.setattr(
+        hosted.subprocess,
+        "run",
+        lambda command, **options: calls.append(command)
+        or type("Result", (), {"returncode": 0})(),
+    )
+
+    assert hosted.run_hosted(5197, browser="chrome") == 0
+    assert calls == [["open", "-b", "com.google.Chrome", "http://127.0.0.1:5197/"]]
+
+    # Asked once, honoured thereafter.
+    calls.clear()
+    assert hosted.run_hosted(5197) == 0
+    assert calls == [["open", "-b", "com.google.Chrome", "http://127.0.0.1:5197/"]]
+
+
+def test_an_unknown_browser_is_passed_through_as_an_app_name(monkeypatch, tmp_path):
+    monkeypatch.setenv("KNUTH_CONFIG_DIR", str(tmp_path))
+    monkeypatch.setattr(hosted.sys, "platform", "darwin")
+    calls = []
+    monkeypatch.setattr(
+        hosted.subprocess,
+        "run",
+        lambda command, **options: calls.append(command)
+        or type("Result", (), {"returncode": 0})(),
+    )
+
+    assert hosted.open_in("http://x", "Vivaldi") is True
+    assert calls == [["open", "-a", "Vivaldi", "http://x"]]
+
+
+def test_default_still_means_the_system_browser(monkeypatch, tmp_path):
+    monkeypatch.setenv("KNUTH_CONFIG_DIR", str(tmp_path))
+    opened = []
+    monkeypatch.setattr(hosted.webbrowser, "open", lambda url: opened.append(url) or True)
+
+    assert hosted.open_in("http://x", None) is True
+    assert hosted.open_in("http://x", "default") is True
+    assert opened == ["http://x", "http://x"]

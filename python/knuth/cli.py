@@ -40,6 +40,11 @@ def main():
         help="seconds a disconnected session stays alive for reattach (default 120)",
     )
     app_cmd.add_argument(
+        "--browser",
+        help="which browser to open (chrome, safari, arc, edge, brave, firefox, "
+        "default, or an application name). Remembered for next time.",
+    )
+    app_cmd.add_argument(
         "--no-browser",
         action="store_true",
         help="start the engine without opening a browser",
@@ -85,6 +90,7 @@ def main():
             args.port,
             args.grace,
             open_browser=not args.no_browser,
+            browser=args.browser,
         ))
     elif args.command == "agent":
         if args.action == "install":
