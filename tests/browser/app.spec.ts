@@ -313,16 +313,24 @@ test('a script with no cells opens as a file, and gains the workbench when given
   await expect(page.locator('#kernel-status')).toHaveText('kernel');
 
   await expect(page.locator('body')).toHaveAttribute('data-plain', 'true');
-  for (const gone of ['.run', '.badge', '.insert-zone', '#panel', '#run-all', '#restart']) {
+  const hidden = ['.run', '.badge', '.insert-zone', '#panel', '#run-all', '#restart',
+                  '#cells-pod'];
+  for (const gone of hidden) {
     await expect(page.locator(gone).first(), `${gone} is noise on a plain file`)
       .toBeHidden();
   }
-  // The text itself is still there, and still editable.
+  // The text itself is still there, still editable, and numbered.
   await expect(page.locator('.cm-content').first()).toContainText('import math');
+  await expect(page.locator('.cm-lineNumbers').first()).toBeVisible();
 
-  // Adding a cell gives the document structure, so the apparatus comes back.
-  await page.locator('#add-code').click();
+  // With no cell buttons, typing a marker is the way in — and it has to work,
+  // or a file that looks structured would keep behaving flat.
+  await page.locator('.cm-content').first().click();
+  await page.keyboard.press('ControlOrMeta+ArrowUp');
+  await page.keyboard.type('# %%\n');
+
   await expect(page.locator('body')).toHaveAttribute('data-plain', '');
   await expect(page.locator('.run').first()).toBeVisible();
   await expect(page.locator('#run-all')).toBeVisible();
+  await expect(page.locator('#cells-pod')).toBeVisible();
 });

@@ -9,7 +9,7 @@
 // below. New cells also come from hover insert strips between cells.
 
 import { minimalSetup, EditorView } from 'codemirror';
-import { keymap, placeholder } from '@codemirror/view';
+import { keymap, lineNumbers, placeholder } from '@codemirror/view';
 import { Compartment, type Extension } from '@codemirror/state';
 import { python } from '@codemirror/lang-python';
 import { markdown } from '@codemirror/lang-markdown';
@@ -18,6 +18,7 @@ import {
   type Cell,
   type KnuthDocument,
   parseDocument,
+  serializeDocument,
   cellCode,
   textProse,
   setProse,
@@ -199,6 +200,20 @@ export class DocumentView {
       const lines = text.replace(/\n+$/, '').split('\n');
       if (this.views.length > 0) lines.push('');
       this.doc.preamble = lines;
+      // A plain file that grows a marker has become a cell document. With
+      // no cell buttons to press, typing "# %%" is the way in, so re-read
+      // it rather than leave the text looking structured and behaving flat.
+      if (this.views.length === 0 && lines.some((line) => /^# ?%%/.test(line))) {
+        const reparsed = parseDocument(
+          serializeDocument({ preamble: lines, cells: [], trailingNewline: true }),
+        );
+        if (reparsed.cells.length > 0) {
+          queueMicrotask(() => {
+            this.setDoc(reparsed);
+            this.onChange();
+          });
+        }
+      }
       return;
     }
     if (v.cell.kind === 'text') {
@@ -477,6 +492,7 @@ export class DocumentView {
         this.trackFocus(v),
         minimalSetup,
         oneDark,
+        ...(v.cell.kind === 'text' ? [] : [lineNumbers()]),
         v.lang.of(this.langFor(v.cell.kind)),
         EditorView.lineWrapping,
         EditorView.updateListener.of((update) => {

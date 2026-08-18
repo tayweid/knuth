@@ -1033,6 +1033,7 @@ body[data-plain='true'] .output,
 body[data-plain='true'] .cell-figures,
 body[data-plain='true'] #panel,
 body[data-plain='true'] #toggle-panel,
+body[data-plain='true'] #cells-pod,
 body[data-plain='true'] #run-stale,
 body[data-plain='true'] #run-all,
 body[data-plain='true'] #stop,
@@ -1044,4 +1045,11 @@ body[data-plain='true'] #restart {
    column that is holding space for them. */
 body[data-plain='true'] .gutter {
   min-width: 0;
+}
+
+/* The panel is display:none here, not [hidden], so the rule above still sees
+   it and cedes 350px to a column that is not on screen — which walks the
+   pods off-centre from the code they sit above. */
+body[data-plain='true'] #toolbar {
+  padding-right: 14px;
 }
