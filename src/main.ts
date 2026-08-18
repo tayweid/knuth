@@ -7,7 +7,7 @@ import './frame-guard.ts';
 import './styles.css';
 import { SidecarKernel } from './kernel/kernel.ts';
 import { DocumentView } from './document-view.ts';
-import { FileManager } from './file-manager.ts';
+import { DEFAULT_DOC_NAME, FileManager } from './file-manager.ts';
 import { SessionPanel } from './panel.ts';
 import { icon } from './icons.ts';
 import { Onboarding } from './onboarding.ts';
@@ -51,7 +51,7 @@ function labeled(id: string, glyph: string, label: string, title: string): strin
 
 const toolbar = document.getElementById('toolbar')!;
 toolbar.innerHTML = `
-  <div class="tb-pod doc-pod" id="doc-pod"><span class="name" id="file-name" title="Click to rename">untitled.py</span></div>
+  <div class="tb-pod doc-pod" id="doc-pod"><span class="name" id="file-name" title="Click to rename">${DEFAULT_DOC_NAME}</span></div>
   <div class="tb-pod tb-group" id="cells-pod">
     ${labeled('add-code', icon('code'), 'Code', 'Program cell below the current one')}
     ${labeled('add-scratch', icon('scratch'), 'Scratch', 'Scratch cell — explores the session, never persists')}

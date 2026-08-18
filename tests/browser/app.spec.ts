@@ -364,3 +364,13 @@ test('a full engine and a failed Python say different things', async ({ page }) 
     page.getByRole('heading', { name: 'Python could not be started' }),
   ).toBeVisible();
 });
+
+test('an untouched document names the tab after the app', async ({ page }) => {
+  // The tab title is the document name, so a fresh one should say which app
+  // the tab is — and say the same thing on the hosted preview and locally.
+  await page.goto('/');
+  await expect(page.locator('#kernel-status')).toHaveText('kernel');
+
+  await expect(page).toHaveTitle('Knuth.py');
+  await expect(page.locator('#file-name')).toHaveText('Knuth.py');
+});

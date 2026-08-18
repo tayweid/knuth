@@ -26,6 +26,9 @@ const PY_TYPE: FilePickerType[] = [
 ];
 
 const NEW_DOC = '# %%\n';
+/** The default document name. It is what the browser tab shows, so it says
+ *  which app the tab is rather than that the file is nameless. */
+export const DEFAULT_DOC_NAME = 'Knuth.py';
 const ARTIFACT_MANIFEST = '.knuth-artifacts.json';
 const MAX_FIGURE_NAME_BYTES = 128;
 const WINDOWS_RESERVED_NAMES = new Set([
@@ -109,7 +112,7 @@ export class FileManager {
   handle: FileSystemFileHandle | null = null;
   /** Project folder: where the contract (values.json, figs/) lands. */
   dir: FileSystemDirectoryHandle | null = null;
-  name = 'untitled.py';
+  name = DEFAULT_DOC_NAME;
   dirty = false;
   /** Last session's file awaiting a permission re-grant (needs a user
    *  gesture) — the document on screen IS this file's latest state. */
@@ -269,7 +272,7 @@ export class FileManager {
   newDoc() {
     this.handle = null;
     this.pendingHandle = null;
-    this.name = 'untitled.py';
+    this.name = DEFAULT_DOC_NAME;
     this.dirty = false;
     this.hooks.setDoc(parseDocument(NEW_DOC));
     this.hooks.onState();
