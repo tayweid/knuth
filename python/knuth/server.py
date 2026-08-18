@@ -25,6 +25,7 @@ import asyncio
 import importlib.metadata
 import json
 import os
+from pathlib import Path
 import signal
 import subprocess
 import sys
@@ -66,6 +67,25 @@ def local_origins(port):
     the entire point of SAME_ORIGIN.md.
     """
     return (f"http://127.0.0.1:{port}", f"http://localhost:{port}")
+
+
+def build_stamp():
+    """A fingerprint of the code this process would load from disk.
+
+    Versions do not move during development, so `2.0.0.dev0` cannot tell a
+    freshly upgraded package from the one a long-lived engine started with.
+    The newest mtime across the package can, and that is the exact question
+    after a pip install: is the engine still serving what it booted with?
+    """
+    root = Path(__file__).parent
+    newest = 0.0
+    for path in root.rglob("*"):
+        if path.suffix in {".py", ".html", ".js", ".css"}:
+            try:
+                newest = max(newest, path.stat().st_mtime)
+            except OSError:
+                continue
+    return f"{newest:.0f}"
 
 
 def _package_version():
@@ -279,6 +299,7 @@ async def serve(
                 "type": "status",
                 "protocol": PROTOCOL_VERSION,
                 "version": _package_version(),
+                "build": build_stamp(),
                 "sessions": len(sessions) + len(starting_sids),
                 "max_sessions": max_sessions,
             }))

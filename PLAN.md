@@ -163,3 +163,26 @@ persists in localStorage.
   path hint file) — needed before `knuth run` feels complete.
 - Plass line-breaker port for text-cell typography (Q6 revisit).
 - External-change reload, themes, export niceties.
+
+
+## Dogfooding list (2026-08-18)
+
+From using it, in the order they bite:
+
+- **Launched files should assume their own folder.** Double-clicking a `.py`
+  still asks where the project folder is, when the answer is obviously the
+  directory the file came from. Opinionated: default to it, no prompt. The
+  engine is local now, so it can resolve that itself rather than asking the
+  browser for a directory grant — which also fixes relative `read_csv` in the
+  app (the open item further up this file).
+
+- **A plain `.py` should look plain.** Scripts with no cell structure already
+  open and run as cell zero, but they arrive wearing the whole workbench:
+  run/stale/session/cell chrome for a document that has none of it. Same
+  visual language, less of it — a file, not a notebook. It should degrade to
+  something close to a good editor.
+
+- **Session panel and the data/figure viewer want to be objects, not
+  regions.** Today they are areas divided by rules. They should read as boxes
+  in the same family as a code cell — same corner radius, same surface — but
+  visibly a different kind of thing, without the cell's affordances.

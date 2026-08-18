@@ -9,7 +9,7 @@ import sys
 import websockets
 
 from .hosted import app_url
-from .server import PROTOCOL_VERSION, local_origins
+from .server import PROTOCOL_VERSION, build_stamp, local_origins
 
 STATUS_TIMEOUT = 2
 
@@ -75,6 +75,13 @@ def run_doctor(port=5197):
     )
     if status.get("protocol") != PROTOCOL_VERSION:
         print(f"Expected protocol {PROTOCOL_VERSION}; update and restart Knuth.")
+        return 1
+    running_build = status.get("build")
+    if running_build and running_build != build_stamp():
+        print(
+            "The running engine started before the installed code changed — it "
+            "is serving the old version. Restart it: knuth agent restart"
+        )
         return 1
     engine_version = status.get("version")
     if engine_version != installed_version:

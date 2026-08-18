@@ -243,3 +243,56 @@ def test_default_still_means_the_system_browser(monkeypatch, tmp_path):
     assert hosted.open_in("http://x", None) is True
     assert hosted.open_in("http://x", "default") is True
     assert opened == ["http://x", "http://x"]
+
+
+def test_an_engine_older_than_the_install_is_restarted(monkeypatch, tmp_path, capsys):
+    """pip replaces files; it does not restart processes."""
+    monkeypatch.setenv("KNUTH_CONFIG_DIR", str(tmp_path))
+    monkeypatch.setattr(hosted, "_port_is_taken", lambda _port: True)
+    monkeypatch.setattr(hosted, "build_stamp", lambda: "2000")
+    monkeypatch.setattr(
+        hosted.asyncio, "run", lambda coroutine: _finish_coroutine(coroutine, {
+            "type": "status", "build": "1000",
+        })
+    )
+    monkeypatch.setattr(hosted.agent, "is_installed", lambda: True)
+    restarted = []
+    monkeypatch.setattr(hosted.agent, "restart", lambda: restarted.append(True) or 0)
+    monkeypatch.setattr(hosted.webbrowser, "open", lambda _url: True)
+
+    assert hosted.run_hosted(5197) == 0
+    assert restarted == [True]
+    assert "restarted it" in capsys.readouterr().out
+
+
+def test_a_current_engine_is_left_alone(monkeypatch, tmp_path):
+    monkeypatch.setenv("KNUTH_CONFIG_DIR", str(tmp_path))
+    monkeypatch.setattr(hosted, "_port_is_taken", lambda _port: True)
+    monkeypatch.setattr(hosted, "build_stamp", lambda: "2000")
+    monkeypatch.setattr(
+        hosted.asyncio, "run", lambda coroutine: _finish_coroutine(coroutine, {
+            "type": "status", "build": "2000",
+        })
+    )
+    monkeypatch.setattr(
+        hosted.agent, "restart", lambda: pytest.fail("nothing to restart")
+    )
+    monkeypatch.setattr(hosted.webbrowser, "open", lambda _url: True)
+
+    assert hosted.run_hosted(5197) == 0
+
+
+def test_a_stale_foreground_engine_says_what_to_do(monkeypatch, tmp_path, capsys):
+    monkeypatch.setenv("KNUTH_CONFIG_DIR", str(tmp_path))
+    monkeypatch.setattr(hosted, "_port_is_taken", lambda _port: True)
+    monkeypatch.setattr(hosted, "build_stamp", lambda: "2000")
+    monkeypatch.setattr(
+        hosted.asyncio, "run", lambda coroutine: _finish_coroutine(coroutine, {
+            "type": "status", "build": "1000",
+        })
+    )
+    monkeypatch.setattr(hosted.agent, "is_installed", lambda: False)
+    monkeypatch.setattr(hosted.webbrowser, "open", lambda _url: True)
+
+    assert hosted.run_hosted(5197) == 0
+    assert "still serving the old version" in capsys.readouterr().out

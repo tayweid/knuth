@@ -8,6 +8,7 @@ actually happened — existed only because the page came from somewhere else.
 See SAME_ORIGIN.md.
 """
 
+import asyncio
 import socket
 import subprocess
 import sys
@@ -15,7 +16,7 @@ import time
 import webbrowser
 
 from . import agent, state
-from .server import GRACE_SECONDS, main as serve_main
+from .server import GRACE_SECONDS, build_stamp, main as serve_main
 
 ASKED_KEY = "asked-about-login-agent"
 BROWSER_KEY = "browser"
@@ -63,6 +64,35 @@ def _port_is_taken(port):
     """Whether something already listens on the loopback port."""
     with socket.socket() as probe:
         return probe.connect_ex(("127.0.0.1", port)) == 0
+
+
+def _restart_if_stale(port):
+    """Restart a long-lived engine that is still serving pre-upgrade code.
+
+    pip replaces files; it does not restart processes. An engine that has
+    been up since before an upgrade keeps serving what it booted with, and
+    the symptoms of that are baffling — in the worst case a page request
+    reaching an engine that predates static serving entirely. Compare what
+    it is running against what is on disk and fix it rather than report it.
+    """
+    from .doctor import _engine_status
+
+    try:
+        status = asyncio.run(_engine_status(port))
+    except (RuntimeError, OSError):
+        return False
+    if not status:
+        return False
+    running = status.get("build")
+    if not running or running == build_stamp():
+        return False
+    if agent.is_installed():
+        return agent.restart() == 0
+    print()
+    print("The engine on this port started before the installed code changed,")
+    print("so it is still serving the old version. Stop it (Ctrl-C in its")
+    print("terminal) and run `knuth app` again.")
+    return False
 
 
 def _offer_login_agent(port):
@@ -127,7 +157,10 @@ def run_hosted(port=5197, grace=GRACE_SECONDS, *, open_browser=True, browser=Non
             print(f"Could not open {chosen or 'a browser'} automatically. Open {url}")
 
     if _port_is_taken(port):
-        print(f"Using the Knuth engine already running on port {port}.")
+        if _restart_if_stale(port):
+            print("The running engine was older than the installed one; restarted it.")
+        else:
+            print(f"Using the Knuth engine already running on port {port}.")
         show(url)
         return 0
 
