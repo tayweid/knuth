@@ -271,3 +271,50 @@ Steps 1 and 2 are done (2026-08-17).
   does not fix. Serving assets from the agent makes it more useful, not less.
 - What happens to `knuth agent pair` and `rotate-token` — both are pairing
   verbs with nothing left to pair.
+
+
+## Pyodide in the preview (branch `pyodide`, 2026-08-18)
+
+The hosted build stopped being able to reach a local engine when the pairing
+layer went, which left it a workbench that cannot run anything. Pyodide closes
+that: the preview runs Python in the tab, so `knuth.tayweid.io` becomes usable
+without installing anything, and the local app stays exactly as it is.
+
+DECIDED: not a second implementation of the session. The browser loads the
+same `knuth.session` and `knuth.kernel` modules the sidecar runs and calls the
+same `handle_request` dispatcher, so a run, a namespace snapshot, a table
+window, and every limit are the same code in both backends. `kernel.py`'s
+subprocess loop was refactored to expose that function; nothing about its
+behaviour changed. Anything that diverges between the two backends would be a
+way for them to disagree, so almost nothing does.
+
+The backend is chosen by where the page came from — loopback means an engine
+served it, anything else means there is none — and the Pyodide path is a
+dynamic import, so the local bundle does not carry a runtime it will never
+load. It builds as a separate 28 KB chunk.
+
+Verified end to end against the real thing, not mocked: served from a
+non-loopback address, the app boots Pyodide, runs a cell (`print` output and
+the last expression's value both arrive), and shows the binding in the session
+panel. `import pandas` works — imports are inspected and packages fetched
+before the cell runs — and a DataFrame reaches the panel. The local path was
+re-checked at the same time: still the sidecar, and it makes no request off
+this machine.
+
+Two things it cannot do, and says so rather than pretending:
+
+- **Interrupt.** Cancelling running Python needs a shared memory buffer and
+  cross-origin isolation, which a static host does not provide.
+- **Figures** depend on matplotlib being loaded in the tab. The session code
+  reaches it through `sys.modules`, so this degrades rather than breaks.
+
+The page's meta CSP has to admit the CDN that serves Pyodide. Nothing local
+needs that, so the engine sends its own stricter policy as a header when it
+serves the page; browsers enforce every policy they are given, so the local
+app still cannot reach the network. Confirmed by inspection of the served
+header and by watching for outbound requests.
+
+OPEN: the CDN. Vendoring Pyodide into the Pages deploy would remove the
+third-party dependency, but the staging step copies the deploy into the wheel,
+so it would also put ~25 MB of WebAssembly into every pip install. That needs
+the two builds separated before it is worth doing.

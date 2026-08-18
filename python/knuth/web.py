@@ -26,6 +26,18 @@ WEB_ROOT = Path(__file__).parent / "web"
 
 INDEX = "index.html"
 
+# The page's own meta policy has to admit the CDN that serves Pyodide, because
+# the hosted preview runs Python in the tab. A locally served page never needs
+# it — an engine is right here — so the engine sends the policy it actually
+# wants as a header. Browsers enforce every policy they are given, so the
+# stricter one wins and the local app cannot reach the network at all.
+LOCAL_CSP = (
+    "default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; "
+    "font-src 'self'; img-src 'self' blob: data:; connect-src 'self' blob:; "
+    "manifest-src 'self'; worker-src 'self' blob:; object-src 'none'; "
+    "base-uri 'none'; form-action 'none'; frame-src 'none'"
+)
+
 # mimetypes' table varies by platform and misses the manifest entirely;
 # a wrong type here makes the browser refuse to install the app.
 CONTENT_TYPES = {
@@ -112,7 +124,7 @@ def respond(request, root=None):
 
     body = resolved.read_bytes()
     relative = resolved.relative_to(root.resolve()).as_posix()
-    headers = Headers({
+    fields = {
         "Content-Type": _content_type(resolved),
         "Content-Length": str(len(body)),
         "Cache-Control": _cache_control(relative),
@@ -120,8 +132,10 @@ def respond(request, root=None):
         # sniff its types. index.html carries the full CSP.
         "X-Content-Type-Options": "nosniff",
         "Frame-Options": "DENY",
-    })
-    return Response(200, "OK", headers, b"" if method == "HEAD" else body)
+    }
+    if resolved.suffix == ".html":
+        fields["Content-Security-Policy"] = LOCAL_CSP
+    return Response(200, "OK", Headers(fields), b"" if method == "HEAD" else body)
 
 
 NO_APP_PAGE = """<!doctype html>

@@ -5,7 +5,8 @@
 
 import './frame-guard.ts';
 import './styles.css';
-import { SidecarKernel } from './kernel/kernel.ts';
+import { SidecarKernel, type Kernel } from './kernel/kernel.ts';
+import { LazyKernel } from './kernel/lazy-kernel.ts';
 import { DocumentView } from './document-view.ts';
 import { FileManager } from './file-manager.ts';
 import { SessionPanel } from './panel.ts';
@@ -113,7 +114,25 @@ window.addEventListener('beforeinstallprompt', () => {
 
 let hadSession = false;
 let kernelState: Parameters<typeof onboarding.setState>[0] = 'connecting';
-const kernel = new SidecarKernel(undefined, (state, resumed) => {
+
+// Served from loopback, an engine is behind this page and owns the session.
+// Served from the web, there is no engine and never will be, so the preview
+// runs Python in the tab instead (SAME_ORIGIN.md). The Pyodide backend is
+// imported only in that case: the local app should not carry a megabyte of
+// runtime it will never load.
+const servedLocally = ['127.0.0.1', 'localhost', '[::1]'].includes(
+  window.location.hostname,
+);
+
+function makeKernel(onState: (state: Parameters<typeof onboarding.setState>[0], resumed?: boolean) => void): Kernel {
+  if (servedLocally) return new SidecarKernel(undefined, onState);
+  const pending = import('./kernel/pyodide-kernel.ts').then(
+    ({ PyodideKernel }) => new PyodideKernel(onState),
+  );
+  return new LazyKernel(pending, onState);
+}
+
+const kernel = makeKernel((state, resumed) => {
   kernelState = state;
   onboarding.setState(state);
   if (state === 'ready') {
@@ -261,7 +280,7 @@ fileManager = new FileManager({
     docView.setDoc(doc);
     // A different document deserves a fresh session — otherwise the
     // previous document's variables haunt the explorer and values.json.
-    if (!restoring && kernel.isReady) {
+    if (!restoring && kernelState === 'ready') {
       void kernel.restart().then(() => void panel.refresh());
     }
   },

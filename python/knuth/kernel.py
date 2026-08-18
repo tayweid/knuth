@@ -94,6 +94,126 @@ class _StreamOut(io.TextIOBase):
         return len(s)
 
 
+def handle_request(msg, session, state, emit):
+    """Serve one request against a session, emitting protocol events.
+
+    Extracted from the subprocess loop so a second host can drive the same
+    semantics: Pyodide runs this in the browser tab, where there is no stdin
+    to read and no subprocess to be. Anything that diverges here is a way for
+    the two backends to disagree, so nothing should.
+    """
+    kind = msg.get("type")
+    if kind == "run":
+        state["id"] = msg["id"]
+        state["stream_bytes"] = 0
+        ok, payload = session.run(msg["code"], scratch=bool(msg.get("scratch")))
+        svgs = capture_open_figures(MAX_FIGURES_PER_RUN)
+        named = [] if msg.get("scratch") else session.figure_receipts(
+            session.last_assigned
+        )
+        kept_svgs = []
+        figure_bytes = 0
+        omitted = 0
+        for svg in svgs:
+            size = _utf8_size(svg)
+            if (
+                len(kept_svgs) >= MAX_FIGURES_PER_RUN
+                or size > MAX_FIGURE_BYTES
+                or figure_bytes + size > MAX_FIGURE_BYTES_PER_RUN
+            ):
+                omitted += 1
+                continue
+            kept_svgs.append(svg)
+            figure_bytes += size
+        if len(named) > MAX_FIGURES_PER_RUN:
+            omitted += len(named) - MAX_FIGURES_PER_RUN
+            named = named[:MAX_FIGURES_PER_RUN]
+        if omitted:
+            emit({
+                "type": "stream",
+                "id": msg["id"],
+                "which": "stderr",
+                "text": f"Knuth omitted {omitted} figure(s) that exceeded display limits.\n",
+            })
+        if kept_svgs or named:
+            emit({
+                "type": "figures",
+                "id": msg["id"],
+                "svgs": kept_svgs,
+                "named": named,
+            })
+        if ok:
+            result, truncated = (
+                _truncate_utf8(payload, MAX_RESULT_BYTES)
+                if payload is not None
+                else (None, False)
+            )
+            event = {"type": "done", "id": msg["id"], "result": result}
+            if truncated:
+                event["truncated"] = True
+            emit(event)
+        else:
+            traceback, truncated = _truncate_utf8(payload, MAX_TRACEBACK_BYTES)
+            event = {"type": "error", "id": msg["id"], "traceback": traceback}
+            if truncated:
+                event["truncated"] = True
+            emit(event)
+        state["id"] = None
+    elif kind == "namespace":
+        event = {"type": "namespace", "id": msg["id"], "vars": session.snapshot()}
+        if _event_size(event) <= MAX_NAMESPACE_RESPONSE_BYTES:
+            emit(event)
+        else:
+            emit({
+                "type": "protocol_error",
+                "request": "namespace",
+                "id": msg["id"],
+                "error": "namespace response exceeds the configured limit",
+            })
+    elif kind == "artifacts":
+        values, figures = session.artifacts()
+        event = {
+            "type": "artifacts",
+            "id": msg["id"],
+            "values": values,
+            "figures": figures,
+        }
+        if _event_size(event) <= MAX_ARTIFACT_RESPONSE_BYTES:
+            emit(event)
+        else:
+            emit({
+                "type": "protocol_error",
+                "request": "artifacts",
+                "id": msg["id"],
+                "error": "artifact response exceeds the configured limit",
+            })
+    elif kind == "figure":
+        result = session.figure(msg.get("name", ""))
+        if "svg" in result and _utf8_size(result["svg"]) > MAX_FIGURE_BYTES:
+            result = {
+                "name": result["name"],
+                "error": "figure exceeds the configured display limit",
+            }
+        emit({"type": "figure", "id": msg["id"], **result})
+    elif kind == "table":
+        event = {
+            "type": "table",
+            "id": msg["id"],
+            **session.table(
+                msg.get("name", ""), msg.get("offset", 0), msg.get("limit", 100)
+            ),
+        }
+        if _event_size(event) <= MAX_TABLE_RESPONSE_BYTES:
+            emit(event)
+        else:
+            emit({
+                "type": "protocol_error",
+                "request": "table",
+                "id": msg["id"],
+                "error": "table response exceeds the configured limit",
+            })
+
+
 def main():
     _install_interrupt_handler()
     real_stdout = sys.stdout
@@ -119,116 +239,7 @@ def main():
                 msg = json.loads(line)
             except ValueError:
                 continue
-            kind = msg.get("type")
-            if kind == "run":
-                state["id"] = msg["id"]
-                state["stream_bytes"] = 0
-                ok, payload = session.run(msg["code"], scratch=bool(msg.get("scratch")))
-                svgs = capture_open_figures(MAX_FIGURES_PER_RUN)
-                named = [] if msg.get("scratch") else session.figure_receipts(
-                    session.last_assigned
-                )
-                kept_svgs = []
-                figure_bytes = 0
-                omitted = 0
-                for svg in svgs:
-                    size = _utf8_size(svg)
-                    if (
-                        len(kept_svgs) >= MAX_FIGURES_PER_RUN
-                        or size > MAX_FIGURE_BYTES
-                        or figure_bytes + size > MAX_FIGURE_BYTES_PER_RUN
-                    ):
-                        omitted += 1
-                        continue
-                    kept_svgs.append(svg)
-                    figure_bytes += size
-                if len(named) > MAX_FIGURES_PER_RUN:
-                    omitted += len(named) - MAX_FIGURES_PER_RUN
-                    named = named[:MAX_FIGURES_PER_RUN]
-                if omitted:
-                    emit({
-                        "type": "stream",
-                        "id": msg["id"],
-                        "which": "stderr",
-                        "text": f"Knuth omitted {omitted} figure(s) that exceeded display limits.\n",
-                    })
-                if kept_svgs or named:
-                    emit({
-                        "type": "figures",
-                        "id": msg["id"],
-                        "svgs": kept_svgs,
-                        "named": named,
-                    })
-                if ok:
-                    result, truncated = (
-                        _truncate_utf8(payload, MAX_RESULT_BYTES)
-                        if payload is not None
-                        else (None, False)
-                    )
-                    event = {"type": "done", "id": msg["id"], "result": result}
-                    if truncated:
-                        event["truncated"] = True
-                    emit(event)
-                else:
-                    traceback, truncated = _truncate_utf8(payload, MAX_TRACEBACK_BYTES)
-                    event = {"type": "error", "id": msg["id"], "traceback": traceback}
-                    if truncated:
-                        event["truncated"] = True
-                    emit(event)
-                state["id"] = None
-            elif kind == "namespace":
-                event = {"type": "namespace", "id": msg["id"], "vars": session.snapshot()}
-                if _event_size(event) <= MAX_NAMESPACE_RESPONSE_BYTES:
-                    emit(event)
-                else:
-                    emit({
-                        "type": "protocol_error",
-                        "request": "namespace",
-                        "id": msg["id"],
-                        "error": "namespace response exceeds the configured limit",
-                    })
-            elif kind == "artifacts":
-                values, figures = session.artifacts()
-                event = {
-                    "type": "artifacts",
-                    "id": msg["id"],
-                    "values": values,
-                    "figures": figures,
-                }
-                if _event_size(event) <= MAX_ARTIFACT_RESPONSE_BYTES:
-                    emit(event)
-                else:
-                    emit({
-                        "type": "protocol_error",
-                        "request": "artifacts",
-                        "id": msg["id"],
-                        "error": "artifact response exceeds the configured limit",
-                    })
-            elif kind == "figure":
-                result = session.figure(msg.get("name", ""))
-                if "svg" in result and _utf8_size(result["svg"]) > MAX_FIGURE_BYTES:
-                    result = {
-                        "name": result["name"],
-                        "error": "figure exceeds the configured display limit",
-                    }
-                emit({"type": "figure", "id": msg["id"], **result})
-            elif kind == "table":
-                event = {
-                    "type": "table",
-                    "id": msg["id"],
-                    **session.table(
-                        msg.get("name", ""), msg.get("offset", 0), msg.get("limit", 100)
-                    ),
-                }
-                if _event_size(event) <= MAX_TABLE_RESPONSE_BYTES:
-                    emit(event)
-                else:
-                    emit({
-                        "type": "protocol_error",
-                        "request": "table",
-                        "id": msg["id"],
-                        "error": "table response exceeds the configured limit",
-                    })
+            handle_request(msg, session, state, emit)
         except KeyboardInterrupt:
             # Interrupt arrived while idle (or between commands): ignore.
             state["id"] = None

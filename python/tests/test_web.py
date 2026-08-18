@@ -110,3 +110,20 @@ def test_an_install_without_a_build_explains_itself(tmp_path):
 def test_the_kernel_socket_still_gets_through_without_a_build(tmp_path):
     request = FakeRequest("/", headers={"Upgrade": "websocket"})
     assert web.respond(request, tmp_path) is None
+
+
+def test_locally_served_html_carries_the_strict_policy(root):
+    """The page's meta policy admits a CDN for the hosted preview's Pyodide.
+
+    Nothing local needs that, and a policy sent as a header is enforced
+    alongside the meta one — so the strict version wins here.
+    """
+    response = web.respond(FakeRequest("/"), root)
+    policy = response.headers["Content-Security-Policy"]
+    assert "cdn.jsdelivr.net" not in policy
+    assert "connect-src 'self' blob:;" in policy
+
+
+def test_assets_do_not_carry_a_policy(root):
+    response = web.respond(FakeRequest("/assets/index-abc123.js"), root)
+    assert "Content-Security-Policy" not in response.headers
