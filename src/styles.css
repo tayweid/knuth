@@ -1019,3 +1019,29 @@ body:has(#panel:not([hidden])) #toolbar {
 }
 
 #toast button:hover { background: #fff; }
+
+/* A plain .py is a file, not a notebook. It parses to a single body with no
+   markers, so the affordances that structure a document — running a cell,
+   its staleness, where the next one goes, what kind it is — have nothing to
+   act on. Same surface and type, less apparatus. Adding a cell from the
+   toolbar restores all of it, because then there is structure to work. */
+body[data-plain='true'] .run,
+body[data-plain='true'] .badge,
+body[data-plain='true'] .insert-zone,
+body[data-plain='true'] .tools,
+body[data-plain='true'] .output,
+body[data-plain='true'] .cell-figures,
+body[data-plain='true'] #panel,
+body[data-plain='true'] #toggle-panel,
+body[data-plain='true'] #run-stale,
+body[data-plain='true'] #run-all,
+body[data-plain='true'] #stop,
+body[data-plain='true'] #restart {
+  display: none;
+}
+
+/* Without the gutter's run button and badge the body should not sit in a
+   column that is holding space for them. */
+body[data-plain='true'] .gutter {
+  min-width: 0;
+}

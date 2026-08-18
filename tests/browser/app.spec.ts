@@ -298,3 +298,31 @@ test('a file opened from a folder Knuth already holds does not ask again', async
   expect(adopted.sameFile, 'a held folder can identify its own file').toBe(true);
   expect(adopted.differentFolder).toBe(false);
 });
+
+test('a script with no cells opens as a file, and gains the workbench when given one', async ({ page }) => {
+  // Seed the session the way a reload would, with a plain script: no markers,
+  // so it parses to one body and zero cells.
+  await page.addInitScript(() => {
+    sessionStorage.setItem('knuth-doc', JSON.stringify({
+      name: 'script.py',
+      dirty: false,
+      text: 'import math\n\nprint(math.pi)\n',
+    }));
+  });
+  await page.goto('/');
+  await expect(page.locator('#kernel-status')).toHaveText('kernel');
+
+  await expect(page.locator('body')).toHaveAttribute('data-plain', 'true');
+  for (const gone of ['.run', '.badge', '.insert-zone', '#panel', '#run-all', '#restart']) {
+    await expect(page.locator(gone).first(), `${gone} is noise on a plain file`)
+      .toBeHidden();
+  }
+  // The text itself is still there, and still editable.
+  await expect(page.locator('.cm-content').first()).toContainText('import math');
+
+  // Adding a cell gives the document structure, so the apparatus comes back.
+  await page.locator('#add-code').click();
+  await expect(page.locator('body')).toHaveAttribute('data-plain', '');
+  await expect(page.locator('.run').first()).toBeVisible();
+  await expect(page.locator('#run-all')).toBeVisible();
+});

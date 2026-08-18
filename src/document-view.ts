@@ -187,6 +187,13 @@ export class DocumentView {
    *  editor never shows separator blank lines; the model re-adds one at
    *  the end (unless the output block's `trailing` already holds it) so
    *  the raw file keeps breathing room between cells. */
+  /** No markers means a plain script: one body, no cell structure. The
+   *  chrome that serves a notebook is noise on a file, and gaining a cell
+   *  gives the document structure for that chrome to act on again. */
+  private syncPlain() {
+    document.body.dataset.plain = this.doc.cells.length === 0 ? 'true' : '';
+  }
+
   private syncModel(v: CellView, text: string) {
     if (v.isPreamble) {
       const lines = text.replace(/\n+$/, '').split('\n');
@@ -217,6 +224,7 @@ export class DocumentView {
     this.container.append(this.endZone);
     // A plain script (or jupytext header) is the implicit cell zero —
     // without this, a markerless .py renders as a blank sheet.
+    this.syncPlain();
     if (doc.preamble.some((l) => l.trim() !== '')) {
       const pseudo: Cell = {
         kind: 'program',
@@ -620,6 +628,7 @@ export class DocumentView {
       if (p[p.length - 1]?.trim() !== '') p.push('');
     }
     this.doc.cells.splice(i, 0, cell);
+    this.syncPlain();
     const view = this.buildView(cell);
     this.views.splice(i, 0, view);
     if (i + 1 < this.views.length) this.views[i + 1].root.before(view.root);
@@ -648,6 +657,7 @@ export class DocumentView {
     const i = this.views.indexOf(v);
     const cell = v.cell;
     this.doc.cells.splice(i, 1);
+    this.syncPlain();
     this.views.splice(i, 1);
     v.editor?.destroy();
     v.root.remove();
@@ -657,6 +667,7 @@ export class DocumentView {
     this.onCellDeleted?.(() => {
       const at = Math.min(i, this.views.length);
       this.doc.cells.splice(at, 0, cell);
+      this.syncPlain();
       const view = this.buildView(cell);
       this.views.splice(at, 0, view);
       if (at + 1 < this.views.length) this.views[at + 1].root.before(view.root);
