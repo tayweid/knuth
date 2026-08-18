@@ -32,6 +32,11 @@ const COMMANDS: Record<Platform, { label: string; install: string; module: strin
   },
 };
 
+/** Whether this page came from a local engine or from the hosted preview. */
+function servedLocally(): boolean {
+  return ['127.0.0.1', 'localhost', '[::1]'].includes(window.location.hostname);
+}
+
 function detectedPlatform(): Platform {
   const modernPlatform = (
     navigator as Navigator & { userAgentData?: { platform?: string } }
@@ -63,16 +68,18 @@ export class Onboarding {
   private state: KernelStatus = 'connecting';
   private dismissed = false;
   private installPrompt: InstallPromptEvent | null = null;
+  private local = servedLocally();
   private title: HTMLElement;
   private detail: HTMLElement;
   private installCommand: HTMLElement;
   private moduleCommand: HTMLElement;
-  private installAction: HTMLButtonElement;
+  private installAction: HTMLButtonElement | null;
 
   constructor(
     private root: HTMLElement,
     private toolbarInstall: HTMLButtonElement,
   ) {
+    const local = servedLocally();
     root.innerHTML = `
       <div class="onboarding-card">
         <header class="onboarding-head">
@@ -85,35 +92,47 @@ export class Onboarding {
         </header>
         <div class="onboarding-platforms" role="tablist" aria-label="Operating system"></div>
         <div class="onboarding-steps">
-          <section class="onboarding-step">
-            <span class="step-number">1</span>
-            <div>
-              <h2>Start Knuth</h2>
-              <p>The engine runs Python locally and serves this page.</p>
-              <div class="command-row">
-                <code>knuth app</code>
-                <button type="button" class="command-copy">Copy</button>
-              </div>
-              <details>
-                <summary>If the <code>knuth</code> command is not found</summary>
-                <div class="command-row command-row-secondary">
-                  <code id="engine-module-command"></code>
-                  <button type="button" class="command-copy">Copy</button>
-                </div>
-              </details>
-            </div>
-          </section>
-          <section class="onboarding-step">
-            <span class="step-number">2</span>
-            <div>
-              <h2>Update the local engine</h2>
-              <p>Only needed if the engine is out of date. Installs it from Knuth’s matching GitHub revision.</p>
-              <div class="command-row">
-                <code id="engine-install-command"></code>
-                <button type="button" class="command-copy">Copy</button>
-              </div>
-            </div>
-          </section>
+          ${(local
+            ? [
+                `<section class="onboarding-step"><span class="step-number">1</span><div>
+                  <h2>Start Knuth</h2>
+                  <p>The engine runs Python locally and serves this page.</p>
+                  <div class="command-row"><code>knuth app</code>
+                    <button type="button" class="command-copy">Copy</button></div>
+                  <details><summary>If the <code>knuth</code> command is not found</summary>
+                    <div class="command-row command-row-secondary">
+                      <code id="engine-module-command"></code>
+                      <button type="button" class="command-copy">Copy</button></div>
+                  </details>
+                </div></section>`,
+                `<section class="onboarding-step"><span class="step-number">2</span><div>
+                  <h2>Update the local engine</h2>
+                  <p>Only needed if the engine is out of date. Installs it from Knuth’s matching GitHub revision.</p>
+                  <div class="command-row"><code id="engine-install-command"></code>
+                    <button type="button" class="command-copy">Copy</button></div>
+                </div></section>`,
+              ]
+            : [
+                `<section class="onboarding-step"><span class="step-number">1</span><div>
+                  <h2>Install the engine</h2>
+                  <p>Requires Python 3.11 or newer. Installs Knuth from the revision this page was built from.</p>
+                  <div class="command-row"><code id="engine-install-command"></code>
+                    <button type="button" class="command-copy">Copy</button></div>
+                </div></section>`,
+                `<section class="onboarding-step"><span class="step-number">2</span><div>
+                  <h2>Start Knuth</h2>
+                  <p>It opens the app from your own computer, where cells can run.</p>
+                  <div class="command-row"><code>knuth app</code>
+                    <button type="button" class="command-copy">Copy</button></div>
+                  <details><summary>If the <code>knuth</code> command is not found</summary>
+                    <div class="command-row command-row-secondary">
+                      <code id="engine-module-command"></code>
+                      <button type="button" class="command-copy">Copy</button></div>
+                  </details>
+                </div></section>`,
+              ]
+          ).join('')}
+          ${local ? `
           <section class="onboarding-step onboarding-install-step">
             <span class="step-number">3</span>
             <div>
@@ -121,11 +140,12 @@ export class Onboarding {
               <p id="install-help">Use your browser’s install icon or menu to add Knuth to your applications.</p>
               <button type="button" id="onboarding-install" hidden>Install Knuth</button>
             </div>
-          </section>
+          </section>` : ''}
         </div>
         <footer class="onboarding-foot">
-          This page is served by the engine on <code>127.0.0.1</code>. Your
-          documents and Python session never leave this computer.
+          ${local
+            ? 'This page is served by the engine on <code>127.0.0.1</code>. Your documents and Python session never leave this computer.'
+            : 'This is a preview. The editor runs here, but cells run in Python on your own computer — install Knuth and it serves the app itself.'}
         </footer>
       </div>
     `;
@@ -134,7 +154,7 @@ export class Onboarding {
     this.detail = root.querySelector('#onboarding-detail')!;
     this.installCommand = root.querySelector('#engine-install-command')!;
     this.moduleCommand = root.querySelector('#engine-module-command')!;
-    this.installAction = root.querySelector('#onboarding-install')!;
+    this.installAction = root.querySelector('#onboarding-install');
 
     const tabs = root.querySelector('.onboarding-platforms')!;
     for (const platform of ['macos', 'windows', 'linux'] as Platform[]) {
@@ -159,15 +179,16 @@ export class Onboarding {
         void copy(command, button);
       });
     }
-    this.installAction.addEventListener('click', () => void this.install());
+    this.installAction?.addEventListener('click', () => void this.install());
     toolbarInstall.addEventListener('click', () => void this.install());
 
     window.addEventListener('beforeinstallprompt', (event) => {
       event.preventDefault();
       this.installPrompt = event as InstallPromptEvent;
-      this.installAction.hidden = false;
+      if (this.installAction) this.installAction.hidden = false;
       this.toolbarInstall.hidden = false;
-      root.querySelector('#install-help')!.textContent =
+      const help = root.querySelector('#install-help');
+      if (help) help.textContent =
         'Install Knuth as a focused desktop app; the Python engine remains separate and local.';
     });
     window.addEventListener('appinstalled', () => this.markInstalled());
@@ -194,11 +215,17 @@ export class Onboarding {
       this.detail.textContent =
         'This page and the running engine use different protocol versions. ' +
         'Update the engine, then start Knuth again.';
-    } else {
+    } else if (this.local) {
       this.title.textContent = 'Start the local Python engine';
       this.detail.textContent =
         'This window is running from its cache. Start the engine to run cells ' +
         'with your local Python packages.';
+    } else {
+      // The hosted preview: there is no engine here and never will be.
+      this.title.textContent = 'Knuth runs Python on your computer';
+      this.detail.textContent =
+        'You can read and edit documents here. Running cells needs the local ' +
+        'engine, which serves Knuth from your own machine.';
     }
   }
 
@@ -229,7 +256,7 @@ export class Onboarding {
 
   private markInstalled(): void {
     this.installPrompt = null;
-    this.installAction.hidden = true;
+    if (this.installAction) this.installAction.hidden = true;
     this.toolbarInstall.hidden = true;
     const help = this.root.querySelector('#install-help');
     if (help) help.textContent = 'Knuth is installed as an app.';

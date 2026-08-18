@@ -253,3 +253,20 @@ test('fails closed on a malformed event from the local engine', async ({ page })
 
   await expect(page.locator('#kernel-status')).toHaveText('Python engine unavailable');
 });
+
+test('a locally served window is told to start the engine, not to install it', async ({ page }) => {
+  // The dev server is on 127.0.0.1, so this page counts as locally served: the
+  // engine exists — it served the page — it just is not running. Leading with
+  // "install" would be advice for a problem the user does not have.
+  await page.addInitScript(() => {
+    (window as WindowWithProbe).__knuthRefuseConnections = true;
+  });
+  await page.goto('/');
+
+  await expect(
+    page.getByRole('heading', { name: 'Start the local Python engine' }),
+  ).toBeVisible();
+  await expect(page.locator('.onboarding-step h2').first()).toHaveText('Start Knuth');
+  await expect(page.getByText('served by the engine on')).toBeVisible();
+  await expect(page.locator('.onboarding-install-step')).toHaveCount(1);
+});
