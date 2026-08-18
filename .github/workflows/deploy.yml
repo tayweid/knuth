@@ -28,7 +28,14 @@ jobs:
       - run: npm ci
       - run: npm audit --audit-level=high
       - run: npm test
+      # --with-deps shells out to apt on the runner, which has hung waiting on
+      # a package prompt and burned the whole 20-minute job budget. Keep it
+      # (chromium needs the system libs) but make it non-interactive, and let
+      # it fail fast so a stuck apt reads as a stuck apt rather than a mystery.
       - run: npx playwright install --with-deps chromium
+        timeout-minutes: 6
+        env:
+          DEBIAN_FRONTEND: noninteractive
       - run: npm run test:browser
       - run: npm run build
         env:
