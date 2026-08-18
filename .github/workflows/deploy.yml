@@ -3,7 +3,9 @@ name: Deploy to GitHub Pages
 on:
   push:
     branches: [main]
+    paths-ignore: ['**.md']
   pull_request:
+    paths-ignore: ['**.md']
   workflow_dispatch:
 
 permissions:
@@ -28,14 +30,17 @@ jobs:
       - run: npm ci
       - run: npm audit --audit-level=high
       - run: npm test
-      # --with-deps shells out to apt on the runner, which has hung waiting on
-      # a package prompt and burned the whole 20-minute job budget. Keep it
-      # (chromium needs the system libs) but make it non-interactive, and let
-      # it fail fast so a stuck apt reads as a stuck apt rather than a mystery.
-      - run: npx playwright install --with-deps chromium
-        timeout-minutes: 6
-        env:
-          DEBIAN_FRONTEND: noninteractive
+      # No --with-deps: it shells out to apt, which took 373 of this job's 380
+      # seconds and then timed out. The ubuntu-latest image already ships the
+      # libraries chromium needs, so the browser download is all that is left —
+      # and cached, that is seconds. If a library ever does go missing the
+      # tests fail saying which, which beats a six-minute hang saying nothing.
+      - uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
+      - run: npx playwright install chromium
+        timeout-minutes: 3
       - run: npm run test:browser
       - run: npm run build
         env:
