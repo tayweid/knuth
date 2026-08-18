@@ -30,7 +30,12 @@ classifiers = [
     "Topic :: Scientific/Engineering",
 ]
 dependencies = [
-    "websockets>=13.0",
+    # 14.0 is the floor: `websockets.serve` became the asyncio implementation
+    # there, whose process_request hook receives a Request and may return a
+    # Response. That is how the engine serves the app on its own port
+    # (SAME_ORIGIN.md). On 13.x the legacy server hands process_request a
+    # Headers object instead and every page request 500s.
+    "websockets>=14.0",
 ]
 
 [project.urls]

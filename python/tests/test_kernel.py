@@ -34,9 +34,21 @@ def served_origin(port):
     return local_origins(port)[0]
 
 
+def close_code(ws):
+    """The close code the server sent, across supported websockets versions.
+
+    14.0 (our floor) exposes it only on the underlying protocol; later
+    versions promote it onto the connection.
+    """
+    code = getattr(ws, "close_code", None)
+    if code is not None:
+        return code
+    return getattr(getattr(ws, "protocol", None), "close_code", None)
+
+
 @asynccontextmanager
 async def closing_websocket(ws):
-    """Close an already-awaited client across websockets 13 through current."""
+    """Close an already-awaited client across supported websockets versions."""
     try:
         yield ws
     finally:
@@ -443,7 +455,7 @@ async def check_origin_and_protocol_rejection():
             with pytest.raises(ConnectionClosed):
                 await ws.recv()
             await ws.wait_closed()
-            assert ws.close_code == 4401, ws.close_code
+            assert close_code(ws) == 4401, close_code(ws)
 
         # Same for the control verb.
         async with websockets.connect(url, origin=FOREIGN_ORIGIN) as ws:
@@ -451,7 +463,7 @@ async def check_origin_and_protocol_rejection():
             with pytest.raises(ConnectionClosed):
                 await ws.recv()
             await ws.wait_closed()
-            assert ws.close_code == 4401, ws.close_code
+            assert close_code(ws) == 4401, close_code(ws)
 
         # The explicit frame limit applies before JSON parsing or process creation.
         async with websockets.connect(url, origin=served_origin(port)) as ws:
@@ -459,7 +471,7 @@ async def check_origin_and_protocol_rejection():
             with pytest.raises(ConnectionClosed):
                 await ws.recv()
             await ws.wait_closed()
-            assert ws.close_code == 1009, ws.close_code
+            assert close_code(ws) == 1009, close_code(ws)
 
         # Even an authorized handshake can't smuggle an unbounded/non-string id.
         async with websockets.connect(url, origin=served_origin(port)) as ws:
@@ -471,7 +483,7 @@ async def check_origin_and_protocol_rejection():
             with pytest.raises(ConnectionClosed):
                 await ws.recv()
             await ws.wait_closed()
-            assert ws.close_code == 1002, ws.close_code
+            assert close_code(ws) == 1002, close_code(ws)
 
         async with websockets.connect(url, origin=served_origin(port)) as ws:
             await ws.send(json.dumps({
@@ -563,7 +575,7 @@ async def check_live_session_limit():
             busy = await other.recv()
             assert busy["type"] == "server_busy", busy
             await second.wait_closed()
-            assert second.close_code == 1013, second.close_code
+            assert close_code(second) == 1013, close_code(second)
 
         _, final = await client.run(1, "6 * 7")
         assert final["type"] == "done" and final["result"] == "42", final

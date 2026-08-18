@@ -43,13 +43,13 @@ jobs:
         include:
           - os: ubuntu-latest
             python-version: '3.11'
-            websockets: 'websockets==13.0'
+            websockets: 'websockets==14.0'
           - os: macos-latest
             python-version: '3.14'
-            websockets: 'websockets>=13.0'
+            websockets: 'websockets>=14.0'
           - os: windows-latest
             python-version: '3.14'
-            websockets: 'websockets>=13.0'
+            websockets: 'websockets>=14.0'
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
