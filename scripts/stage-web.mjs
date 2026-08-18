@@ -2,9 +2,10 @@
 // from its own port (SAME_ORIGIN.md). Kept as an explicit step rather than a
 // vite outDir so `npm run build` still produces a plain dist/ for Pages.
 
-import { cp, rm, mkdir, readdir } from 'node:fs/promises';
+import { cp, rm, mkdir, readdir, writeFile } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
+import { STAMP, sourceHash } from './web-sources.mjs';
 
 const root = new URL('../', import.meta.url);
 const dist = new URL('dist/', root);
@@ -21,5 +22,11 @@ await rm(staged, { recursive: true, force: true });
 await mkdir(staged, { recursive: true });
 await cp(dist, staged, { recursive: true });
 
+// What these bytes were built from, so CI can tell a stale commit from a
+// fresh one without rebuilding (and without depending on the build being
+// byte-reproducible, which it need not be).
+const stamp = await sourceHash();
+await writeFile(STAMP, `${stamp}\n`);
+
 const entries = await readdir(staged, { recursive: true });
-console.log(`staged ${entries.length} paths into python/knuth/web/`);
+console.log(`staged ${entries.length} paths into python/knuth/web/ (${stamp})`);

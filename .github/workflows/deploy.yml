@@ -29,6 +29,9 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm audit --audit-level=high
+      # The built app is committed so pip installs carry a UI; this is what
+      # keeps that from silently shipping an old one.
+      - run: npm run check:web
       - run: npm test
       # No --with-deps: it shells out to apt, which took 373 of this job's 380
       # seconds and then timed out. The ubuntu-latest image already ships the
