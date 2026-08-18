@@ -358,6 +358,13 @@ async def serve(
                 raise
             except Exception:
                 await kernel.stop()
+                # Closing without a word leaves the app guessing, and its
+                # guess was "engine unavailable" — which is wrong: the engine
+                # answered, it just could not start a Python process.
+                await ws.send(json.dumps({
+                    "type": "kernel_start_failed",
+                    "error": "Python could not be started for this window",
+                }))
                 await ws.close(code=1011, reason="kernel failed to start")
                 return
             finally:

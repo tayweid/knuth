@@ -57,7 +57,7 @@ toolbar.innerHTML = `
     ${labeled('add-scratch', icon('scratch'), 'Scratch', 'Scratch cell — explores the session, never persists')}
     ${labeled('add-text', icon('text'), 'Text', 'Markdown text cell')}
   </div>
-  <div class="tb-pod tb-group">
+  <div class="tb-pod tb-group" id="run-pod">
     ${labeled('run-stale', icon('play'), 'Stale', 'Run stale program cells in order')}
     ${labeled('run-all', icon('playall'), 'All', 'Run all program cells from the top')}
     ${labeled('stop', icon('stop'), 'Stop', 'Interrupt the running cell')}
@@ -137,6 +137,14 @@ const kernel = new SidecarKernel(undefined, (state, resumed) => {
   } else if (state === 'incompatible') {
     status.textContent = 'kernel/app versions do not match';
     status.title = 'Update and restart the Knuth agent, then reload the app';
+    status.className = 'bad';
+  } else if (state === 'busy') {
+    status.textContent = 'too many sessions open';
+    status.title = 'Close another Knuth window, or restart the engine';
+    status.className = 'bad';
+  } else if (state === 'kernel_failed') {
+    status.textContent = 'Python could not start';
+    status.title = 'The engine is running; starting Python for this window failed';
     status.className = 'bad';
   } else {
     status.textContent = 'connecting…';

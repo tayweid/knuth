@@ -14,7 +14,15 @@
 // worker cache with no engine running simply retries until one appears.
 
 export type StreamWhich = 'stdout' | 'stderr';
-export type KernelStatus = 'connecting' | 'ready' | 'down' | 'incompatible';
+export type KernelStatus =
+  | 'connecting'
+  | 'ready'
+  | 'down'
+  | 'incompatible'
+  /** The engine answered but is at its session limit. */
+  | 'busy'
+  /** The engine is fine; Python is what failed. */
+  | 'kernel_failed';
 
 export interface RunHandlers {
   onStream?(which: StreamWhich, text: string): void;
@@ -107,7 +115,8 @@ type ServerEvent =
   | ({ type: 'figure'; id: number } & FigureResult)
   | { type: 'protocol_error'; error: string; request?: string; id?: number }
   | { type: 'kernel_exit'; error: string; returncode?: number; id?: number }
-  | { type: 'server_busy'; error: string };
+  | { type: 'server_busy'; error: string }
+  | { type: 'kernel_start_failed'; error: string };
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
@@ -200,6 +209,7 @@ function parseServerEvent(value: unknown): ServerEvent | null {
         (event.returncode === undefined || typeof event.returncode === 'number') &&
         (event.id === undefined || isRequestId(event.id)) ? event as ServerEvent : null;
     case 'server_busy':
+    case 'kernel_start_failed':
       return typeof event.error === 'string' ? event as ServerEvent : null;
     default:
       return null;
@@ -224,6 +234,11 @@ export class SidecarKernel implements Kernel {
   private connectedReady = false;
   private closed = false;
   private retryTimer = 0;
+  /** A refusal the engine explained. The close that follows it, and the
+   *  retries after that, must not overwrite the explanation with a generic
+   *  "engine unavailable" — that is how two different problems came to look
+   *  identical. Cleared when a connection actually works. */
+  private refused: KernelStatus | null = null;
   private nextId = 1;
   private runs = new Map<number, PendingRun>();
   private namespaceWaiters = new Map<number, (vars: NamespaceVar[]) => void>();
@@ -251,7 +266,7 @@ export class SidecarKernel implements Kernel {
   private connect(): void {
     clearTimeout(this.retryTimer);
     if (this.closed) return;
-    this.onStatus?.('connecting');
+    if (!this.refused) this.onStatus?.('connecting');
     const ws = new WebSocket(this.url);
     this.ws = ws;
     ws.addEventListener('open', () =>
@@ -301,7 +316,7 @@ export class SidecarKernel implements Kernel {
     if (this.closed) return;
     this.connectedReady = false;
     this.failPending('kernel connection lost');
-    this.onStatus?.('down');
+    if (!this.refused) this.onStatus?.('down');
     this.scheduleConnect(RECONNECT_MS);
   }
 
@@ -345,6 +360,7 @@ export class SidecarKernel implements Kernel {
           restarted?.();
         }
         this.connectedReady = true;
+        this.refused = null;
         this.onStatus?.('ready', msg.resumed === true);
         break;
       }
@@ -395,14 +411,24 @@ export class SidecarKernel implements Kernel {
         this.failPending(
           typeof msg.error === 'string' ? msg.error : 'Python engine exited unexpectedly',
         );
-        this.onStatus?.('down');
+        this.refused = 'kernel_failed';
+        this.onStatus?.('kernel_failed');
         this.ws?.close(1011, 'kernel process exited');
+        break;
+      }
+      case 'kernel_start_failed': {
+        this.connectedReady = false;
+        this.failPending(msg.error);
+        this.refused = 'kernel_failed';
+        this.onStatus?.('kernel_failed');
+        this.ws?.close(1011, 'kernel failed to start');
         break;
       }
       case 'server_busy': {
         this.connectedReady = false;
         this.failPending(msg.error);
-        this.onStatus?.('down');
+        this.refused = 'busy';
+        this.onStatus?.('busy');
         this.ws?.close(1013, 'kernel server busy');
         break;
       }

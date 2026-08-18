@@ -210,7 +210,20 @@ export class Onboarding {
     if (state === 'connecting') return;
     if (!this.dismissed) this.root.hidden = false;
 
-    if (state === 'incompatible') {
+    if (state === 'busy') {
+      // The engine is healthy and full. Saying "unavailable" here sent us
+      // hunting for a dead engine that was running the whole time.
+      this.title.textContent = 'Too many Knuth windows are open';
+      this.detail.textContent =
+        'Every window holds its own Python session, and this engine is at its ' +
+        'limit. Close one — a closed window frees its session after a couple ' +
+        'of minutes — or restart the engine to clear them all.';
+    } else if (state === 'kernel_failed') {
+      this.title.textContent = 'Python could not be started';
+      this.detail.textContent =
+        'The engine is running and answered — starting a Python process for ' +
+        'this window is what failed. Its terminal or log will say why.';
+    } else if (state === 'incompatible') {
       this.title.textContent = 'Update the local Python engine';
       this.detail.textContent =
         'This page and the running engine use different protocol versions. ' +

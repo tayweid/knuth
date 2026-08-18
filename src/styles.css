@@ -95,7 +95,7 @@ body {
 
 /* Keep the pods centered on the document column, not the viewport:
    when the session panel is open, cede its width. */
-body:has(#panel:not([hidden])) #toolbar {
+body:not([data-plain='true']):has(#panel:not([hidden])) #toolbar {
   padding-right: calc(350px + 14px);
 }
 
@@ -659,6 +659,17 @@ body:has(#panel:not([hidden])) #toolbar {
 }
 
 .cell .cm-editor.cm-focused { outline: none; border-color: rgba(157, 184, 214, 0.45); }
+
+/* The numbers are apparatus, not text: a quieter surface and a hairline keep
+   them from reading as the first column of the code. */
+.cell .cm-gutters {
+  background: rgba(255, 255, 255, 0.022);
+  border-right: 1px solid rgba(255, 255, 255, 0.06);
+  color: rgba(240, 238, 233, 0.28);
+}
+
+.cell .cm-lineNumbers .cm-gutterElement { padding: 0 0.6rem 0 0.8rem; }
+.cell .cm-content { margin-left: 0.15rem; }
 .cell .cm-content { padding: 0.5rem 0; font-family: var(--mono); }
 .cell .cm-line { padding: 0 0.75rem; }
 
@@ -1058,6 +1069,7 @@ body[data-plain='true'] .cell-figures,
 body[data-plain='true'] #panel,
 body[data-plain='true'] #toggle-panel,
 body[data-plain='true'] #cells-pod,
+body[data-plain='true'] #run-pod,
 body[data-plain='true'] #run-stale,
 body[data-plain='true'] #run-all,
 body[data-plain='true'] #stop,
@@ -1071,9 +1083,6 @@ body[data-plain='true'] .gutter {
   min-width: 0;
 }
 
-/* The panel is display:none here, not [hidden], so the rule above still sees
-   it and cedes 350px to a column that is not on screen — which walks the
-   pods off-centre from the code they sit above. */
-body[data-plain='true'] #toolbar {
-  padding-right: 14px;
-}
+/* The 350px allowance for the session panel is made by the rule above, which
+   now excludes plain mode: the panel is display:none here, not [hidden], so
+   that rule still matched it and ceded space to a column not on screen. */

@@ -4,6 +4,7 @@ type WindowWithProbe = typeof window & {
   __knuthSocketUrl?: string;
   __knuthRefuseConnections?: boolean;
   __knuthRecordAttach?: (msg: Record<string, unknown>) => void;
+  __knuthAttachReply?: Record<string, unknown>;
 };
 
 const FIGURE_SVG = `
@@ -62,6 +63,11 @@ test.beforeEach(async ({ page }) => {
         if (msg.type === 'attach') {
           const record = (window as WindowWithProbe).__knuthRecordAttach;
           if (record) record(msg);
+          const refusal = (window as WindowWithProbe).__knuthAttachReply;
+          if (refusal) {
+            this.reply(refusal);
+            return;
+          }
           this.reply({
             type: 'attached',
             protocol: msg.protocol,
@@ -333,4 +339,28 @@ test('a script with no cells opens as a file, and gains the workbench when given
   await expect(page.locator('.run').first()).toBeVisible();
   await expect(page.locator('#run-all')).toBeVisible();
   await expect(page.locator('#cells-pod')).toBeVisible();
+});
+
+test('a full engine and a failed Python say different things', async ({ page }) => {
+  // Both used to render as "Python engine unavailable", which is wrong twice
+  // over: the engine answered in both cases, and the fixes are different.
+  await page.addInitScript(() => {
+    (window as WindowWithProbe).__knuthAttachReply = { type: 'server_busy', error: 'full' };
+  });
+  await page.goto('/');
+  await expect(page.locator('#kernel-status')).toHaveText('too many sessions open');
+  await expect(
+    page.getByRole('heading', { name: 'Too many Knuth windows are open' }),
+  ).toBeVisible();
+
+  await page.addInitScript(() => {
+    (window as WindowWithProbe).__knuthAttachReply = {
+      type: 'kernel_start_failed', error: 'no python',
+    };
+  });
+  await page.goto('/');
+  await expect(page.locator('#kernel-status')).toHaveText('Python could not start');
+  await expect(
+    page.getByRole('heading', { name: 'Python could not be started' }),
+  ).toBeVisible();
 });
