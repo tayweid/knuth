@@ -289,6 +289,47 @@ export class FileManager {
     }
   }
 
+  /** Folders the user has already granted, newest first. */
+  private async knownFolders(): Promise<FileSystemDirectoryHandle[]> {
+    const stored = (await idbGet<FileSystemDirectoryHandle[]>('folders')) ?? [];
+    const last = await idbGet<FileSystemDirectoryHandle>('lastDir');
+    return last ? [last, ...stored.filter((d) => d !== last)] : stored;
+  }
+
+  private async rememberFolder(dir: FileSystemDirectoryHandle) {
+    const kept = [dir];
+    for (const known of await this.knownFolders()) {
+      if (kept.length >= 12) break;
+      if (!(await known.isSameEntry?.(dir))) kept.push(known);
+    }
+    await idbSet('folders', kept).catch(() => undefined);
+  }
+
+  /** The already-granted folder this file lives in, if we have one.
+   *
+   *  A launched file arrives as a bare handle: the browser deliberately
+   *  withholds its path, and a page cannot obtain a directory without a user
+   *  gesture. But it CAN test whether a file is inside a directory it was
+   *  already given — so the second file you open from a folder, and every one
+   *  after, needs no asking.
+   */
+  private async folderContaining(
+    handle: FileSystemFileHandle,
+  ): Promise<FileSystemDirectoryHandle | null> {
+    for (const dir of await this.knownFolders()) {
+      try {
+        // Silent only: prompting needs a gesture we do not have here.
+        const granted = (await dir.queryPermission?.({ mode: 'readwrite' })) ?? 'granted';
+        if (granted !== 'granted') continue;
+        const candidate = await dir.getFileHandle(handle.name).catch(() => null);
+        if (candidate && (await candidate.isSameEntry?.(handle))) return dir;
+      } catch {
+        continue;
+      }
+    }
+    return null;
+  }
+
   async loadHandle(handle: FileSystemFileHandle) {
     const file = await handle.getFile();
     this.hooks.setDoc(parseDocument(await file.text()));
@@ -300,6 +341,13 @@ export class FileManager {
     this.hooks.message(`Opened ${file.name}`);
     void this.addRecent(handle, file.name);
     void idbSet('last', handle).catch(() => undefined);
+    // A file opened from a folder we already hold belongs to that folder.
+    // Asking again would be asking a question we know the answer to.
+    const home = await this.folderContaining(handle);
+    if (home) {
+      this.dir = home;
+      void idbSet('lastDir', home).catch(() => undefined);
+    }
     this.stash();
     this.hooks.onOpened?.();
   }
@@ -415,6 +463,7 @@ export class FileManager {
     }
     this.dir = dir;
     void idbSet('lastDir', dir).catch(() => undefined);
+    void this.rememberFolder(dir);
     try {
       if (!this.handle) {
         // Never load over unsaved work, and a SAVE never opens someone

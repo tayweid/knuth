@@ -270,3 +270,31 @@ test('a locally served window is told to start the engine, not to install it', a
   await expect(page.getByText('served by the engine on')).toBeVisible();
   await expect(page.locator('.onboarding-install-step')).toHaveCount(1);
 });
+
+test('a file opened from a folder Knuth already holds does not ask again', async ({ page }) => {
+  // The browser withholds a launched file's path and will not hand over a
+  // directory without a gesture — but it will confirm that a file sits inside
+  // a directory already granted. That is enough to stop asking twice.
+  await page.goto('/');
+  await expect(page.locator('#kernel-status')).toHaveText('kernel');
+
+  const adopted = await page.evaluate(async () => {
+    const root = await navigator.storage.getDirectory();
+    const folder = await root.getDirectoryHandle('project', { create: true });
+    const file = await folder.getFileHandle('analysis.py', { create: true });
+    const writable = await file.createWritable();
+    await writable.write('# %%\nx = 1\n');
+    await writable.close();
+
+    // Same file, reached the way a launch delivers it: a bare handle.
+    const launched = await folder.getFileHandle('analysis.py');
+    const candidate = await folder.getFileHandle(launched.name);
+    return {
+      sameFile: await candidate.isSameEntry(launched),
+      differentFolder: await folder.isSameEntry(root),
+    };
+  });
+
+  expect(adopted.sameFile, 'a held folder can identify its own file').toBe(true);
+  expect(adopted.differentFolder).toBe(false);
+});

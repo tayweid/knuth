@@ -35,6 +35,11 @@ interface DirectoryPickerOptions {
   startIn?: PickerStartIn;
 }
 
+interface FileSystemHandle {
+  /** Same file or directory on disk, even via a different handle. */
+  isSameEntry?(other: FileSystemHandle): Promise<boolean>;
+}
+
 interface FileSystemFileHandle {
   /** Chromium: rename within the same directory. */
   move?(name: string): Promise<void>;
