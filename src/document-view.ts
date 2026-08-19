@@ -635,26 +635,31 @@ export class DocumentView {
     if (seg[seg.length - 1]?.trim() !== '') seg.push('');
   }
 
-  private insertAt(i: number, kind: NewCellKind) {
-    const cell = this.newCell(kind);
-    this.ensureSeparator(this.views[i - 1]);
-    // First cell after a preamble: the preamble supplies the separator.
-    if (i === 0 && this.preambleView) {
-      const p = this.doc.preamble;
-      if (p[p.length - 1]?.trim() !== '') p.push('');
-    }
+  /** Splice a cell into the document, views, and DOM at index i — the one
+   *  sequence insertAt and delete-restore share, so they cannot drift. */
+  private spliceIn(i: number, cell: Cell) {
     this.doc.cells.splice(i, 0, cell);
     this.syncPlain();
     const view = this.buildView(cell);
     this.views.splice(i, 0, view);
     if (i + 1 < this.views.length) this.views[i + 1].root.before(view.root);
     else this.endZone.before(view.root);
-    if (kind === 'program') {
+    if (cell.kind === 'program') {
       view.stale = true;
       this.refreshBadge(view);
     }
     view.editor?.focus();
     this.onChange();
+  }
+
+  private insertAt(i: number, kind: NewCellKind) {
+    this.ensureSeparator(this.views[i - 1]);
+    // First cell after a preamble: the preamble supplies the separator.
+    if (i === 0 && this.preambleView) {
+      const p = this.doc.preamble;
+      if (p[p.length - 1]?.trim() !== '') p.push('');
+    }
+    this.spliceIn(i, this.newCell(kind));
   }
 
   private insertAfter(v: CellView, kind: NewCellKind) {
@@ -680,21 +685,7 @@ export class DocumentView {
     this.markStaleFromIndex(i);
     this.onChange();
     if (this.views.length === 0) this.insertAtEnd('program');
-    this.onCellDeleted?.(() => {
-      const at = Math.min(i, this.views.length);
-      this.doc.cells.splice(at, 0, cell);
-      this.syncPlain();
-      const view = this.buildView(cell);
-      this.views.splice(at, 0, view);
-      if (at + 1 < this.views.length) this.views[at + 1].root.before(view.root);
-      else this.endZone.before(view.root);
-      if (cell.kind === 'program') {
-        view.stale = true;
-        this.refreshBadge(view);
-      }
-      view.editor?.focus();
-      this.onChange();
-    });
+    this.onCellDeleted?.(() => this.spliceIn(Math.min(i, this.views.length), cell));
   }
 
   // ---------- staleness ----------
