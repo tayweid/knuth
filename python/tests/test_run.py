@@ -18,11 +18,24 @@ def test_corpus_parity():
     files = sorted(CORPUS.glob("*.py"))
     assert files, f"corpus not found at {CORPUS}"
     for f in files:
-        text = f.read_text()
+        # newline="" keeps \r\n literal — the bytes the browser sees, not
+        # universal-newline translation.
+        with f.open(newline="") as stream:
+            text = stream.read()
         assert serialize_document(parse_document(text)) == text, f"round-trip: {f.name}"
     for text in ["", "\n", "x = 1", "# %%"]:
         assert serialize_document(parse_document(text)) == text, repr(text)
     print(f"percent port: round-trip parity on {len(files)} corpus files")
+
+
+def test_corpus_crlf_structure():
+    # Same structural reading as round-trip.test.ts asserts: CRLF endings
+    # still delimit cells, in both implementations.
+    with (CORPUS / "crlf.py").open(newline="") as stream:
+        doc = parse_document(stream.read())
+    assert len(doc.preamble) == 2
+    assert [c.kind for c in doc.cells] == ["program", "text", "scratch"]
+    assert len(doc.cells[0].output) == 1
 
 
 DOC = """\

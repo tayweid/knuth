@@ -70,6 +70,14 @@ for (const text of ['', '\n', 'x = 1', '# %%']) {
   assert.equal(cellCode(doc.cells[1]), 'x = 1');
 }
 
+// Structure: crlf.py — CRLF endings still delimit cells; \r stays in the bytes.
+{
+  const doc = parseDocument(corpus.get('crlf.py')!);
+  assert.equal(doc.preamble.length, 2);
+  assert.deepEqual(doc.cells.map((c) => c.kind), ['program', 'text', 'scratch']);
+  assert.equal(doc.cells[0].output.length, 1);
+}
+
 // setOutput: replace, multi-line, blank-line canonicalization, stability.
 {
   const doc = parseDocument(corpus.get('outputs.py')!);

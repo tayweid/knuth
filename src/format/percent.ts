@@ -30,7 +30,11 @@ export interface KnuthDocument {
   trailingNewline: boolean;
 }
 
-const MARKER = /^# ?%%(.*)$/;
+// [^\n] rather than '.': JS '.' excludes \r, so '.*' would refuse the
+// '# %%\r' markers of a CRLF file that Python's re (where '.' matches \r)
+// accepts. percent.py and this file must agree on structure, not just
+// round-tripping.
+const MARKER = /^# ?%%([^\n]*)$/;
 const OUTPUT_PREFIX = '#->';
 
 function cellKind(markerRest: string): CellKind {
