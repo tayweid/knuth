@@ -332,6 +332,12 @@ test('a script with no cells opens as a file, and gains the workbench when given
   const sheetCap = () =>
     page.locator('#sheet').evaluate((el) => getComputedStyle(el).maxWidth);
   expect(await sheetCap()).toBe('none');
+  // Edge to edge: no toolbar, no doc inset, no card border on the editor.
+  await expect(page.locator('#toolbar')).toBeHidden();
+  expect(await page.locator('#doc').evaluate((el) => getComputedStyle(el).paddingLeft))
+    .toBe('0px');
+  expect(await page.locator('.cell .cm-editor').first()
+    .evaluate((el) => getComputedStyle(el).borderTopWidth)).toBe('0px');
 
   // With no cell buttons, typing a marker is the way in — and it has to work,
   // or a file that looks structured would keep behaving flat.
@@ -343,6 +349,7 @@ test('a script with no cells opens as a file, and gains the workbench when given
   await expect(page.locator('.run').first()).toBeVisible();
   await expect(page.locator('#run-all')).toBeVisible();
   await expect(page.locator('#cells-pod')).toBeVisible();
+  await expect(page.locator('#toolbar')).toBeVisible();
   expect(await sheetCap()).not.toBe('none');
 });
 

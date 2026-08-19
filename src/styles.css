@@ -1090,6 +1090,29 @@ body[data-plain='true'] #sheet {
   max-width: none;
 }
 
+/* All the way: a plain file is one edge-to-edge editor. No toolbar (the
+   tab names the file; ⌘O/⌘S still work; typing a # %% marker brings the
+   whole workbench back), no card border, no reserved gutter column —
+   just the text against the window, with editor-style overscroll below. */
+body[data-plain='true'] #toolbar {
+  display: none;
+}
+
+body[data-plain='true'] #doc {
+  padding: 0 0 40vh;
+  min-width: 0;
+}
+
+body[data-plain='true'] .cell {
+  padding: 0;
+}
+
+body[data-plain='true'] .cell .cm-editor,
+body[data-plain='true'] .cell.stale .cm-editor {
+  border: 0;
+  border-radius: 0;
+}
+
 /* The 350px allowance for the session panel is made by the rule above, which
    now excludes plain mode: the panel is display:none here, not [hidden], so
    that rule still matched it and ceded space to a column not on screen. */
