@@ -16,7 +16,7 @@
   co-authors again — the folder contract is the collaboration.
 
 Design notes from a working session (2026-08-12). Supersedes the direction
-in PLAN.md/SPEC.md where they conflict: the Tauri-era pyrmd tried to be the
+in the v1 PLAN.md/SPEC.md (at the `v1-tauri` tag) where they conflict: the Tauri-era pyrmd tried to be the
 whole workflow in one app; this design splits the workflow across two apps
 and makes pyrmd the computation half.
 
