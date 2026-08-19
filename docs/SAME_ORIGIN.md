@@ -108,7 +108,8 @@ pairing retry, and no `unauthorized` / `pairing_expired` states in the UI.
 
 Two of the six refusal paths survive: the session cap and kernel start
 failure. Both should say what they are instead of both saying "Python engine
-unavailable" — that is worth fixing regardless of this design.
+unavailable" — that is worth fixing regardless of this design. (Done,
+2026-08-18: `18b6040` gave each refusal its own message.)
 
 ## Packaging and version skew
 
@@ -122,10 +123,12 @@ disagree.** `PROTOCOL_VERSION` stays as a cheap assertion but should never
 fire again, and the "Update the local engine" wall becomes unreachable in
 normal use. Today the hosted app and a stale local engine skew routinely.
 
-OPEN: whether built assets are committed to the repo or produced only in CI
-and attached to a release. CI-only keeps the diffs clean; committed keeps
-`pip install` from a bare GitHub archive working, which is what the install
-command does today.
+DECIDED (2026-08-18, `d6659d0`): built assets are committed to
+`python/knuth/web/`, because the documented install — pip from a bare GitHub
+archive — has to work today, and `npm run check:web` fails the build when the
+committed app is older than its sources. It can move to a CI-built release
+wheel later without users noticing; revisit at the first tagged release
+(ROADMAP.md).
 
 ## The dev loop
 
@@ -135,11 +138,12 @@ Neither pip nor Pages belongs in the inner loop:
   edits.
 - `npm run dev` — vite at `127.0.0.1:5198` with HMR, unchanged.
 
-To keep dev same-origin too, vite proxies the WebSocket to the engine, so the
-dev page talks to `127.0.0.1:5198` for everything. That deletes
-`DEVELOPMENT_ORIGINS` and, more importantly, means dev and production
-exercise the same code path instead of dev being the one place cross-origin
-still happens.
+OPEN — not yet implemented: to keep dev same-origin too, vite would proxy
+the WebSocket to the engine, so the dev page talks to `127.0.0.1:5198` for
+everything. That would retire the `--origin` dev opt-in and, more
+importantly, mean dev and production exercise the same code path instead of
+dev being the one place cross-origin still happens. Today `vite.config.ts`
+has no proxy; dev opts in with `knuth serve --origin http://127.0.0.1:5198`.
 
 Measured for reference, so the shipping choice is made on numbers: a pip
 install from a GitHub archive is **1.8s cold, 1.4s warm** (845 KB, pure
@@ -226,7 +230,7 @@ None of it recurs. After first run the loop is: double-click a `.py`.
 ## Migration
 
 Each step is shippable on its own; the app keeps working throughout.
-Steps 1 and 2 are done (2026-08-17).
+Steps 1–3 and 5 are done; step 4 remains.
 
 1. **DONE — Serve assets from the engine.** `process_request` + package data. The
    app still pairs exactly as it does today. Verifies the serving path in
@@ -238,12 +242,15 @@ Steps 1 and 2 are done (2026-08-17).
    `rotate-token`, and every pairing state in `kernel.ts` / `onboarding.ts`.
    Net: 306 insertions, 1466 deletions. The kernel URL and the page's CSP
    now derive from the serving origin, so the engine works on any port.
-3. **Package the frontend** into the wheel; update the install command; drop
-   the Pages build to demo-only.
+3. **DONE — Package the frontend** into the wheel: `python/knuth/web/` is
+   committed and freshness-gated (`npm run check:web`), and the install
+   command points at the GitHub archive. Leftover: the Pages demo is still
+   technically installable (its manifest is unconditional) despite the
+   demo-not-installable decision above — tracked in ROADMAP.md.
 4. **Install locally as a PWA**, confirm `.py` handlers and the offline
    shell against the real app rather than the spike.
-5. **Message the two remaining refusals** properly — session cap and kernel
-   start failure stop sharing a screen.
+5. **DONE (2026-08-18, `18b6040`)** — the two remaining refusals stopped
+   sharing a screen.
 
 ## Risks
 
@@ -265,9 +272,10 @@ Steps 1 and 2 are done (2026-08-17).
 ## Open questions
 
 - Keep a per-process token, or origin check alone? (See Security.)
-- Built assets committed, or CI-only release artifacts? (See Packaging.)
+- ~~Built assets committed, or CI-only release artifacts?~~ DECIDED:
+  committed (see Packaging).
 - Does the launchd agent survive? It solves "engine not running when you
   double-click a file," which the offline shell now handles gracefully but
   does not fix. Serving assets from the agent makes it more useful, not less.
-- What happens to `knuth agent pair` and `rotate-token` — both are pairing
-  verbs with nothing left to pair.
+- ~~What happens to `knuth agent pair` and `rotate-token`?~~ Deleted in
+  step 2; `knuth agent` keeps `install`/`uninstall`/`status`/`restart`.
