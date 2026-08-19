@@ -328,6 +328,10 @@ test('a script with no cells opens as a file, and gains the workbench when given
   // The text itself is still there, still editable, and numbered.
   await expect(page.locator('.cm-content').first()).toContainText('import math');
   await expect(page.locator('.cm-lineNumbers').first()).toBeVisible();
+  // A file gets the room's full width; the 52rem column is for notebooks.
+  const sheetCap = () =>
+    page.locator('#sheet').evaluate((el) => getComputedStyle(el).maxWidth);
+  expect(await sheetCap()).toBe('none');
 
   // With no cell buttons, typing a marker is the way in — and it has to work,
   // or a file that looks structured would keep behaving flat.
@@ -339,6 +343,7 @@ test('a script with no cells opens as a file, and gains the workbench when given
   await expect(page.locator('.run').first()).toBeVisible();
   await expect(page.locator('#run-all')).toBeVisible();
   await expect(page.locator('#cells-pod')).toBeVisible();
+  expect(await sheetCap()).not.toBe('none');
 });
 
 test('a full engine and a failed Python say different things', async ({ page }) => {

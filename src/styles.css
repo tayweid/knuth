@@ -1083,6 +1083,13 @@ body[data-plain='true'] .gutter {
   min-width: 0;
 }
 
+/* A file also gets the room. The 52rem column is a reading measure for a
+   notebook's mixed prose and outputs; a plain script is an editor view,
+   and an editor uses the width the window has. */
+body[data-plain='true'] #sheet {
+  max-width: none;
+}
+
 /* The 350px allowance for the session panel is made by the rule above, which
    now excludes plain mode: the panel is display:none here, not [hidden], so
    that rule still matched it and ceded space to a column not on screen. */
