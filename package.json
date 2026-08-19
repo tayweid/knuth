@@ -11,7 +11,7 @@
     "build:engine": "npm run build && node scripts/stage-web.mjs",
     "preview": "vite preview",
     "check:web": "node scripts/check-web-fresh.mjs",
-    "test": "node --import tsx src/format/round-trip.test.ts && node --import tsx src/kernel/protocol.test.ts",
+    "test": "node --import tsx src/format/round-trip.test.ts && node --import tsx src/kernel/protocol.test.ts && node --import tsx src/artifacts.test.ts",
     "test:browser": "playwright test"
   },
   "devDependencies": {

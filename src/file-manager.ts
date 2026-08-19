@@ -3,6 +3,7 @@
 // autosave on Chromium; <input type=file> / download fallback elsewhere.
 
 import { parseDocument, serializeDocument, type KnuthDocument } from './format/percent.ts';
+import { ARTIFACT_MANIFEST, isSafeFigureName, manifestText, parseOwnedFigureNames } from './artifacts.ts';
 
 export interface FileHooks {
   getDoc(): KnuthDocument;
@@ -29,49 +30,6 @@ const NEW_DOC = '# %%\n';
 /** The default document name. It is what the browser tab shows, so it says
  *  which app the tab is rather than that the file is nameless. */
 export const DEFAULT_DOC_NAME = 'Knuth.py';
-const ARTIFACT_MANIFEST = '.knuth-artifacts.json';
-const MAX_FIGURE_NAME_BYTES = 128;
-const WINDOWS_RESERVED_NAMES = new Set([
-  'CON',
-  'PRN',
-  'AUX',
-  'NUL',
-  ...Array.from({ length: 9 }, (_, index) => `COM${index + 1}`),
-  ...Array.from({ length: 9 }, (_, index) => `LPT${index + 1}`),
-]);
-
-function isSafeFigureName(name: string): boolean {
-  return (
-    name.length > 0 &&
-    !name.startsWith('_') &&
-    /^\p{ID_Start}\p{ID_Continue}*$/u.test(name) &&
-    name === name.normalize('NFC') &&
-    new TextEncoder().encode(name).byteLength <= MAX_FIGURE_NAME_BYTES &&
-    !WINDOWS_RESERVED_NAMES.has(name.toUpperCase())
-  );
-}
-
-function parseOwnedFigureNames(raw: string): Set<string> {
-  try {
-    const data = JSON.parse(raw) as unknown;
-    if (!data || typeof data !== 'object') return new Set();
-    const manifest = data as { version?: unknown; figures?: unknown };
-    if (manifest.version !== 1 || !Array.isArray(manifest.figures)) return new Set();
-    const names = new Set<string>();
-    for (const path of manifest.figures) {
-      if (typeof path !== 'string' || !path.startsWith('figs/') || !path.endsWith('.svg')) {
-        return new Set();
-      }
-      const name = path.slice('figs/'.length, -'.svg'.length);
-      if (!isSafeFigureName(name) || path !== `figs/${name}.svg`) return new Set();
-      names.add(name);
-    }
-    return names;
-  } catch {
-    return new Set();
-  }
-}
-
 export interface RecentEntry {
   name: string;
   time: number;
@@ -539,14 +497,9 @@ export class FileManager {
           }
         }
       }
-      const manifest = JSON.stringify(
-        { version: 1, figures: names.map((name) => `figs/${name}.svg`) },
-        null,
-        2,
-      ) + '\n';
       // Commit ownership last: it never claims a file that was not already
       // written successfully, and pre-manifest SVGs are never inferred.
-      await this.writeFile(this.dir, ARTIFACT_MANIFEST, manifest);
+      await this.writeFile(this.dir, ARTIFACT_MANIFEST, manifestText(names));
     } catch (e) {
       console.warn('Contract write failed', e);
       this.hooks.message('Could not write to the project folder');
