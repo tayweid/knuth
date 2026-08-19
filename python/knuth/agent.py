@@ -70,7 +70,7 @@ def uninstall(quiet=False):
 def status():
     if sys.platform != "darwin":
         print("knuth agent currently supports macOS (launchd) only")
-        print("Use `knuth app --hosted` for the cross-platform foreground engine.")
+        print("Use `knuth app` for the cross-platform foreground engine.")
         return 1
     result = _launchctl("print", f"{_domain()}/{LABEL}")
     if result.returncode != 0:

@@ -69,7 +69,7 @@ def main():
 
     doctor_cmd = sub.add_parser(
         "doctor",
-        help="report redacted package, pairing, port, and protocol diagnostics",
+        help="report package, engine, port, and protocol diagnostics",
     )
     doctor_cmd.add_argument("--port", type=int, default=DEFAULT_PORT)
 
