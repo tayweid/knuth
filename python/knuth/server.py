@@ -268,6 +268,16 @@ async def serve(
         if session:
             await session.kernel.stop()
 
+    async def report_start_failure(kernel, ws, event, reason):
+        # One voice for both start-failure paths (first attach and restart):
+        # stop the half-started process, say exactly what failed — closing
+        # without a word leaves the app guessing, and its guess was "engine
+        # unavailable", which is wrong: the engine answered, Python is what
+        # failed — then close 1011.
+        await kernel.stop()
+        await ws.send(json.dumps(event))
+        await ws.close(code=1011, reason=reason)
+
     async def handle_status(ws):
         # The read-only probe `knuth doctor` uses: answer and hang up,
         # touching no session state. Kept apart from handler() so attach
@@ -363,15 +373,10 @@ async def serve(
                 await kernel.stop()
                 raise
             except Exception:
-                await kernel.stop()
-                # Closing without a word leaves the app guessing, and its
-                # guess was "engine unavailable" — which is wrong: the engine
-                # answered, it just could not start a Python process.
-                await ws.send(json.dumps({
+                await report_start_failure(kernel, ws, {
                     "type": "kernel_start_failed",
                     "error": "Python could not be started for this window",
-                }))
-                await ws.close(code=1011, reason="kernel failed to start")
+                }, "kernel failed to start")
                 return
             finally:
                 starting_sids.discard(sid)
@@ -414,13 +419,11 @@ async def serve(
                             await session.kernel.start()
                     except Exception:
                         sessions.pop(sid, None)
-                        await session.kernel.stop()
-                        await ws.send(json.dumps({
+                        await report_start_failure(session.kernel, ws, {
                             "type": "kernel_exit",
                             "id": msg["id"],
                             "error": "Python engine failed to restart",
-                        }))
-                        await ws.close(code=1011, reason="kernel failed to restart")
+                        }, "kernel failed to restart")
                         return
                     session.pump_task = asyncio.create_task(
                         _pump(session.kernel, ws, ready_id=msg["id"])
