@@ -84,6 +84,17 @@ installed version, Python executable, engine version, protocol version,
 build stamp, and live-session count — never code, output, or document
 contents.
 
+## Migrating from Jupyter
+
+```bash
+knuth import notebooks/*.ipynb
+```
+
+Each notebook becomes a sibling percent-format `.py` — one-way, and never
+overwriting an existing file. Outputs are dropped (`knuth run` regenerates
+them as receipts), and magic or shell-escape lines, which are not Python,
+arrive commented out.
+
 ## Development
 
 ```bash

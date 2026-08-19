@@ -67,6 +67,13 @@ def main():
     )
     run_cmd.add_argument("file")
 
+    import_cmd = sub.add_parser(
+        "import",
+        help="convert Jupyter notebooks to percent-format .py documents "
+        "(outputs dropped, magic lines commented out; never overwrites)",
+    )
+    import_cmd.add_argument("files", nargs="+", metavar="notebook.ipynb")
+
     doctor_cmd = sub.add_parser(
         "doctor",
         help="report package, engine, port, and protocol diagnostics",
@@ -79,6 +86,10 @@ def main():
         from .runner import run_file
 
         sys.exit(run_file(args.file))
+    elif args.command == "import":
+        from .ipynb import import_files
+
+        sys.exit(import_files(args.files))
     elif args.command == "doctor":
         from .doctor import run_doctor
 
