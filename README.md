@@ -13,8 +13,10 @@ PyCharm, run under bare `python`, and diff cleanly in git — with outputs
 stored in the file as machine-managed comment blocks, so results change
 alongside code in the history.
 
-The production PWA is served from `https://knuth.tayweid.io`. Secure custom
-domain and agent-pairing setup is documented in [DEPLOYMENT.md](./DEPLOYMENT.md).
+The app is served by the local Python engine on its own port, so the page
+and the kernel socket share one origin and no credential ever travels
+([SAME_ORIGIN.md](./docs/SAME_ORIGIN.md)). A read-only demo is hosted at
+`https://knuth.tayweid.io`.
 
 The session is separate from the document, with panes looking into it
 (the RStudio architecture): a variable explorer shows the live namespace,
@@ -32,41 +34,38 @@ knuth run analysis.py && typst compile paper.typ
 
 **Status: v2 public-release candidate.** The design is in
 [DESIGN.md](./docs/DESIGN.md), the build history in [PLAN.md](./docs/PLAN.md). The v1
-Tauri app (WYSIWYG markdown with executable cells) lives on the
-[`v1-tauri`](../../tree/v1-tauri) branch, its docs in `archive/v1/`.
+Tauri app (WYSIWYG markdown with executable cells) is retired at the
+`v1-tauri` tag in git history, its docs at that tag's root.
 
 ## Install and launch
-
-Open [knuth.tayweid.io](https://knuth.tayweid.io). The page offers PWA
-installation and shows the commands for the current operating system when it
-cannot reach a compatible local engine.
 
 macOS and Linux:
 
 ```bash
 python3 -m pip install --upgrade --force-reinstall "knuth @ https://github.com/tayweid/knuth/archive/refs/heads/main.zip#subdirectory=python"
-knuth app --hosted
+knuth app
 ```
 
 Windows:
 
 ```powershell
 py -m pip install --upgrade --force-reinstall "knuth @ https://github.com/tayweid/knuth/archive/refs/heads/main.zip#subdirectory=python"
-knuth app --hosted
+knuth app
 ```
 
-The hosted page pins the install URL to the exact commit used for that deployed
-web app; the `main` URL above follows the latest repository version. The second
-command starts the Python engine on localhost, opens the hosted
-app, and securely pairs that browser. On macOS it prefers an installed
-`Knuth.app`, so Finder-launched files share the same pairing. Keep the terminal
-open while using Knuth; `Ctrl-C` stops the foreground engine. If the console
-entry point is not on `PATH`, use `python3 -m knuth app --hosted` on macOS/Linux or
-`py -m knuth app --hosted` on Windows.
+The second command starts the Python engine on `127.0.0.1:5197`, which
+serves the app itself and opens it in the default browser — nothing to pair,
+no token to carry. Keep the terminal open while using Knuth; `Ctrl-C` stops
+the foreground engine. If the console entry point is not on `PATH`, use
+`python3 -m knuth app` on macOS/Linux or `py -m knuth app` on Windows. The
+demo page at [knuth.tayweid.io](https://knuth.tayweid.io) shows these
+commands pinned to the exact deployed commit; the `main` URL above follows
+the latest repository version.
 
-PWA installation is optional. In Chromium browsers it also registers Knuth as
-a handler for `.py` files. The Python engine remains local whether Knuth runs
-in a browser tab or an installed window.
+Installing the app as a PWA (from the local origin) is optional. In Chromium
+browsers it also registers Knuth as a handler for `.py` files. The Python
+engine remains local whether Knuth runs in a browser tab or an installed
+window.
 
 ### Optional macOS background agent
 
@@ -80,13 +79,10 @@ knuth agent restart
 knuth agent uninstall
 ```
 
-`knuth agent pair` displays the durable capability for manual recovery, and
-`knuth agent rotate-token` revokes all paired browsers.
-
 If the page and engine do not connect, run `knuth doctor`. It reports the
-installed version, Python executable, redacted capability-file health, local
-port state, protocol version, and live-session count without printing the
-capability or document contents.
+installed version, Python executable, engine version, protocol version,
+build stamp, and live-session count — never code, output, or document
+contents.
 
 ## Development
 
