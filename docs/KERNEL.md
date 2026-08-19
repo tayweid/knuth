@@ -86,13 +86,14 @@ same interface, not an architectural rewrite. Deferring it costs nothing.
   stdout/stderr capture, tracebacks), WebSocket server speaking a small
   JSON protocol, interrupt via signal, restart via process replacement.
 - `src/kernel/`: the Kernel interface and its WebSocket client.
-- Protocol messages (v2): the initial `attach` requires the exact protocol
-  version plus either the durable capability or a single-use pairing token.
-  A trusted CLI may request that token with an authenticated
-  `create_pairing` handshake, and ask whether it has been spent yet with an
-  authenticated `pairing_status` — the launcher confirms that a browser
-  really received the pairing link rather than trusting that a window
-  opened. After attachment, `run{id, code}` →
+- Protocol messages (v2): the initial `attach` carries the exact protocol
+  version and a session id; the server answers `attached{protocol,
+  session, resumed}`, or refuses with a specific close code — `1002` and an
+  `incompatible` event on a version mismatch, no best-effort forwarding.
+  Authorization is the loopback bind plus the exact-Origin check on the
+  upgrade; the page is served from the same origin as the socket, so no
+  capability or pairing token exists (SAME_ORIGIN.md). After attachment,
+  `run{id, code}` →
   `stream{id, text, which}`* → `done{id, result?}` | `error{id, traceback}`.
   `restart`, `namespace`, `artifacts`, `table`, and `figure` also carry a
   request ID echoed by their response; `interrupt` is intentionally one-way.

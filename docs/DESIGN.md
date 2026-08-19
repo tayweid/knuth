@@ -139,13 +139,13 @@ and makes pyrmd the computation half.
 
 - Web app like Plass (the Tauri shell is what made v1 slow to develop; the
   editor stack was always web tech). Vite + HMR development cycle.
-- Kernel pluggable: **Pyodide in a Web Worker** by default (real CPython in
-  WASM; numpy/pandas/matplotlib/scipy as prebuilt wheels;
-  `pyodide.mountNativeFS()` mounts the project-folder handle so
-  `pd.read_csv('data.csv')` reads the real file; interrupt buffer for
-  Stop). **Local sidecar** (the existing pymd-server lineage) over
-  localhost WebSocket for native-scale work — WASM caps at ~2–4GB memory
-  and can't install compiled packages outside Pyodide's build set.
+- Kernel pluggable behind one small interface. DECIDED (2026-08-13, see
+  KERNEL.md): **local sidecar** — real CPython over a localhost WebSocket,
+  one engine shared by the app and `knuth run`. Pyodide (CPython in WASM,
+  zero-install) stays buildable later behind the same interface as a
+  teaching mode; its memory ceiling, package wall, and second-engine cost
+  are the tradeoff record in KERNEL.md. This paragraph originally recorded
+  the opposite default and was corrected after the decision.
 
 ## Open questions
 
