@@ -268,6 +268,23 @@ async def serve(
         if session:
             await session.kernel.stop()
 
+    async def handle_status(ws):
+        # The read-only probe `knuth doctor` uses: answer and hang up,
+        # touching no session state. Kept apart from handler() so attach
+        # and the probe cannot tangle.
+        if not same_origin(ws):
+            await ws.close(code=4401, reason="status is local-origin only")
+            return
+        await ws.send(json.dumps({
+            "type": "status",
+            "protocol": PROTOCOL_VERSION,
+            "version": _package_version(),
+            "build": build_stamp(),
+            "sessions": len(sessions) + len(starting_sids),
+            "max_sessions": max_sessions,
+        }))
+        await ws.close(code=1000, reason="status reported")
+
     async def handler(ws):
         # Handshake: attach{session} names the session to create or resume.
         try:
@@ -292,18 +309,7 @@ async def serve(
             return
 
         if first.get("type") == "status":
-            if not same_origin(ws):
-                await ws.close(code=4401, reason="status is local-origin only")
-                return
-            await ws.send(json.dumps({
-                "type": "status",
-                "protocol": PROTOCOL_VERSION,
-                "version": _package_version(),
-                "build": build_stamp(),
-                "sessions": len(sessions) + len(starting_sids),
-                "max_sessions": max_sessions,
-            }))
-            await ws.close(code=1000, reason="status reported")
+            await handle_status(ws)
             return
 
         if first.get("type") != "attach":
