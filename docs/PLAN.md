@@ -1,7 +1,11 @@
 # Knuth v2 — Development Plan
 
+**Closed record (2026-08-18).** Milestones 0–6 are built and the
+dogfooding list below is done; everything forward-looking moved to
+[ROADMAP.md](./ROADMAP.md). Kept as the build-order history.
+
 The design is in [DESIGN.md](./DESIGN.md); this is the build order. The v1
-Tauri app is retired on the `v1-tauri` branch (its docs in `archive/v1/`);
+Tauri app is retired at the `v1-tauri` tag (its docs at that tag's root);
 the only v1 asset carried forward is `python/pymd_server`, the lineage for
 the local kernel and the `knuth run` CLI.
 
@@ -141,33 +145,17 @@ persists in localStorage.
 
 ## Later (tracked, not scheduled)
 
-- Editable DataFrames in the data viewer (Taylor, 2026-08-13): edits must
-  preserve reproducibility by materializing as code appended to a cell
-  (e.g. `df.loc[3, 'wage'] = 12.5`) rather than mutating silently — the
-  viewer becomes a code generator, the document stays the truth.
-- ~~Figure receipts~~ built (2026-08-14): output blocks carry
-  `figs/<name>.svg` lines for the canonical name of each figure a cell's
-  run touched (direct Figure bindings beat artist references — one file
-  per figure); the app resolves receipts from the project folder on open,
-  `knuth run` writes identical byte-stable lines. Unnamed figures still
-  display-only.
+Moved to [ROADMAP.md](./ROADMAP.md) (2026-08-18). One entry closed here
+first: ~~figure receipts~~ built (2026-08-14) — output blocks carry
+`figs/<name>.svg` lines for the canonical name of each figure a cell's run
+touched; the app resolves receipts from the project folder on open, and
+`knuth run` writes identical byte-stable lines.
 
-- Scratch cells in a one-way ChainMap namespace (structural enforcement of
-  the no-hidden-state rule).
-- Cell-level DAG for staleness precision; possibly opt-in reactive rerun.
-- The kernel not chosen in Milestone 2, behind the same interface.
-- Tables in the folder contract (DESIGN.md Q1 — parked).
-- Kernel working directory: sidecar code can't `read_csv('data.csv')`
-  relative to the project folder, because the browser never learns real
-  paths. Likely a server-side project root (`knuth serve --root` or a
-  path hint file) — needed before `knuth run` feels complete.
-- Plass line-breaker port for text-cell typography (Q6 revisit).
-- External-change reload, themes, export niceties.
+## Dogfooding list (2026-08-18) — all done
 
-
-## Dogfooding list (2026-08-18)
-
-From using it, in the order they bite:
+From using it, in the order they bite. All three landed the same day:
+`3b6e5f8` (folders), `f88d928` + `06ca7da` (plain files), `d3cbf1b`
+(boxes).
 
 - **Launched files should assume their own folder.** Double-clicking a `.py`
   still asks where the project folder is, when the answer is obviously the
