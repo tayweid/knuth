@@ -121,6 +121,11 @@ def run_file(file, echo=print):
     if not path.exists():
         echo(f"knuth run: no such file: {file}")
         return 1
+    # read_text() applies universal-newline translation on purpose: knuth
+    # run canonicalizes a document to LF the first time it rewrites receipts
+    # (DECIDED, DESIGN.md). Receipt lines are LF either way, so preserving
+    # CRLF would mean mixed endings forever; one line-ending diff on the
+    # first run, byte-stable ever after.
     doc = parse_document(path.read_text())
     # The preamble is the implicit cell zero: a plain script (no # %%
     # markers) runs whole; it gets no output block (nothing to anchor

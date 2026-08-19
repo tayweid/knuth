@@ -28,6 +28,21 @@ def test_corpus_parity():
     print(f"percent port: round-trip parity on {len(files)} corpus files")
 
 
+def test_crlf_documents_are_canonicalized_to_lf(tmp_path):
+    # DECIDED (DESIGN.md): everything knuth run writes is LF. A CRLF file
+    # is canonicalized wholesale on its first receipt rewrite — one
+    # line-ending diff on first run, byte-stable ever after.
+    doc_path = tmp_path / "windows.py"
+    doc_path.write_bytes(b"# %%\r\nprint('hi')\r\n")
+    quiet = lambda *_: None
+    assert run_file(doc_path, echo=quiet) == 0
+    after = doc_path.read_bytes()
+    assert b"\r" not in after, "canonicalized to LF"
+    assert b"#-> hi" in after, after
+    assert run_file(doc_path, echo=quiet) == 0
+    assert doc_path.read_bytes() == after, "second run must be byte-stable"
+
+
 def test_corpus_structure_parity():
     # The same expectations src/format/round-trip.test.ts asserts against
     # percent.ts: the two parsers must agree on structure, not just on
