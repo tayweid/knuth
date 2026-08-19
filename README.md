@@ -31,7 +31,7 @@ knuth run analysis.py && typst compile paper.typ
 ```
 
 **Status: v2 public-release candidate.** The design is in
-[DESIGN.md](./DESIGN.md), the build history in [PLAN.md](./PLAN.md). The v1
+[DESIGN.md](./docs/DESIGN.md), the build history in [PLAN.md](./docs/PLAN.md). The v1
 Tauri app (WYSIWYG markdown with executable cells) lives on the
 [`v1-tauri`](../../tree/v1-tauri) branch, its docs in `archive/v1/`.
 
@@ -115,7 +115,7 @@ reproducibility runner behind `knuth run`.
 
 Please report vulnerabilities privately rather than opening a public issue.
 The supported-version policy, threat-model boundary, and reporting process are
-in [SECURITY.md](./SECURITY.md).
+in [SECURITY.md](./docs/SECURITY.md).
 
 ## License
 

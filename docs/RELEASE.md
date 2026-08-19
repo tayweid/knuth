@@ -15,7 +15,7 @@ release distributions have passed the same release-candidate tests.
 
 ## Every release
 
-1. Finish the smoke checklist in [DEPLOYMENT.md](./DEPLOYMENT.md) on the release
+1. Finish the smoke checklist in [DEPLOYMENT.md](../DEPLOYMENT.md) on the release
    commit, including macOS, Windows, and Linux.
 2. Complete the stable-release response-header gate in `DEPLOYMENT.md`, or
    explicitly label the release as a prerelease while it remains on bare
