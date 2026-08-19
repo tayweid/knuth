@@ -23,6 +23,32 @@ for (const [name, text] of corpus) {
   assert.equal(serializeDocument(parseDocument(text)), text, `round-trip: ${name}`);
 }
 
+// Every corpus file's parsed structure matches corpus-structure.json — the
+// same expectations python/tests/test_run.py asserts against percent.py, so
+// the two parsers must agree on structure, not just on round-tripping (the
+// CRLF divergence hid in exactly that gap).
+{
+  const expected = JSON.parse(
+    readFileSync(fileURLToPath(new URL('./corpus-structure.json', import.meta.url)), 'utf8'),
+  ) as Record<string, unknown>;
+  assert.deepEqual(Object.keys(expected).sort(), [...corpus.keys()].sort());
+  for (const [name, text] of corpus) {
+    const doc = parseDocument(text);
+    const signature = {
+      preamble: doc.preamble.length,
+      trailingNewline: doc.trailingNewline,
+      cells: doc.cells.map((c) => ({
+        kind: c.kind,
+        marker: c.marker,
+        source: c.source.length,
+        output: c.output.length,
+        trailing: c.trailing.length,
+      })),
+    };
+    assert.deepEqual(signature, expected[name], `structure: ${name}`);
+  }
+}
+
 // Degenerate inputs round-trip too.
 for (const text of ['', '\n', 'x = 1', '# %%']) {
   assert.equal(serializeDocument(parseDocument(text)), text, `round-trip: ${JSON.stringify(text)}`);

@@ -1,0 +1,142 @@
+{
+  "basic.py": {
+    "preamble": 0,
+    "trailingNewline": true,
+    "cells": [
+      {
+        "kind": "text",
+        "marker": "# %% [markdown]",
+        "source": 4,
+        "output": 0,
+        "trailing": 0
+      },
+      {
+        "kind": "program",
+        "marker": "# %%",
+        "source": 4,
+        "output": 0,
+        "trailing": 0
+      },
+      {
+        "kind": "program",
+        "marker": "# %%",
+        "source": 1,
+        "output": 0,
+        "trailing": 0
+      }
+    ]
+  },
+  "crlf.py": {
+    "preamble": 2,
+    "trailingNewline": true,
+    "cells": [
+      {
+        "kind": "program",
+        "marker": "# %%\r",
+        "source": 1,
+        "output": 1,
+        "trailing": 1
+      },
+      {
+        "kind": "text",
+        "marker": "# %% [markdown]\r",
+        "source": 2,
+        "output": 0,
+        "trailing": 0
+      },
+      {
+        "kind": "scratch",
+        "marker": "# %% scratch\r",
+        "source": 1,
+        "output": 0,
+        "trailing": 0
+      }
+    ]
+  },
+  "edge.py": {
+    "preamble": 0,
+    "trailingNewline": false,
+    "cells": [
+      {
+        "kind": "program",
+        "marker": "# %%",
+        "source": 1,
+        "output": 0,
+        "trailing": 0
+      },
+      {
+        "kind": "program",
+        "marker": "# %%",
+        "source": 1,
+        "output": 0,
+        "trailing": 0
+      }
+    ]
+  },
+  "jupytext.py": {
+    "preamble": 9,
+    "trailingNewline": true,
+    "cells": [
+      {
+        "kind": "text",
+        "marker": "# %% [markdown]",
+        "source": 2,
+        "output": 0,
+        "trailing": 0
+      },
+      {
+        "kind": "program",
+        "marker": "#%%",
+        "source": 2,
+        "output": 0,
+        "trailing": 0
+      },
+      {
+        "kind": "program",
+        "marker": "# %% This cell has a title",
+        "source": 3,
+        "output": 0,
+        "trailing": 0
+      },
+      {
+        "kind": "program",
+        "marker": "# %% tags=[\"parameters\"]",
+        "source": 1,
+        "output": 0,
+        "trailing": 0
+      }
+    ]
+  },
+  "outputs.py": {
+    "preamble": 0,
+    "trailingNewline": true,
+    "cells": [
+      {
+        "kind": "program",
+        "marker": "# %%",
+        "source": 2,
+        "output": 1,
+        "trailing": 1
+      },
+      {
+        "kind": "scratch",
+        "marker": "# %% scratch",
+        "source": 1,
+        "output": 1,
+        "trailing": 1
+      },
+      {
+        "kind": "program",
+        "marker": "# %%",
+        "source": 1,
+        "output": 1,
+        "trailing": 0
+      }
+    ]
+  },
+  "script.py": {
+    "preamble": 4,
+    "trailingNewline": true,
+    "cells": []
+  }
+}

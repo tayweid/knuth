@@ -28,6 +28,33 @@ def test_corpus_parity():
     print(f"percent port: round-trip parity on {len(files)} corpus files")
 
 
+def test_corpus_structure_parity():
+    # The same expectations src/format/round-trip.test.ts asserts against
+    # percent.ts: the two parsers must agree on structure, not just on
+    # round-tripping (the CRLF divergence hid in exactly that gap).
+    expected = json.loads((CORPUS.parent / "corpus-structure.json").read_text())
+    files = sorted(CORPUS.glob("*.py"))
+    assert sorted(expected) == [f.name for f in files]
+    for f in files:
+        with f.open(newline="") as stream:
+            doc = parse_document(stream.read())
+        signature = {
+            "preamble": len(doc.preamble),
+            "trailingNewline": doc.trailing_newline,
+            "cells": [
+                {
+                    "kind": c.kind,
+                    "marker": c.marker,
+                    "source": len(c.source),
+                    "output": len(c.output),
+                    "trailing": len(c.trailing),
+                }
+                for c in doc.cells
+            ],
+        }
+        assert signature == expected[f.name], f.name
+
+
 def test_corpus_crlf_structure():
     # Same structural reading as round-trip.test.ts asserts: CRLF endings
     # still delimit cells, in both implementations.
