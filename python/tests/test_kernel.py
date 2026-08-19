@@ -652,6 +652,118 @@ def test_simultaneous_duplicate_attach(monkeypatch):
     asyncio.run(check_simultaneous_duplicate_attach(monkeypatch))
 
 
+async def connect_when_up(port):
+    """Connect to an in-process serve() task, retrying until it binds."""
+    deadline = time.monotonic() + 10
+    while True:
+        try:
+            return await websockets.connect(
+                f"ws://127.0.0.1:{port}", origin=served_origin(port)
+            )
+        except OSError:
+            if time.monotonic() > deadline:
+                raise
+            await asyncio.sleep(0.05)
+
+
+async def check_kernel_start_failure(monkeypatch):
+    """A Python that cannot start is reported as exactly that.
+
+    The engine answered; Python is what failed. The app must hear
+    kernel_start_failed — not a wordless close it would read as "engine
+    unavailable" — and the reserved session id must be released so a later
+    attach with the same id starts clean.
+    """
+    original_start = KernelProcess.start
+
+    async def failing_start(kernel):
+        raise RuntimeError("no interpreter for this test")
+
+    monkeypatch.setattr(KernelProcess, "start", failing_start)
+    port = free_port()
+    server_task = asyncio.create_task(serve(port, grace=1, origins=()))
+    try:
+        ws = await connect_when_up(port)
+        async with closing_websocket(ws):
+            client = Client(ws)
+            await client.send(
+                type="attach", protocol=PROTOCOL_VERSION, session="doomed-id"
+            )
+            event = await asyncio.wait_for(client.recv(), timeout=5)
+            assert event["type"] == "kernel_start_failed", event
+            assert event["error"] == "Python could not be started for this window"
+            with pytest.raises(ConnectionClosed):
+                await client.recv()
+        assert close_code(ws) == 1011
+
+        # The failure released the reserved id: with a working interpreter
+        # again, the same id attaches fresh instead of resuming a corpse.
+        monkeypatch.setattr(KernelProcess, "start", original_start)
+        replacement = await connect_when_up(port)
+        async with closing_websocket(replacement):
+            client = Client(replacement)
+            attached = await client.attach("doomed-id")
+            assert attached["resumed"] is False, attached
+            await asyncio.wait_for(client.wait_ready(), timeout=10)
+    finally:
+        server_task.cancel()
+        with suppress(asyncio.CancelledError):
+            await server_task
+
+
+def test_kernel_start_failure(monkeypatch):
+    asyncio.run(check_kernel_start_failure(monkeypatch))
+
+
+async def check_restart_failure(monkeypatch):
+    """A restart whose new interpreter cannot start says so and frees the session."""
+    original_start = KernelProcess.start
+    fail_next_start = False
+
+    async def flaky_start(kernel):
+        if fail_next_start:
+            raise RuntimeError("interpreter went missing")
+        await original_start(kernel)
+
+    monkeypatch.setattr(KernelProcess, "start", flaky_start)
+    port = free_port()
+    server_task = asyncio.create_task(serve(port, grace=1, origins=()))
+    try:
+        ws = await connect_when_up(port)
+        async with closing_websocket(ws):
+            client = Client(ws)
+            await client.attach("restart-doomed")
+            await asyncio.wait_for(client.wait_ready(), timeout=10)
+            fail_next_start = True
+            await client.send(type="restart", id=7)
+            while True:
+                event = await asyncio.wait_for(client.recv(), timeout=5)
+                if event["type"] == "kernel_exit":
+                    break
+            assert event["id"] == 7, event
+            assert event["error"] == "Python engine failed to restart"
+            with pytest.raises(ConnectionClosed):
+                await client.recv()
+        assert close_code(ws) == 1011
+
+        # The dead session was removed, not left to be resumed.
+        fail_next_start = False
+        replacement = await connect_when_up(port)
+        async with closing_websocket(replacement):
+            client = Client(replacement)
+            attached = await client.attach("restart-doomed")
+            assert attached["resumed"] is False, attached
+            await asyncio.wait_for(client.wait_ready(), timeout=10)
+    finally:
+        server_task.cancel()
+        with suppress(asyncio.CancelledError):
+            await server_task
+
+
+def test_restart_failure(monkeypatch):
+    asyncio.run(check_restart_failure(monkeypatch))
+
+
 async def check_same_origin_needs_no_credential(web_root):
     """A page the engine served is proven by its Origin, not by a secret.
 
