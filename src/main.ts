@@ -203,7 +203,9 @@ function attachProjectFolder() {
 const panel = new SessionPanel($('panel'), kernel);
 if (localStorage.getItem('knuth-panel') === '0') $('panel').hidden = true;
 
-// Deleted cells get one immediate Cmd-Z lifeline, wherever focus is.
+// Structural changes the editors' own history cannot undo (deleted cell,
+// plain file converted to cells) get one immediate Cmd-Z lifeline,
+// wherever focus is.
 let pendingRestore: (() => void) | null = null;
 let restoreTimer = 0;
 
@@ -227,11 +229,11 @@ const docView = new DocumentView(
   () => fileManager?.noteChange(),
   syncArtifacts,
   () => void panel.refresh(),
-  (restore) => {
+  (restore, message) => {
     pendingRestore = restore;
     clearTimeout(restoreTimer);
     restoreTimer = window.setTimeout(() => (pendingRestore = null), 15000);
-    toast('Cell deleted — ⌘Z restores it');
+    toast(message);
   },
   loadFigureFromDir,
 );
@@ -395,7 +397,7 @@ window.addEventListener(
       e.preventDefault();
       void fileManager.open();
     } else if (key === 'z' && !e.shiftKey && pendingRestore) {
-      // The undo the user means: bring the deleted cell back.
+      // The undo the user means: reverse the structural change.
       e.preventDefault();
       e.stopPropagation();
       pendingRestore();

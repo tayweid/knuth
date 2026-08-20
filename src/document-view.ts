@@ -101,8 +101,10 @@ export class DocumentView {
     private onProgramRun?: () => void,
     /** Any code cell finished (ok or not) — the session may have changed. */
     private onRun?: () => void,
-    /** A cell was deleted; calling `restore` puts it back. */
-    private onCellDeleted?: (restore: () => void) => void,
+    /** A structural change happened that the editors' own history cannot
+     *  undo (cell deleted, plain file converted to cells); calling
+     *  `restore` reverses it. `message` names the ⌘Z on offer. */
+    private onUndoable?: (restore: () => void, message: string) => void,
     /** Resolve a figs/<name>.svg receipt to SVG text (project folder). */
     private loadFigure?: (path: string) => Promise<string | null>,
   ) {
@@ -198,6 +200,11 @@ export class DocumentView {
   private syncModel(v: CellView, text: string) {
     if (v.isPreamble) {
       const lines = text.replace(/\n+$/, '').split('\n');
+      // The text as it stood before this edit: conversion below rebuilds
+      // the editors, losing their undo history, so this is what one ⌘Z
+      // gives back.
+      const before = this.doc.preamble;
+      const trailingNewline = this.doc.trailingNewline;
       if (this.views.length > 0) lines.push('');
       this.doc.preamble = lines;
       // A plain file that grows a marker has become a cell document. With
@@ -211,6 +218,11 @@ export class DocumentView {
           queueMicrotask(() => {
             this.setDoc(reparsed);
             this.onChange();
+            this.onUndoable?.(() => {
+              this.setDoc({ preamble: before, cells: [], trailingNewline });
+              this.onChange();
+              this.preambleView?.editor?.focus();
+            }, 'Cells created — ⌘Z restores the plain file');
           });
         }
       }
@@ -685,7 +697,10 @@ export class DocumentView {
     this.markStaleFromIndex(i);
     this.onChange();
     if (this.views.length === 0) this.insertAtEnd('program');
-    this.onCellDeleted?.(() => this.spliceIn(Math.min(i, this.views.length), cell));
+    this.onUndoable?.(
+      () => this.spliceIn(Math.min(i, this.views.length), cell),
+      'Cell deleted — ⌘Z restores it',
+    );
   }
 
   // ---------- staleness ----------

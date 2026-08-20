@@ -351,6 +351,14 @@ test('a script with no cells opens as a file, and gains the workbench when given
   await expect(page.locator('#cells-pod')).toBeVisible();
   await expect(page.locator('#toolbar')).toBeVisible();
   expect(await sheetCap()).not.toBe('none');
+
+  // Conversion rebuilt the editors, so their own history cannot undo it;
+  // one ⌘Z is the lifeline back to the plain file, marker gone.
+  await page.keyboard.press('ControlOrMeta+z');
+  await expect(page.locator('body')).toHaveAttribute('data-plain', 'true');
+  await expect(page.locator('#toolbar')).toBeHidden();
+  await expect(page.locator('.cm-content').first()).toContainText('import math');
+  await expect(page.locator('.cm-content').first()).not.toContainText('%%');
 });
 
 test('a full engine and a failed Python say different things', async ({ page }) => {
