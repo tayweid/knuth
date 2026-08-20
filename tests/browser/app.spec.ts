@@ -339,7 +339,7 @@ test('a script opens as edge-to-edge source, and cell view is a deliberate toggl
   expect(await page.locator('.cell .cm-editor').first()
     .evaluate((el) => getComputedStyle(el).borderTopWidth)).toBe('0px');
   // With no markers, cell view has nothing to act on: no way in is offered.
-  await expect(page.locator('#view-cells')).toBeHidden();
+  await expect(page.locator('#view-toggle')).toBeHidden();
 
   // Typing a marker converts nothing — it just opens the door. The view
   // stays put and the editor's own undo history keeps working.
@@ -348,26 +348,29 @@ test('a script opens as edge-to-edge source, and cell view is a deliberate toggl
   await page.keyboard.type('# %%\n');
   await expect(page.locator('body')).toHaveAttribute('data-view', 'source');
   await expect(page.locator('#toolbar')).toBeHidden();
-  await expect(page.locator('#view-cells')).toBeVisible();
+  await expect(page.locator('#view-toggle')).toBeVisible();
+  await expect(page.locator('#view-toggle')).toHaveText(/Cells/);
 
   // ⌘Z is plain editor undo: the typed marker comes back out, and the
   // door closes again.
   for (let i = 0; i < 6; i += 1) await page.keyboard.press('ControlOrMeta+z');
   await expect(page.locator('.cm-content').first()).not.toContainText('%%');
   await expect(page.locator('.cm-content').first()).toContainText('import math');
-  await expect(page.locator('#view-cells')).toBeHidden();
+  await expect(page.locator('#view-toggle')).toBeHidden();
 
-  // With a marker in place, the floating pill switches to cell view...
+  // With a marker in place, the corner pill switches to cell view...
   await page.keyboard.type('# %%\nx = 1\n');
-  await page.locator('#view-cells').click();
+  await page.locator('#view-toggle').click();
   await expect(page.locator('body')).toHaveAttribute('data-view', '');
   await expect(page.locator('#toolbar')).toBeVisible();
   await expect(page.locator('.run').first()).toBeVisible();
   await expect(page.locator('#cells-pod')).toBeVisible();
   expect(await sheetCap()).not.toBe('none');
 
-  // ...and the toolbar's Source button switches back, markers intact.
-  await page.locator('#view-source').click();
+  // ...where the same pill, in the same corner, now reads Source and
+  // switches back, markers intact.
+  await expect(page.locator('#view-toggle')).toHaveText(/Source/);
+  await page.locator('#view-toggle').click();
   await expect(page.locator('body')).toHaveAttribute('data-view', 'source');
   await expect(page.locator('#toolbar')).toBeHidden();
   await expect(page.locator('.cm-content').first()).toContainText('# %%');

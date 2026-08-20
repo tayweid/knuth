@@ -63,9 +63,6 @@ toolbar.innerHTML = `
     ${labeled('stop', icon('stop'), 'Stop', 'Interrupt the running cell')}
     ${labeled('restart', icon('restart'), 'Restart', 'Fresh session (kernel process replaced)')}
   </div>
-  <div class="tb-pod tb-group" id="view-pod">
-    ${labeled('view-source', icon('code'), 'Source', 'Edit the raw file — markers and receipts as text (⌘⇧E)')}
-  </div>
   <div class="tb-pod tb-group">
     ${labeled('toggle-panel', icon('panel'), 'Session', 'Show/hide the session panes')}
     <button type="button" id="install-app" hidden>Install</button>
@@ -368,17 +365,16 @@ flyout($('doc-pod'), icon('open'), 'File — new, open, recent', [
   },
 ]);
 
-$('view-source').addEventListener('click', () => docView.setSource(true));
-
-// The way back from an edge-to-edge source file: a floating pill, shown
-// by CSS only in source view and only when the text has markers for cell
-// view to act on.
-const viewCells = document.createElement('button');
-viewCells.id = 'view-cells';
-viewCells.title = 'Cell view (⌘⇧E)';
-viewCells.innerHTML = `${icon('code')}<span class="lbl">Cells</span>`;
-viewCells.addEventListener('click', () => docView.setSource(false));
-document.body.append(viewCells);
+// The view toggle lives in one corner in both views, so the way in and
+// the way out are the same spot. CSS swaps its label by view and hides
+// it when a markerless file offers no cell view to switch to.
+const viewToggle = document.createElement('button');
+viewToggle.id = 'view-toggle';
+viewToggle.title = 'Switch between source and cell view (⌘⇧E)';
+viewToggle.innerHTML =
+  `${icon('code')}<span class="lbl lbl-cells">Cells</span><span class="lbl lbl-source">Source</span>`;
+viewToggle.addEventListener('click', () => docView.setSource(!docView.isSource));
+document.body.append(viewToggle);
 
 $('add-code').addEventListener('click', () => docView.insertRelative('program'));
 $('add-scratch').addEventListener('click', () => docView.insertRelative('scratch'));

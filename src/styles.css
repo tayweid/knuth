@@ -1114,18 +1114,15 @@ body[data-view='source'] .cell.stale .cm-editor {
   border-radius: 0;
 }
 
-/* The way back into cell view: one quiet floating pill, present only in
-   source view and only when the text has markers to act on. */
-#view-cells {
+/* The view toggle: one quiet floating pill in the same corner in both
+   views — the way in and the way out are the same spot. Hidden only when
+   a markerless source file offers no cell view to switch to. */
+#view-toggle {
   display: none;
-}
-
-body[data-view='source'][data-cells='true'] #view-cells {
   position: fixed;
-  top: 12px;
+  top: 14px;
   right: 12px;
   z-index: 60;
-  display: inline-flex;
   align-items: center;
   gap: 6px;
   height: 32px;
@@ -1142,16 +1139,26 @@ body[data-view='source'][data-cells='true'] #view-cells {
   transition: opacity 0.25s ease, background 0.12s;
 }
 
-body[data-view='source'][data-cells='true'] #view-cells:hover {
+body[data-view='source'][data-cells='true'] #view-toggle,
+body:not([data-view='source']) #view-toggle {
+  display: inline-flex;
+}
+
+#view-toggle:hover {
   opacity: 1;
   background: rgba(255, 255, 255, 0.12);
 }
 
-#view-cells .ico {
+#view-toggle .ico {
   width: 16px;
   height: 16px;
   display: block;
 }
+
+/* The label names the view you would switch TO. */
+#view-toggle .lbl-source { display: none; }
+body:not([data-view='source']) #view-toggle .lbl-cells { display: none; }
+body:not([data-view='source']) #view-toggle .lbl-source { display: inline; }
 
 /* The 350px allowance for the session panel is made by the rule above, which
    now excludes plain mode: the panel is display:none here, not [hidden], so
