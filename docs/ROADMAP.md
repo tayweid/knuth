@@ -23,7 +23,10 @@ question that still needs one.
   headers — GitHub Pages cannot emit header-only directives such as
   `frame-ancestors`. The gate and header set are in RELEASE.md.
 - Run the installed-PWA/launcher smoke checklist on macOS, Windows, and
-  Linux, including the optional macOS launch agent.
+  Linux, including the optional macOS launch agent. Restore the
+  windows-latest CI leg at the same time (dropped 2026-08-20 — single
+  developer, no Windows machine; its checkout-newline failure mode is
+  already fixed by .gitattributes).
 - Publish GitHub release assets only after the cross-platform release
   commit is green.
 - Commission an independent attack pass over the release candidate.

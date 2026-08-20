@@ -62,9 +62,13 @@ jobs:
           - os: macos-latest
             python-version: '3.14'
             websockets: 'websockets>=14.0'
-          - os: windows-latest
-            python-version: '3.14'
-            websockets: 'websockets>=14.0'
+          # windows-latest dropped for now: single-developer project, no
+          # Windows machine in use. Restore this leg alongside the
+          # cross-platform release gates (docs/ROADMAP.md); the corpus
+          # fixtures are already checkout-proof via .gitattributes.
+          #          - os: windows-latest
+          #            python-version: '3.14'
+          #            websockets: 'websockets>=14.0'
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:

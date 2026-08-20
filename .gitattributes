@@ -1,0 +1,6 @@
+# The corpus files are byte-exact parser fixtures: both percent
+# implementations are tested on their raw bytes (round-trip and
+# structure, including the deliberate CRLF fixture), so git must never
+# translate their line endings — Windows checkouts with autocrlf were
+# rewriting the LF fixtures to CRLF and failing the structure test.
+src/format/corpus/* -text
