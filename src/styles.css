@@ -1055,38 +1055,39 @@ body:not([data-plain='true']):has(#panel:not([hidden])) #toolbar {
 
 #toast button:hover { background: #fff; }
 
-/* A plain .py is a file, not a notebook. It parses to a single body with no
-   markers, so the affordances that structure a document — running a cell,
-   its staleness, where the next one goes, what kind it is — have nothing to
-   act on. Same surface and type, less apparatus. Adding a cell from the
-   toolbar restores all of it, because then there is structure to work. */
-body[data-plain='true'] .run,
-body[data-plain='true'] .badge,
-body[data-plain='true'] .insert-zone,
-body[data-plain='true'] .tools,
-body[data-plain='true'] .output,
-body[data-plain='true'] .cell-figures,
-body[data-plain='true'] #panel,
-body[data-plain='true'] #toggle-panel,
-body[data-plain='true'] #cells-pod,
-body[data-plain='true'] #run-pod,
-body[data-plain='true'] #run-stale,
-body[data-plain='true'] #run-all,
-body[data-plain='true'] #stop,
-body[data-plain='true'] #restart {
+/* Source view: the raw file in one editor, for any .py. The affordances
+   that structure a document — running a cell, its staleness, where the
+   next one goes, what kind it is — act on cells, and here there are none
+   on screen. Same surface and type, less apparatus. The cell view is a
+   deliberate toggle (⌘⇧E, the toolbar Source button, the floating Cells
+   pill), never a side effect of typing a marker. */
+body[data-view='source'] .run,
+body[data-view='source'] .badge,
+body[data-view='source'] .insert-zone,
+body[data-view='source'] .tools,
+body[data-view='source'] .output,
+body[data-view='source'] .cell-figures,
+body[data-view='source'] #panel,
+body[data-view='source'] #toggle-panel,
+body[data-view='source'] #cells-pod,
+body[data-view='source'] #run-pod,
+body[data-view='source'] #run-stale,
+body[data-view='source'] #run-all,
+body[data-view='source'] #stop,
+body[data-view='source'] #restart {
   display: none;
 }
 
 /* Without the gutter's run button and badge the body should not sit in a
    column that is holding space for them. */
-body[data-plain='true'] .gutter {
+body[data-view='source'] .gutter {
   min-width: 0;
 }
 
 /* A file also gets the room. The 52rem column is a reading measure for a
    notebook's mixed prose and outputs; a plain script is an editor view,
    and an editor uses the width the window has. */
-body[data-plain='true'] #sheet {
+body[data-view='source'] #sheet {
   max-width: none;
 }
 
@@ -1094,23 +1095,62 @@ body[data-plain='true'] #sheet {
    tab names the file; ⌘O/⌘S still work; typing a # %% marker brings the
    whole workbench back), no card border, no reserved gutter column —
    just the text against the window, with editor-style overscroll below. */
-body[data-plain='true'] #toolbar {
+body[data-view='source'] #toolbar {
   display: none;
 }
 
-body[data-plain='true'] #doc {
+body[data-view='source'] #doc {
   padding: 0 0 40vh;
   min-width: 0;
 }
 
-body[data-plain='true'] .cell {
+body[data-view='source'] .cell {
   padding: 0;
 }
 
-body[data-plain='true'] .cell .cm-editor,
-body[data-plain='true'] .cell.stale .cm-editor {
+body[data-view='source'] .cell .cm-editor,
+body[data-view='source'] .cell.stale .cm-editor {
   border: 0;
   border-radius: 0;
+}
+
+/* The way back into cell view: one quiet floating pill, present only in
+   source view and only when the text has markers to act on. */
+#view-cells {
+  display: none;
+}
+
+body[data-view='source'][data-cells='true'] #view-cells {
+  position: fixed;
+  top: 12px;
+  right: 12px;
+  z-index: 60;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 32px;
+  padding: 0 12px;
+  background: var(--glass);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid var(--glass-border);
+  border-radius: 999px;
+  color: rgba(240, 238, 233, 0.9);
+  font-size: 12px;
+  cursor: pointer;
+  opacity: 0.45;
+  transition: opacity 0.25s ease, background 0.12s;
+}
+
+body[data-view='source'][data-cells='true'] #view-cells:hover {
+  opacity: 1;
+  background: rgba(255, 255, 255, 0.12);
+}
+
+#view-cells .ico {
+  width: 16px;
+  height: 16px;
+  display: block;
 }
 
 /* The 350px allowance for the session panel is made by the rule above, which

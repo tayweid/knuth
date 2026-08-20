@@ -88,6 +88,9 @@ export class DocumentView {
   doc: KnuthDocument = parseDocument('# %%\n');
   private views: CellView[] = [];
   private preambleView: CellView | null = null;
+  /** Source view: the whole file in one raw editor, markers and receipts
+   *  as honest text. Cell view needs markers; source view suits any file. */
+  private sourceMode = false;
   private endZone!: HTMLElement;
   private lastFocused: CellView | null = null;
   /** Esc arms a brief chord: the next key can switch the cell's kind. */
@@ -190,42 +193,31 @@ export class DocumentView {
    *  editor never shows separator blank lines; the model re-adds one at
    *  the end (unless the output block's `trailing` already holds it) so
    *  the raw file keeps breathing room between cells. */
-  /** No markers means a plain script: one body, no cell structure. The
-   *  chrome that serves a notebook is noise on a file, and gaining a cell
-   *  gives the document structure for that chrome to act on again. */
-  private syncPlain() {
-    document.body.dataset.plain = this.doc.cells.length === 0 ? 'true' : '';
+  /** The body carries the view for CSS: 'source' strips the notebook
+   *  chrome down to one raw editor. data-cells gates the floating toggle
+   *  into cell view on whether the text has markers to act on. */
+  private syncView() {
+    document.body.dataset.view = this.sourceMode ? 'source' : '';
+    document.body.dataset.cells = this.doc.cells.length > 0 ? 'true' : '';
   }
 
   private syncModel(v: CellView, text: string) {
     if (v.isPreamble) {
+      if (this.sourceMode) {
+        // Source view edits the raw file. Reparse for the model — saving
+        // serializes it back byte-identically — but never rebuild the
+        // view: the editor's undo history survives, and cell view is a
+        // deliberate toggle (setSource), not a side effect of typing.
+        const raw = text.replace(/\n+$/, '');
+        const reparsed = parseDocument(raw === '' ? '' : raw + '\n');
+        reparsed.trailingNewline = this.doc.trailingNewline;
+        this.doc = reparsed;
+        this.syncView();
+        return;
+      }
       const lines = text.replace(/\n+$/, '').split('\n');
-      // The text as it stood before this edit: conversion below rebuilds
-      // the editors, losing their undo history, so this is what one ⌘Z
-      // gives back.
-      const before = this.doc.preamble;
-      const trailingNewline = this.doc.trailingNewline;
       if (this.views.length > 0) lines.push('');
       this.doc.preamble = lines;
-      // A plain file that grows a marker has become a cell document. With
-      // no cell buttons to press, typing "# %%" is the way in, so re-read
-      // it rather than leave the text looking structured and behaving flat.
-      if (this.views.length === 0 && lines.some((line) => /^# ?%%/.test(line))) {
-        const reparsed = parseDocument(
-          serializeDocument({ preamble: lines, cells: [], trailingNewline: true }),
-        );
-        if (reparsed.cells.length > 0) {
-          queueMicrotask(() => {
-            this.setDoc(reparsed);
-            this.onChange();
-            this.onUndoable?.(() => {
-              this.setDoc({ preamble: before, cells: [], trailingNewline });
-              this.onChange();
-              this.preambleView?.editor?.focus();
-            }, 'Cells created — ⌘Z restores the plain file');
-          });
-        }
-      }
       return;
     }
     if (v.cell.kind === 'text') {
@@ -237,6 +229,29 @@ export class DocumentView {
   }
 
   setDoc(doc: KnuthDocument) {
+    this.doc = doc;
+    // Open in the view that fits: cells when the file has markers, the
+    // raw source editor when it does not.
+    this.sourceMode = doc.cells.length === 0;
+    this.render();
+  }
+
+  /** Whether the raw single-editor source view is showing. */
+  get isSource(): boolean {
+    return this.sourceMode;
+  }
+
+  /** Switch between the raw source editor and the cell view. Cell view
+   *  needs markers to act on; without any, the switch refuses. */
+  setSource(on: boolean) {
+    if (on === this.sourceMode) return;
+    if (!on && this.doc.cells.length === 0) return;
+    this.sourceMode = on;
+    this.render();
+    (this.preambleView ?? this.views[0])?.editor?.focus();
+  }
+
+  private render() {
     for (const v of this.views) {
       clearSafeSvgImages(v.figsEl);
       v.editor?.destroy();
@@ -246,24 +261,39 @@ export class DocumentView {
     this.views = [];
     this.preambleView = null;
     this.container.textContent = '';
-    this.doc = doc;
     this.endZone = this.buildZone(null);
     this.container.append(this.endZone);
-    // A plain script (or jupytext header) is the implicit cell zero —
-    // without this, a markerless .py renders as a blank sheet.
-    this.syncPlain();
-    if (doc.preamble.some((l) => l.trim() !== '')) {
+    this.syncView();
+    if (this.sourceMode) {
+      // The whole file in one editor, markers and receipts as honest
+      // text; round-tripping makes the reparse on edit lossless.
+      const text = serializeDocument(this.doc).replace(/\n+$/, '');
       const pseudo: Cell = {
         kind: 'program',
         marker: '',
-        source: [...doc.preamble],
+        source: text.split('\n'),
+        output: [],
+        trailing: [],
+      };
+      this.preambleView = this.buildView(pseudo, true);
+      this.endZone.before(this.preambleView.root);
+      this.markAllStale();
+      return;
+    }
+    // The jupytext header (or any preamble) is the implicit cell zero —
+    // without this it would render as a blank gap above the first cell.
+    if (this.doc.preamble.some((l) => l.trim() !== '')) {
+      const pseudo: Cell = {
+        kind: 'program',
+        marker: '',
+        source: [...this.doc.preamble],
         output: [],
         trailing: [],
       };
       this.preambleView = this.buildView(pseudo, true);
       this.endZone.before(this.preambleView.root);
     }
-    for (const cell of doc.cells) {
+    for (const cell of this.doc.cells) {
       const view = this.buildView(cell);
       this.views.push(view);
       this.endZone.before(view.root);
@@ -651,7 +681,7 @@ export class DocumentView {
    *  sequence insertAt and delete-restore share, so they cannot drift. */
   private spliceIn(i: number, cell: Cell) {
     this.doc.cells.splice(i, 0, cell);
-    this.syncPlain();
+    this.syncView();
     const view = this.buildView(cell);
     this.views.splice(i, 0, view);
     if (i + 1 < this.views.length) this.views[i + 1].root.before(view.root);
@@ -690,7 +720,7 @@ export class DocumentView {
     const i = this.views.indexOf(v);
     const cell = v.cell;
     this.doc.cells.splice(i, 1);
-    this.syncPlain();
+    this.syncView();
     this.views.splice(i, 1);
     v.editor?.destroy();
     v.root.remove();

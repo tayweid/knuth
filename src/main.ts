@@ -63,6 +63,9 @@ toolbar.innerHTML = `
     ${labeled('stop', icon('stop'), 'Stop', 'Interrupt the running cell')}
     ${labeled('restart', icon('restart'), 'Restart', 'Fresh session (kernel process replaced)')}
   </div>
+  <div class="tb-pod tb-group" id="view-pod">
+    ${labeled('view-source', icon('code'), 'Source', 'Edit the raw file — markers and receipts as text (⌘⇧E)')}
+  </div>
   <div class="tb-pod tb-group">
     ${labeled('toggle-panel', icon('panel'), 'Session', 'Show/hide the session panes')}
     <button type="button" id="install-app" hidden>Install</button>
@@ -365,6 +368,18 @@ flyout($('doc-pod'), icon('open'), 'File — new, open, recent', [
   },
 ]);
 
+$('view-source').addEventListener('click', () => docView.setSource(true));
+
+// The way back from an edge-to-edge source file: a floating pill, shown
+// by CSS only in source view and only when the text has markers for cell
+// view to act on.
+const viewCells = document.createElement('button');
+viewCells.id = 'view-cells';
+viewCells.title = 'Cell view (⌘⇧E)';
+viewCells.innerHTML = `${icon('code')}<span class="lbl">Cells</span>`;
+viewCells.addEventListener('click', () => docView.setSource(false));
+document.body.append(viewCells);
+
 $('add-code').addEventListener('click', () => docView.insertRelative('program'));
 $('add-scratch').addEventListener('click', () => docView.insertRelative('scratch'));
 $('add-text').addEventListener('click', () => docView.insertRelative('text'));
@@ -396,6 +411,10 @@ window.addEventListener(
     } else if (key === 'o') {
       e.preventDefault();
       void fileManager.open();
+    } else if (key === 'e' && e.shiftKey) {
+      // Toggle between the raw source editor and the cell view.
+      e.preventDefault();
+      docView.setSource(!docView.isSource);
     } else if (key === 'z' && !e.shiftKey && pendingRestore) {
       // The undo the user means: reverse the structural change.
       e.preventDefault();

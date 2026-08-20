@@ -305,7 +305,7 @@ test('a file opened from a folder Knuth already holds does not ask again', async
   expect(adopted.differentFolder).toBe(false);
 });
 
-test('a script with no cells opens as a file, and gains the workbench when given one', async ({ page }) => {
+test('a script opens as edge-to-edge source, and cell view is a deliberate toggle', async ({ page }) => {
   // Seed the session the way a reload would, with a plain script: no markers,
   // so it parses to one body and zero cells.
   await page.addInitScript(() => {
@@ -318,11 +318,11 @@ test('a script with no cells opens as a file, and gains the workbench when given
   await page.goto('/');
   await expect(page.locator('#kernel-status')).toHaveText('kernel');
 
-  await expect(page.locator('body')).toHaveAttribute('data-plain', 'true');
+  await expect(page.locator('body')).toHaveAttribute('data-view', 'source');
   const hidden = ['.run', '.badge', '.insert-zone', '#panel', '#run-all', '#restart',
                   '#cells-pod'];
   for (const gone of hidden) {
-    await expect(page.locator(gone).first(), `${gone} is noise on a plain file`)
+    await expect(page.locator(gone).first(), `${gone} is noise on a source file`)
       .toBeHidden();
   }
   // The text itself is still there, still editable, and numbered.
@@ -338,27 +338,39 @@ test('a script with no cells opens as a file, and gains the workbench when given
     .toBe('0px');
   expect(await page.locator('.cell .cm-editor').first()
     .evaluate((el) => getComputedStyle(el).borderTopWidth)).toBe('0px');
+  // With no markers, cell view has nothing to act on: no way in is offered.
+  await expect(page.locator('#view-cells')).toBeHidden();
 
-  // With no cell buttons, typing a marker is the way in — and it has to work,
-  // or a file that looks structured would keep behaving flat.
+  // Typing a marker converts nothing — it just opens the door. The view
+  // stays put and the editor's own undo history keeps working.
   await page.locator('.cm-content').first().click();
   await page.keyboard.press('ControlOrMeta+ArrowUp');
   await page.keyboard.type('# %%\n');
+  await expect(page.locator('body')).toHaveAttribute('data-view', 'source');
+  await expect(page.locator('#toolbar')).toBeHidden();
+  await expect(page.locator('#view-cells')).toBeVisible();
 
-  await expect(page.locator('body')).toHaveAttribute('data-plain', '');
-  await expect(page.locator('.run').first()).toBeVisible();
-  await expect(page.locator('#run-all')).toBeVisible();
-  await expect(page.locator('#cells-pod')).toBeVisible();
+  // ⌘Z is plain editor undo: the typed marker comes back out, and the
+  // door closes again.
+  for (let i = 0; i < 6; i += 1) await page.keyboard.press('ControlOrMeta+z');
+  await expect(page.locator('.cm-content').first()).not.toContainText('%%');
+  await expect(page.locator('.cm-content').first()).toContainText('import math');
+  await expect(page.locator('#view-cells')).toBeHidden();
+
+  // With a marker in place, the floating pill switches to cell view...
+  await page.keyboard.type('# %%\nx = 1\n');
+  await page.locator('#view-cells').click();
+  await expect(page.locator('body')).toHaveAttribute('data-view', '');
   await expect(page.locator('#toolbar')).toBeVisible();
+  await expect(page.locator('.run').first()).toBeVisible();
+  await expect(page.locator('#cells-pod')).toBeVisible();
   expect(await sheetCap()).not.toBe('none');
 
-  // Conversion rebuilt the editors, so their own history cannot undo it;
-  // one ⌘Z is the lifeline back to the plain file, marker gone.
-  await page.keyboard.press('ControlOrMeta+z');
-  await expect(page.locator('body')).toHaveAttribute('data-plain', 'true');
+  // ...and the toolbar's Source button switches back, markers intact.
+  await page.locator('#view-source').click();
+  await expect(page.locator('body')).toHaveAttribute('data-view', 'source');
   await expect(page.locator('#toolbar')).toBeHidden();
-  await expect(page.locator('.cm-content').first()).toContainText('import math');
-  await expect(page.locator('.cm-content').first()).not.toContainText('%%');
+  await expect(page.locator('.cm-content').first()).toContainText('# %%');
 });
 
 test('a full engine and a failed Python say different things', async ({ page }) => {
