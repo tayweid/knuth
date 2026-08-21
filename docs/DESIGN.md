@@ -112,6 +112,15 @@ and makes pyrmd the computation half.
 - Scratch cells: `# %% scratch` — DECIDED: the exact token `scratch`
   after the marker; any other suffix (titles, `tags=[...]`) stays a
   program cell, so jupytext-written files parse unchanged.
+  - DECIDED (2026-08-21): scratch **bodies are stored commented out**
+    (`# `-prefixed, like text-cell prose), so bare `python file.py` never
+    executes scratch — the whole file's plain-python behavior is exactly
+    its program cells. The app and the parsers uncomment for display and
+    interactive run; `#-> ` receipt lines are already comments and stay
+    as-is. A body line that would read as a marker after prefixing gets
+    the same extra-`# ` escape the ipynb importer uses. Not yet
+    implemented (see ROADMAP.md); both parsers, the corpus, and existing
+    files' migration must move together.
 - **Outputs are stored inside the `.py`** as machine-managed comment blocks
   under their cell (text reprs, stdout). Figures are NOT embedded — they
   already live as `figs/<name>.svg` via auto-persistence, so the output
@@ -157,9 +166,9 @@ and makes pyrmd the computation half.
 
 1. Tables in the contract — dataframe → csv that Plass could import/
    reference, or manual? Parked (follows from "no .typ emission").
-2. Scratch cells under bare `python file.py` — they execute (they're real
-   code) and may error against ephemeral state. Does plain-python parity
-   matter enough to guard, or is `pyrmd run` the canonical runner?
+2. DECIDED (2026-08-21) — see "File format": scratch bodies are stored
+   commented out, so they are inert under bare `python file.py`.
+   Implementation is on the roadmap.
 3. DECIDED — see "File format": scratch tag is the exact token
    `# %% scratch`; outputs are trailing `#-> ` comment runs, no
    delimiters.

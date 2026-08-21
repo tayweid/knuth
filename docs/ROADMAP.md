@@ -17,6 +17,14 @@ question that still needs one.
   file); the engine being local makes this resolvable without the browser.
   Needed before the app and `knuth run` feel like one tool.
 
+- **Commented scratch bodies.** DECIDED 2026-08-21 (DESIGN.md, file
+  format): scratch cells store their code `# `-prefixed so bare
+  `python file.py` runs only program cells. Touches both percent parsers
+  and the corpus in one move (corpus-structure.json is the pin), the app
+  editor (uncomment for display/edit), the ipynb importer's marker-escape
+  rule, and a one-time migration of existing scratch cells — `knuth run`
+  can rewrite them the way it canonicalizes CRLF.
+
 ### Release gates (carried from HARDENING_PLAN.md, retired 2026-08-18)
 
 - Serve the hosted demo through a host/proxy capable of production response
