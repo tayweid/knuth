@@ -504,6 +504,11 @@ body:not([data-plain='true']):has(#panel:not([hidden])) #toolbar {
      panel's fixed 350px stacks on top of this. */
   min-width: 640px;
   overflow-y: auto;
+  /* Never sideways: everything in the room wraps (editors, outputs), and
+     wide receipts scroll inside their own boxes. Without this, anything
+     poking past the edge — the .cell::after hover bridge, mainly — turns
+     into a phantom 24px page scroll with the room showing through. */
+  overflow-x: hidden;
   /* The bar floats over the room; content starts below it and scrolls
      beneath it, Plass-style. */
   padding: calc(60px + 1.5rem) 1.5rem 40vh;
@@ -1112,6 +1117,13 @@ body[data-view='source'] #doc {
 
 body[data-view='source'] .cell {
   padding: 0;
+}
+
+/* The hover bridge reaches toward a kind picker this view hides, and on
+   a full-width cell its width degenerates to a bare 1.5rem hanging past
+   the window's edge. Nothing to bridge to: no bridge. */
+body[data-view='source'] .cell::after {
+  display: none;
 }
 
 body[data-view='source'] .cell .cm-editor,
