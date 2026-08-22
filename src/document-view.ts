@@ -11,7 +11,7 @@
 import { minimalSetup, EditorView } from 'codemirror';
 import { keymap, lineNumbers, placeholder } from '@codemirror/view';
 import { Compartment, type Extension } from '@codemirror/state';
-import { foldGutter, foldKeymap } from '@codemirror/language';
+import { foldGutter, foldKeymap, indentUnit } from '@codemirror/language';
 import { indentationMarkers } from '@replit/codemirror-indentation-markers';
 import { python } from '@codemirror/lang-python';
 import { markdown } from '@codemirror/lang-markdown';
@@ -194,6 +194,11 @@ export class DocumentView {
     // folds — bodies of defs, classes, loops), and indent guides.
     return [
       python(),
+      // CodeMirror's indent-unit facet defaults to TWO spaces and python()
+      // does not correct it — auto-indent was stepping by 2, and the
+      // indent guides drew a phantom bar at every half level of 4-space
+      // code. Python's unit is four.
+      indentUnit.of('    '),
       lineNumbers(),
       foldGutter(),
       indentationMarkers({
