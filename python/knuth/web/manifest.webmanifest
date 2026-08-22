@@ -34,6 +34,9 @@
       "accept": {
         "text/x-python": [
           ".py"
+        ],
+        "application/x-ipynb+json": [
+          ".ipynb"
         ]
       }
     }

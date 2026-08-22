@@ -271,7 +271,15 @@ fileManager = new FileManager({
   message: toast,
   getFigures: () => docView.collectFigures(),
   setFigures: (figures) => docView.restoreFigures(figures),
-  convert: (text) => kernel.convert(text),
+  convert: async (text) => {
+    // A file-handler launch converts at boot, usually before the socket's
+    // first attach lands — and the engine that served this page is at
+    // most a reconnect away. Wait for ready briefly instead of refusing.
+    for (let waited = 0; !kernel.isReady && waited < 5000; waited += 100) {
+      await new Promise((resolve) => setTimeout(resolve, 100));
+    }
+    return kernel.convert(text);
+  },
   onSaveBlocked: () => {
     toast(`Allow saving to ${fileManager.name}?`, {
       label: 'Allow',
@@ -456,7 +464,11 @@ window.launchQueue?.setConsumer((params) => {
   if (file && file.kind === 'file') {
     // The folder offer rides the shared onOpened hook (a launched file
     // handle can't reach its parent; the picker startIn points there).
-    void fileManager.loadHandle(file as FileSystemFileHandle).catch((e) => {
+    const handle = file as FileSystemFileHandle;
+    const opened = /\.ipynb$/i.test(handle.name)
+      ? handle.getFile().then((f) => fileManager.importNotebook(f))
+      : fileManager.loadHandle(handle);
+    void opened.catch((e) => {
       console.warn('Launched file failed to open', e);
       toast('Could not open the launched file — try again');
     });
