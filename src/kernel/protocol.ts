@@ -33,6 +33,15 @@ export interface Artifacts {
   figures: Record<string, string>;
 }
 
+export interface ConvertResult {
+  /** Percent-format document text, when conversion succeeded. */
+  text?: string;
+  /** What made the input not a notebook, when it failed. */
+  error?: string;
+  /** Lines the converter had to comment out (magics, raw cells). */
+  commented?: number;
+}
+
 export interface TableWindow {
   name: string;
   error?: string;
@@ -56,6 +65,7 @@ export type ServerEvent =
   | { type: 'artifacts'; id: number; values: Record<string, unknown>; figures: Record<string, string> }
   | ({ type: 'table'; id: number } & TableWindow)
   | ({ type: 'figure'; id: number } & FigureResult)
+  | ({ type: 'converted'; id: number } & ConvertResult)
   | { type: 'protocol_error'; error: string; request?: string; id?: number }
   | { type: 'kernel_exit'; error: string; returncode?: number; id?: number }
   | { type: 'server_busy'; error: string }
@@ -134,6 +144,12 @@ export function parseServerEvent(value: unknown): ServerEvent | null {
     case 'figure':
       return isRequestId(event.id) && typeof event.name === 'string' &&
         optionalString(event.svg) && optionalString(event.error) ? event as ServerEvent : null;
+    case 'converted':
+      return isRequestId(event.id) &&
+        (typeof event.text === 'string' || typeof event.error === 'string') &&
+        optionalString(event.text) && optionalString(event.error) &&
+        (event.commented === undefined || isRequestId(event.commented))
+        ? event as ServerEvent : null;
     case 'table':
       return isRequestId(event.id) && typeof event.name === 'string' &&
         optionalString(event.error) && optionalStringArray(event.columns) &&

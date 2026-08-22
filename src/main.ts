@@ -271,6 +271,7 @@ fileManager = new FileManager({
   message: toast,
   getFigures: () => docView.collectFigures(),
   setFigures: (figures) => docView.restoreFigures(figures),
+  convert: (text) => kernel.convert(text),
   onSaveBlocked: () => {
     toast(`Allow saving to ${fileManager.name}?`, {
       label: 'Allow',

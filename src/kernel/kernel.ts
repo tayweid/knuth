@@ -17,6 +17,7 @@ import {
   PROTOCOL_VERSION,
   parseServerEvent,
   type Artifacts,
+  type ConvertResult,
   type FigureResult,
   type NamespaceVar,
   type ServerEvent,
@@ -27,6 +28,7 @@ import {
 export { PROTOCOL_VERSION } from './protocol.ts';
 export type {
   Artifacts,
+  ConvertResult,
   FigureResult,
   NamespaceVar,
   StreamWhich,
@@ -66,6 +68,8 @@ export interface Kernel {
   artifacts(): Promise<Artifacts | null>;
   table(name: string, offset?: number, limit?: number): Promise<TableWindow | null>;
   figure(name: string): Promise<FigureResult | null>;
+  /** .ipynb JSON in, percent-format document text out (null: no engine). */
+  convert(text: string): Promise<ConvertResult | null>;
   close(): void;
 }
 
@@ -112,6 +116,7 @@ export class SidecarKernel implements Kernel {
   private artifactsWaiters = new Map<number, (artifacts: Artifacts | null) => void>();
   private tableWaiters = new Map<number, (window: TableWindow | null) => void>();
   private figureWaiters = new Map<number, (result: FigureResult | null) => void>();
+  private convertWaiters = new Map<number, (result: ConvertResult | null) => void>();
   private restartWaiters = new Map<number, () => void>();
   constructor(
     private url: string = kernelUrl(),
@@ -200,6 +205,8 @@ export class SidecarKernel implements Kernel {
     this.tableWaiters.clear();
     for (const resolve of this.figureWaiters.values()) resolve(null);
     this.figureWaiters.clear();
+    for (const resolve of this.convertWaiters.values()) resolve(null);
+    this.convertWaiters.clear();
     for (const resolve of this.restartWaiters.values()) resolve();
     this.restartWaiters.clear();
   }
@@ -269,6 +276,11 @@ export class SidecarKernel implements Kernel {
         this.figureWaiters.delete(msg.id);
         break;
       }
+      case 'converted': {
+        this.convertWaiters.get(msg.id)?.(msg);
+        this.convertWaiters.delete(msg.id);
+        break;
+      }
       case 'protocol_error': {
         this.rejectRequest(msg);
         break;
@@ -327,6 +339,10 @@ export class SidecarKernel implements Kernel {
       case 'figure':
         this.figureWaiters.get(msg.id)?.(null);
         this.figureWaiters.delete(msg.id);
+        break;
+      case 'convert':
+        this.convertWaiters.get(msg.id)?.({ error: reason });
+        this.convertWaiters.delete(msg.id);
         break;
       case 'restart':
         this.restartWaiters.get(msg.id)?.();
@@ -410,6 +426,15 @@ export class SidecarKernel implements Kernel {
     return new Promise((resolve) => {
       this.figureWaiters.set(id, resolve);
       this.send({ type: 'figure', id, name });
+    });
+  }
+
+  async convert(text: string): Promise<ConvertResult | null> {
+    if (!this.connectedReady) return null;
+    const id = this.nextId++;
+    return new Promise((resolve) => {
+      this.convertWaiters.set(id, resolve);
+      this.send({ type: 'convert', id, text });
     });
   }
 

@@ -87,6 +87,23 @@ def test_things_that_are_not_notebooks_are_refused(text, message):
         notebook_to_document(text)
 
 
+def test_convert_request_rides_the_same_converter():
+    """The app's convert request (server.py) answers with this converter."""
+    from knuth.server import _convert_response
+
+    msg = _convert_response({"id": 9, "text": notebook(code("%time 1", "y = 2"))})
+    assert msg == {
+        "type": "converted",
+        "id": 9,
+        "text": "# %%\n# %time 1\ny = 2\n",
+        "commented": 1,
+    }
+
+    refusal = _convert_response({"id": 10, "text": "not json"})
+    assert refusal["type"] == "converted" and refusal["id"] == 10, refusal
+    assert "invalid JSON" in refusal["error"] and "text" not in refusal, refusal
+
+
 def test_import_files_converts_and_never_overwrites(tmp_path):
     lines = []
     echo = lines.append

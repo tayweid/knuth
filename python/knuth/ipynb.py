@@ -1,8 +1,9 @@
 """Import Jupyter notebooks: .ipynb in, percent-format .py out.
 
 One-way by design (DESIGN.md: the document is a plain .py file), and
-implemented once, in Python — the app opens the .py this writes rather
-than growing a second converter in TypeScript.
+implemented once, in Python — the app converts through the server's
+`convert` request (server.py) rather than growing a second converter
+in TypeScript.
 
 The mapping (decided 2026-08-19):
 - code cell -> program cell; magic and shell-escape lines (%..., !...)

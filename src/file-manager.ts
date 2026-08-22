@@ -20,13 +20,50 @@ export interface FileHooks {
   /** Displayed figures per cell, for the session stash / its restore. */
   getFigures?(): Array<string[] | null>;
   setFigures?(figures: Array<string[] | null>): void;
+  /** .ipynb JSON → percent-format text, via the engine's one converter
+   *  (null: no engine connection). */
+  convert?(text: string): Promise<{ text?: string; error?: string; commented?: number } | null>;
 }
 
+// One picker type, both extensions: a notebook is openable, it just
+// arrives converted — a separate filter entry would hide .py files
+// exactly when someone is looking for either.
 const PY_TYPE: FilePickerType[] = [
-  { description: 'Python cell documents', accept: { 'text/x-python': ['.py'] } },
+  {
+    description: 'Python cell documents',
+    accept: {
+      'text/x-python': ['.py'],
+      'application/x-ipynb+json': ['.ipynb'],
+    },
+  },
 ];
 
 const NEW_DOC = '# %%\n';
+
+// The engine's inbound frame cap (limits.py MAX_INBOUND_MESSAGE_BYTES,
+// minus envelope slack): an oversized frame closes the socket instead of
+// answering, so the refusal has to happen here, politely.
+const MAX_CONVERT_WIRE_BYTES = 1024 * 1024 - 1024;
+
+/** Outputs dominate a notebook's bytes and the converter drops them
+ *  anyway: send only what conversion reads, so real notebooks fit under
+ *  the engine's frame cap. Anything unparseable passes through as-is —
+ *  the engine's converter is the one voice for naming a bad notebook. */
+function slimNotebook(raw: string): string {
+  try {
+    const data = JSON.parse(raw) as { nbformat?: unknown; cells?: unknown };
+    if (!Array.isArray(data.cells)) return raw;
+    return JSON.stringify({
+      nbformat: data.nbformat,
+      cells: data.cells.map((cell) => {
+        const { cell_type, source } = (cell ?? {}) as Record<string, unknown>;
+        return { cell_type, source };
+      }),
+    });
+  } catch {
+    return raw;
+  }
+}
 /** The default document name. It is what the browser tab shows, so it says
  *  which app the tab is rather than that the file is nameless. */
 export const DEFAULT_DOC_NAME = 'Knuth.py';
@@ -244,10 +281,45 @@ export class FileManager {
     }
     try {
       const [handle] = await window.showOpenFilePicker!({ types: PY_TYPE });
-      await this.loadHandle(handle);
+      if (/\.ipynb$/i.test(handle.name)) {
+        await this.importNotebook(await handle.getFile());
+      } else {
+        await this.loadHandle(handle);
+      }
     } catch (e) {
       if ((e as DOMException)?.name !== 'AbortError') console.warn(e);
     }
+  }
+
+  /** Open a notebook: the engine converts, and the document arrives as an
+   *  unsaved .py named after it — saving writes the .py wherever the save
+   *  flow lands it; the .ipynb itself is never touched (one-way import). */
+  async importNotebook(file: File) {
+    if (!this.hooks.convert) return;
+    const slimmed = slimNotebook(await file.text());
+    if (new TextEncoder().encode(JSON.stringify(slimmed)).length > MAX_CONVERT_WIRE_BYTES) {
+      this.hooks.message(`${file.name} is too large to import here — run: knuth import`);
+      return;
+    }
+    const result = await this.hooks.convert(slimmed);
+    if (!result) {
+      this.hooks.message('Importing a notebook needs the engine — is it running?');
+      return;
+    }
+    if (typeof result.text !== 'string') {
+      this.hooks.message(`Could not import ${file.name}: ${result.error ?? 'no conversion result'}`);
+      return;
+    }
+    this.hooks.setDoc(parseDocument(result.text));
+    this.handle = null;
+    this.pendingHandle = null;
+    this.name = file.name.replace(/\.ipynb$/i, '.py');
+    this.dirty = true;
+    this.writeBlockedNotified = false;
+    this.hooks.onState();
+    const note = result.commented ? `, ${result.commented} line(s) commented out` : '';
+    this.hooks.message(`Imported ${file.name}${note} — saving writes ${this.name}`);
+    this.stash();
   }
 
   /** Folders the user has already granted, newest first. */
@@ -529,10 +601,14 @@ export class FileManager {
   private openViaInput() {
     const input = document.createElement('input');
     input.type = 'file';
-    input.accept = '.py';
+    input.accept = '.py,.ipynb';
     input.onchange = async () => {
       const file = input.files?.[0];
       if (!file) return;
+      if (/\.ipynb$/i.test(file.name)) {
+        await this.importNotebook(file);
+        return;
+      }
       this.hooks.setDoc(parseDocument(await file.text()));
       this.handle = null;
       this.name = file.name;

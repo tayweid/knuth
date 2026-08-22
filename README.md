@@ -95,6 +95,10 @@ overwriting an existing file. Outputs are dropped (`knuth run` regenerates
 them as receipts), and magic or shell-escape lines, which are not Python,
 arrive commented out.
 
+The app speaks the same conversion: Open accepts a `.ipynb`, the engine
+converts it, and the document arrives as an unsaved `.py` — saving writes
+the `.py`; the notebook itself is never touched.
+
 ## Development
 
 ```bash

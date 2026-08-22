@@ -217,6 +217,20 @@ async def check_over_websocket():
             assert msg["type"] == "namespace" and msg["id"] == 30, msg
             assert names["x"]["preview"] == "42", msg
 
+            # convert answers in-server — notebook JSON in, percent text
+            # out — and never touches the kernel.
+            await c.send(type="convert", id=31, text=json.dumps({
+                "nbformat": 4,
+                "cells": [{"cell_type": "code", "source": ["x = 1\n"]}],
+            }))
+            msg = await c.recv()
+            assert msg == {
+                "type": "converted", "id": 31, "text": "# %%\nx = 1\n", "commented": 0,
+            }, msg
+            await c.send(type="convert", id=32, text=7)
+            msg = await c.recv()
+            assert msg["type"] == "protocol_error" and msg["request"] == "convert", msg
+
             # Interrupt: stop an infinite loop, session stays usable.
             await c.send(type="run", id=6, code="import time\nwhile True: time.sleep(0.05)")
             await asyncio.sleep(0.4)

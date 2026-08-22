@@ -93,6 +93,15 @@ ok({ type: 'figure', id: 8, name: 'fig', error: 'no such figure' });
 bad({ type: 'figure', id: 8, svg: '<svg/>' });
 bad({ type: 'figure', id: 8, name: 'fig', svg: 7 });
 
+// converted: text or error required; commented optional but counted.
+ok({ type: 'converted', id: 8, text: '# %%\nx = 1\n' });
+ok({ type: 'converted', id: 8, text: '# %%\n', commented: 3 });
+ok({ type: 'converted', id: 8, error: 'not a notebook (invalid JSON)' });
+bad({ type: 'converted', id: 8 });
+bad({ type: 'converted', text: '# %%\n' });
+bad({ type: 'converted', id: 8, text: 7 });
+bad({ type: 'converted', id: 8, text: '# %%\n', commented: -1 });
+
 // protocol_error / kernel_exit: error required, correlation optional.
 ok({ type: 'protocol_error', error: 'bad request', request: 'table', id: 9 });
 ok({ type: 'protocol_error', error: 'bad frame' });

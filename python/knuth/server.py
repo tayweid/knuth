@@ -34,6 +34,8 @@ import uuid
 import websockets
 
 from . import web
+from .ipynb import notebook_to_document
+from .percent import serialize_document
 from .limits import (
     HANDSHAKE_TIMEOUT_SECONDS,
     MAX_CODE_BYTES,
@@ -173,6 +175,7 @@ def _validate_request(msg):
         "artifacts",
         "figure",
         "table",
+        "convert",
     }:
         return "unknown request type"
     if kind != "interrupt":
@@ -187,6 +190,9 @@ def _validate_request(msg):
             return f"run code exceeds the {MAX_CODE_BYTES}-byte limit"
         if "scratch" in msg and not isinstance(msg["scratch"], bool):
             return "run scratch must be a boolean"
+    elif kind == "convert":
+        if not isinstance(msg.get("text"), str):
+            return "convert text must be a string"
     elif kind in {"figure", "table"}:
         name = msg.get("name")
         if not isinstance(name, str) or len(name) > MAX_NAME_CHARS:
@@ -199,6 +205,25 @@ def _validate_request(msg):
             if type(limit) is not int or not 1 <= limit <= MAX_TABLE_LIMIT:
                 return f"table limit must be an integer from 1 to {MAX_TABLE_LIMIT}"
     return None
+
+
+def _convert_response(msg):
+    """Answer a convert request: .ipynb JSON in, percent-format text out.
+
+    The notebook importer is pure text transformation (ipynb.py), so the
+    server answers directly — the kernel is never involved, and the one
+    converter stays the Python one.
+    """
+    try:
+        doc, commented = notebook_to_document(msg["text"])
+    except ValueError as error:
+        return {"type": "converted", "id": msg["id"], "error": str(error)}
+    return {
+        "type": "converted",
+        "id": msg["id"],
+        "text": serialize_document(doc),
+        "commented": commented,
+    }
 
 
 async def _pump(kernel, ws, ready_id=None):
@@ -409,6 +434,8 @@ async def serve(
                 kind = msg.get("type")
                 if kind == "interrupt":
                     session.kernel.interrupt()
+                elif kind == "convert":
+                    await ws.send(json.dumps(_convert_response(msg)))
                 elif kind == "restart":
                     session.pump_task.cancel()
                     await asyncio.gather(session.pump_task, return_exceptions=True)
