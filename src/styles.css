@@ -585,26 +585,38 @@ body[data-view='source'] .cell .run-num { visibility: visible; }
 
 .cell .run {
   position: absolute;
-  inset: 0 3px 0 2px;
+  /* The holder is the one-line cell's WHOLE gutter: half a rem above
+     and below line 1's slot (the editor's own vertical padding), which
+     spans band top to band bottom when there is one line — and taller
+     cells keep exactly that holder, bottom edge where the one-line
+     cell's would be. */
+  left: 0;
+  right: 0;
+  top: -0.5rem;
+  height: calc(100% + 1rem);
   display: flex;
   align-items: center;
   justify-content: center;
   border: 1px solid var(--glass-border);
   border-radius: 6px;
   padding: 0;
-  background: var(--glass);
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
+  /* Toolbar glass, pre-composited over the gutter band (blur would
+     smudge the digit this holder covers). */
+  background: color-mix(in srgb, #17161a 80%, #2b2f37);
   color: #6ea576;
   cursor: pointer;
   font-size: 9px;
   transition: color 0.12s, background 0.12s;
 }
 
+.cell.kind-scratch .run {
+  background: color-mix(in srgb, #17161a 80%, var(--bg));
+}
+
 .cell .run::before { content: '▶'; }
 .cell.running .run::before { content: '■'; }
 
-.cell .run:hover { color: #8fc79a; background: color-mix(in srgb, #17161a 65%, transparent); }
+.cell .run:hover { color: #8fc79a; background: color-mix(in srgb, #17161a 62%, #2b2f37); }
 .cell.running .run { color: #cd6452; }
 
 .cell .body { flex: 1; min-width: 0; }
