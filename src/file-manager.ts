@@ -23,6 +23,9 @@ export interface FileHooks {
   /** .ipynb JSON → percent-format text, via the engine's one converter
    *  (null: no engine connection). */
   convert?(text: string): Promise<{ text?: string; error?: string; commented?: number } | null>;
+  /** The open file changed on disk under a clean document (an outside
+   *  editor, knuth run receipts): here is its fresh parse. */
+  onDiskChange?(doc: KnuthDocument): void;
 }
 
 // One picker type, both extensions: a notebook is openable, it just
@@ -115,11 +118,42 @@ export class FileManager {
   readonly supportsFS = typeof window.showOpenFilePicker === 'function';
   private saveTimer = 0;
   private stashTimer = 0;
+  /** lastModified of the disk version this document reflects (read or
+   *  written by us) — the watcher's baseline for "someone else wrote". */
+  private diskModified = 0;
 
   constructor(private hooks: FileHooks) {
     document.addEventListener('visibilitychange', () => {
       if (document.visibilityState === 'hidden') void this.flush();
+      // Coming back from the outside editor is exactly when a disk
+      // change is most likely — don't make the return wait for a tick.
+      else void this.pollDisk();
     });
+    window.setInterval(() => void this.pollDisk(), 1500);
+  }
+
+  /** External edits, hot-reloaded. The File System Access API has no
+   *  stable change events, so the handle is polled: lastModified is a
+   *  cheap metadata read, and our own writes advance diskModified in
+   *  write() so a poll only ever fires for a writer that is not us. A
+   *  dirty document never reloads — its autosave is about to overwrite
+   *  disk anyway (last writer wins, the same rule two autosaving windows
+   *  already live by). */
+  private async pollDisk() {
+    if (!this.handle || this.dirty) return;
+    let file: File;
+    try {
+      file = await this.handle.getFile();
+    } catch {
+      return; // moved, deleted, or permission lapsed — surfaces on save
+    }
+    if (file.lastModified === this.diskModified) return;
+    this.diskModified = file.lastModified;
+    const text = await file.text();
+    if (text === serializeDocument(this.hooks.getDoc())) return;
+    this.hooks.onDiskChange?.(parseDocument(text));
+    this.hooks.message(`${this.name} changed on disk — reloaded`);
+    this.stash();
   }
 
   /** Call on every document change: marks dirty, schedules a disk autosave
@@ -262,6 +296,8 @@ export class FileManager {
     const writable = await handle.createWritable();
     await writable.write(serializeDocument(this.hooks.getDoc()));
     await writable.close();
+    // Our own write is not an external change: move the baseline past it.
+    this.diskModified = (await handle.getFile()).lastModified;
   }
 
   newDoc() {
@@ -367,6 +403,7 @@ export class FileManager {
     const file = await handle.getFile();
     this.hooks.setDoc(parseDocument(await file.text()));
     this.handle = handle;
+    this.diskModified = file.lastModified;
     this.name = file.name;
     this.dirty = false;
     this.writeBlockedNotified = false;

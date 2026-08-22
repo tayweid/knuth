@@ -286,6 +286,13 @@ fileManager = new FileManager({
       run: () => void fileManager.grantWrite(),
     });
   },
+  onDiskChange: (doc) => {
+    // Same document, fresh from disk (knuth run receipts, an outside
+    // editor): replace in place and keep the session — restarting on
+    // every external save would kill exploration state mid-thought.
+    docView.setDoc(doc);
+    if (fileManager.dir) docView.hydrateAll();
+  },
   onOpened: () => {
     if (!fileManager.dir) {
       toast(`Opened ${fileManager.name} — attach its folder for values.json and figs/`, {
