@@ -319,7 +319,7 @@ test('a script opens as edge-to-edge source, and cell view is a deliberate toggl
   await expect(page.locator('#kernel-status')).toHaveText('kernel');
 
   await expect(page.locator('body')).toHaveAttribute('data-view', 'source');
-  const hidden = ['.run', '.badge', '.insert-zone', '#panel', '#run-all', '#restart',
+  const hidden = ['.run', '.insert-zone', '#panel', '#run-all', '#restart',
                   '#cells-pod'];
   for (const gone of hidden) {
     await expect(page.locator(gone).first(), `${gone} is noise on a source file`)

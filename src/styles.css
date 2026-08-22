@@ -570,52 +570,45 @@ body:not([data-plain='true']):has(#panel:not([hidden])) #toolbar {
   position: relative;
 }
 
-/* Out of the flow, and ON the card: one quiet capsule holds the run
-   control and state dot, sitting over the editor's own number column
-   (the space where lines 1–2 keep their digits), so the cell spends no
-   side column on apparatus and the editor gets the full measure. Solid
-   — the capsule covers the digits beneath rather than tangling with
-   them; its fill is the gutter band's composite color (One Dark's
-   #282c34 under its 2.2% white wash). */
+/* Out of the flow, and ON the card: the run control IS the first line
+   of the number column — a full-width segment where line 1 keeps its
+   digit. No dot: staleness already shows on the cell's amber edge, and
+   running shows on this control itself (▶ becomes ■, click interrupts). */
 .cell .gutter {
   position: absolute;
-  left: 2px;
-  top: 0.45rem;
-  width: 1.35rem;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 1px;
+  left: 1px;
+  top: calc(0.5rem + 1px);
+  width: 1.7rem;
   z-index: 3;
-  padding: 2px 0;
-  background: #2b2f37;
-  border: 1px solid rgba(255, 255, 255, 0.07);
-  border-radius: 999px;
 }
 
 .cell .run {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: 19px;
   border: 0;
-  background: none;
-  color: rgba(240, 238, 233, 0.35);
+  border-radius: 3px;
+  /* Solid over the digit beneath: the gutter band's composite color
+     (One Dark's #282c34 under its 2.2% white wash). */
+  background: #2b2f37;
+  color: #6ea576;
   cursor: pointer;
-  font-size: 11px;
-  padding: 0.1rem;
-  transition: color 0.12s;
+  font-size: 10px;
+  padding: 0;
+  transition: color 0.12s, background 0.12s;
 }
 
-.cell .run:hover { color: #9db8d6; }
-
-.cell .badge { font-size: 11px; color: var(--amber); }
-.cell .badge:empty { display: none; }
+.cell .run:hover { color: #8fc79a; background: #333844; }
+.cell.running .run { color: #cd6452; }
 
 /* Scratch editors are transparent: their gutter shows the room, so the
-   capsule matches the room — and it drops below the SCRATCH label to
+   control matches the room — and it drops below the SCRATCH label to
    sit beside line 1, like every other cell. */
-.cell.kind-scratch .gutter {
-  background: var(--bg);
-  top: calc(0.45rem + 18px);
-}
-.cell.running .badge { color: #9db8d6; }
+.cell.kind-scratch .run { background: var(--bg); }
+.cell.kind-scratch .run:hover { background: #37363a; }
+.cell.kind-scratch .gutter { top: calc(0.5rem + 1px + 18px); }
 
 .cell .body { flex: 1; min-width: 0; }
 
@@ -640,7 +633,12 @@ body:not([data-plain='true']):has(#panel:not([hidden])) #toolbar {
   color: rgba(240, 238, 233, 0.28);
 }
 
-.cell .cm-lineNumbers .cm-gutterElement { padding: 0 0.35rem 0 0.3rem; }
+.cell .cm-lineNumbers .cm-gutterElement {
+  padding: 0 0.35rem 0 0.3rem;
+  /* One width for every cell (fits 2 digits), so the code columns of
+     neighboring cards line up instead of drifting with digit count. */
+  min-width: 1.7rem;
+}
 
 /* Fold arrows share the apparatus band with the numbers: quiet until
    pointed at, like every other control in the room. */

@@ -42,6 +42,12 @@ def _raise_keyboard_interrupt(_signum, _frame):
 def _install_interrupt_handler():
     if sys.platform == "win32":
         signal.signal(signal.SIGBREAK, _raise_keyboard_interrupt)
+    else:
+        # An engine started as a shell background job inherits SIGINT as
+        # ignored, Python then leaves it ignored, and this kernel inherits
+        # that in turn — every interrupt silently vanishes. Interrupts are
+        # this process's job: claim the handler unconditionally.
+        signal.signal(signal.SIGINT, signal.default_int_handler)
 
 
 def _utf8_size(text):

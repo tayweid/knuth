@@ -74,7 +74,7 @@ interface CellView {
    *  header) — runnable and editable, but never given a marker or a
    *  stored output block, so the file stays byte-identical. */
   isPreamble?: boolean;
-  badge: HTMLElement;
+  runBtn: HTMLButtonElement;
   editor?: EditorView;
   /** Language/placeholder live in a compartment so kind switches keep the
    *  same editor — and with it, the undo history. */
@@ -232,7 +232,7 @@ export class DocumentView {
     this.syncModel(v, v.editor.state.doc.toString());
     v.stale = kind === 'program';
     v.row.className = `cell kind-${kind}`;
-    this.refreshBadge(v);
+    this.refreshRunControl(v);
     v.editor.focus();
     this.onChange();
   }
@@ -384,7 +384,7 @@ export class DocumentView {
   markAllStale() {
     for (const v of this.allRunnable()) {
       if (v.cell.kind === 'program') v.stale = true;
-      this.refreshBadge(v);
+      this.refreshRunControl(v);
     }
   }
 
@@ -408,7 +408,7 @@ export class DocumentView {
   private async runCell(v: CellView): Promise<boolean> {
     if (v.cell.kind === 'text' || v.running) return false;
     v.running = true;
-    this.refreshBadge(v);
+    this.refreshRunControl(v);
     v.outEl.textContent = '';
     v.outEl.hidden = false;
     clearSafeSvgImages(v.figsEl);
@@ -461,7 +461,7 @@ export class DocumentView {
     v.outEl.classList.toggle('error', !outcome.ok);
     v.running = false;
     if (outcome.ok && v.cell.kind === 'program') v.stale = false;
-    this.refreshBadge(v);
+    this.refreshRunControl(v);
     if (!v.isPreamble) this.onChange();
     if (outcome.ok && v.cell.kind === 'program') this.onProgramRun?.();
     this.onRun?.();
@@ -547,8 +547,10 @@ export class DocumentView {
 
     const gutter = document.createElement('div');
     gutter.className = 'gutter';
-    const badge = document.createElement('span');
-    badge.className = 'badge';
+    const run = document.createElement('button');
+    run.className = 'run';
+    run.textContent = '▶';
+    run.title = 'Run cell (Cmd-Enter)';
     const body = document.createElement('div');
     body.className = 'body';
     const outEl = document.createElement('pre');
@@ -564,7 +566,7 @@ export class DocumentView {
       body,
       outEl,
       figsEl,
-      badge,
+      runBtn: run,
       lang: new Compartment(),
       stale: false,
       running: false,
@@ -572,13 +574,13 @@ export class DocumentView {
     };
 
     // One skeleton for every kind — CSS shows/hides per kind, so a kind
-    // switch is a class change, not a rebuild.
-    const run = document.createElement('button');
-    run.className = 'run';
-    run.textContent = '▶';
-    run.title = 'Run cell (Cmd-Enter)';
-    run.addEventListener('click', () => void this.runCell(v));
-    gutter.append(run, badge);
+    // switch is a class change, not a rebuild. The one control is also
+    // the state: ▶ runs, and while running it reads ■ and interrupts.
+    run.addEventListener('click', () => {
+      if (v.running) this.kernel.interrupt();
+      else void this.runCell(v);
+    });
+    gutter.append(run);
 
     const label = document.createElement('div');
     label.className = 'scratch-label';
@@ -740,7 +742,7 @@ export class DocumentView {
     else this.endZone.before(view.root);
     if (cell.kind === 'program') {
       view.stale = true;
-      this.refreshBadge(view);
+      this.refreshRunControl(view);
     }
     view.editor?.focus();
     this.onChange();
@@ -796,7 +798,7 @@ export class DocumentView {
     for (const view of this.views.slice(Math.max(i, 0))) {
       if (view.cell.kind === 'program' && !view.stale) {
         view.stale = true;
-        this.refreshBadge(view);
+        this.refreshRunControl(view);
       }
     }
   }
@@ -805,9 +807,11 @@ export class DocumentView {
     return this.views.filter((v) => v.stale).length;
   }
 
-  private refreshBadge(v: CellView) {
-    v.badge.textContent = v.running ? '●' : v.stale ? '○' : '';
-    v.badge.title = v.running ? 'running' : v.stale ? 'stale — not run in this session' : '';
+  private refreshRunControl(v: CellView) {
+    v.runBtn.textContent = v.running ? '■' : '▶';
+    v.runBtn.title = v.running
+      ? 'Running — click to interrupt'
+      : 'Run cell (Cmd-Enter)';
     v.row.classList.toggle('stale', v.stale);
     v.row.classList.toggle('running', v.running);
   }
