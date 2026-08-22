@@ -232,7 +232,6 @@ export class DocumentView {
     this.syncModel(v, v.editor.state.doc.toString());
     v.stale = kind === 'program';
     v.row.className = `cell kind-${kind}`;
-    v.row.querySelector('.tools')?.replaceWith(this.buildTools(v));
     this.refreshBadge(v);
     v.editor.focus();
     this.onChange();
@@ -590,7 +589,7 @@ export class DocumentView {
     body.append(figsEl, outEl);
     this.hydrateOutputs(v);
 
-    row.append(gutter, body, this.buildTools(v));
+    row.append(gutter, body);
     // No insert strip above the preamble: nothing can precede cell zero.
     if (isPreamble) root.append(row);
     else root.append(this.buildZone(v), row);
@@ -686,28 +685,6 @@ export class DocumentView {
       return true;
     }
     return false;
-  }
-
-  private buildTools(v: CellView): HTMLElement {
-    const tools = document.createElement('div');
-    tools.className = 'tools';
-    // Kind picker: the cell's identity, switchable in place (also via
-    // Esc then Y/S/M). Hidden for markers carrying titles/attributes.
-    if (!BARE_MARKERS.has(v.cell.marker)) return tools;
-    const kinds: Array<[NewCellKind, string, string, string]> = [
-      ['program', 'code', 'Code', 'Code cell (Esc, Y)'],
-      ['scratch', 'scratch', 'Scratch', 'Scratch cell — never persists (Esc, S)'],
-      ['text', 'text', 'Text', 'Text cell (Esc, M)'],
-    ];
-    for (const [kind, glyph, label, title] of kinds) {
-      const b = document.createElement('button');
-      b.className = 'kind-pick' + (v.cell.kind === kind ? ' cur' : '');
-      b.title = title;
-      b.innerHTML = `${icon(glyph)}<span class="lbl">${label}</span>`;
-      b.addEventListener('click', () => this.convertKind(v, kind));
-      tools.append(b);
-    }
-    return tools;
   }
 
   /** Hover strip that inserts a cell before `v` (or at the end for null):

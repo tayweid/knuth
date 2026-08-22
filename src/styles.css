@@ -194,14 +194,7 @@ body:not([data-plain='true']):has(#panel:not([hidden])) #toolbar {
   transform: translateX(-50%);
 }
 
-/* The picker stacks vertically: its labels point back toward the cell. */
-.kind-pick .lbl {
-  right: calc(100% + 8px);
-  top: 50%;
-  transform: translateY(-50%);
-}
-
-:is(.tb-btn, .insert-actions button, .kind-pick):is(:hover, :focus-visible) > .lbl {
+:is(.tb-btn, .insert-actions button):is(:hover, :focus-visible) > .lbl {
   opacity: 1;
 }
 
@@ -512,7 +505,7 @@ body:not([data-plain='true']):has(#panel:not([hidden])) #toolbar {
   /* The bar floats over the room; content starts below it and scrolls
      beneath it, Plass-style. Left stays lean: the sheet centers at wide
      widths, so side padding only ever costs narrow windows. */
-  padding: calc(60px + 1.5rem) 1.5rem 40vh 0.6rem;
+  padding: calc(60px + 1.5rem) 1.5rem 40vh 1rem;
   /* Container so cells can center the kind picker in the free margin
      between the card column and the session panel (cqw units). */
   container-type: inline-size;
@@ -577,31 +570,32 @@ body:not([data-plain='true']):has(#panel:not([hidden])) #toolbar {
   position: relative;
 }
 
-/* Out of the flow, and ON the card: the run control and state dot sit
-   over the editor's own number column (the space where lines 1–2 keep
-   their digits), so the cell spends no side column on apparatus and the
-   editor gets the full measure. The covered digits show faint beneath
-   controls drawn at full strength. */
+/* Out of the flow, and ON the card: one quiet capsule holds the run
+   control and state dot, sitting over the editor's own number column
+   (the space where lines 1–2 keep their digits), so the cell spends no
+   side column on apparatus and the editor gets the full measure. Solid
+   — the capsule covers the digits beneath rather than tangling with
+   them; its fill is the gutter band's composite color (One Dark's
+   #282c34 under its 2.2% white wash). */
 .cell .gutter {
   position: absolute;
-  left: 1px;
-  top: 0.5rem;
-  width: 1.5rem;
+  left: 2px;
+  top: 0.45rem;
+  width: 1.35rem;
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 0.2rem;
+  gap: 1px;
   z-index: 3;
+  padding: 2px 0;
+  background: #2b2f37;
+  border: 1px solid rgba(255, 255, 255, 0.07);
+  border-radius: 999px;
 }
 
 .cell .run {
   border: 0;
-  /* A solid chip: the control sits on the digit's spot, so it must
-     cover, not blend — this is the gutter band's composite color (One
-     Dark's #282c34 under its 2.2% white wash). */
-  background: #2b2f37;
-  border-radius: 4px;
-  width: 1.15rem;
+  background: none;
   color: rgba(240, 238, 233, 0.35);
   cursor: pointer;
   font-size: 11px;
@@ -611,78 +605,19 @@ body:not([data-plain='true']):has(#panel:not([hidden])) #toolbar {
 
 .cell .run:hover { color: #9db8d6; }
 
-.cell .badge {
-  font-size: 11px;
-  color: var(--amber);
-  width: 1.15rem;
-  text-align: center;
-  border-radius: 4px;
-  background: #2b2f37;
-}
-.cell .badge:empty { background: none; }
+.cell .badge { font-size: 11px; color: var(--amber); }
+.cell .badge:empty { display: none; }
 
 /* Scratch editors are transparent: their gutter shows the room, so the
-   chips match the room instead of the card — and they drop below the
-   SCRATCH label to sit beside line 1, like every other cell. */
-.cell.kind-scratch .run,
-.cell.kind-scratch .badge { background: var(--bg); }
-.cell.kind-scratch .badge:empty { background: none; }
-.cell.kind-scratch .gutter { top: calc(0.5rem + 18px); }
+   capsule matches the room — and it drops below the SCRATCH label to
+   sit beside line 1, like every other cell. */
+.cell.kind-scratch .gutter {
+  background: var(--bg);
+  top: calc(0.45rem + 18px);
+}
 .cell.running .badge { color: #9db8d6; }
 
 .cell .body { flex: 1; min-width: 0; }
-
-/* Kind picker: the cell's identity, switchable in place. Floats over the
-   row's right edge OUT of the layout (a flex child's invisible height
-   inflated short cells). Flat against the room — deliberately NOT the
-   glass-pill dialect, so it doesn't read as the between-cell inserter. */
-.cell .tools {
-  position: absolute;
-  /* Centered in the free margin between the card column and the session
-     seam: half of (container width - cell width)/2 plus half the doc
-     padding, measured from the cell's right edge. */
-  left: calc(100% + (100cqw - 100%) / 4 + 0.75rem);
-  top: 50%;
-  transform: translate(-50%, -50%);
-  visibility: hidden;
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  align-items: center;
-  z-index: 5;
-}
-
-/* Hover bridge: the right margin counts as part of the cell, so the
-   picker doesn't vanish while the cursor crosses the gap toward it. */
-.cell::after {
-  content: '';
-  position: absolute;
-  left: 100%;
-  top: 0;
-  bottom: 0;
-  width: calc((100cqw - 100%) / 2 + 1.5rem);
-}
-
-.cell:hover .tools { visibility: visible; }
-
-.cell .tools .kind-pick {
-  position: relative;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 22px;
-  height: 20px;
-  border: 0;
-  background: none;
-  cursor: pointer;
-  color: rgba(240, 238, 233, 0.55);
-  border-radius: 999px;
-}
-
-.cell .tools .kind-pick .ico { width: 13px; height: 13px; display: block; }
-
-.cell .tools .kind-pick:hover { color: #fff; background: rgba(255, 255, 255, 0.12); }
-.cell .tools .kind-pick.cur { color: #9db8d6; }
 
 /* Esc armed: the next key (Y/S/M) switches this cell's kind. */
 .cell.armed { outline: 1px dashed rgba(157, 184, 214, 0.5); outline-offset: 3px; border-radius: 8px; }
@@ -756,7 +691,7 @@ body:not([data-plain='true']):has(#panel:not([hidden])) #toolbar {
 .cell.kind-scratch .scratch-label { display: block; }
 
 /* Text cells don't run. */
-.cell.kind-text .run { visibility: hidden; }
+.cell.kind-text .gutter { display: none; }
 
 .cell.stale .cm-editor { border-left: 3px solid var(--amber); }
 
@@ -1129,10 +1064,10 @@ body:not([data-plain='true']):has(#panel:not([hidden])) #toolbar {
    on screen. Same surface and type, less apparatus. The cell view is a
    deliberate toggle (⌘⇧E, the toolbar Source button, the floating Cells
    pill), never a side effect of typing a marker. */
+body[data-view='source'] .cell .gutter,
 body[data-view='source'] .run,
 body[data-view='source'] .badge,
 body[data-view='source'] .insert-zone,
-body[data-view='source'] .tools,
 body[data-view='source'] .output,
 body[data-view='source'] .cell-figures,
 body[data-view='source'] #panel,
@@ -1176,11 +1111,10 @@ body[data-view='source'] .cell {
   padding: 0;
 }
 
-/* The hover bridge reaches toward a kind picker this view hides, and on
-   a full-width cell its width degenerates to a bare 1.5rem hanging past
-   the window's edge. Nothing to bridge to: no bridge. */
-body[data-view='source'] .cell::after {
-  display: none;
+/* The numbers hug the window edge: a plain file is an editor, and an
+   editor spends no margin on ceremony. */
+body[data-view='source'] .cell .cm-lineNumbers .cm-gutterElement {
+  padding-left: 2px;
 }
 
 body[data-view='source'] .cell .cm-editor,
