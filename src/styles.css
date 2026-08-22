@@ -510,8 +510,9 @@ body:not([data-plain='true']):has(#panel:not([hidden])) #toolbar {
      into a phantom 24px page scroll with the room showing through. */
   overflow-x: hidden;
   /* The bar floats over the room; content starts below it and scrolls
-     beneath it, Plass-style. */
-  padding: calc(60px + 1.5rem) 1.5rem 40vh;
+     beneath it, Plass-style. Left stays lean: the sheet centers at wide
+     widths, so side padding only ever costs narrow windows. */
+  padding: calc(60px + 1.5rem) 1.5rem 40vh 0.6rem;
   /* Container so cells can center the kind picker in the free margin
      between the card column and the session panel (cqw units). */
   container-type: inline-size;
@@ -572,26 +573,35 @@ body:not([data-plain='true']):has(#panel:not([hidden])) #toolbar {
 
 .cell {
   display: flex;
-  padding: 0.2rem 0 0.2rem 2.2rem;
+  padding: 0.2rem 0;
   position: relative;
 }
 
-/* Out of the flow: a tall gutter must never stretch a short cell (it was
-   adding ~5px of dead space under one-line cards). */
+/* Out of the flow, and ON the card: the run control and state dot sit
+   over the editor's own number column (the space where lines 1–2 keep
+   their digits), so the cell spends no side column on apparatus and the
+   editor gets the full measure. The covered digits show faint beneath
+   controls drawn at full strength. */
 .cell .gutter {
   position: absolute;
-  left: 0;
-  top: 0.45rem;
-  width: 1.6rem;
+  left: 1px;
+  top: 0.5rem;
+  width: 1.5rem;
   display: flex;
   flex-direction: column;
   align-items: center;
   gap: 0.2rem;
+  z-index: 3;
 }
 
 .cell .run {
   border: 0;
-  background: none;
+  /* A solid chip: the control sits on the digit's spot, so it must
+     cover, not blend — this is the gutter band's composite color (One
+     Dark's #282c34 under its 2.2% white wash). */
+  background: #2b2f37;
+  border-radius: 4px;
+  width: 1.15rem;
   color: rgba(240, 238, 233, 0.35);
   cursor: pointer;
   font-size: 11px;
@@ -601,7 +611,23 @@ body:not([data-plain='true']):has(#panel:not([hidden])) #toolbar {
 
 .cell .run:hover { color: #9db8d6; }
 
-.cell .badge { font-size: 11px; color: var(--amber); }
+.cell .badge {
+  font-size: 11px;
+  color: var(--amber);
+  width: 1.15rem;
+  text-align: center;
+  border-radius: 4px;
+  background: #2b2f37;
+}
+.cell .badge:empty { background: none; }
+
+/* Scratch editors are transparent: their gutter shows the room, so the
+   chips match the room instead of the card — and they drop below the
+   SCRATCH label to sit beside line 1, like every other cell. */
+.cell.kind-scratch .run,
+.cell.kind-scratch .badge { background: var(--bg); }
+.cell.kind-scratch .badge:empty { background: none; }
+.cell.kind-scratch .gutter { top: calc(0.5rem + 18px); }
 .cell.running .badge { color: #9db8d6; }
 
 .cell .body { flex: 1; min-width: 0; }
@@ -723,6 +749,8 @@ body:not([data-plain='true']):has(#panel:not([hidden])) #toolbar {
   text-transform: uppercase;
   color: var(--room-ink-soft);
   margin-bottom: 0.15rem;
+  /* Clear of the run/state chips, which now sit on the number column. */
+  margin-left: 1.7rem;
 }
 
 .cell.kind-scratch .scratch-label { display: block; }
