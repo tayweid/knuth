@@ -704,7 +704,10 @@ body[data-view='source'] .cell .run-num { visibility: visible; }
 
 /* Text cells don't run. */
 
-.cell.stale .cm-editor { border-left: 3px solid var(--amber); }
+/* Stale: the gutter's own right-edge line turns amber — a straight
+   line inside the apparatus (the way VS Code marks changed regions in
+   the gutter), quieter than a border wrapping the card's curve. */
+.cell.stale .cm-gutters { border-right-color: var(--amber); }
 
 /* text cells: light serif prose straight on the room — no box, no modes.
    Tiny bars above and below mark the cell's top and bottom while you're
@@ -1127,10 +1130,15 @@ body[data-view='source'] .cell .cm-lineNumbers .cm-gutterElement {
   padding-left: 2px;
 }
 
-body[data-view='source'] .cell .cm-editor,
-body[data-view='source'] .cell.stale .cm-editor {
+body[data-view='source'] .cell .cm-editor {
   border: 0;
   border-radius: 0;
+}
+
+/* A plain file is an editor, not a workbench: staleness stays out of
+   source view, as it always has. */
+body[data-view='source'] .cell.stale .cm-gutters {
+  border-right-color: rgba(255, 255, 255, 0.06);
 }
 
 /* The view toggle: one quiet floating pill in the same corner in both
