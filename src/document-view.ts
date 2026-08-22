@@ -11,6 +11,8 @@
 import { minimalSetup, EditorView } from 'codemirror';
 import { keymap, lineNumbers, placeholder } from '@codemirror/view';
 import { Compartment, type Extension } from '@codemirror/state';
+import { foldGutter, foldKeymap } from '@codemirror/language';
+import { indentationMarkers } from '@replit/codemirror-indentation-markers';
 import { python } from '@codemirror/lang-python';
 import { markdown } from '@codemirror/lang-markdown';
 import { oneDark } from '@codemirror/theme-one-dark';
@@ -186,7 +188,24 @@ export class DocumentView {
   }
 
   private langFor(kind: NewCellKind): Extension {
-    return kind === 'text' ? [markdown(), placeholder('Write…')] : python();
+    if (kind === 'text') return [markdown(), placeholder('Write…')];
+    // Code chrome rides the language compartment so a kind switch brings
+    // it along: numbers, fold arrows (Python's own parser says what
+    // folds — bodies of defs, classes, loops), and indent guides.
+    return [
+      python(),
+      lineNumbers(),
+      foldGutter(),
+      indentationMarkers({
+        colors: {
+          light: 'rgba(0, 0, 0, 0.12)',
+          dark: 'rgba(255, 255, 255, 0.09)',
+          activeLight: 'rgba(0, 0, 0, 0.28)',
+          activeDark: 'rgba(255, 255, 255, 0.22)',
+        },
+      }),
+      keymap.of(foldKeymap),
+    ];
   }
 
   /** Editor text -> document model, by the cell's current kind. The
@@ -534,7 +553,6 @@ export class DocumentView {
         this.trackFocus(v),
         minimalSetup,
         oneDark,
-        ...(v.cell.kind === 'text' ? [] : [lineNumbers()]),
         v.lang.of(this.langFor(v.cell.kind)),
         EditorView.lineWrapping,
         EditorView.updateListener.of((update) => {

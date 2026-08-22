@@ -680,6 +680,25 @@ body:not([data-plain='true']):has(#panel:not([hidden])) #toolbar {
 }
 
 .cell .cm-lineNumbers .cm-gutterElement { padding: 0 0.6rem 0 0.8rem; }
+
+/* Fold arrows share the apparatus band with the numbers: quiet until
+   pointed at, like every other control in the room. */
+.cell .cm-foldGutter .cm-gutterElement {
+  padding: 0 0.45rem 0 0;
+  color: rgba(240, 238, 233, 0.25);
+  cursor: pointer;
+}
+.cell .cm-foldGutter .cm-gutterElement:hover { color: rgba(240, 238, 233, 0.65); }
+
+/* A folded body reads as one quiet token, not a button. */
+.cell .cm-foldPlaceholder {
+  background: rgba(255, 255, 255, 0.06);
+  border: 0;
+  border-radius: 4px;
+  padding: 0 6px;
+  margin: 0 4px;
+  color: rgba(240, 238, 233, 0.5);
+}
 .cell .cm-content { margin-left: 0.15rem; }
 .cell .cm-content { padding: 0.5rem 0; font-family: var(--mono); }
 .cell .cm-line { padding: 0 0.75rem; }
