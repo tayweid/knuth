@@ -679,14 +679,24 @@ body:not([data-plain='true']):has(#panel:not([hidden])) #toolbar {
   color: rgba(240, 238, 233, 0.28);
 }
 
-.cell .cm-lineNumbers .cm-gutterElement { padding: 0 0.6rem 0 0.8rem; }
+.cell .cm-lineNumbers .cm-gutterElement { padding: 0 0.35rem 0 0.3rem; }
 
 /* Fold arrows share the apparatus band with the numbers: quiet until
    pointed at, like every other control in the room. */
 .cell .cm-foldGutter .cm-gutterElement {
-  padding: 0 0.45rem 0 0;
+  padding: 0 0.2rem 0 0;
   color: rgba(240, 238, 233, 0.25);
   cursor: pointer;
+}
+
+/* Indent bars sit at the RIGHT edge of each indent run, so a block's
+   code rests against the bar that scopes it. The package draws bars at
+   (level*unit + 0.5)ch from its overlay's left edge and assumes the
+   stock 2px line padding; our lines pad 0.75rem. Anchoring the overlay
+   at padding + 3ch lands each bar one indent unit right of its default
+   spot, half a character before the glyphs it scopes. */
+.cell .cm-indent-markers::before {
+  left: calc(0.75rem + 3ch);
 }
 .cell .cm-foldGutter .cm-gutterElement:hover { color: rgba(240, 238, 233, 0.65); }
 
