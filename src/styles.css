@@ -574,37 +574,38 @@ body:not([data-plain='true']):has(#panel:not([hidden])) #toolbar {
    rides the number column at the column's real width, centered on line
    1 — the gutter's center for a one-line cell — and pinned there for
    taller ones. No dot: staleness already shows on the cell's amber
-   edge; running shows here (▶ becomes ■, click interrupts). The marker
-   overlays line 1's digit, so it paints solid. */
+   edge; running shows here (▶ becomes ■, click interrupts). Styled as
+   toolbar glass: the same black chip, the glyph centered in it. */
 .cell .cm-lineNumbers .cm-gutterElement { position: relative; }
+
+/* The chip covers line 1's digit; it comes back wherever the chip is
+   hidden (source view shows a plain 1). */
+.cell .run-num { visibility: hidden; }
+body[data-view='source'] .cell .run-num { visibility: visible; }
 
 .cell .run {
   position: absolute;
-  inset: 0;
+  inset: 0 3px 0 2px;
   display: flex;
   align-items: center;
   justify-content: center;
-  border: 0;
+  border: 1px solid var(--glass-border);
+  border-radius: 6px;
   padding: 0;
-  /* The gutter band's composite color (One Dark's #282c34 under its
-     2.2% white wash): covers the digit beneath at any column width. */
-  background: #2b2f37;
+  background: var(--glass);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
   color: #6ea576;
   cursor: pointer;
-  font-size: 10px;
+  font-size: 9px;
   transition: color 0.12s, background 0.12s;
 }
 
 .cell .run::before { content: '▶'; }
 .cell.running .run::before { content: '■'; }
 
-.cell .run:hover { color: #8fc79a; background: #333844; }
+.cell .run:hover { color: #8fc79a; background: color-mix(in srgb, #17161a 65%, transparent); }
 .cell.running .run { color: #cd6452; }
-
-/* Scratch editors are transparent: their gutter shows the room, so the
-   control matches the room. */
-.cell.kind-scratch .run { background: var(--bg); }
-.cell.kind-scratch .run:hover { background: #37363a; }
 
 .cell .body { flex: 1; min-width: 0; }
 

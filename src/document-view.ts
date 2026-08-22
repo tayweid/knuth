@@ -135,6 +135,14 @@ class RunMarker extends GutterMarker {
     super();
   }
   toDOM() {
+    // A marker REPLACES the line number it sits on, so the slot carries
+    // the digit itself: wherever the button is hidden (source view),
+    // line 1 keeps its plain number.
+    const slot = document.createElement('span');
+    slot.className = 'run-slot';
+    const num = document.createElement('span');
+    num.className = 'run-num';
+    num.textContent = '1';
     const button = document.createElement('button');
     button.className = 'run';
     button.title = 'Run cell (Cmd-Enter) — interrupts while running';
@@ -142,7 +150,8 @@ class RunMarker extends GutterMarker {
       e.preventDefault();
       this.onClick();
     });
-    return button;
+    slot.append(num, button);
+    return slot;
   }
 }
 
