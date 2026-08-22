@@ -570,45 +570,41 @@ body:not([data-plain='true']):has(#panel:not([hidden])) #toolbar {
   position: relative;
 }
 
-/* Out of the flow, and ON the card: the run control IS the first line
-   of the number column — a full-width segment where line 1 keeps its
-   digit. No dot: staleness already shows on the cell's amber edge, and
-   running shows on this control itself (▶ becomes ■, click interrupts). */
-.cell .gutter {
-  position: absolute;
-  left: 1px;
-  top: calc(0.5rem + 1px);
-  width: 1.7rem;
-  z-index: 3;
-}
+/* The run control is line 1's own gutter marker (document-view.ts): it
+   rides the number column at the column's real width, centered on line
+   1 — the gutter's center for a one-line cell — and pinned there for
+   taller ones. No dot: staleness already shows on the cell's amber
+   edge; running shows here (▶ becomes ■, click interrupts). The marker
+   overlays line 1's digit, so it paints solid. */
+.cell .cm-lineNumbers .cm-gutterElement { position: relative; }
 
 .cell .run {
+  position: absolute;
+  inset: 0;
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 100%;
-  height: 19px;
   border: 0;
-  border-radius: 3px;
-  /* Solid over the digit beneath: the gutter band's composite color
-     (One Dark's #282c34 under its 2.2% white wash). */
+  padding: 0;
+  /* The gutter band's composite color (One Dark's #282c34 under its
+     2.2% white wash): covers the digit beneath at any column width. */
   background: #2b2f37;
   color: #6ea576;
   cursor: pointer;
   font-size: 10px;
-  padding: 0;
   transition: color 0.12s, background 0.12s;
 }
+
+.cell .run::before { content: '▶'; }
+.cell.running .run::before { content: '■'; }
 
 .cell .run:hover { color: #8fc79a; background: #333844; }
 .cell.running .run { color: #cd6452; }
 
 /* Scratch editors are transparent: their gutter shows the room, so the
-   control matches the room — and it drops below the SCRATCH label to
-   sit beside line 1, like every other cell. */
+   control matches the room. */
 .cell.kind-scratch .run { background: var(--bg); }
 .cell.kind-scratch .run:hover { background: #37363a; }
-.cell.kind-scratch .gutter { top: calc(0.5rem + 1px + 18px); }
 
 .cell .body { flex: 1; min-width: 0; }
 
@@ -635,9 +631,9 @@ body:not([data-plain='true']):has(#panel:not([hidden])) #toolbar {
 
 .cell .cm-lineNumbers .cm-gutterElement {
   padding: 0 0.35rem 0 0.3rem;
-  /* One width for every cell (fits 2 digits), so the code columns of
+  /* One width for every cell (fits 3 digits), so the code columns of
      neighboring cards line up instead of drifting with digit count. */
-  min-width: 1.7rem;
+  min-width: 2.25rem;
 }
 
 /* Fold arrows share the apparatus band with the numbers: quiet until
@@ -682,14 +678,11 @@ body:not([data-plain='true']):has(#panel:not([hidden])) #toolbar {
   text-transform: uppercase;
   color: var(--room-ink-soft);
   margin-bottom: 0.15rem;
-  /* Clear of the run/state chips, which now sit on the number column. */
-  margin-left: 1.7rem;
 }
 
 .cell.kind-scratch .scratch-label { display: block; }
 
 /* Text cells don't run. */
-.cell.kind-text .gutter { display: none; }
 
 .cell.stale .cm-editor { border-left: 3px solid var(--amber); }
 
@@ -1062,7 +1055,6 @@ body:not([data-plain='true']):has(#panel:not([hidden])) #toolbar {
    on screen. Same surface and type, less apparatus. The cell view is a
    deliberate toggle (⌘⇧E, the toolbar Source button, the floating Cells
    pill), never a side effect of typing a marker. */
-body[data-view='source'] .cell .gutter,
 body[data-view='source'] .run,
 body[data-view='source'] .badge,
 body[data-view='source'] .insert-zone,

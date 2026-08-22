@@ -11,14 +11,16 @@
 import { minimalSetup, EditorView } from 'codemirror';
 import {
   Decoration,
+  GutterMarker,
   keymap,
+  lineNumberMarkers,
   lineNumbers,
   placeholder,
   ViewPlugin,
   type DecorationSet,
   type ViewUpdate,
 } from '@codemirror/view';
-import { Compartment, RangeSetBuilder, type Extension } from '@codemirror/state';
+import { Compartment, RangeSet, RangeSetBuilder, type Extension } from '@codemirror/state';
 import { foldGutter, foldKeymap, indentUnit } from '@codemirror/language';
 import { indentationMarkers } from '@replit/codemirror-indentation-markers';
 import { python } from '@codemirror/lang-python';
@@ -74,7 +76,6 @@ interface CellView {
    *  header) — runnable and editable, but never given a marker or a
    *  stored output block, so the file stays byte-identical. */
   isPreamble?: boolean;
-  runBtn: HTMLButtonElement;
   editor?: EditorView;
   /** Language/placeholder live in a compartment so kind switches keep the
    *  same editor — and with it, the undo history. */
@@ -122,6 +123,27 @@ function hangDeco(view: EditorView): DecorationSet {
     }
   }
   return builder.finish();
+}
+
+/** The run control lives IN the line-number gutter, as line 1's marker:
+ *  it inherits the column's real width (two digits or three), sits
+ *  centered on line 1 — which IS the gutter's center for a one-line
+ *  cell — and stays pinned there however tall the cell grows. Its glyph
+ *  and colors are CSS (.cell.running flips ▶ to ■). */
+class RunMarker extends GutterMarker {
+  constructor(private onClick: () => void) {
+    super();
+  }
+  toDOM() {
+    const button = document.createElement('button');
+    button.className = 'run';
+    button.title = 'Run cell (Cmd-Enter) — interrupts while running';
+    button.addEventListener('click', (e) => {
+      e.preventDefault();
+      this.onClick();
+    });
+    return button;
+  }
 }
 
 const wrapHang = ViewPlugin.fromClass(
@@ -227,7 +249,7 @@ export class DocumentView {
         v.outEl.hidden = true;
         v.outEl.textContent = '';
       }
-      v.editor.dispatch({ effects: v.lang.reconfigure(this.langFor(kind)) });
+      v.editor.dispatch({ effects: v.lang.reconfigure(this.langFor(v)) });
     }
     this.syncModel(v, v.editor.state.doc.toString());
     v.stale = kind === 'program';
@@ -237,8 +259,8 @@ export class DocumentView {
     this.onChange();
   }
 
-  private langFor(kind: NewCellKind): Extension {
-    if (kind === 'text') return [markdown(), placeholder('Write…')];
+  private langFor(v: CellView): Extension {
+    if (v.cell.kind === 'text') return [markdown(), placeholder('Write…')];
     // Code chrome rides the language compartment so a kind switch brings
     // it along: numbers, fold arrows (Python's own parser says what
     // folds — bodies of defs, classes, loops), and indent guides.
@@ -261,6 +283,12 @@ export class DocumentView {
         },
       }),
       keymap.of(foldKeymap),
+      lineNumberMarkers.of(RangeSet.of(
+        new RunMarker(() => {
+          if (v.running) this.kernel.interrupt();
+          else void this.runCell(v);
+        }).range(0),
+      )),
     ];
   }
 
@@ -545,12 +573,6 @@ export class DocumentView {
     const row = document.createElement('div');
     row.className = `cell kind-${cell.kind}`;
 
-    const gutter = document.createElement('div');
-    gutter.className = 'gutter';
-    const run = document.createElement('button');
-    run.className = 'run';
-    run.textContent = '▶';
-    run.title = 'Run cell (Cmd-Enter)';
     const body = document.createElement('div');
     body.className = 'body';
     const outEl = document.createElement('pre');
@@ -566,21 +588,11 @@ export class DocumentView {
       body,
       outEl,
       figsEl,
-      runBtn: run,
       lang: new Compartment(),
       stale: false,
       running: false,
       isPreamble,
     };
-
-    // One skeleton for every kind — CSS shows/hides per kind, so a kind
-    // switch is a class change, not a rebuild. The one control is also
-    // the state: ▶ runs, and while running it reads ■ and interrupts.
-    run.addEventListener('click', () => {
-      if (v.running) this.kernel.interrupt();
-      else void this.runCell(v);
-    });
-    gutter.append(run);
 
     const label = document.createElement('div');
     label.className = 'scratch-label';
@@ -591,7 +603,7 @@ export class DocumentView {
     body.append(figsEl, outEl);
     this.hydrateOutputs(v);
 
-    row.append(gutter, body);
+    row.append(body);
     // No insert strip above the preamble: nothing can precede cell zero.
     if (isPreamble) root.append(row);
     else root.append(this.buildZone(v), row);
@@ -611,7 +623,7 @@ export class DocumentView {
         this.trackFocus(v),
         minimalSetup,
         oneDark,
-        v.lang.of(this.langFor(v.cell.kind)),
+        v.lang.of(this.langFor(v)),
         EditorView.lineWrapping,
         EditorView.updateListener.of((update) => {
           if (!update.docChanged) return;
@@ -808,10 +820,8 @@ export class DocumentView {
   }
 
   private refreshRunControl(v: CellView) {
-    v.runBtn.textContent = v.running ? '■' : '▶';
-    v.runBtn.title = v.running
-      ? 'Running — click to interrupt'
-      : 'Run cell (Cmd-Enter)';
+    // The control itself is line 1's gutter marker; its glyph and color
+    // follow these classes in CSS.
     v.row.classList.toggle('stale', v.stale);
     v.row.classList.toggle('running', v.running);
   }
