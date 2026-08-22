@@ -9,8 +9,16 @@
 // below. New cells also come from hover insert strips between cells.
 
 import { minimalSetup, EditorView } from 'codemirror';
-import { keymap, lineNumbers, placeholder } from '@codemirror/view';
-import { Compartment, type Extension } from '@codemirror/state';
+import {
+  Decoration,
+  keymap,
+  lineNumbers,
+  placeholder,
+  ViewPlugin,
+  type DecorationSet,
+  type ViewUpdate,
+} from '@codemirror/view';
+import { Compartment, RangeSetBuilder, type Extension } from '@codemirror/state';
 import { foldGutter, foldKeymap, indentUnit } from '@codemirror/language';
 import { indentationMarkers } from '@replit/codemirror-indentation-markers';
 import { python } from '@codemirror/lang-python';
@@ -85,6 +93,49 @@ const KIND_MARKERS: Record<NewCellKind, string> = {
 
 // Kind conversion never clobbers a marker carrying a title/attributes.
 const BARE_MARKERS = new Set(Object.values(KIND_MARKERS));
+
+/** Wrapped continuations honor the line's indent plus one extra unit, so
+ *  the back half of a long line lands deeper than any real code at that
+ *  level could (bodies step by exactly 4) — visibly a continuation, the
+ *  same idiom as PEP 8's own continuation indents. VS Code calls this
+ *  wrappingIndent: 'indent'; vim calls it breakindent. The mechanism is
+ *  the classic pair: pad the line block by the hang, pull the first
+ *  visual row back by the same amount. */
+function hangDeco(view: EditorView): DecorationSet {
+  const builder = new RangeSetBuilder<Decoration>();
+  for (const { from, to } of view.visibleRanges) {
+    for (let pos = from; pos <= to; ) {
+      const line = view.state.doc.lineAt(pos);
+      if (line.length) {
+        const hang = /^ */.exec(line.text)![0].length + 4;
+        builder.add(
+          line.from,
+          line.from,
+          Decoration.line({
+            attributes: {
+              style: `text-indent:-${hang}ch;padding-left:calc(${hang}ch + 0.75rem)`,
+            },
+          }),
+        );
+      }
+      pos = line.to + 1;
+    }
+  }
+  return builder.finish();
+}
+
+const wrapHang = ViewPlugin.fromClass(
+  class {
+    decorations: DecorationSet;
+    constructor(view: EditorView) {
+      this.decorations = hangDeco(view);
+    }
+    update(update: ViewUpdate) {
+      if (update.docChanged || update.viewportChanged) this.decorations = hangDeco(update.view);
+    }
+  },
+  { decorations: (plugin) => plugin.decorations },
+);
 
 export class DocumentView {
   doc: KnuthDocument = parseDocument('# %%\n');
@@ -199,6 +250,7 @@ export class DocumentView {
       // indent guides drew a phantom bar at every half level of 4-space
       // code. Python's unit is four.
       indentUnit.of('    '),
+      wrapHang,
       lineNumbers(),
       foldGutter(),
       indentationMarkers({
