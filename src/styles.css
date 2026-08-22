@@ -576,7 +576,7 @@ body:not([data-plain='true']):has(#panel:not([hidden])) #toolbar {
    taller ones. No dot: staleness already shows on the cell's amber
    edge; running shows here (▶ becomes ■, click interrupts). Styled as
    toolbar glass: the same black chip, the glyph centered in it. */
-.cell .cm-lineNumbers .cm-gutterElement { position: relative; }
+.cell .cm-gutters { position: relative; }
 
 /* The chip covers line 1's digit; it comes back wherever the chip is
    hidden (source view shows a plain 1). */
@@ -585,15 +585,17 @@ body[data-view='source'] .cell .run-num { visibility: visible; }
 
 .cell .run {
   position: absolute;
-  /* The holder is the one-line cell's WHOLE gutter: half a rem above
-     and below line 1's slot (the editor's own vertical padding), which
-     spans band top to band bottom when there is one line — and taller
-     cells keep exactly that holder, bottom edge where the one-line
-     cell's would be. */
+  /* The holder is the one-line cell's WHOLE gutter — full band width
+     (numbers AND fold strip) and full band height when there is one
+     line — and taller cells keep exactly that holder, bottom edge
+     where the one-line cell's would be. Anchored to .cm-gutters, so
+     left/right span the band; the height is the one-line band: the
+     editor's 0.5rem paddings plus one 18.9px line (13.5px × 1.4). */
   left: 0;
   right: 0;
-  top: -0.5rem;
-  height: calc(100% + 1rem);
+  top: 0;
+  height: calc(1rem + 18.9px);
+  z-index: 3;
   display: flex;
   align-items: center;
   justify-content: center;
