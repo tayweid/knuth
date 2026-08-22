@@ -585,41 +585,46 @@ body[data-view='source'] .cell .run-num { visibility: visible; }
 
 .cell .run {
   position: absolute;
-  /* The holder is the one-line cell's WHOLE gutter — full band width
-     (numbers AND fold strip) and full band height when there is one
-     line — and taller cells keep exactly that holder, bottom edge
-     where the one-line cell's would be. Anchored to .cm-gutters, so
-     left/right span the band; the height is the one-line band: the
-     editor's 0.5rem paddings plus one 18.9px line (13.5px × 1.4). */
+  left: 0;
+  right: 0;
+  top: 0;
+  /* The button is the band itself, ending at a hairline where the
+     one-line cell's gutter ends. The box runs deeper — over all of
+     rows 1 and 2 (clamped to the band for one-line cells) — so no
+     half-covered digit peeks out beneath the line; numbering resumes
+     at 3. */
+  height: min(calc(0.5rem + 37.8px), 100%);
+  border: 0;
+  padding: 0;
+  background: #2b2f37;
+  color: #6ea576;
+  cursor: pointer;
+  font-size: 13px;
+  z-index: 3;
+  transition: color 0.12s;
+}
+
+.cell .run::before {
+  content: '▶';
+  position: absolute;
   left: 0;
   right: 0;
   top: 0;
   height: calc(1rem + 18.9px);
-  z-index: 3;
   display: flex;
   align-items: center;
   justify-content: center;
-  border: 1px solid var(--glass-border);
-  border-radius: 6px;
-  padding: 0;
-  /* Toolbar glass, pre-composited over the gutter band (blur would
-     smudge the digit this holder covers). */
-  background: color-mix(in srgb, #17161a 80%, #2b2f37);
-  color: #6ea576;
-  cursor: pointer;
-  font-size: 9px;
-  transition: color 0.12s, background 0.12s;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  transition: background 0.12s;
 }
-
-.cell.kind-scratch .run {
-  background: color-mix(in srgb, #17161a 80%, var(--bg));
-}
-
-.cell .run::before { content: '▶'; }
 .cell.running .run::before { content: '■'; }
 
-.cell .run:hover { color: #8fc79a; background: color-mix(in srgb, #17161a 62%, #2b2f37); }
+.cell .run:hover { color: #8fc79a; }
+.cell .run:hover::before { background: rgba(255, 255, 255, 0.045); }
 .cell.running .run { color: #cd6452; }
+
+/* Scratch editors are transparent: their band is the room. */
+.cell.kind-scratch .run { background: var(--bg); }
 
 .cell .body { flex: 1; min-width: 0; }
 
