@@ -64,7 +64,13 @@ html, body { margin: 0; height: 100%; }
    PWA can't refuse a small window; it can refuse to deform). The html
    element scrolls; the body sizes to the layout, so the absolute toolbar
    spans the full scrollable width and rides along. */
-html { overflow-x: auto; overflow-y: hidden; }
+html {
+  overflow-x: auto;
+  overflow-y: hidden;
+  /* Sideways scrolling below the floor stays; the trackpad rubber-band
+     past the edge goes. Vertical overscroll is #doc's and stays bouncy. */
+  overscroll-behavior-x: none;
+}
 
 body {
   position: relative;
