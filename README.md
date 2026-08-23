@@ -84,6 +84,20 @@ installed version, Python executable, engine version, protocol version,
 build stamp, and live-session count — never code, output, or document
 contents.
 
+## Working in a project
+
+Start the engine in your project so relative reads work in the app —
+`pd.read_csv('data.csv')` resolves against the folder every kernel
+starts in:
+
+```bash
+knuth app ~/analysis        # or: knuth serve --root ~/analysis
+```
+
+Scratch cells are stored commented (`#| ` lines), so running the file
+with plain `python` executes only the program cells; the app shows and
+edits them as ordinary code.
+
 ## Migrating from Jupyter
 
 ```bash
