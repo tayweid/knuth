@@ -20,8 +20,15 @@ import {
   type DecorationSet,
   type ViewUpdate,
 } from '@codemirror/view';
-import { Compartment, RangeSet, RangeSetBuilder, type Extension } from '@codemirror/state';
-import { foldGutter, foldKeymap, indentUnit } from '@codemirror/language';
+import { Compartment, Prec, RangeSet, RangeSetBuilder, type Extension } from '@codemirror/state';
+import {
+  foldGutter,
+  foldKeymap,
+  HighlightStyle,
+  indentUnit,
+  syntaxHighlighting,
+} from '@codemirror/language';
+import { tags } from '@lezer/highlight';
 import { indentationMarkers } from '@replit/codemirror-indentation-markers';
 import { python } from '@codemirror/lang-python';
 import { markdown } from '@codemirror/lang-markdown';
@@ -271,7 +278,18 @@ export class DocumentView {
   }
 
   private langFor(v: CellView): Extension {
-    if (v.cell.kind === 'text') return [markdown(), placeholder('Write…')];
+    if (v.cell.kind === 'text') {
+      return [
+        markdown(),
+        placeholder('Write…'),
+        // One Dark paints markdown headings coral — prose ink is white
+        // here, and the # marks are apparatus, so they go quiet.
+        Prec.high(syntaxHighlighting(HighlightStyle.define([
+          { tag: tags.heading, color: '#f0eee9', fontWeight: '700' },
+          { tag: tags.processingInstruction, color: 'rgba(240, 238, 233, 0.4)' },
+        ]))),
+      ];
+    }
     // Code chrome rides the language compartment so a kind switch brings
     // it along: numbers, fold arrows (Python's own parser says what
     // folds — bodies of defs, classes, loops), and indent guides.
