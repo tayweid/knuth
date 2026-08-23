@@ -773,6 +773,76 @@ body[data-view='source'] .cell .run-num { visibility: visible; }
   color: var(--room-ink-soft);
 }
 
+/* Rendered prose: the same serif column as the editor it stands in for,
+   read rather than edited — Jupyter's rendered/edit-mode split. Sits over
+   the same slot the editor occupies, so swapping the two never reflows
+   the cells below. */
+.text-render {
+  font: 17px/1.6 var(--serif);
+  color: var(--room-ink);
+  padding: 4px 0.75rem;
+  cursor: pointer;
+}
+
+.text-render[hidden] { display: none; }
+
+/* CodeMirror's own base theme sets `.cm-editor { display: flex !important }`,
+   which otherwise beats the `[hidden]` UA rule outright. */
+.cell.kind-text .cm-editor[hidden] { display: none !important; }
+
+.text-render > :first-child { margin-top: 0; }
+.text-render > :last-child { margin-bottom: 0; }
+
+.text-render h1,
+.text-render h2,
+.text-render h3,
+.text-render h4,
+.text-render h5,
+.text-render h6 {
+  font-weight: 700;
+  color: #f0eee9; /* the editor's own heading color (langFor's heading highlight) */
+  line-height: 1.3;
+  margin: 0.9em 0 0.35em;
+}
+.text-render h1 { font-size: 1.6em; }
+.text-render h2 { font-size: 1.35em; }
+.text-render h3 { font-size: 1.15em; }
+.text-render h4, .text-render h5, .text-render h6 { font-size: 1em; }
+
+.text-render p { margin: 0.6em 0; }
+
+.text-render a { color: #9db8d6; text-decoration-color: rgba(157, 184, 214, 0.45); }
+.text-render a:hover { text-decoration-color: currentColor; }
+
+.text-render code {
+  font-family: var(--mono);
+  font-size: 0.87em;
+  background: rgba(255, 255, 255, 0.08);
+  border-radius: 3px;
+  padding: 0.1em 0.35em;
+}
+.text-render pre {
+  background: rgba(255, 255, 255, 0.06);
+  border-radius: 6px;
+  padding: 0.6em 0.75em;
+  overflow-x: auto;
+}
+.text-render pre code { background: none; padding: 0; }
+
+.text-render ul, .text-render ol { margin: 0.5em 0; padding-left: 1.4em; }
+.text-render li { margin: 0.2em 0; }
+
+.text-render blockquote {
+  margin: 0.6em 0;
+  padding: 0.1em 0 0.1em 0.85em;
+  border-left: 3px solid var(--room-line);
+  color: var(--room-ink-soft);
+}
+
+.text-render hr { border: 0; border-top: 1px solid var(--room-line); margin: 1em 0; }
+
+.text-render .katex { color: inherit; }
+
 /* figures: the one deliberately lit object on the bench — a small white
    card, like a print pinned to the desk. */
 .cell .cell-figures {
@@ -1088,6 +1158,7 @@ body[data-view='source'] .badge,
 body[data-view='source'] .insert-zone,
 body[data-view='source'] .output,
 body[data-view='source'] .cell-figures,
+body[data-view='source'] .text-render,
 body[data-view='source'] #panel,
 body[data-view='source'] #toggle-panel,
 body[data-view='source'] #cells-pod,

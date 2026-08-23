@@ -49,6 +49,7 @@ import {
 import type { Kernel } from './kernel/kernel.ts';
 import { icon } from './icons.ts';
 import { clearSafeSvgImages, createSafeSvgImage } from './safe-svg.ts';
+import { renderProse } from './text-render.ts';
 
 // Stored-output cap (the DESIGN.md truncation policy).
 const MAX_OUTPUT_LINES = 40;
@@ -79,6 +80,10 @@ interface CellView {
   body: HTMLElement;
   outEl: HTMLPreElement;
   figsEl: HTMLElement;
+  /** Rendered prose overlay for a text cell (Jupyter's rendered/edit
+   *  split): shown in place of the editor whenever it's unfocused and
+   *  there's prose to show. */
+  textRender: HTMLElement;
   /** SVGs displayed under this cell (stashed so reloads keep them). */
   figSvgs?: string[];
   /** The implicit cell zero: a plain script's whole body (or a jupytext
@@ -273,6 +278,7 @@ export class DocumentView {
     v.stale = kind === 'program';
     v.row.className = `cell kind-${kind}`;
     this.refreshRunControl(v);
+    this.syncTextRender(v); // text->code: drop the overlay; code->text: renders on next blur
     v.editor.focus();
     this.onChange();
   }
@@ -611,6 +617,9 @@ export class DocumentView {
     const figsEl = document.createElement('div');
     figsEl.className = 'cell-figures';
     figsEl.hidden = true;
+    const textRender = document.createElement('div');
+    textRender.className = 'text-render';
+    textRender.hidden = true;
 
     const v: CellView = {
       cell,
@@ -619,20 +628,30 @@ export class DocumentView {
       body,
       outEl,
       figsEl,
+      textRender,
       lang: new Compartment(),
       stale: false,
       running: false,
       isPreamble,
     };
 
+    textRender.addEventListener('click', (e) => {
+      // A link in prose should navigate, not also drop the cell into edit
+      // mode underneath the new tab it opens.
+      if ((e.target as HTMLElement).closest('a')) return;
+      this.enterTextEdit(v);
+    });
+
     const label = document.createElement('div');
     label.className = 'scratch-label';
     label.textContent = 'scratch';
     body.append(label);
     this.buildEditor(v);
+    body.append(textRender);
 
     body.append(figsEl, outEl);
     this.hydrateOutputs(v);
+    this.syncTextRender(v); // a loaded document shows prose immediately
 
     row.append(body);
     // No insert strip above the preamble: nothing can precede cell zero.
@@ -688,7 +707,35 @@ export class DocumentView {
         this.lastFocused = v;
         return false;
       },
+      // A text cell renders its prose the moment the editor stops being
+      // the thing in focus — Jupyter's rendered/edit-mode split.
+      blur: () => {
+        this.syncTextRender(v);
+        return false;
+      },
     });
+  }
+
+  /** Click the rendered prose to get back to the raw markdown, focused. */
+  private enterTextEdit(v: CellView) {
+    if (v.cell.kind !== 'text' || !v.editor) return;
+    v.editor.dom.hidden = false;
+    v.textRender.hidden = true;
+    v.editor.focus();
+  }
+
+  /** Show rendered prose in place of the editor when the editor isn't
+   *  focused and there's prose to show it; otherwise (code/scratch, an
+   *  empty text cell, or the cell currently being edited) the editor is
+   *  the whole story. Called at build time, on blur, and on a kind
+   *  switch — never while the editor holds focus. */
+  private syncTextRender(v: CellView) {
+    if (!v.editor) return;
+    const prose = v.cell.kind === 'text' ? textProse(v.cell) : '';
+    const show = prose.trim() !== '' && !v.editor.hasFocus;
+    if (show) v.textRender.replaceChildren(renderProse(prose));
+    v.textRender.hidden = !show;
+    v.editor.dom.hidden = show;
   }
 
   private cellKeymap(v: CellView) {
