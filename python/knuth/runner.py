@@ -1,12 +1,16 @@
 """knuth run: the reproducibility check and canonical artifact producer.
 
-Fresh session, program cells only (scratch and text untouched), top to
+Fresh session, program cells only (scratch and text not executed), top to
 bottom in the document's own folder, stopping at the first error. Output
 blocks are rewritten for every cell that ran — receipts of what actually
 happened — and on a clean run the folder contract is regenerated:
 values.json wholesale, named figures into figs/. On failure the previous
 contract is left untouched (it reflects the last complete run) and the
 exit code is nonzero.
+
+Every rewrite also canonicalizes scratch cell bodies to their commented
+"#|" form (same doctrine as the CRLF canonicalization below: a one-time
+diff on a legacy file, byte-stable ever after).
 """
 
 import io
@@ -19,7 +23,14 @@ from contextlib import redirect_stderr, redirect_stdout
 from pathlib import Path
 
 from .artifacts import MANIFEST_NAME, figure_path, manifest_text, owned_figure_names
-from .percent import cell_code, parse_document, serialize_document, set_output
+from .percent import (
+    cell_code,
+    parse_document,
+    scratch_code,
+    serialize_document,
+    set_output,
+    set_scratch_code,
+)
 from .session import Session
 
 # Stored-output cap — the same policy as the app (DESIGN.md).
@@ -127,6 +138,12 @@ def run_file(file, echo=print):
     # CRLF would mean mixed endings forever; one line-ending diff on the
     # first run, byte-stable ever after.
     doc = parse_document(path.read_text())
+    # Canonicalize every scratch body to its commented "#|" form. Decoding
+    # then re-encoding is idempotent: new-form bodies come back unchanged,
+    # legacy bare-code bodies migrate — a one-time diff, byte-stable after.
+    for cell in doc.cells:
+        if cell.kind == "scratch":
+            set_scratch_code(cell, scratch_code(cell))
     # The preamble is the implicit cell zero: a plain script (no # %%
     # markers) runs whole; it gets no output block (nothing to anchor
     # one to — the file must stay byte-identical apart from receipts).

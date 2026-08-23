@@ -4,7 +4,9 @@ same semantics, kept honest by round-tripping the same corpus in tests.
 Cells open with "# %%" ("#%%" tolerated, marker preserved verbatim);
 "# %% [markdown]" is a text cell; "# %% scratch" (exact token) is a scratch
 cell; anything else is a program cell. Outputs are machine-managed "#->"
-comment lines forming the trailing run of their cell.
+comment lines forming the trailing run of their cell. Scratch bodies are
+stored commented ("#| " prefix) so plain `python file.py` runs only
+program cells; "#|" can never match MARKER, so the encoding is lossless.
 """
 
 import re
@@ -12,6 +14,8 @@ from dataclasses import dataclass, field
 
 MARKER = re.compile(r"^# ?%%(.*)$")
 OUTPUT_PREFIX = "#->"
+SCRATCH_PREFIX = "#| "
+SCRATCH_BLANK = "#|"
 
 
 @dataclass
@@ -96,6 +100,28 @@ def serialize_document(doc):
 
 def cell_code(cell):
     return "\n".join(cell.source)
+
+
+def scratch_code(cell):
+    """A scratch cell's code, "#| " comment prefix stripped. A line without
+    the prefix (legacy bare-code scratch) passes through unchanged."""
+
+    def decode(line):
+        if line == SCRATCH_BLANK:
+            return ""
+        if line.startswith(SCRATCH_PREFIX):
+            return line[len(SCRATCH_PREFIX):]
+        return line
+
+    return "\n".join(decode(line) for line in cell.source)
+
+
+def set_scratch_code(cell, code):
+    """Replace a scratch cell's body (canonical "#| " prefixing, blank
+    lines as "#|"); empty code clears the source lines entirely."""
+    cell.source = [] if code == "" else [
+        SCRATCH_BLANK if line == "" else f"{SCRATCH_PREFIX}{line}" for line in code.split("\n")
+    ]
 
 
 def set_output(cell, text):

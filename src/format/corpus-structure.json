@@ -138,5 +138,32 @@
     "preamble": 4,
     "trailingNewline": true,
     "cells": []
+  },
+  "scratch.py": {
+    "preamble": 0,
+    "trailingNewline": true,
+    "cells": [
+      {
+        "kind": "text",
+        "marker": "# %% [markdown]",
+        "source": 2,
+        "output": 0,
+        "trailing": 0
+      },
+      {
+        "kind": "program",
+        "marker": "# %%",
+        "source": 2,
+        "output": 1,
+        "trailing": 1
+      },
+      {
+        "kind": "scratch",
+        "marker": "# %% scratch",
+        "source": 3,
+        "output": 1,
+        "trailing": 0
+      }
+    ]
   }
 }

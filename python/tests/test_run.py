@@ -1,13 +1,22 @@
 """Percent-format parity and full reproducibility-runner scenarios."""
 
 import json
+import subprocess
+import sys
 from pathlib import Path
 
 import pytest
 
 import knuth.runner as runner
 from knuth.artifacts import MANIFEST_NAME, owned_figure_names
-from knuth.percent import parse_document, serialize_document
+from knuth.percent import (
+    Cell,
+    Document,
+    parse_document,
+    scratch_code,
+    serialize_document,
+    set_scratch_code,
+)
 from knuth.runner import run_file
 
 REPO = Path(__file__).resolve().parents[2]
@@ -78,6 +87,97 @@ def test_corpus_crlf_structure():
     assert len(doc.preamble) == 2
     assert [c.kind for c in doc.cells] == ["program", "text", "scratch"]
     assert len(doc.cells[0].output) == 1
+
+
+def test_corpus_scratch_structure():
+    # Same structural reading as round-trip.test.ts asserts: a commented
+    # ("#|") scratch body decodes to its original code, "#|"-looking lines
+    # inside the code included.
+    with (CORPUS / "scratch.py").open(newline="") as stream:
+        doc = parse_document(stream.read())
+    assert [c.kind for c in doc.cells] == ["text", "program", "scratch"]
+    scratch = doc.cells[2]
+    assert scratch.output == ["#-> 84"]
+    assert scratch_code(scratch) == (
+        "probe = x * 2\n\n#| looks like a marker but is just code"
+    )
+
+
+def test_scratch_code_round_trip():
+    cell = Cell(kind="scratch", marker="# %% scratch")
+    set_scratch_code(cell, "a = 1\n\nb = 2")
+    assert cell.source == ["#| a = 1", "#|", "#| b = 2"]
+    assert scratch_code(cell) == "a = 1\n\nb = 2"
+
+
+def test_scratch_code_legacy_passthrough():
+    # A line without the "#| " prefix (legacy bare-code scratch) passes
+    # through decode unchanged.
+    cell = Cell(kind="scratch", marker="# %% scratch", source=["x * 2", "", "y = 3"])
+    assert scratch_code(cell) == "x * 2\n\ny = 3"
+
+
+def test_scratch_code_with_pipe_in_code():
+    # Code that itself looks like "#|" round-trips: encode prepends its own
+    # prefix, decode strips exactly one, so the code text comes back whole.
+    cell = Cell(kind="scratch", marker="# %% scratch")
+    set_scratch_code(cell, "#| not a marker\nreal_code = 1")
+    assert cell.source == ["#| #| not a marker", "#| real_code = 1"]
+    assert scratch_code(cell) == "#| not a marker\nreal_code = 1"
+
+
+def test_set_scratch_code_empty_clears_source():
+    cell = Cell(kind="scratch", marker="# %% scratch", source=["#| leftover"])
+    set_scratch_code(cell, "")
+    assert cell.source == []
+
+
+def test_legacy_scratch_body_is_canonicalized_by_run(tmp_path):
+    # DECIDED: the same rewrite that lays down receipts also canonicalizes
+    # every scratch cell's body to its commented "#|" form — same doctrine
+    # as the CRLF canonicalization above.
+    doc_path = tmp_path / "legacy.py"
+    doc_path.write_text(
+        "# %%\n"
+        "x = 1\n"
+        "print(x)\n"
+        "\n"
+        "# %% scratch\n"
+        "x * 2\n"
+        "#-> stale scratch receipt\n"
+    )
+    quiet = lambda *_: None
+    assert run_file(doc_path, echo=quiet) == 0
+    after = doc_path.read_text()
+    doc = parse_document(after)
+    program, scratch = doc.cells
+    assert program.output == ["#-> 1"], program.output
+    assert scratch.source == ["#| x * 2"], scratch.source
+    assert scratch.output == ["#-> stale scratch receipt"], scratch.output
+
+    # Idempotence: a second run reproduces the same bytes (the body is
+    # already in "#|" form, so decode-then-encode is a no-op).
+    assert run_file(doc_path, echo=quiet) == 0
+    assert doc_path.read_text() == after, "second run must be byte-stable"
+
+
+def test_scratch_body_does_not_execute_under_plain_python(tmp_path):
+    # The whole point of the "#|" convention: `python file.py` runs the
+    # program cells but never the scratch body.
+    marker_file = tmp_path / "scratch_ran.txt"
+    program = Cell(kind="program", marker="# %%", source=["print('program ran')"])
+    scratch = Cell(kind="scratch", marker="# %% scratch")
+    set_scratch_code(scratch, f"open({str(marker_file)!r}, 'w').write('scratch ran')")
+    doc = Document(cells=[program, scratch])
+    doc_path = tmp_path / "plain.py"
+    doc_path.write_text(serialize_document(doc))
+
+    result = subprocess.run(
+        [sys.executable, str(doc_path)], capture_output=True, text=True
+    )
+    assert result.returncode == 0, result.stderr
+    assert "program ran" in result.stdout
+    assert not marker_file.exists(), "scratch body executed under plain python"
 
 
 DOC = """\
