@@ -60,10 +60,17 @@ and makes pyrmd the computation half.
   - The discipline rule that kills hidden state: program cells must not
     depend on names defined only in scratch. (With one-way namespaces this
     is structural; enforce/warn explicitly if v1 shares the namespace.)
-- **Text cells** — markdown narration between code. Nice-to-have: reuse
-  Plass's line-breaker/measurement port (extract `src/layout/port` into a
-  shared package) for good text; take none of Plass's paragraph/page
-  machinery.
+- **Text cells** — markdown narration between code. DECIDED 2026-08-23:
+  always-editable WYSIWYG via ProseMirror, built from Plass's prose
+  machinery trimmed into `src/prose/` (schema, md round-trip with the
+  math sentinel, input rules, KaTeX-only math views — each file headers
+  its provenance; the Typst oracle and paragraph/page machinery stayed
+  home, as originally decided). The file stores plain markdown prose;
+  the PM view serializes only on real doc changes, so the round-trip is
+  byte-stable (pinned by the md-round suite, both display-math forms).
+  Vendored copies may drift from Plass; extract a shared package only
+  if that ever hurts. The line-breaker port for justified prose remains
+  the horizon nice-to-have.
 
 ## Execution model
 
