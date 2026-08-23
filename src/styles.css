@@ -594,6 +594,11 @@ body[data-view='source'] .cell .run-num { visibility: visible; }
      half-covered digit peeks out beneath the line; numbering resumes
      at 3. */
   height: min(calc(0.5rem + 37.8px), 100%);
+  /* The card's left curve, from inside its 1px border — the box sits
+     in the top-left corner and reaches the bottom one in a one-line
+     cell; mid-band the rounding vanishes into the same-colored band. */
+  border-top-left-radius: 7px;
+  border-bottom-left-radius: 7px;
   border: 0;
   padding: 0;
   background: #2b2f37;
