@@ -32,6 +32,8 @@ import {
   parseDocument,
   serializeDocument,
   cellCode,
+  scratchCode,
+  setScratchCode,
   textProse,
   setProse,
   setOutput,
@@ -334,6 +336,8 @@ export class DocumentView {
     }
     if (v.cell.kind === 'text') {
       setProse(v.cell, text);
+    } else if (v.cell.kind === 'scratch') {
+      setScratchCode(v.cell, text.replace(/\n+$/, ''));
     } else {
       v.cell.source = text.replace(/\n+$/, '').split('\n');
     }
@@ -464,7 +468,7 @@ export class DocumentView {
     };
     let named: string[] = [];
     const outcome = await this.kernel.run(
-      cellCode(v.cell),
+      v.cell.kind === 'scratch' ? scratchCode(v.cell) : cellCode(v.cell),
       {
         onStream: (_which, chunk) => {
           appendOutput(chunk);
@@ -623,7 +627,12 @@ export class DocumentView {
     // Trailing blank lines are inter-cell separators, not content: they
     // stay in the model and out of the editor (phantom empty lines made
     // cell heights and spacing uneven).
-    const raw = v.cell.kind === 'text' ? textProse(v.cell) : cellCode(v.cell);
+    const raw =
+      v.cell.kind === 'text'
+        ? textProse(v.cell)
+        : v.cell.kind === 'scratch'
+          ? scratchCode(v.cell)
+          : cellCode(v.cell);
     const initial = raw.replace(/\n+$/, '');
     v.editor = new EditorView({
       doc: initial,

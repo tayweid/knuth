@@ -5,6 +5,8 @@ import {
   parseDocument,
   serializeDocument,
   cellCode,
+  scratchCode,
+  setScratchCode,
   textProse,
   setProse,
   outputText,
@@ -131,6 +133,53 @@ for (const text of ['', '\n', 'x = 1', '# %%']) {
   const text = serializeDocument(doc);
   assert.ok(text.startsWith('# %%\nx = 42\nprint(x)\n\n# %% scratch'));
   assert.equal(serializeDocument(parseDocument(text)), text);
+}
+
+// Structure: scratch.py — commented scratch body decodes to its original
+// code, a "#|"-looking line inside the code included.
+{
+  const doc = parseDocument(corpus.get('scratch.py')!);
+  assert.deepEqual(doc.cells.map((c) => c.kind), ['text', 'program', 'scratch']);
+  const scratch = doc.cells[2];
+  assert.deepEqual(scratch.output, ['#-> 84']);
+  assert.equal(scratchCode(scratch), 'probe = x * 2\n\n#| looks like a marker but is just code');
+}
+
+// scratchCode/setScratchCode: canonical "#| " prefixing round-trips.
+{
+  const c = { kind: 'scratch' as const, marker: '# %% scratch', source: [] as string[], output: [], trailing: [] };
+  setScratchCode(c, 'a = 1\n\nb = 2');
+  assert.deepEqual(c.source, ['#| a = 1', '#|', '#| b = 2']);
+  assert.equal(scratchCode(c), 'a = 1\n\nb = 2');
+}
+
+// scratchCode: a line without the "#| " prefix (legacy bare-code scratch)
+// passes through decode unchanged.
+{
+  const c = {
+    kind: 'scratch' as const,
+    marker: '# %% scratch',
+    source: ['x * 2', '', 'y = 3'],
+    output: [],
+    trailing: [],
+  };
+  assert.equal(scratchCode(c), 'x * 2\n\ny = 3');
+}
+
+// scratchCode/setScratchCode: code that itself looks like "#|" round-trips —
+// encode prepends its own prefix, decode strips exactly one.
+{
+  const c = { kind: 'scratch' as const, marker: '# %% scratch', source: [] as string[], output: [], trailing: [] };
+  setScratchCode(c, '#| not a marker\nreal_code = 1');
+  assert.deepEqual(c.source, ['#| #| not a marker', '#| real_code = 1']);
+  assert.equal(scratchCode(c), '#| not a marker\nreal_code = 1');
+}
+
+// setScratchCode(''): clears the source lines entirely.
+{
+  const c = { kind: 'scratch' as const, marker: '# %% scratch', source: ['#| leftover'], output: [], trailing: [] };
+  setScratchCode(c, '');
+  assert.deepEqual(c.source, []);
 }
 
 // setProse: canonical "# " prefixing round-trips through parse.

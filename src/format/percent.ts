@@ -36,6 +36,8 @@ export interface KnuthDocument {
 // round-tripping.
 const MARKER = /^# ?%%([^\n]*)$/;
 const OUTPUT_PREFIX = '#->';
+const SCRATCH_PREFIX = '#| ';
+const SCRATCH_BLANK = '#|';
 
 function cellKind(markerRest: string): CellKind {
   const rest = markerRest.trim();
@@ -103,6 +105,27 @@ export function serializeDocument(doc: KnuthDocument): string {
 /** Code text of a program/scratch cell. */
 export function cellCode(cell: Cell): string {
   return cell.source.join('\n');
+}
+
+/**
+ * A scratch cell's code, "#| " comment prefix stripped. A line without the
+ * prefix (legacy bare-code scratch) passes through unchanged.
+ */
+export function scratchCode(cell: Cell): string {
+  const decode = (line: string) => {
+    if (line === SCRATCH_BLANK) return '';
+    if (line.startsWith(SCRATCH_PREFIX)) return line.slice(SCRATCH_PREFIX.length);
+    return line;
+  };
+  return cell.source.map(decode).join('\n');
+}
+
+/** Replace a scratch cell's body (canonical "#| " prefixing, blank lines as "#|"); empty code clears the source lines entirely. */
+export function setScratchCode(cell: Cell, code: string): void {
+  cell.source =
+    code === ''
+      ? []
+      : code.split('\n').map((l) => (l === '' ? SCRATCH_BLANK : `${SCRATCH_PREFIX}${l}`));
 }
 
 /** Prose of a text cell, comment prefix stripped. */
