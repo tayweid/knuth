@@ -11,7 +11,7 @@
     "build:engine": "npm run build && node scripts/stage-web.mjs",
     "preview": "vite preview",
     "check:web": "node scripts/check-web-fresh.mjs",
-    "test": "node --import tsx src/format/round-trip.test.ts && node --import tsx src/kernel/protocol.test.ts && node --import tsx src/artifacts.test.ts && node --import tsx src/text-render.test.ts",
+    "test": "node --import tsx src/format/round-trip.test.ts && node --import tsx src/kernel/protocol.test.ts && node --import tsx src/artifacts.test.ts && node --import tsx src/text-render.test.ts && node --import tsx src/prose/md-round.test.ts",
     "test:browser": "playwright test"
   },
   "devDependencies": {
@@ -30,6 +30,16 @@
     "codemirror": "^6.0.2",
     "dompurify": "^3.4.13",
     "katex": "^0.18.4",
-    "markdown-it": "^15.0.0"
+    "markdown-it": "^15.0.0",
+    "prosemirror-commands": "1.7.1",
+    "prosemirror-history": "1.5.0",
+    "prosemirror-inputrules": "1.5.1",
+    "prosemirror-keymap": "1.2.3",
+    "prosemirror-model": "1.25.10",
+    "prosemirror-schema-basic": "1.2.4",
+    "prosemirror-schema-list": "1.5.1",
+    "prosemirror-state": "1.4.4",
+    "prosemirror-transform": "1.12.0",
+    "prosemirror-view": "1.42.0"
   }
 }
