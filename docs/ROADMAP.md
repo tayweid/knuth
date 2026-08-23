@@ -105,4 +105,4 @@ and sockets. The browser side is thinner:
   interface, as the zero-install teaching mode.
 - Tables in the folder contract (DESIGN.md Q1 — parked).
 - Plass line-breaker port for text-cell typography (DESIGN.md Q6 revisit).
-- External-change reload, themes, export niceties.
+- Themes, export niceties. (External-change reload shipped 2026-08-22.)
