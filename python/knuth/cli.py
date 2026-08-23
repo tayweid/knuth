@@ -1,12 +1,23 @@
 """The Knuth command-line interface."""
 
 import argparse
+from pathlib import Path
 import sys
 
 from . import agent
 from .server import main as serve_main
 
 DEFAULT_PORT = 5197
+
+
+def _resolve_root(path):
+    """Resolve a project root, or exit before anything starts if it's unusable."""
+    if path is None:
+        return None
+    resolved = Path(path).expanduser().resolve()
+    if not resolved.is_dir():
+        sys.exit(f"knuth: root does not exist or is not a directory: {resolved}")
+    return str(resolved)
 
 
 def main():
@@ -27,10 +38,19 @@ def main():
         dest="origins",
         help="exact allowed browser origin (repeatable; overrides release defaults)",
     )
+    serve.add_argument(
+        "--root",
+        help="project root each kernel runs in (default: this process's cwd)",
+    )
 
     app_cmd = sub.add_parser(
         "app",
         help="start the local engine and open the Knuth app it serves",
+    )
+    app_cmd.add_argument(
+        "folder",
+        nargs="?",
+        help="project root each kernel runs in (default: this process's cwd)",
     )
     app_cmd.add_argument("--port", type=int, default=DEFAULT_PORT)
     app_cmd.add_argument(
@@ -97,11 +117,13 @@ def main():
     elif args.command == "app":
         from .hosted import run_hosted
 
+        root = _resolve_root(args.folder)
         sys.exit(run_hosted(
             args.port,
             args.grace,
             open_browser=not args.no_browser,
             browser=args.browser,
+            root=root,
         ))
     elif args.command == "agent":
         if args.action == "install":
@@ -113,10 +135,12 @@ def main():
         else:
             sys.exit(agent.restart())
     elif args.command == "serve":
+        root = _resolve_root(args.root)
         serve_main(
             args.port,
             args.grace,
             args.origins,
+            root=root,
         )
     else:
         parser.print_help()

@@ -136,7 +136,7 @@ def _offer_login_agent(port):
     return True
 
 
-def run_hosted(port=5197, grace=GRACE_SECONDS, *, open_browser=True, browser=None):
+def run_hosted(port=5197, grace=GRACE_SECONDS, *, open_browser=True, browser=None, root=None):
     """Serve the app and keep the engine in the foreground.
 
     If an engine already owns the port, this just opens the app against it
@@ -175,7 +175,7 @@ def run_hosted(port=5197, grace=GRACE_SECONDS, *, open_browser=True, browser=Non
         print("The Python engine is running locally. Press Ctrl-C to stop it.")
 
     try:
-        serve_main(port, grace, on_ready=ready)
+        serve_main(port, grace, on_ready=ready, root=root)
     except OSError as exc:
         print(f"Knuth could not bind the local engine on port {port}: {exc}")
         return 1

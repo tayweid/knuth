@@ -89,8 +89,8 @@ def test_cli_dispatches_app(monkeypatch):
     monkeypatch.setattr(
         hosted,
         "run_hosted",
-        lambda port, grace, *, open_browser, browser: called.append(
-            (port, grace, open_browser, browser)
+        lambda port, grace, *, open_browser, browser, root: called.append(
+            (port, grace, open_browser, browser, root)
         ) or 0,
     )
     monkeypatch.setattr(
@@ -102,7 +102,7 @@ def test_cli_dispatches_app(monkeypatch):
     with pytest.raises(SystemExit) as exit_info:
         cli.main()
     assert exit_info.value.code == 0
-    assert called == [(8123, 9, False, "chrome")]
+    assert called == [(8123, 9, False, "chrome", None)]
 
 
 def test_cli_no_longer_offers_pairing_verbs(monkeypatch, capsys):

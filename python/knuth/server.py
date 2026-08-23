@@ -101,7 +101,7 @@ class KernelProcess:
     def __init__(self):
         self.proc = None
 
-    async def start(self):
+    async def start(self, cwd=None):
         platform_options = {}
         if sys.platform == "win32":
             # A new process group lets the parent deliver Ctrl-Break to this
@@ -115,6 +115,7 @@ class KernelProcess:
             stdin=asyncio.subprocess.PIPE,
             stdout=asyncio.subprocess.PIPE,
             limit=MAX_KERNEL_EVENT_BYTES,
+            cwd=cwd,
             # Headless matplotlib: no GUI windows from a background service.
             env={**os.environ, "MPLBACKEND": "Agg"},
             **platform_options,
@@ -267,6 +268,7 @@ async def serve(
     max_sessions=MAX_LIVE_SESSIONS,
     max_concurrent_starts=MAX_CONCURRENT_KERNEL_STARTS,
     web_root=None,
+    root=None,
 ):
     sessions = {}
     starting_sids = set()
@@ -317,6 +319,7 @@ async def serve(
             "build": build_stamp(),
             "sessions": len(sessions) + len(starting_sids),
             "max_sessions": max_sessions,
+            "root": root,
         }))
         await ws.close(code=1000, reason="status reported")
 
@@ -393,7 +396,7 @@ async def serve(
             kernel = KernelProcess()
             try:
                 async with start_slots:
-                    await kernel.start()
+                    await kernel.start(cwd=root)
             except asyncio.CancelledError:
                 await kernel.stop()
                 raise
@@ -443,7 +446,7 @@ async def serve(
                     session.kernel = KernelProcess()
                     try:
                         async with start_slots:
-                            await session.kernel.start()
+                            await session.kernel.start(cwd=root)
                     except Exception:
                         sessions.pop(sid, None)
                         await report_start_failure(session.kernel, ws, {
@@ -514,6 +517,7 @@ def main(
     origins=None,
     *,
     on_ready=None,
+    root=None,
 ):
     try:
         asyncio.run(serve(
@@ -521,6 +525,7 @@ def main(
             grace,
             origins,
             on_ready=on_ready,
+            root=root,
         ))
     except KeyboardInterrupt:
         pass

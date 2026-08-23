@@ -122,10 +122,12 @@ def free_port():
         return sock.getsockname()[1]
 
 
-def server_command(port, *extra, origins=()):
+def server_command(port, *extra, origins=(), root=None):
     command = [sys.executable, "-m", "knuth", "serve", "--port", str(port), *extra]
     for origin in origins:
         command.extend(("--origin", origin))
+    if root is not None:
+        command.extend(("--root", str(root)))
     return command
 
 
@@ -611,13 +613,13 @@ async def check_simultaneous_duplicate_attach(monkeypatch):
     both_starting = asyncio.Event()
     starts = 0
 
-    async def delayed_start(kernel):
+    async def delayed_start(kernel, cwd=None):
         nonlocal starts
         starts += 1
         if starts == 2:
             both_starting.set()
         await asyncio.wait_for(both_starting.wait(), timeout=5)
-        await original_start(kernel)
+        await original_start(kernel, cwd=cwd)
 
     monkeypatch.setattr(KernelProcess, "start", delayed_start)
     port = free_port()
@@ -690,7 +692,7 @@ async def check_kernel_start_failure(monkeypatch):
     """
     original_start = KernelProcess.start
 
-    async def failing_start(kernel):
+    async def failing_start(kernel, cwd=None):
         raise RuntimeError("no interpreter for this test")
 
     monkeypatch.setattr(KernelProcess, "start", failing_start)
@@ -734,10 +736,10 @@ async def check_restart_failure(monkeypatch):
     original_start = KernelProcess.start
     fail_next_start = False
 
-    async def flaky_start(kernel):
+    async def flaky_start(kernel, cwd=None):
         if fail_next_start:
             raise RuntimeError("interpreter went missing")
-        await original_start(kernel)
+        await original_start(kernel, cwd=cwd)
 
     monkeypatch.setattr(KernelProcess, "start", flaky_start)
     port = free_port()
@@ -827,3 +829,59 @@ async def check_same_origin_needs_no_credential(web_root):
 def test_same_origin_needs_no_credential(tmp_path):
     (tmp_path / "index.html").write_text("<!doctype html>")
     asyncio.run(check_same_origin_needs_no_credential(tmp_path))
+
+
+async def check_kernel_root(root):
+    """A kernel started with a server root runs there, across a restart too."""
+    port = free_port()
+    (root / "probe.txt").write_text("hello from root\n")
+    server = subprocess.Popen(
+        server_command(port, root=root),
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+    )
+    try:
+        ws = await connect_when_up(port)
+        async with closing_websocket(ws):
+            client = Client(ws)
+            await client.attach("root-test")
+            await client.wait_ready()
+
+            _, final = await client.run(1, "open('probe.txt').read()")
+            assert final["type"] == "done", final
+            assert final["result"] == repr("hello from root\n"), final
+
+            _, final = await client.run(2, "import os; os.getcwd()")
+            assert final["type"] == "done", final
+            assert final["result"] == repr(str(root)), final
+
+            await client.send(type="restart", id=3)
+            while True:
+                msg = await asyncio.wait_for(client.recv(), timeout=10)
+                if msg["type"] == "ready":
+                    assert msg["id"] == 3, msg
+                    break
+
+            _, final = await client.run(4, "import os; os.getcwd()")
+            assert final["type"] == "done", final
+            assert final["result"] == repr(str(root)), final
+    finally:
+        server.terminate()
+        server.wait(timeout=5)
+
+
+def test_kernel_root(tmp_path):
+    asyncio.run(check_kernel_root(tmp_path.resolve()))
+
+
+def test_serve_rejects_missing_root():
+    """The engine never binds a port for a root that isn't a real directory."""
+    port = free_port()
+    result = subprocess.run(
+        server_command(port, root="/nonexistent"),
+        capture_output=True,
+        text=True,
+        timeout=10,
+    )
+    assert result.returncode != 0, result
+    assert "/nonexistent" in result.stderr, result.stderr
