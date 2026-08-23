@@ -57,10 +57,13 @@ export function mdToDoc(markdown: string): MdImport {
       // Display block: $$ ... $$ (single- or multi-line).
       const d = /^\s*\$\$(.*)$/.exec(line);
       if (d) {
+        // The src keeps the authored whitespace around the TeX — `$$ x $$`
+        // and the three-line form both round-trip byte-stably, because the
+        // serializer just writes $$src$$ back. KaTeX ignores the padding.
         let body = '';
         const closeSame = /^(.*?)\$\$\s*$/.exec(d[1]);
         if (closeSame && closeSame[1].trim()) {
-          body = closeSame[1].trim();
+          body = closeSame[1];
         } else {
           const buf: string[] = [];
           if (d[1].trim()) buf.push(d[1].trim());
@@ -78,7 +81,7 @@ export function mdToDoc(markdown: string): MdImport {
             continue;
           }
           i = j;
-          body = buf.join('\n');
+          body = `\n${buf.join('\n')}\n`;
         }
         out.push(`${S}B${displayMath.length}${S}`);
         displayMath.push(body);

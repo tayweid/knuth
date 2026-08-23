@@ -57,7 +57,9 @@ export function docToMd(doc: PMNode): string {
       case 'heading':
         return `${'#'.repeat(node.attrs.level as number)} ${inline(node)}`;
       case 'math_display':
-        return `$$\n${node.attrs.src as string}\n$$`;
+        // src carries its authored whitespace (md-parser), so both the
+        // single-line and three-line forms round-trip byte-stably.
+        return `$$${node.attrs.src as string}$$`;
       case 'code_block':
         return `\`\`\`\n${node.textContent}\n\`\`\``;
       case 'blockquote': {

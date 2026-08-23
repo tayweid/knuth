@@ -87,7 +87,7 @@ export function openMathEditor(view: EditorView, pos: number) {
   input.className = 'math-editor-input';
   input.rows = display ? 3 : 1;
   input.spellcheck = false;
-  input.value = node.attrs.src as string;
+  input.value = (node.attrs.src as string).trim();
   panel.append(preview, input);
 
   const updatePreview = () => renderInto(preview, input.value.trim(), display);
@@ -111,8 +111,19 @@ export function openMathEditor(view: EditorView, pos: number) {
 
   const commit = () => {
     if (closed) return;
-    const src = input.value.trim();
+    const edited = input.value.trim();
     const current = view.state.doc.nodeAt(pos);
+    // An unchanged source is a close, not an edit: a no-op setNodeMarkup
+    // still reads as docChanged and would reserialize the cell. Real
+    // edits keep the node's authored whitespace form (single-line vs
+    // block), which the serializer round-trips.
+    const orig = current ? (current.attrs.src as string) : '';
+    if (current && current.type === node.type && edited === orig.trim()) {
+      close();
+      return;
+    }
+    const pad = display ? (orig.includes('\n') ? '\n' : ' ') : '';
+    const src = edited ? pad + edited + pad : '';
     if (current && current.type === node.type) {
       const tr = src
         ? view.state.tr

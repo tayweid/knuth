@@ -128,6 +128,13 @@ const second = mdToDoc(md1);
 const md2 = docToMd(second.doc);
 check('round-trip converges on a second pass', md1 === md2);
 
+// Single-line display math keeps its single-line form.
+{
+  const single = '$$ u_t = \\alpha + \\beta \\pi_t $$';
+  const round = docToMd(mdToDoc(single).doc);
+  check('single-line display math is byte-stable', round === single + '\n', JSON.stringify(round));
+}
+
 // The math sentinel pre-pass must run BEFORE markdown-it's emphasis rules
 // see the text — otherwise `$x_i$` would tokenize the underscore as an
 // (unmatched, since it's mid-word) emphasis marker rather than passing

@@ -15,24 +15,28 @@ import {
   keymap,
   lineNumberMarkers,
   lineNumbers,
-  placeholder,
   ViewPlugin,
   type DecorationSet,
   type ViewUpdate,
 } from '@codemirror/view';
-import { Compartment, Prec, RangeSet, RangeSetBuilder, type Extension } from '@codemirror/state';
-import {
-  foldGutter,
-  foldKeymap,
-  HighlightStyle,
-  indentUnit,
-  syntaxHighlighting,
-} from '@codemirror/language';
-import { tags } from '@lezer/highlight';
+import { Compartment, RangeSet, RangeSetBuilder, type Extension } from '@codemirror/state';
+import { foldGutter, foldKeymap, indentUnit } from '@codemirror/language';
 import { indentationMarkers } from '@replit/codemirror-indentation-markers';
 import { python } from '@codemirror/lang-python';
-import { markdown } from '@codemirror/lang-markdown';
 import { oneDark } from '@codemirror/theme-one-dark';
+import {
+  EditorView as PMEditorView,
+  Decoration as PMDecoration,
+  DecorationSet as PMDecorationSet,
+} from 'prosemirror-view';
+import { EditorState, Plugin as PMPlugin, TextSelection, type Command as PMCommand } from 'prosemirror-state';
+import type { Node as PMNode } from 'prosemirror-model';
+import { keymap as pmKeymap } from 'prosemirror-keymap';
+import { history } from 'prosemirror-history';
+import { proseInputRules, proseKeymap, copyTextWithoutItsBlock } from './prose/editing.ts';
+import { mdToDoc } from './prose/md-parser.ts';
+import { docToMd } from './prose/md-serializer.ts';
+import { MathView } from './prose/math-view.ts';
 import {
   type Cell,
   type KnuthDocument,
@@ -49,7 +53,6 @@ import {
 import type { Kernel } from './kernel/kernel.ts';
 import { icon } from './icons.ts';
 import { clearSafeSvgImages, createSafeSvgImage } from './safe-svg.ts';
-import { renderProse } from './text-render.ts';
 
 // Stored-output cap (the DESIGN.md truncation policy).
 const MAX_OUTPUT_LINES = 40;
@@ -80,22 +83,45 @@ interface CellView {
   body: HTMLElement;
   outEl: HTMLPreElement;
   figsEl: HTMLElement;
-  /** Rendered prose overlay for a text cell (Jupyter's rendered/edit
-   *  split): shown in place of the editor whenever it's unfocused and
-   *  there's prose to show. */
-  textRender: HTMLElement;
   /** SVGs displayed under this cell (stashed so reloads keep them). */
   figSvgs?: string[];
   /** The implicit cell zero: a plain script's whole body (or a jupytext
    *  header) — runnable and editable, but never given a marker or a
    *  stored output block, so the file stays byte-identical. */
   isPreamble?: boolean;
+  /** Program/scratch cells (and the source-view pseudo-cell). */
   editor?: EditorView;
+  /** Text cells: an always-editable ProseMirror view: no rendered/edit
+   *  split, no overlay — the doc it holds IS the cell. */
+  prose?: PMEditorView;
   /** Language/placeholder live in a compartment so kind switches keep the
    *  same editor — and with it, the undo history. */
   lang: Compartment;
   stale: boolean;
   running: boolean;
+}
+
+/** An empty doc is the schema's default: one paragraph, no content. */
+function isEmptyProseDoc(doc: PMNode): boolean {
+  const first = doc.firstChild;
+  return doc.childCount === 1 && !!first && first.content.size === 0;
+}
+
+/** 'Write…' for an empty text cell: a `data-placeholder` node decoration on
+ *  the lone empty paragraph (CSS renders it via ::before) — PM's own
+ *  trailing-break span keeps the <p> non-empty, so :empty is no use here. */
+function textPlaceholder(text: string): PMPlugin {
+  return new PMPlugin({
+    props: {
+      decorations(state) {
+        if (!isEmptyProseDoc(state.doc)) return null;
+        const first = state.doc.firstChild!;
+        return PMDecorationSet.create(state.doc, [
+          PMDecoration.node(0, first.nodeSize, { 'data-placeholder': text }),
+        ]);
+      },
+    },
+  });
 }
 
 type NewCellKind = 'program' | 'scratch' | 'text';
@@ -249,53 +275,49 @@ export class DocumentView {
     this.armed = null;
   }
 
-  /** Switch a cell's kind in place. The editor (and its undo history)
-   *  survives: only the language compartment and the chrome change. */
+  /** Switch a cell's kind in place. Program<->scratch keeps the same CM
+   *  editor (and its undo history) — only the language compartment and the
+   *  chrome change. Any switch across the text/code line rebuilds the
+   *  editor outright: CodeMirror and ProseMirror are different widgets,
+   *  so undo history does not survive that crossing. */
   convertKind(v: CellView, kind: NewCellKind): void {
     const cell = v.cell;
-    if (cell.kind === kind || !BARE_MARKERS.has(cell.marker) || !v.editor) return;
+    if (cell.kind === kind || !BARE_MARKERS.has(cell.marker) || (!v.editor && !v.prose)) return;
     const wasText = cell.kind === 'text';
     const nowText = kind === 'text';
+    let text = v.prose ? docToMd(v.prose.state.doc).replace(/\n+$/, '') : (v.editor?.state.doc.toString() ?? '');
+
     cell.kind = kind;
     cell.marker = KIND_MARKERS[kind];
+
     if (wasText !== nowText) {
       if (nowText) {
         // Outputs don't survive becoming text; trailing blank lines would
-        // turn into '#' lines, so trim them (one undoable step).
-        const text = v.editor.state.doc.toString();
-        const trimmed = text.replace(/\n+$/, '');
-        if (trimmed !== text) {
-          v.editor.dispatch({ changes: { from: trimmed.length, to: text.length } });
-        }
+        // turn into '#' lines, so trim them.
+        text = text.replace(/\n+$/, '');
         setOutput(cell, null);
         cell.output = [];
         v.outEl.hidden = true;
         v.outEl.textContent = '';
       }
-      v.editor.dispatch({ effects: v.lang.reconfigure(this.langFor(v)) });
+      v.prose?.destroy();
+      v.prose = undefined;
+      v.editor?.destroy();
+      v.editor = undefined;
+      this.syncModel(v, text);
+      this.buildEditor(v);
+    } else {
+      v.editor!.dispatch({ effects: v.lang.reconfigure(this.langFor(v)) });
+      this.syncModel(v, text);
     }
-    this.syncModel(v, v.editor.state.doc.toString());
     v.stale = kind === 'program';
     v.row.className = `cell kind-${kind}`;
     this.refreshRunControl(v);
-    this.syncTextRender(v); // text->code: drop the overlay; code->text: renders on next blur
-    v.editor.focus();
+    this.focusCell(v);
     this.onChange();
   }
 
   private langFor(v: CellView): Extension {
-    if (v.cell.kind === 'text') {
-      return [
-        markdown(),
-        placeholder('Write…'),
-        // One Dark paints markdown headings coral — prose ink is white
-        // here, and the # marks are apparatus, so they go quiet.
-        Prec.high(syntaxHighlighting(HighlightStyle.define([
-          { tag: tags.heading, color: '#f0eee9', fontWeight: '700' },
-          { tag: tags.processingInstruction, color: 'rgba(240, 238, 233, 0.4)' },
-        ]))),
-      ];
-    }
     // Code chrome rides the language compartment so a kind switch brings
     // it along: numbers, fold arrows (Python's own parser says what
     // folds — bodies of defs, classes, loops), and indent guides.
@@ -388,16 +410,16 @@ export class DocumentView {
     if (!on && this.doc.cells.length === 0) return;
     this.sourceMode = on;
     this.render();
-    (this.preambleView ?? this.views[0])?.editor?.focus();
+    this.focusCell(this.preambleView ?? this.views[0]);
   }
 
   private render() {
     for (const v of this.views) {
       clearSafeSvgImages(v.figsEl);
-      v.editor?.destroy();
+      this.destroyEditors(v);
     }
     if (this.preambleView) clearSafeSvgImages(this.preambleView.figsEl);
-    this.preambleView?.editor?.destroy();
+    if (this.preambleView) this.destroyEditors(this.preambleView);
     this.views = [];
     this.preambleView = null;
     this.container.textContent = '';
@@ -597,8 +619,61 @@ export class DocumentView {
   /** Focus the next cell; optionally create one when v is last. */
   private focusAfter(v: CellView, createAtEnd: boolean) {
     const next = this.views[this.views.indexOf(v) + 1];
-    if (next) next.editor?.focus();
+    if (next) this.focusCell(next);
     else if (createAtEnd) this.insertAfter(v, 'program');
+  }
+
+  /** The focusable widget in a cell, CM or PM alike. */
+  private focusCell(v: CellView | null | undefined) {
+    if (!v) return;
+    if (v.prose) v.prose.focus();
+    else v.editor?.focus();
+  }
+
+  /** Cursor to the very end of a cell, then focus it — ArrowDown/Backspace
+   *  landing in the previous cell should not dump the cursor at its start. */
+  private focusCellEnd(v: CellView) {
+    if (v.prose) {
+      const sel = TextSelection.atEnd(v.prose.state.doc);
+      v.prose.dispatch(v.prose.state.tr.setSelection(sel));
+      v.prose.focus();
+    } else if (v.editor) {
+      v.editor.dispatch({ selection: { anchor: v.editor.state.doc.length } });
+      v.editor.focus();
+    }
+  }
+
+  /** Cursor to the very start of a cell, then focus it. */
+  private focusCellStart(v: CellView) {
+    if (v.prose) {
+      const sel = TextSelection.atStart(v.prose.state.doc);
+      v.prose.dispatch(v.prose.state.tr.setSelection(sel));
+      v.prose.focus();
+    } else if (v.editor) {
+      v.editor.dispatch({ selection: { anchor: 0 } });
+      v.editor.focus();
+    }
+  }
+
+  /** ArrowUp from the first line of a cell: cursor to the end of whatever
+   *  precedes it (another cell, or the preamble). false if there's nothing
+   *  above — the arrow key falls through to its ordinary behavior. */
+  private moveToPrevEnd(v: CellView): boolean {
+    const all = this.allRunnable();
+    const prev = all[all.indexOf(v) - 1];
+    if (!prev) return false;
+    this.focusCellEnd(prev);
+    return true;
+  }
+
+  /** ArrowDown from the last line of a cell: cursor to the start of
+   *  whatever follows it. */
+  private moveToNextStart(v: CellView): boolean {
+    const all = this.allRunnable();
+    const next = all[all.indexOf(v) + 1];
+    if (!next) return false;
+    this.focusCellStart(next);
+    return true;
   }
 
   // ---------- construction ----------
@@ -617,9 +692,6 @@ export class DocumentView {
     const figsEl = document.createElement('div');
     figsEl.className = 'cell-figures';
     figsEl.hidden = true;
-    const textRender = document.createElement('div');
-    textRender.className = 'text-render';
-    textRender.hidden = true;
 
     const v: CellView = {
       cell,
@@ -628,30 +700,20 @@ export class DocumentView {
       body,
       outEl,
       figsEl,
-      textRender,
       lang: new Compartment(),
       stale: false,
       running: false,
       isPreamble,
     };
 
-    textRender.addEventListener('click', (e) => {
-      // A link in prose should navigate, not also drop the cell into edit
-      // mode underneath the new tab it opens.
-      if ((e.target as HTMLElement).closest('a')) return;
-      this.enterTextEdit(v);
-    });
-
     const label = document.createElement('div');
     label.className = 'scratch-label';
     label.textContent = 'scratch';
     body.append(label);
     this.buildEditor(v);
-    body.append(textRender);
 
     body.append(figsEl, outEl);
     this.hydrateOutputs(v);
-    this.syncTextRender(v); // a loaded document shows prose immediately
 
     row.append(body);
     // No insert strip above the preamble: nothing can precede cell zero.
@@ -661,15 +723,14 @@ export class DocumentView {
   }
 
   private buildEditor(v: CellView) {
+    if (v.cell.kind === 'text') {
+      this.buildProse(v);
+      return;
+    }
     // Trailing blank lines are inter-cell separators, not content: they
     // stay in the model and out of the editor (phantom empty lines made
     // cell heights and spacing uneven).
-    const raw =
-      v.cell.kind === 'text'
-        ? textProse(v.cell)
-        : v.cell.kind === 'scratch'
-          ? scratchCode(v.cell)
-          : cellCode(v.cell);
+    const raw = v.cell.kind === 'scratch' ? scratchCode(v.cell) : cellCode(v.cell);
     const initial = raw.replace(/\n+$/, '');
     v.editor = new EditorView({
       doc: initial,
@@ -683,12 +744,102 @@ export class DocumentView {
         EditorView.updateListener.of((update) => {
           if (!update.docChanged) return;
           this.syncModel(v, update.state.doc.toString());
-          this.markStaleFrom(v); // no-op for scratch/text
+          this.markStaleFrom(v); // no-op for scratch
           this.onChange();
         }),
       ],
     });
     v.body.append(v.editor.dom);
+  }
+
+  /** A text cell is an always-editable ProseMirror view — no rendered/edit
+   *  split, no overlay: the doc it holds IS the cell. */
+  private buildProse(v: CellView) {
+    const state = EditorState.create({
+      doc: mdToDoc(textProse(v.cell)).doc,
+      plugins: [
+        // First, so its Shift-Enter/Backspace/Escape/arrow bindings beat
+        // proseKeymap's own (hard-break Shift-Enter, joining Backspace).
+        pmKeymap(this.textCellKeymap(v)),
+        proseInputRules,
+        proseKeymap,
+        history(),
+        copyTextWithoutItsBlock(),
+        textPlaceholder('Write…'),
+      ],
+    });
+    let view!: PMEditorView;
+    view = new PMEditorView(null, {
+      state,
+      nodeViews: {
+        math_inline: (node, nv, getPos) => new MathView(node, nv, getPos),
+        math_display: (node, nv, getPos) => new MathView(node, nv, getPos),
+      },
+      handleDOMEvents: {
+        focus: () => {
+          this.lastFocused = v;
+          return false;
+        },
+        mousedown: (_pv, event) => this.openLinkOnModifierClick(event),
+      },
+      // Round-trip honesty: reserialize only on a real doc change, never on
+      // a bare selection/focus transaction (that would be pointless churn
+      // and risks the file changing under a click that touched nothing).
+      dispatchTransaction: (tr) => {
+        const next = view.state.apply(tr);
+        view.updateState(next);
+        if (!tr.docChanged) return;
+        this.syncModel(v, docToMd(next.doc).replace(/\n+$/, ''));
+        this.markStaleFrom(v); // no-op for text
+        this.onChange();
+      },
+    });
+    v.prose = view;
+    v.body.append(view.dom);
+  }
+
+  /** Cmd/Ctrl-click a link to open it beside the app, same as prose links
+   *  always have — never inside the contenteditable, which would just move
+   *  the caret there. http(s) only; never hand the tab a `window.opener`. */
+  private openLinkOnModifierClick(event: MouseEvent): boolean {
+    if (!(event.metaKey || event.ctrlKey)) return false;
+    const anchor = (event.target as HTMLElement).closest('a[href]');
+    if (!anchor) return false;
+    const href = anchor.getAttribute('href') ?? '';
+    if (!/^https?:\/\//i.test(href)) return false;
+    event.preventDefault();
+    window.open(href, '_blank', 'noopener');
+    return true;
+  }
+
+  /** Cell-level bindings for a text cell's PM keymap: the same Shift-Enter/
+   *  Mod-Shift-Enter/Backspace/Escape/arrow-flow parity every other cell
+   *  kind gets from cellKeymap. Mod-Enter (run) is deliberately absent —
+   *  text cells don't run, so it falls through as a no-op, same as today. */
+  private textCellKeymap(v: CellView): Record<string, PMCommand> {
+    return {
+      'Shift-Enter': () => {
+        this.focusAfter(v, true);
+        return true;
+      },
+      'Mod-Shift-Enter': () => {
+        this.insertAfter(v, 'program');
+        return true;
+      },
+      'Backspace': () => this.backspaceOnEmpty(v),
+      'Escape': () => {
+        this.arm(v);
+        return true;
+      },
+      'ArrowUp': (state, _dispatch, pv) => {
+        if (!state.selection.empty || !pv?.endOfTextblock('up')) return false;
+        return this.moveToPrevEnd(v);
+      },
+      'ArrowDown': (state, _dispatch, pv) => {
+        if (!state.selection.empty || !pv?.endOfTextblock('down')) return false;
+        return this.moveToNextStart(v);
+      },
+    };
   }
 
   /** Insert after the cell the user is (or was last) working in. */
@@ -707,78 +858,71 @@ export class DocumentView {
         this.lastFocused = v;
         return false;
       },
-      // A text cell renders its prose the moment the editor stops being
-      // the thing in focus — Jupyter's rendered/edit-mode split.
-      blur: () => {
-        this.syncTextRender(v);
-        return false;
-      },
     });
   }
 
-  /** Click the rendered prose to get back to the raw markdown, focused. */
-  private enterTextEdit(v: CellView) {
-    if (v.cell.kind !== 'text' || !v.editor) return;
-    v.editor.dom.hidden = false;
-    v.textRender.hidden = true;
-    v.editor.focus();
-  }
-
-  /** Show rendered prose in place of the editor when the editor isn't
-   *  focused and there's prose to show it; otherwise (code/scratch, an
-   *  empty text cell, or the cell currently being edited) the editor is
-   *  the whole story. Called at build time, on blur, and on a kind
-   *  switch — never while the editor holds focus. */
-  private syncTextRender(v: CellView) {
-    if (!v.editor) return;
-    const prose = v.cell.kind === 'text' ? textProse(v.cell) : '';
-    const show = prose.trim() !== '' && !v.editor.hasFocus;
-    if (show) v.textRender.replaceChildren(renderProse(prose));
-    v.textRender.hidden = !show;
-    v.editor.dom.hidden = show;
-  }
-
+  /** This keymap only ever rides a CM editor (program/scratch/the source
+   *  pseudo-cell): a kind switch that crosses the text/code line rebuilds
+   *  the editor rather than reusing it (convertKind), so `v.cell.kind` is
+   *  never 'text' while these closures fire. */
   private cellKeymap(v: CellView) {
-    // One keymap for every kind, branching at press time — the editor
-    // survives kind switches, so its bindings must too.
-    const isText = () => v.cell.kind === 'text';
     return keymap.of([
-      { key: 'Mod-Enter', run: () => (isText() ? false : (void this.runCell(v), true)) },
-      {
-        key: 'Shift-Enter',
-        run: () => {
-          if (isText()) this.focusAfter(v, true);
-          else this.runAndAdvance(v);
-          return true;
-        },
-      },
-      { key: 'Alt-Enter', run: () => (isText() ? false : (this.runAndInsertBelow(v), true)) },
+      { key: 'Mod-Enter', run: () => (void this.runCell(v), true) },
+      { key: 'Shift-Enter', run: () => (this.runAndAdvance(v), true) },
+      { key: 'Alt-Enter', run: () => (this.runAndInsertBelow(v), true) },
       { key: 'Mod-Shift-Enter', run: () => (this.insertAfter(v, 'program'), true) },
       { key: 'Backspace', run: () => this.backspaceOnEmpty(v) },
       { key: 'Escape', run: () => (this.arm(v), true) },
+      {
+        key: 'ArrowUp',
+        run: (cm) => {
+          const sel = cm.state.selection.main;
+          if (!sel.empty || cm.state.doc.lineAt(sel.head).number !== 1) return false;
+          return this.moveToPrevEnd(v);
+        },
+      },
+      {
+        key: 'ArrowDown',
+        run: (cm) => {
+          const sel = cm.state.selection.main;
+          if (!sel.empty || cm.state.doc.lineAt(sel.head).number !== cm.state.doc.lines) return false;
+          return this.moveToNextStart(v);
+        },
+      },
     ]);
+  }
+
+  /** Whether a cell holds no content: the empty CM doc, or PM's schema
+   *  default (one paragraph, no content). */
+  private isCellEmpty(v: CellView): boolean {
+    if (v.prose) return isEmptyProseDoc(v.prose.state.doc);
+    return v.editor ? v.editor.state.doc.length === 0 : false;
+  }
+
+  /** Destroy whichever editor (CM or PM) a cell holds. */
+  private destroyEditors(v: CellView) {
+    v.editor?.destroy();
+    v.prose?.destroy();
   }
 
   /** Backspace in an empty cell deletes it (Jupyter's affordance) and
    *  moves focus up; the deletion is restorable via onCellDeleted. */
   private backspaceOnEmpty(v: CellView): boolean {
+    if (!this.isCellEmpty(v)) return false;
     if (v.isPreamble) {
-      if (v.editor && v.editor.state.doc.length === 0) {
-        this.doc.preamble = [];
-        v.editor.destroy();
-        v.root.remove();
-        this.preambleView = null;
-        if (this.views.length === 0) this.insertAtEnd('program');
-        else this.views[0].editor?.focus();
-        this.onChange();
-        return true;
-      }
-      return false;
+      this.doc.preamble = [];
+      this.destroyEditors(v);
+      v.root.remove();
+      this.preambleView = null;
+      if (this.views.length === 0) this.insertAtEnd('program');
+      else this.focusCell(this.views[0]);
+      this.onChange();
+      return true;
     }
-    if (v.editor && v.editor.state.doc.length === 0 && this.views.length > 1) {
+    if (this.views.length > 1) {
       const prev = this.views[this.views.indexOf(v) - 1] ?? this.views[1];
       this.remove(v);
-      prev?.editor?.focus();
+      this.focusCell(prev);
       return true;
     }
     return false;
@@ -839,7 +983,7 @@ export class DocumentView {
       view.stale = true;
       this.refreshRunControl(view);
     }
-    view.editor?.focus();
+    this.focusCell(view);
     this.onChange();
   }
 
@@ -871,7 +1015,7 @@ export class DocumentView {
     this.doc.cells.splice(i, 1);
     this.syncView();
     this.views.splice(i, 1);
-    v.editor?.destroy();
+    this.destroyEditors(v);
     v.root.remove();
     this.markStaleFromIndex(i);
     this.onChange();
