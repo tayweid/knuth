@@ -260,6 +260,9 @@ let restoring = true;
 fileManager = new FileManager({
   getDoc: () => docView.doc,
   setDoc: (doc) => {
+    // A non-.py file is a plain text file: pin it to the source editor
+    // (the cell workbench is for Python cell documents).
+    docView.setPlain(!/\.py$/i.test(fileManager?.name ?? DEFAULT_DOC_NAME));
     docView.setDoc(doc);
     // A different document deserves a fresh session — otherwise the
     // previous document's variables haunt the explorer and values.json.

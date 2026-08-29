@@ -32,11 +32,21 @@
     {
       "action": "./",
       "accept": {
-        "text/x-python": [
-          ".py"
-        ],
-        "application/x-ipynb+json": [
-          ".ipynb"
+        "text/x-python": [".py", ".pyi"],
+        "application/x-ipynb+json": [".ipynb"],
+        "text/markdown": [".md", ".markdown", ".qmd", ".rmd"],
+        "application/json": [".json", ".jsonl"],
+        "application/yaml": [".yaml", ".yml"],
+        "text/csv": [".csv", ".tsv"],
+        "text/html": [".html", ".htm"],
+        "text/css": [".css"],
+        "text/javascript": [".js", ".mjs", ".cjs", ".jsx", ".ts", ".tsx"],
+        "text/x-sh": [".sh", ".bash", ".zsh"],
+        "text/x-tex": [".tex", ".sty", ".bib"],
+        "text/plain": [
+          ".txt", ".text", ".log", ".ini", ".cfg", ".conf", ".toml",
+          ".typ", ".r", ".jl", ".sql", ".xml", ".svg", ".rs", ".go",
+          ".c", ".h", ".cpp", ".hpp", ".java", ".rb", ".lua", ".php"
         ]
       }
     }

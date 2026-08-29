@@ -215,6 +215,9 @@ export class DocumentView {
   /** Source view: the whole file in one raw editor, markers and receipts
    *  as honest text. Cell view needs markers; source view suits any file. */
   private sourceMode = false;
+  /** A non-.py file: always the plain source editor, never the cell
+   *  workbench — even if its text happens to contain "# %%" lines. */
+  private plainFile = false;
   private endZone!: HTMLElement;
   private lastFocused: CellView | null = null;
   /** Esc arms a brief chord: the next key can switch the cell's kind. */
@@ -321,8 +324,25 @@ export class DocumentView {
     // Code chrome rides the language compartment so a kind switch brings
     // it along: numbers, fold arrows (Python's own parser says what
     // folds — bodies of defs, classes, loops), and indent guides.
+    // A plain (non-.py) file is not Python: no highlighting, folding, or
+    // indent guides — just numbered, wrapped text.
+    const pythonChrome: Extension = this.plainFile
+      ? []
+      : [
+          python(),
+          foldGutter(),
+          indentationMarkers({
+            colors: {
+              light: 'rgba(0, 0, 0, 0.12)',
+              dark: 'rgba(255, 255, 255, 0.09)',
+              activeLight: 'rgba(0, 0, 0, 0.28)',
+              activeDark: 'rgba(255, 255, 255, 0.22)',
+            },
+          }),
+          keymap.of(foldKeymap),
+        ];
     return [
-      python(),
+      pythonChrome,
       // CodeMirror's indent-unit facet defaults to TWO spaces and python()
       // does not correct it — auto-indent was stepping by 2, and the
       // indent guides drew a phantom bar at every half level of 4-space
@@ -330,16 +350,6 @@ export class DocumentView {
       indentUnit.of('    '),
       wrapHang,
       lineNumbers(),
-      foldGutter(),
-      indentationMarkers({
-        colors: {
-          light: 'rgba(0, 0, 0, 0.12)',
-          dark: 'rgba(255, 255, 255, 0.09)',
-          activeLight: 'rgba(0, 0, 0, 0.28)',
-          activeDark: 'rgba(255, 255, 255, 0.22)',
-        },
-      }),
-      keymap.of(foldKeymap),
       lineNumberMarkers.of(RangeSet.of(
         new RunMarker(() => {
           if (v.running) this.kernel.interrupt();
@@ -358,7 +368,9 @@ export class DocumentView {
    *  into cell view on whether the text has markers to act on. */
   private syncView() {
     document.body.dataset.view = this.sourceMode ? 'source' : '';
-    document.body.dataset.cells = this.doc.cells.length > 0 ? 'true' : '';
+    document.body.dataset.cells =
+      !this.plainFile && this.doc.cells.length > 0 ? 'true' : '';
+    document.body.dataset.plain = this.plainFile ? 'true' : '';
   }
 
   private syncModel(v: CellView, text: string) {
@@ -390,11 +402,17 @@ export class DocumentView {
     if (v.cell.output.length === 0) v.cell.source.push('');
   }
 
+  /** Pin the document to the plain source editor (non-.py files). Set
+   *  before setDoc — it decides which view the document opens in. */
+  setPlain(on: boolean) {
+    this.plainFile = on;
+  }
+
   setDoc(doc: KnuthDocument) {
     this.doc = doc;
     // Open in the view that fits: cells when the file has markers, the
-    // raw source editor when it does not.
-    this.sourceMode = doc.cells.length === 0;
+    // raw source editor when it does not — or always, for a plain file.
+    this.sourceMode = this.plainFile || doc.cells.length === 0;
     this.render();
   }
 
@@ -407,7 +425,7 @@ export class DocumentView {
    *  needs markers to act on; without any, the switch refuses. */
   setSource(on: boolean) {
     if (on === this.sourceMode) return;
-    if (!on && this.doc.cells.length === 0) return;
+    if (!on && (this.plainFile || this.doc.cells.length === 0)) return;
     this.sourceMode = on;
     this.render();
     this.focusCell(this.preambleView ?? this.views[0]);

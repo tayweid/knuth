@@ -28,15 +28,26 @@ export interface FileHooks {
   onDiskChange?(doc: KnuthDocument): void;
 }
 
-// One picker type, both extensions: a notebook is openable, it just
-// arrives converted — a separate filter entry would hide .py files
+// Any text file opens: .py as a cell document, .ipynb converted, and
+// everything else in the plain source editor (the file_handlers list in
+// manifest.webmanifest names the same set for OS launches). One picker
+// type carries them all — separate filter entries would hide .py files
 // exactly when someone is looking for either.
+const TEXT_EXTENSIONS = [
+  '.txt', '.text', '.md', '.markdown', '.qmd', '.rmd', '.log', '.json', '.jsonl',
+  '.yaml', '.yml', '.toml', '.ini', '.cfg', '.conf', '.csv', '.tsv',
+  '.html', '.htm', '.css', '.js', '.mjs', '.cjs', '.jsx', '.ts', '.tsx',
+  '.sh', '.bash', '.zsh', '.tex', '.sty', '.bib', '.typ', '.r', '.jl',
+  '.sql', '.xml', '.svg', '.rs', '.go', '.c', '.h', '.cpp', '.hpp',
+  '.java', '.rb', '.lua', '.php',
+];
 const PY_TYPE: FilePickerType[] = [
   {
-    description: 'Python cell documents',
+    description: 'Python cell documents and text files',
     accept: {
-      'text/x-python': ['.py'],
+      'text/x-python': ['.py', '.pyi'],
       'application/x-ipynb+json': ['.ipynb'],
+      'text/plain': TEXT_EXTENSIONS,
     },
   },
 ];
@@ -217,8 +228,9 @@ export class FileManager {
         text: string;
         figures?: Array<string[] | null>;
       };
-      this.hooks.setDoc(parseDocument(snap.text));
+      // Name first: setDoc reads it to decide plain-file mode.
       this.name = snap.name;
+      this.hooks.setDoc(parseDocument(snap.text));
       this.dirty = snap.dirty;
       if (snap.figures) this.hooks.setFigures?.(snap.figures);
     } catch (e) {
@@ -346,10 +358,10 @@ export class FileManager {
       this.hooks.message(`Could not import ${file.name}: ${result.error ?? 'no conversion result'}`);
       return;
     }
+    this.name = file.name.replace(/\.ipynb$/i, '.py');
     this.hooks.setDoc(parseDocument(result.text));
     this.handle = null;
     this.pendingHandle = null;
-    this.name = file.name.replace(/\.ipynb$/i, '.py');
     this.dirty = true;
     this.writeBlockedNotified = false;
     this.hooks.onState();
@@ -401,10 +413,10 @@ export class FileManager {
 
   async loadHandle(handle: FileSystemFileHandle) {
     const file = await handle.getFile();
+    this.name = file.name;
     this.hooks.setDoc(parseDocument(await file.text()));
     this.handle = handle;
     this.diskModified = file.lastModified;
-    this.name = file.name;
     this.dirty = false;
     this.writeBlockedNotified = false;
     this.hooks.onState();
@@ -482,11 +494,14 @@ export class FileManager {
     this.hooks.onState();
   }
 
-  /** Rename in place (Chromium handle.move); enforces the .py suffix. */
+  /** Rename in place (Chromium handle.move); a name typed without an
+   *  extension keeps the file's current one. */
   async rename(newName: string): Promise<boolean> {
     newName = newName.trim();
     if (!newName) return false;
-    if (!/\.py$/i.test(newName)) newName += '.py';
+    if (!/\.[^./]+$/.test(newName)) {
+      newName += this.name.match(/\.[^./]+$/)?.[0] ?? '.py';
+    }
     if (newName === this.name) return true;
     if (this.handle) {
       if (typeof this.handle.move !== 'function') {
@@ -638,7 +653,7 @@ export class FileManager {
   private openViaInput() {
     const input = document.createElement('input');
     input.type = 'file';
-    input.accept = '.py,.ipynb';
+    input.accept = ['.py', '.pyi', '.ipynb', ...TEXT_EXTENSIONS].join(',');
     input.onchange = async () => {
       const file = input.files?.[0];
       if (!file) return;
@@ -646,9 +661,9 @@ export class FileManager {
         await this.importNotebook(file);
         return;
       }
+      this.name = file.name;
       this.hooks.setDoc(parseDocument(await file.text()));
       this.handle = null;
-      this.name = file.name;
       this.dirty = false;
       this.hooks.onState();
     };
@@ -656,7 +671,8 @@ export class FileManager {
   }
 
   private download() {
-    const blob = new Blob([serializeDocument(this.hooks.getDoc())], { type: 'text/x-python' });
+    const type = /\.py$/i.test(this.name) ? 'text/x-python' : 'text/plain';
+    const blob = new Blob([serializeDocument(this.hooks.getDoc())], { type });
     const a = document.createElement('a');
     a.href = URL.createObjectURL(blob);
     a.download = this.name;

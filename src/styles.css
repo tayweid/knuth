@@ -31,6 +31,30 @@
   font-display: swap;
 }
 
+/* Text-cell prose: Computer Modern, the website's face — and KaTeX's, so
+   running text and math read as one voice. */
+@font-face {
+  font-family: 'CMU Serif';
+  src: url('./fonts/CMUSerif-Roman.woff2') format('woff2');
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'CMU Serif';
+  src: url('./fonts/CMUSerif-Bold.woff2') format('woff2');
+  font-weight: 700;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'CMU Serif';
+  src: url('./fonts/CMUSerif-Italic.woff2') format('woff2');
+  font-weight: 400;
+  font-style: italic;
+  font-display: swap;
+}
+
 :root {
   /* The reading room (shared with Plass). */
   --bg: #2b2a2d;
@@ -52,6 +76,7 @@
   --room-ink: #d8d6d1;
   --room-ink-soft: #8f8d88;
   --serif: 'STIX Two Text', 'Charter', 'Georgia', serif;
+  --prose: 'CMU Serif', 'Computer Modern Serif', 'Georgia', serif;
   --mono: ui-monospace, 'SF Mono', 'Menlo', 'Consolas', monospace;
   --sans: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Helvetica Neue', sans-serif;
 }
@@ -724,7 +749,9 @@ body[data-view='source'] .cell .run-num { visibility: visible; }
   border: 0;
   background: transparent;
   position: relative;
-  font: 17px/1.6 var(--serif);
+  /* 18px because CMU carries a small x-height: this is the same optical
+     size the 17px STIX setting had. */
+  font: 18px/1.55 var(--prose);
   color: var(--room-ink);
   caret-color: #fff;
   /* Matches the old editor's inset so text cells don't reflow. */
@@ -769,7 +796,9 @@ body[data-view='source'] .cell .run-num { visibility: visible; }
 .cell.kind-text .ProseMirror h4,
 .cell.kind-text .ProseMirror h5,
 .cell.kind-text .ProseMirror h6 {
-  font-weight: 700;
+  /* CMU headings run regular-weight, sized — the website's rule; bold CMU
+     would read as shouting at these sizes. */
+  font-weight: 400;
   color: #f0eee9; /* the editor's own heading color, kept from langFor's old highlight */
   line-height: 1.3;
   margin: 0.9em 0 0.35em;
@@ -1206,6 +1235,13 @@ body[data-view='source'] #sheet {
    just the text against the window, with editor-style overscroll below. */
 body[data-view='source'] #toolbar {
   display: none;
+}
+
+/* The room is the editor's own surface here: below a short file (and in
+   the 40vh overscroll) the One Dark background continues instead of
+   breaking to the workbench grey — one editor, edge to edge. */
+body[data-view='source'] {
+  background: #282c34; /* @codemirror/theme-one-dark's background */
 }
 
 body[data-view='source'] #doc {
