@@ -6,7 +6,8 @@
 import './frame-guard.ts';
 import './styles.css';
 import { SidecarKernel } from './kernel/kernel.ts';
-import { DocumentView } from './document-view.ts';
+import { DocumentView, plainLanguageFor } from './document-view.ts';
+import { delimiterFor } from './format/csv.ts';
 import { DEFAULT_DOC_NAME, FileManager } from './file-manager.ts';
 import { SessionPanel } from './panel.ts';
 import { icon } from './icons.ts';
@@ -262,7 +263,11 @@ fileManager = new FileManager({
   setDoc: (doc) => {
     // A non-.py file is a plain text file: pin it to the source editor
     // (the cell workbench is for Python cell documents).
-    docView.setPlain(!/\.py$/i.test(fileManager?.name ?? DEFAULT_DOC_NAME));
+    const name = fileManager?.name ?? DEFAULT_DOC_NAME;
+    docView.setPlain(!/\.py$/i.test(name), plainLanguageFor(name));
+    // A .csv/.tsv opens as a grid of cells, with the source editor a
+    // toggle away.
+    docView.setGrid(delimiterFor(name));
     docView.setDoc(doc);
     // A different document deserves a fresh session — otherwise the
     // previous document's variables haunt the explorer and values.json.
@@ -389,9 +394,10 @@ flyout($('doc-pod'), icon('open'), 'File — new, open, recent', [
 // it when a markerless file offers no cell view to switch to.
 const viewToggle = document.createElement('button');
 viewToggle.id = 'view-toggle';
-viewToggle.title = 'Switch between source and cell view (⌘⇧E)';
+viewToggle.title = 'Switch between source and cell (or grid) view (⌘⇧E)';
 viewToggle.innerHTML =
-  `${icon('code')}<span class="lbl lbl-cells">Cells</span><span class="lbl lbl-source">Source</span>`;
+  `${icon('code')}<span class="lbl lbl-cells">Cells</span>` +
+  `<span class="lbl lbl-grid">Grid</span><span class="lbl lbl-source">Source</span>`;
 viewToggle.addEventListener('click', () => docView.setSource(!docView.isSource));
 document.body.append(viewToggle);
 

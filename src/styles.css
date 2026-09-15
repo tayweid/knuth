@@ -1319,3 +1319,107 @@ body:not([data-view='source']) #view-toggle .lbl-source { display: inline; }
 /* The 350px allowance for the session panel is made by the rule above, which
    now excludes plain mode: the panel is display:none here, not [hidden], so
    that rule still matched it and ceded space to a column not on screen. */
+
+/* Grid view: a .csv/.tsv as a table of cells (src/grid.ts), each one
+   editable in place. The same edge-to-edge surface as the source editor —
+   the toggle flips between the two views of the same lines — so the same
+   chrome goes away: no toolbar, no panel, no insert strips. */
+body[data-view='grid'] #toolbar,
+body[data-view='grid'] #panel,
+body[data-view='grid'] #toggle-panel,
+body[data-view='grid'] .insert-zone {
+  display: none;
+}
+
+body[data-view='grid'] {
+  background: #282c34;
+}
+
+body[data-view='grid'] #sheet {
+  max-width: none;
+  height: 100%;
+}
+
+/* The grid is its own scroller (both axes), so the header row and the
+   row numbers can stick to its edges. */
+body[data-view='grid'] #doc {
+  padding: 0;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.grid-scroll {
+  height: 100%;
+  overflow: auto;
+  /* The table's width is the scroller's business, not the page's: without
+     this a wide file would widen the body (min-width: fit-content) and
+     scroll the whole room sideways. */
+  contain: inline-size;
+}
+
+.grid {
+  border-collapse: separate;
+  border-spacing: 0;
+  margin-bottom: 40vh;
+  font: 13px/1.45 var(--mono);
+  color: #abb2bf; /* One Dark's ink, matching the source editor */
+}
+
+.grid th.rn,
+.grid td {
+  padding: 3px 10px;
+  border-right: 1px solid rgba(255, 255, 255, 0.06);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+  white-space: pre;
+  text-align: left;
+  vertical-align: top;
+}
+
+/* Row numbers: the editor's gutter, stuck to the left edge. */
+.grid th.rn {
+  position: sticky;
+  left: 0;
+  z-index: 2;
+  min-width: 3.5ch;
+  background: #21252b;
+  color: #636d83;
+  font-weight: 400;
+  text-align: right;
+  user-select: none;
+}
+
+.grid td {
+  min-width: 6ch;
+  max-width: 48ch;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  outline: none;
+  cursor: cell;
+}
+
+.grid td:focus {
+  box-shadow: inset 0 0 0 2px #61afef;
+}
+
+/* Typing: the cell opens up to show the whole value. */
+.grid td.editing {
+  max-width: none;
+  overflow: visible;
+  white-space: pre-wrap;
+  text-overflow: clip;
+  background: #2c313a;
+  color: #dcdfe4;
+  cursor: text;
+  box-shadow: inset 0 0 0 2px #61afef;
+}
+
+/* The toggle shows for a grid file in either of its views, and the label
+   names the view you would switch TO. */
+body[data-view='grid'] #view-toggle,
+body[data-view='source'][data-grid='true'] #view-toggle {
+  display: inline-flex;
+}
+#view-toggle .lbl-grid { display: none; }
+body[data-view='source'][data-grid='true'] #view-toggle .lbl-cells { display: none; }
+body[data-view='source'][data-grid='true'] #view-toggle .lbl-grid { display: inline; }
+body[data-view='grid'] #view-toggle .lbl-source { display: inline; }

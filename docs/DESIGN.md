@@ -110,6 +110,30 @@ and makes pyrmd the computation half.
   the project folder in sidecar mode; relative data reads are an open
   problem (see PLAN.md Later).
 
+## Other files: text, and delimited grids
+
+- Any text file opens (the manifest's `file_handlers` name the set); a
+  non-`.py` file is pinned to the plain source editor, never the cell
+  workbench, even when its text happens to contain `# %%` lines. Files
+  the editor has a grammar for get highlighting, fold arrows, and indent
+  guides: YAML, and markdown (`.md`, `.qmd`, `.rmd`) read the Quarto way,
+  a YAML front matter over prose with `{python}`/`{yaml}` fences
+  highlighted in their own language. The rest are numbered, wrapped text.
+- DECIDED (2026-09-08): a `.csv`/`.tsv` opens as a **grid** of its cells,
+  each editable in place, with the source editor a toggle away (the same
+  ⌘⇧E / corner pill that flips `.py` files between cells and source).
+  A viewer with a pen, not a spreadsheet: no formulas, sorting, resizing,
+  or column operations, and no header row — every row is a row. Rows come
+  from Enter past the last one and go by Backspace on an empty one; that
+  is all the structure it edits.
+- The unit of editing is the **line** (`src/format/csv.ts`): a cell edit
+  rebuilds the one row it belongs to from that row's own raw fields, so
+  a one-cell change is a one-line diff and the file's conventions —
+  quoting style, CRLF, a BOM — survive untouched everywhere else. A
+  changed field is quoted only when it must be (delimiter, quote, or
+  newline inside) or when it was quoted before. Files past 20k lines
+  open in the source editor; the table is a view, not a database.
+
 ## File format: `.py`, percent format, outputs inside
 
 - The document is a plain `.py` file in the **percent format** — `# %%`

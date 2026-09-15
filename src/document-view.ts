@@ -22,7 +22,9 @@ import {
 import { Compartment, RangeSet, RangeSetBuilder, type Extension } from '@codemirror/state';
 import { foldGutter, foldKeymap, indentUnit } from '@codemirror/language';
 import { indentationMarkers } from '@replit/codemirror-indentation-markers';
-import { python } from '@codemirror/lang-python';
+import { python, pythonLanguage } from '@codemirror/lang-python';
+import { yaml, yamlFrontmatter, yamlLanguage } from '@codemirror/lang-yaml';
+import { markdown } from '@codemirror/lang-markdown';
 import { oneDark } from '@codemirror/theme-one-dark';
 import {
   EditorView as PMEditorView,
@@ -51,8 +53,46 @@ import {
   outputText,
 } from './format/percent.ts';
 import type { Kernel } from './kernel/kernel.ts';
+import { GridView } from './grid.ts';
 import { icon } from './icons.ts';
 import { clearSafeSvgImages, createSafeSvgImage } from './safe-svg.ts';
+
+// A delimited file bigger than this opens in the source editor: the grid
+// lays out every row as a table cell, and past a few tens of thousands
+// of lines that is a wait, not a view.
+const GRID_MAX_LINES = 20_000;
+
+/** Markdown as Quarto/R Markdown write it: a YAML front matter block
+ *  over the prose, and code fences whose info string is braced —
+ *  ```{python} — so the fence's language is read with the braces (and
+ *  any chunk options after a comma or space) stripped. */
+function quartoMarkdown(): Extension {
+  const content = markdown({
+    codeLanguages: (info) => {
+      const lang = info.replace(/^\{/, '').split(/[\s,}]/)[0].toLowerCase();
+      if (lang === 'python' || lang === 'py') return pythonLanguage;
+      if (lang === 'yaml' || lang === 'yml') return yamlLanguage;
+      return null;
+    },
+  });
+  return yamlFrontmatter({ content });
+}
+
+/** The grammar for a plain (non-.py) file, by its name — null when the
+ *  editor has none for it and the file is numbered, wrapped text. */
+export function plainLanguageFor(name: string): Extension | null {
+  if (/\.ya?ml$/i.test(name)) return yaml();
+  if (/\.(md|markdown|qmd|rmd)$/i.test(name)) return quartoMarkdown();
+  return null;
+}
+
+/** Physical lines in the document's serialized text. */
+function countLines(doc: KnuthDocument): number {
+  return doc.cells.reduce(
+    (n, c) => n + 1 + c.source.length + c.output.length + c.trailing.length,
+    doc.preamble.length,
+  );
+}
 
 // Stored-output cap (the DESIGN.md truncation policy).
 const MAX_OUTPUT_LINES = 40;
@@ -218,6 +258,16 @@ export class DocumentView {
   /** A non-.py file: always the plain source editor, never the cell
    *  workbench — even if its text happens to contain "# %%" lines. */
   private plainFile = false;
+  /** A plain file's grammar (plainLanguageFor), when the editor has one. */
+  private plainLanguage: Extension | null = null;
+  /** A .csv/.tsv: its delimiter, and with it a grid view on offer. */
+  private gridDelimiter: string | null = null;
+  /** The grid is on offer for this document (a delimiter, and a size the
+   *  table can carry). Gates the toggle between grid and source. */
+  private gridOffered = false;
+  /** Showing the grid rather than the source editor. */
+  private gridMode = false;
+  private grid: GridView | null = null;
   private endZone!: HTMLElement;
   private lastFocused: CellView | null = null;
   /** Esc arms a brief chord: the next key can switch the cell's kind. */
@@ -324,12 +374,13 @@ export class DocumentView {
     // Code chrome rides the language compartment so a kind switch brings
     // it along: numbers, fold arrows (Python's own parser says what
     // folds — bodies of defs, classes, loops), and indent guides.
-    // A plain (non-.py) file is not Python: no highlighting, folding, or
-    // indent guides — just numbered, wrapped text.
-    const pythonChrome: Extension = this.plainFile
-      ? []
-      : [
-          python(),
+    // A plain (non-.py) file is not Python. With a grammar of its own
+    // (YAML) it gets the same chrome over that grammar; without one it
+    // is just numbered, wrapped text.
+    const language = this.plainFile ? this.plainLanguage : python();
+    const codeChrome: Extension = language
+      ? [
+          language,
           foldGutter(),
           indentationMarkers({
             colors: {
@@ -340,14 +391,15 @@ export class DocumentView {
             },
           }),
           keymap.of(foldKeymap),
-        ];
+        ]
+      : [];
     return [
-      pythonChrome,
+      codeChrome,
       // CodeMirror's indent-unit facet defaults to TWO spaces and python()
       // does not correct it — auto-indent was stepping by 2, and the
       // indent guides drew a phantom bar at every half level of 4-space
-      // code. Python's unit is four.
-      indentUnit.of('    '),
+      // code. Python's unit is four; a plain file's (YAML's) is two.
+      indentUnit.of(this.plainFile ? '  ' : '    '),
       wrapHang,
       lineNumbers(),
       lineNumberMarkers.of(RangeSet.of(
@@ -367,10 +419,13 @@ export class DocumentView {
    *  chrome down to one raw editor. data-cells gates the floating toggle
    *  into cell view on whether the text has markers to act on. */
   private syncView() {
-    document.body.dataset.view = this.sourceMode ? 'source' : '';
+    document.body.dataset.view = this.gridMode ? 'grid' : this.sourceMode ? 'source' : '';
     document.body.dataset.cells =
       !this.plainFile && this.doc.cells.length > 0 ? 'true' : '';
     document.body.dataset.plain = this.plainFile ? 'true' : '';
+    // data-grid gates the toggle between grid and source the way
+    // data-cells gates the one between source and cells.
+    document.body.dataset.grid = this.gridOffered ? 'true' : '';
   }
 
   private syncModel(v: CellView, text: string) {
@@ -404,8 +459,16 @@ export class DocumentView {
 
   /** Pin the document to the plain source editor (non-.py files). Set
    *  before setDoc — it decides which view the document opens in. */
-  setPlain(on: boolean) {
+  setPlain(on: boolean, language: Extension | null = null) {
     this.plainFile = on;
+    this.plainLanguage = on ? language : null;
+  }
+
+  /** Offer the grid view for a delimited file (.csv/.tsv), given its
+   *  delimiter — null for a file with no grid to show. Set before
+   *  setDoc, like setPlain. */
+  setGrid(delimiter: string | null) {
+    this.gridDelimiter = delimiter;
   }
 
   setDoc(doc: KnuthDocument) {
@@ -413,17 +476,30 @@ export class DocumentView {
     // Open in the view that fits: cells when the file has markers, the
     // raw source editor when it does not — or always, for a plain file.
     this.sourceMode = this.plainFile || doc.cells.length === 0;
+    // A delimited file opens as its grid, if the table can carry it.
+    this.gridOffered =
+      this.plainFile && this.gridDelimiter !== null && countLines(doc) <= GRID_MAX_LINES;
+    this.gridMode = this.gridOffered;
     this.render();
   }
 
   /** Whether the raw single-editor source view is showing. */
   get isSource(): boolean {
-    return this.sourceMode;
+    return this.sourceMode && !this.gridMode;
   }
 
-  /** Switch between the raw source editor and the cell view. Cell view
+  /** Switch between the raw source editor and the cell view — or, for a
+   *  delimited file, between the source editor and the grid. Cell view
    *  needs markers to act on; without any, the switch refuses. */
   setSource(on: boolean) {
+    if (this.gridOffered) {
+      if (on === !this.gridMode) return;
+      this.gridMode = !on;
+      this.render();
+      if (this.gridMode) this.grid?.focus();
+      else this.focusCell(this.preambleView);
+      return;
+    }
     if (on === this.sourceMode) return;
     if (!on && (this.plainFile || this.doc.cells.length === 0)) return;
     this.sourceMode = on;
@@ -438,12 +514,35 @@ export class DocumentView {
     }
     if (this.preambleView) clearSafeSvgImages(this.preambleView.figsEl);
     if (this.preambleView) this.destroyEditors(this.preambleView);
+    this.grid?.destroy();
+    this.grid = null;
     this.views = [];
     this.preambleView = null;
     this.container.textContent = '';
     this.endZone = this.buildZone(null);
     this.container.append(this.endZone);
     this.syncView();
+    if (this.gridMode) {
+      // The file's physical lines, handed to the grid to edit in place.
+      // Each change reparses them for the model (saving serializes it
+      // back byte-identically), the way source-view edits do.
+      const lines = serializeDocument(this.doc).split('\n');
+      if (lines[lines.length - 1] === '') lines.pop();
+      this.grid = new GridView({
+        delimiter: this.gridDelimiter ?? ',',
+        lines,
+        onChange: (edited) => {
+          const text =
+            edited.length === 0 ? '' : edited.join('\n') + (this.doc.trailingNewline ? '\n' : '');
+          const reparsed = parseDocument(text);
+          reparsed.trailingNewline = this.doc.trailingNewline;
+          this.doc = reparsed;
+          this.onChange();
+        },
+      });
+      this.endZone.before(this.grid.root);
+      return;
+    }
     if (this.sourceMode) {
       // The whole file in one editor, markers and receipts as honest
       // text; round-tripping makes the reparse on edit lossless.
