@@ -15,10 +15,25 @@ import { type CsvRow, emptyRow, rowValues, setValue, splitRows } from './format/
 
 const PAGE_SIZE = 1000;
 
+interface GridChange {
+  start: number;
+  before: string[];
+  after: string[];
+  r: number;
+  c: number;
+}
+
+export class GridHistory {
+  undo: GridChange[] = [];
+  redo: GridChange[] = [];
+  clear() { this.undo = []; this.redo = []; }
+}
+
 export interface GridOptions {
   delimiter: string;
   /** The file's physical lines. The grid edits this array in place. */
   lines: string[];
+  history?: GridHistory;
   /** The lines changed (a cell committed, a row added or removed). */
   onChange(lines: string[]): void;
 }
@@ -31,10 +46,12 @@ export class GridView {
   private cols: number;
   private pageStart = 0;
   private pager: HTMLElement;
+  private history: GridHistory;
   /** The cell being typed into, with its value before the edit. */
   private editing: { td: HTMLTableCellElement; before: string } | null = null;
 
   constructor(private opts: GridOptions) {
+    this.history = opts.history ?? new GridHistory();
     this.rows = splitRows(opts.lines, opts.delimiter);
     // An empty file still offers a cell to type into.
     if (this.rows.length === 0) this.rows.push(emptyRow(undefined, 0));
@@ -51,6 +68,14 @@ export class GridView {
     this.table.append(this.tbody);
     this.root.append(this.pager, this.table);
     this.renderPage();
+    this.root.addEventListener('keydown', (e) => {
+      const key = e.key.toLowerCase();
+      if (!(e.metaKey || e.ctrlKey) || e.altKey || (key !== 'z' && key !== 'y')) return;
+      e.preventDefault();
+      e.stopPropagation();
+      this.commit();
+      this.restore(key === 'y' || e.shiftKey);
+    }, { capture: true });
 
     this.table.addEventListener('mousedown', (e) => this.onMouseDown(e));
     this.table.addEventListener('dblclick', (e) => {
@@ -242,6 +267,31 @@ export class GridView {
 
   // ---------- editing ----------
 
+  private record(change: GridChange) {
+    this.history.undo.push(change);
+    this.history.redo = [];
+  }
+
+  private restore(redo: boolean) {
+    const from = redo ? this.history.redo : this.history.undo;
+    const to = redo ? this.history.undo : this.history.redo;
+    const change = from.pop();
+    if (!change) return;
+    const remove = redo ? change.before : change.after;
+    const insert = redo ? change.after : change.before;
+    // Keep exact physical lines, including original quoting and CRLF.
+    this.opts.lines.splice(change.start, remove.length, ...insert);
+    to.push(change);
+    this.rows = splitRows(this.opts.lines, this.opts.delimiter);
+    if (!this.rows.length) this.rows.push(emptyRow(undefined, 0));
+    this.cols = this.rows.reduce((n, row) => Math.max(n, row.raws.length), 1);
+    const r = Math.min(change.r, this.rows.length - 1);
+    this.pageStart = Math.floor(r / PAGE_SIZE) * PAGE_SIZE;
+    this.renderPage();
+    this.move(r, Math.min(change.c, this.cols - 1));
+    this.opts.onChange(this.opts.lines);
+  }
+
   private startEdit(td: HTMLTableCellElement, initial?: string) {
     const before = td.textContent ?? '';
     this.editing = { td, before };
@@ -290,6 +340,7 @@ export class GridView {
     const { r, c } = this.position(td);
     const row = this.rows[r];
     const fresh = setValue(row, c, value, this.opts.delimiter);
+    this.record({ start: row.start, before: this.opts.lines.slice(row.start, row.start + row.count), after: fresh.slice(), r, c });
     this.opts.lines.splice(row.start, row.count, ...fresh);
     const delta = fresh.length - row.count;
     row.count = fresh.length;
@@ -304,12 +355,14 @@ export class GridView {
 
   private appendRow() {
     const last = this.rows[this.rows.length - 1];
+    const start = this.opts.lines.length;
     // The placeholder row of an empty file is not a line yet; make it
     // one, so the new row lands after it rather than on it.
     if (this.opts.lines.length === 0) this.opts.lines.push('');
     const row = emptyRow(last, this.opts.lines.length);
     this.rows.push(row);
     this.opts.lines.push(row.eol);
+    this.record({ start, before: [], after: this.opts.lines.slice(start), r: this.rows.length - 1, c: 0 });
     this.renderPage();
     this.opts.onChange(this.opts.lines);
   }
@@ -318,6 +371,7 @@ export class GridView {
     // The last row standing stays: a grid always has a cell to type in.
     if (this.rows.length === 1) return;
     const row = this.rows[r];
+    this.record({ start: row.start, before: this.opts.lines.slice(row.start, row.start + row.count), after: [], r, c });
     this.rows.splice(r, 1);
     this.opts.lines.splice(row.start, row.count);
     for (let i = r; i < this.rows.length; i++) this.rows[i].start -= row.count;

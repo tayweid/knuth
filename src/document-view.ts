@@ -53,7 +53,7 @@ import {
   outputText,
 } from './format/percent.ts';
 import type { Kernel } from './kernel/kernel.ts';
-import { GridView } from './grid.ts';
+import { GridView, GridHistory } from './grid.ts';
 import { icon } from './icons.ts';
 import { clearSafeSvgImages, createSafeSvgImage } from './safe-svg.ts';
 
@@ -254,6 +254,7 @@ export class DocumentView {
   /** Showing the grid rather than the source editor. */
   private gridMode = false;
   private grid: GridView | null = null;
+  private gridHistory = new GridHistory();
   private endZone!: HTMLElement;
   private lastFocused: CellView | null = null;
   /** Esc arms a brief chord: the next key can switch the cell's kind. */
@@ -417,6 +418,9 @@ export class DocumentView {
   private syncModel(v: CellView, text: string) {
     if (v.isPreamble) {
       if (this.sourceMode) {
+        // Raw edits invalidate the grid's line offsets. Merely toggling
+        // views keeps its history intact.
+        this.gridHistory.clear();
         // Source view edits the raw file. Reparse for the model — saving
         // serializes it back byte-identically — but never rebuild the
         // view: the editor's undo history survives, and cell view is a
@@ -458,6 +462,7 @@ export class DocumentView {
   }
 
   setDoc(doc: KnuthDocument) {
+    this.gridHistory.clear();
     this.doc = doc;
     // Open in the view that fits: cells when the file has markers, the
     // raw source editor when it does not — or always, for a plain file.
@@ -515,6 +520,7 @@ export class DocumentView {
       const lines = serializeDocument(this.doc).split('\n');
       if (lines[lines.length - 1] === '') lines.pop();
       this.grid = new GridView({
+        history: this.gridHistory,
         delimiter: this.gridDelimiter ?? ',',
         lines,
         onChange: (edited) => {

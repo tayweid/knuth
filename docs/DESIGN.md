@@ -134,6 +134,10 @@ and makes pyrmd the computation half.
   newline inside) or when it was quoted before. Large files stay in the
   grid, showing 1,000 rows per page with Previous/Next controls. Keyboard
   navigation crosses pages, and the source toggle remains available.
+- Grid undo/redo (⌘Z / ⇧⌘Z, or Ctrl on other platforms) stores exact
+  changed lines for cell edits and row additions/deletions. An active
+  cell edit is one undo step. History survives paging and view toggles;
+  raw source edits, opening another document, or reloading clear it.
 
 ## File format: `.py`, percent format, outputs inside
 

@@ -86,6 +86,53 @@ test('large CSVs open in a bounded grid and edit the correct row across pages', 
   await page.locator('#view-toggle').click();
   await expect(rows).toHaveCount(1000);
 });
+
+test('undo restores exact CSV text, redo reapplies it, and new edits discard redo', async ({ page }) => {
+  await seed(page, 'fussy.csv', FUSSY);
+  await page.goto('/');
+  const cell = page.locator('table.grid tr').nth(1).locator('td').nth(0);
+  await cell.click();
+  await page.keyboard.type('Ada');
+  await page.keyboard.press('Tab');
+  const edited = FUSSY.replace('Lovelace, Ada', 'Ada');
+  await expect.poll(() => stashedText(page)).toBe(edited);
+  await page.locator('#view-toggle').click();
+  await page.locator('#view-toggle').click();
+  await page.keyboard.press('ControlOrMeta+z');
+  await expect.poll(() => stashedText(page)).toBe(FUSSY);
+  await page.keyboard.press('ControlOrMeta+Shift+z');
+  await expect.poll(() => stashedText(page)).toBe(edited);
+  await page.keyboard.press('ControlOrMeta+z');
+  await page.keyboard.type('New');
+  // Undo while still typing reverses the whole current cell edit.
+  await page.keyboard.press('ControlOrMeta+z');
+  await expect(cell).toHaveText('Lovelace, Ada');
+  await page.keyboard.type('Other');
+  await page.keyboard.press('Tab');
+  await page.keyboard.press('ControlOrMeta+Shift+z');
+  await expect.poll(() => stashedText(page)).toBe(FUSSY.replace('Lovelace, Ada', 'Other'));
+});
+
+test('row insertion and deletion can be undone and redone', async ({ page }) => {
+  await seed(page, 'rows.csv', CSV);
+  await page.goto('/');
+  const rows = page.locator('table.grid tr');
+  await rows.last().locator('td').first().click();
+  await page.keyboard.press('Enter');
+  await page.keyboard.press('Enter');
+  await expect(rows).toHaveCount(4);
+  await page.keyboard.press('ControlOrMeta+z');
+  await expect(rows).toHaveCount(3);
+  await expect.poll(() => stashedText(page)).toBe(CSV);
+  await page.keyboard.press('ControlOrMeta+Shift+z');
+  await expect(rows).toHaveCount(4);
+  await page.keyboard.press('Backspace');
+  await expect(rows).toHaveCount(3);
+  await page.keyboard.press('ControlOrMeta+z');
+  await expect(rows).toHaveCount(4);
+  await page.keyboard.press('ControlOrMeta+Shift+z');
+  await expect.poll(() => stashedText(page)).toBe(CSV);
+});
 // CRLF, a BOM, and a quoted field: the conventions an edit must keep.
 const FUSSY = '\uFEFFname,note\r\n"Lovelace, Ada","said ""hi"""\r\ngrace,x\r\n';
 

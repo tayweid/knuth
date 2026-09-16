@@ -436,7 +436,7 @@ window.addEventListener(
       // Toggle between the raw source editor and the cell view.
       e.preventDefault();
       docView.setSource(!docView.isSource);
-    } else if (key === 'z' && !e.shiftKey && pendingRestore) {
+    } else if (key === 'z' && !e.shiftKey && pendingRestore && document.body.dataset.view !== 'grid') {
       // The undo the user means: reverse the structural change.
       e.preventDefault();
       e.stopPropagation();
