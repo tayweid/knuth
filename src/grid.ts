@@ -13,6 +13,8 @@
 
 import { type CsvRow, emptyRow, rowValues, setValue, splitRows } from './format/csv.ts';
 
+const PAGE_SIZE = 1000;
+
 export interface GridOptions {
   delimiter: string;
   /** The file's physical lines. The grid edits this array in place. */
@@ -27,6 +29,8 @@ export class GridView {
   private tbody: HTMLTableSectionElement;
   private rows: CsvRow[];
   private cols: number;
+  private pageStart = 0;
+  private pager: HTMLElement;
   /** The cell being typed into, with its value before the edit. */
   private editing: { td: HTMLTableCellElement; before: string } | null = null;
 
@@ -34,16 +38,19 @@ export class GridView {
     this.rows = splitRows(opts.lines, opts.delimiter);
     // An empty file still offers a cell to type into.
     if (this.rows.length === 0) this.rows.push(emptyRow(undefined, 0));
-    this.cols = Math.max(1, ...this.rows.map((r) => r.raws.length));
+    this.cols = this.rows.reduce((n, row) => Math.max(n, row.raws.length), 1);
 
     this.root = document.createElement('div');
     this.root.className = 'grid-scroll';
     this.table = document.createElement('table');
     this.table.className = 'grid';
     this.tbody = document.createElement('tbody');
-    for (const [i, row] of this.rows.entries()) this.tbody.append(this.buildRow(i, row));
+    this.pager = document.createElement('nav');
+    this.pager.className = 'grid-pager';
+    this.pager.setAttribute('aria-label', 'CSV pages');
     this.table.append(this.tbody);
-    this.root.append(this.table);
+    this.root.append(this.pager, this.table);
+    this.renderPage();
 
     this.table.addEventListener('mousedown', (e) => this.onMouseDown(e));
     this.table.addEventListener('dblclick', (e) => {
@@ -68,6 +75,35 @@ export class GridView {
 
   // ---------- rendering ----------
 
+  private renderPage() {
+    this.pageStart = Math.min(this.pageStart, Math.floor((this.rows.length - 1) / PAGE_SIZE) * PAGE_SIZE);
+    const end = Math.min(this.pageStart + PAGE_SIZE, this.rows.length);
+    this.tbody.replaceChildren();
+    for (let r = this.pageStart; r < end; r++) this.tbody.append(this.buildRow(r, this.rows[r]));
+    this.pager.replaceChildren();
+    this.pager.hidden = this.rows.length <= PAGE_SIZE;
+    const label = document.createElement('span');
+    label.textContent = `Rows ${this.pageStart + 1}–${end} of ${this.rows.length}`;
+    const button = (text: string, start: number, disabled: boolean) => {
+      const el = document.createElement('button');
+      el.textContent = text;
+      el.disabled = disabled;
+      el.addEventListener('click', () => {
+        this.commit();
+        this.pageStart = start;
+        this.renderPage();
+        this.root.scrollTop = 0;
+        this.cellAt(this.pageStart, 0)?.focus();
+      });
+      return el;
+    };
+    this.pager.append(
+      button('Previous', this.pageStart - PAGE_SIZE, this.pageStart === 0),
+      label,
+      button('Next', this.pageStart + PAGE_SIZE, end === this.rows.length),
+    );
+  }
+
   private buildRow(index: number, row: CsvRow): HTMLTableRowElement {
     const tr = document.createElement('tr');
     const num = document.createElement('th');
@@ -84,11 +120,6 @@ export class GridView {
     return tr;
   }
 
-  private renumber(from: number) {
-    const trs = this.tbody.rows;
-    for (let i = from; i < trs.length; i++) trs[i].cells[0].textContent = String(i + 1);
-  }
-
   // ---------- addressing ----------
 
   private cellOf(target: EventTarget | null): HTMLTableCellElement | null {
@@ -98,7 +129,7 @@ export class GridView {
   }
 
   private cellAt(r: number, c: number): HTMLTableCellElement | null {
-    const tr = this.tbody.rows[r];
+    const tr = this.tbody.rows[r - this.pageStart];
     if (!tr) return null;
     const td = tr.cells[c + 1];
     return td instanceof HTMLTableCellElement && td.tagName === 'TD' ? td : null;
@@ -106,7 +137,7 @@ export class GridView {
 
   private position(td: HTMLTableCellElement): { r: number; c: number } {
     const tr = td.parentElement as HTMLTableRowElement;
-    return { r: tr.sectionRowIndex, c: td.cellIndex - 1 };
+    return { r: this.pageStart + tr.sectionRowIndex, c: td.cellIndex - 1 };
   }
 
   // ---------- events ----------
@@ -196,6 +227,11 @@ export class GridView {
 
   /** Focus the cell at (r, c) if there is one; true when there was. */
   private move(r: number, c: number, e?: KeyboardEvent): boolean {
+    if (r < 0 || r >= this.rows.length || c < 0 || c >= this.cols) return false;
+    if (r < this.pageStart || r >= this.pageStart + PAGE_SIZE) {
+      this.pageStart = Math.floor(r / PAGE_SIZE) * PAGE_SIZE;
+      this.renderPage();
+    }
     const td = this.cellAt(r, c);
     if (!td) return false;
     e?.preventDefault();
@@ -274,7 +310,7 @@ export class GridView {
     const row = emptyRow(last, this.opts.lines.length);
     this.rows.push(row);
     this.opts.lines.push(row.eol);
-    this.tbody.append(this.buildRow(this.rows.length - 1, row));
+    this.renderPage();
     this.opts.onChange(this.opts.lines);
   }
 
@@ -285,8 +321,7 @@ export class GridView {
     this.rows.splice(r, 1);
     this.opts.lines.splice(row.start, row.count);
     for (let i = r; i < this.rows.length; i++) this.rows[i].start -= row.count;
-    this.tbody.rows[r].remove();
-    this.renumber(r);
+    this.renderPage();
     this.opts.onChange(this.opts.lines);
     this.move(Math.min(r, this.rows.length - 1), c);
   }

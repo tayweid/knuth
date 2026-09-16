@@ -131,8 +131,9 @@ and makes pyrmd the computation half.
   a one-cell change is a one-line diff and the file's conventions —
   quoting style, CRLF, a BOM — survive untouched everywhere else. A
   changed field is quoted only when it must be (delimiter, quote, or
-  newline inside) or when it was quoted before. Files past 20k lines
-  open in the source editor; the table is a view, not a database.
+  newline inside) or when it was quoted before. Large files stay in the
+  grid, showing 1,000 rows per page with Previous/Next controls. Keyboard
+  navigation crosses pages, and the source toggle remains available.
 
 ## File format: `.py`, percent format, outputs inside
 

@@ -1340,13 +1340,36 @@ body[data-view='grid'] #sheet {
   height: 100%;
 }
 
-/* The grid is its own scroller (both axes), so the header row and the
-   row numbers can stick to its edges. */
+/* The grid is its own scroller (both axes). */
 body[data-view='grid'] #doc {
   padding: 0;
   min-width: 0;
   overflow: hidden;
 }
+
+.grid-pager:not([hidden]) {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  position: sticky;
+  top: 0;
+  left: 0;
+  z-index: 4;
+  width: fit-content;
+  padding: 8px;
+  background: #282c34;
+  color: #abb2bf;
+  font: 12px var(--sans);
+}
+.grid-pager button {
+  color: inherit;
+  background: #21252b;
+  border: 1px solid #444953;
+  border-radius: 4px;
+  padding: 4px 8px;
+  cursor: pointer;
+}
+.grid-pager button:disabled { opacity: 0.4; cursor: default; }
 
 .grid-scroll {
   height: 100%;

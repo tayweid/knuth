@@ -57,11 +57,6 @@ import { GridView } from './grid.ts';
 import { icon } from './icons.ts';
 import { clearSafeSvgImages, createSafeSvgImage } from './safe-svg.ts';
 
-// A delimited file bigger than this opens in the source editor: the grid
-// lays out every row as a table cell, and past a few tens of thousands
-// of lines that is a wait, not a view.
-const GRID_MAX_LINES = 20_000;
-
 /** Markdown as Quarto/R Markdown write it: a YAML front matter block
  *  over the prose, and code fences whose info string is braced —
  *  ```{python} — so the fence's language is read with the braces (and
@@ -84,14 +79,6 @@ export function plainLanguageFor(name: string): Extension | null {
   if (/\.ya?ml$/i.test(name)) return yaml();
   if (/\.(md|markdown|qmd|rmd)$/i.test(name)) return quartoMarkdown();
   return null;
-}
-
-/** Physical lines in the document's serialized text. */
-function countLines(doc: KnuthDocument): number {
-  return doc.cells.reduce(
-    (n, c) => n + 1 + c.source.length + c.output.length + c.trailing.length,
-    doc.preamble.length,
-  );
 }
 
 // Stored-output cap (the DESIGN.md truncation policy).
@@ -262,8 +249,7 @@ export class DocumentView {
   private plainLanguage: Extension | null = null;
   /** A .csv/.tsv: its delimiter, and with it a grid view on offer. */
   private gridDelimiter: string | null = null;
-  /** The grid is on offer for this document (a delimiter, and a size the
-   *  table can carry). Gates the toggle between grid and source. */
+  /** Whether this document offers the toggle between grid and source. */
   private gridOffered = false;
   /** Showing the grid rather than the source editor. */
   private gridMode = false;
@@ -478,7 +464,7 @@ export class DocumentView {
     this.sourceMode = this.plainFile || doc.cells.length === 0;
     // A delimited file opens as its grid, if the table can carry it.
     this.gridOffered =
-      this.plainFile && this.gridDelimiter !== null && countLines(doc) <= GRID_MAX_LINES;
+      this.plainFile && this.gridDelimiter !== null;
     this.gridMode = this.gridOffered;
     this.render();
   }

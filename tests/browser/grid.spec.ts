@@ -62,6 +62,30 @@ async function stashedText(page: import('@playwright/test').Page): Promise<strin
 }
 
 const CSV = 'name,age\nada,36\ngrace,45\n';
+test('large CSVs open in a bounded grid and edit the correct row across pages', async ({ page }) => {
+  const text = Array.from({ length: 40001 }, (_, i) => `${i},value`).join('\n') + '\n';
+  await seed(page, 'large.csv', text);
+  await page.goto('/');
+  const rows = page.locator('table.grid tr');
+  await expect(rows).toHaveCount(1000);
+  await expect(page.locator('.grid-pager')).toContainText('Rows 1–1000 of 40001');
+  await rows.last().locator('td').first().click();
+  await page.keyboard.press('ArrowDown');
+  await expect(page.locator('.grid-pager')).toContainText('Rows 1001–2000 of 40001');
+  await expect(rows.first().locator('td').first()).toBeFocused();
+  await page.keyboard.type('changed');
+  await page.keyboard.press('Tab');
+  const expected = text.replace('1000,value\n', 'changed,value\n');
+  await expect.poll(() => stashedText(page)).toBe(expected);
+  await page.getByRole('button', { name: 'Next', exact: true }).click();
+  await expect(rows.first().locator('td').first()).toHaveText('2000');
+  await page.getByRole('button', { name: 'Previous', exact: true }).click();
+  await expect(rows.first().locator('td').first()).toHaveText('changed');
+  await page.locator('#view-toggle').click();
+  await expect(page.locator('body')).toHaveAttribute('data-view', 'source');
+  await page.locator('#view-toggle').click();
+  await expect(rows).toHaveCount(1000);
+});
 // CRLF, a BOM, and a quoted field: the conventions an edit must keep.
 const FUSSY = '\uFEFFname,note\r\n"Lovelace, Ada","said ""hi"""\r\ngrace,x\r\n';
 
