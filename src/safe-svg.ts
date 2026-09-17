@@ -16,6 +16,11 @@ function hasExternalCssReference(value: string): boolean {
 export function sanitizeSvg(svg: string): string | null {
   const purified = DOMPurify.sanitize(svg, {
     USE_PROFILES: { svg: true, svgFilters: true },
+    // DOMPurify drops <use> by default, but matplotlib draws every glyph and
+    // tick mark as <use href="#id"> into <defs>; without it figures lose all
+    // their text and ticks. The attribute pass below limits href to same-
+    // document fragments, so <use> cannot reach an external file.
+    ADD_TAGS: ['use'],
     FORBID_TAGS: ['script', 'foreignObject', 'iframe', 'object', 'embed', 'a'],
     KEEP_CONTENT: true,
   });

