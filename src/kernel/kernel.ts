@@ -71,9 +71,12 @@ export interface RunOutcome {
 }
 
 export interface Kernel {
+  /** Connected and past `ready`: requests will be answered now. */
+  readonly isReady: boolean;
   run(code: string, handlers?: RunHandlers, opts?: { scratch?: boolean }): Promise<RunOutcome>;
   interrupt(): void;
-  restart(): Promise<void>;
+  /** Fresh session; with a root, the session also moves to that folder. */
+  restart(root?: string | null): Promise<void>;
   namespace(): Promise<NamespaceVar[]>;
   artifacts(): Promise<Artifacts | null>;
   table(name: string, offset?: number, limit?: number): Promise<TableWindow | null>;

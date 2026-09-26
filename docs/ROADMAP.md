@@ -85,14 +85,16 @@ and sockets. The browser side is thinner:
 
 ## Horizon (sketch, committed to nothing)
 
-- **Pyodide, and the demo that executes.** The unmerged `pyodide` branch
-  runs the real Python modules in the browser so the hosted demo executes
-  for real, end to end. Before it is input to anything: CI coverage, and
-  the CSP expressed once rather than twice (index.html and server.py).
-  OPEN (branch, `2b27d68`): vendor Pyodide into the Pages deploy vs the
-  CDN — vendoring removes the third-party dependency but would put ~25 MB
-  of WebAssembly into every pip install until the demo build and the wheel
-  build are separated.
+- **Pyodide, and the demo that executes.** The `pyodide` branch (rebased
+  onto the app work 2026-09-26) runs the real Python modules in the
+  browser so the hosted demo executes for real, end to end. Before it is
+  input to anything: CI coverage, and the CSP expressed once rather than
+  twice (index.html and web.py). OPEN: vendor Pyodide into the Pages
+  deploy vs the CDN — vendoring removes the third-party dependency but
+  would put ~25 MB of WebAssembly into every pip install until the demo
+  build and the wheel build are separated. Next (APP.md): the same
+  backend as Knuth.app's no-Python mode, once the shell serves the page
+  and does the file I/O itself.
 - **Percent format, one implementation.** `percent.py` calls itself a port
   of `percent.ts` kept honest by corpus tests; the pyodide branch
   demonstrates the browser running the real Python modules, which could end

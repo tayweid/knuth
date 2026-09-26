@@ -5,7 +5,8 @@
 
 import './frame-guard.ts';
 import './styles.css';
-import { SidecarKernel } from './kernel/kernel.ts';
+import { SidecarKernel, type Kernel } from './kernel/kernel.ts';
+import { LazyKernel } from './kernel/lazy-kernel.ts';
 import { DocumentView, plainLanguageFor } from './document-view.ts';
 import { delimiterFor } from './format/csv.ts';
 import { DEFAULT_DOC_NAME, FileManager, dirname } from './file-manager.ts';
@@ -148,9 +149,28 @@ function stashedRoot(): string | null {
 }
 const initialRoot = openParam ? dirname(openParam) : stashedRoot();
 
+// Served from loopback, an engine is behind this page and owns the session.
+// Served from the web, there is no engine and never will be, so the preview
+// runs Python in the tab instead (SAME_ORIGIN.md, "Pyodide in the
+// preview"). The Pyodide backend is imported only in that case: the local
+// app should not carry a runtime it will never load. `?python=browser`
+// forces the in-tab backend anywhere, for testing the preview locally.
+const servedLocally = ['127.0.0.1', 'localhost', '[::1]'].includes(window.location.hostname);
+const pythonInBrowser =
+  !servedLocally || new URLSearchParams(window.location.search).get('python') === 'browser';
+
+type OnState = (state: Parameters<typeof onboarding.setState>[0], resumed?: boolean) => void;
+function makeKernel(onState: OnState): Kernel {
+  if (!pythonInBrowser) return new SidecarKernel(undefined, onState, initialRoot);
+  const pending = import('./kernel/pyodide-kernel.ts').then(
+    ({ PyodideKernel }) => new PyodideKernel(onState),
+  );
+  return new LazyKernel(pending, onState);
+}
+
 let hadSession = false;
 let kernelState: Parameters<typeof onboarding.setState>[0] = 'connecting';
-const kernel = new SidecarKernel(undefined, (state, resumed) => {
+const kernel = makeKernel((state, resumed) => {
   kernelState = state;
   onboarding.setState(state);
   if (state === 'ready') {
@@ -187,7 +207,7 @@ const kernel = new SidecarKernel(undefined, (state, resumed) => {
     status.textContent = 'connecting…';
     status.className = '';
   }
-}, initialRoot);
+});
 
 status.tabIndex = 0;
 status.setAttribute('role', 'button');
