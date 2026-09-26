@@ -970,3 +970,35 @@ def test_session_root_and_documents(tmp_path):
     engine_root.mkdir()
     project.mkdir()
     asyncio.run(check_session_root_and_documents(engine_root, project))
+
+
+def test_serve_exits_with_its_parent(tmp_path):
+    """Knuth.app passes its own pid: when it is gone, so is the engine — even
+    when it went without running any terminate handler."""
+    parent = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(60)"])
+    port = free_port()
+    server = subprocess.Popen(
+        server_command(port, "--parent", str(parent.pid)),
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        text=True,
+    )
+    try:
+        deadline = time.monotonic() + 10
+        while time.monotonic() < deadline:
+            with socket.socket() as probe:
+                if probe.connect_ex(("127.0.0.1", port)) == 0:
+                    break
+            time.sleep(0.1)
+        else:
+            pytest.fail("engine never came up")
+        parent.kill()
+        parent.wait(timeout=5)
+        server.wait(timeout=15)
+        assert server.returncode == 0, server.returncode
+        assert "parent process" in server.stdout.read()
+    finally:
+        if parent.poll() is None:
+            parent.kill()
+        if server.poll() is None:
+            server.kill()

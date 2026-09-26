@@ -320,6 +320,29 @@ async def _pump(kernel, ws, ready_id=None):
         pass
 
 
+def _process_alive(pid):
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        return True
+    except OSError:
+        return False
+    return True
+
+
+async def _exit_with_parent(pid, interval=2.0):
+    """Stop serving once the process that started us is gone (APP.md: the
+    shell owns the engine's lifetime — including when it crashes or is
+    force-quit, which no terminate handler survives)."""
+    while _process_alive(pid):
+        await asyncio.sleep(interval)
+    # Returning ends the `async with websockets.serve(...)` block, whose
+    # finally clause stops every kernel — the same path Ctrl-C takes.
+    print(f"parent process {pid} is gone; stopping the engine", flush=True)
+
+
 async def serve(
     port,
     grace=GRACE_SECONDS,
@@ -330,6 +353,7 @@ async def serve(
     max_concurrent_starts=MAX_CONCURRENT_KERNEL_STARTS,
     web_root=None,
     root=None,
+    parent=None,
 ):
     sessions = {}
     starting_sids = set()
@@ -560,7 +584,10 @@ async def serve(
             )
             if web.available(web_root):
                 print(f"knuth app on http://127.0.0.1:{port}", flush=True)
-            await asyncio.get_running_loop().create_future()
+            if parent:
+                await _exit_with_parent(parent)
+            else:
+                await asyncio.get_running_loop().create_future()
     finally:
         # Foreground shutdown and test cancellation must not orphan subprocesses.
         background_tasks = []
@@ -585,6 +612,7 @@ def main(
     *,
     on_ready=None,
     root=None,
+    parent=None,
 ):
     try:
         asyncio.run(serve(
@@ -593,6 +621,7 @@ def main(
             origins,
             on_ready=on_ready,
             root=root,
+            parent=parent,
         ))
     except KeyboardInterrupt:
         pass

@@ -55,6 +55,11 @@ def main():
         "--root",
         help="project root each kernel runs in (default: this process's cwd)",
     )
+    serve.add_argument(
+        "--parent",
+        type=int,
+        help="exit when this process id is gone (Knuth.app passes its own)",
+    )
 
     app_cmd = sub.add_parser(
         "app",
@@ -156,6 +161,7 @@ def main():
             args.grace,
             args.origins,
             root=root,
+            parent=args.parent,
         )
     else:
         parser.print_help()

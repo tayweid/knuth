@@ -39,6 +39,27 @@ Tauri app (WYSIWYG markdown with executable cells) is retired at the
 
 ## Install and launch
 
+### Knuth.app (macOS)
+
+The app is a native window around the same local engine (design in
+[APP.md](./docs/APP.md)). Until there is a release download, build it
+from a checkout with the command-line tools alone — no Xcode project:
+
+```bash
+app/build.sh
+```
+
+Drag `app/build/Knuth.app` to Applications and open it. The first launch
+finds your Python (Anaconda, Homebrew, python.org, in that order), installs
+the engine into it if it is missing, and starts it; later launches just
+open. Double-clicking a `.py` (or choosing Knuth in Open With) opens it in
+its own folder: the kernel starts there, and `values.json` and `figs/` land
+there. The app starts the engine as its own child and stops it on quit; an
+engine already running, from a terminal or the login agent, is reused and
+left alone.
+
+### The terminal (every platform)
+
 macOS and Linux:
 
 ```bash

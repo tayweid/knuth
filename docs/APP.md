@@ -64,10 +64,12 @@ two folders share one engine and one port. ROADMAP.md's "one root per engine
 superseded: the shell has the real path.
 
 DECIDED: **The shell owns the engine's lifetime.** `Knuth.app` starts
-`knuth serve` as a child process when nothing owns the port, and that child
-dies with the app. If an engine is already running — the launchd agent, or a
-terminal — it is reused and left alone. No idle-exit timer in the engine: the
-thing that started it stops it. The agent remains optional and unchanged.
+`knuth serve --parent <its pid>` as a child process when nothing owns the
+port; the engine polls that pid and stops when it is gone, so a crash or a
+force-quit — which runs no terminate handler — never leaves an orphan. If
+an engine is already running — the launchd agent, or a terminal — it is
+reused and left alone. No idle-exit timer in the engine: the thing that
+started it stops it. The agent remains optional and unchanged.
 
 DECIDED: **First launch installs the engine.** The shell looks for a Python
 3.11+ that already has `knuth`; failing that, one that has `pandas` (the
@@ -140,17 +142,30 @@ one the user could already `open()` — the same boundary as running Python.
 
 ## Migration
 
-1. **Engine: paths and roots.** Per-session root on attach and restart;
-   `open`/`save`/`stat`/`rename` by path; `persist` in the kernel sharing
-   `knuth run`'s contract writer; `knuth app FILE.py`. Unit tests over the
-   real socket.
-2. **Page: path mode.** The file manager runs by path when it has one and
-   by handle otherwise; `?open=` on boot; the shell bridge for dialogs;
-   artifacts persisted by the kernel.
-3. **Shell.** `app/` in the repo: `main.swift`, `Info.plist`, `build.sh`
-   producing `dist/Knuth.app`, icon from the existing PNGs.
-4. **First-run install** in the shell, then the README's install section
+Steps 1–4 landed 2026-09-25; step 5 remains.
+
+1. **DONE — Engine: paths and roots.** Per-session root on attach and
+   restart; `open`/`save`/`stat`/`rename` by path (files.py); `persist` in
+   the kernel sharing `knuth run`'s contract writer (contract.py); `knuth
+   app FILE.py`; `knuth serve --parent PID`. Unit tests over the real
+   socket.
+2. **DONE — Page: path mode.** The file manager runs by path when it has
+   one and by handle otherwise; `?open=` on boot; the shell bridge for
+   dialogs; artifacts persisted by the kernel; the change poll by stat.
+3. **DONE — Shell.** `app/` in the repo: `Sources/main.swift`,
+   `Info.plist`, `build.sh` producing `app/build/Knuth.app`, icon from the
+   existing PNGs. `KNUTH_PORT` and `KNUTH_CONFIG_DIR` in the environment
+   (`open --env`) point a development build at a test engine.
+4. **DONE — First-run install** in the shell; the README's install section
    leads with the app and keeps the pip commands for Windows, Linux, and
    the terminal-inclined.
 5. **Retire the PWA surface**: manifest, service worker, install offer,
    launch-queue consumer. The hosted demo keeps a manifest-free build.
+
+Verified by hand 2026-09-25 (development build against a test port, the
+login agent left alone on 5197): double-click opens the document with its
+folder as the kernel's cwd, receipts autosave through the engine, run-all
+writes `values.json` and the manifest beside the file, an outside edit
+reloads in place with the session kept, and `kill -9` of the shell takes
+the engine down within the poll interval. Not yet exercised by automation:
+the NSOpenPanel/NSSavePanel bridge and the first-run pip install.
