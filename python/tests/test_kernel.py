@@ -885,3 +885,88 @@ def test_serve_rejects_missing_root():
     )
     assert result.returncode != 0, result
     assert "/nonexistent" in result.stderr, result.stderr
+
+
+async def check_session_root_and_documents(engine_root, project):
+    """APP.md: a session names its own root; files go by path; persist
+    writes the contract into the kernel's cwd, not the engine's root."""
+    port = free_port()
+    document = project / "analysis.py"
+    document.write_text("# %%\nx = 1\n")
+    server = subprocess.Popen(
+        server_command(port, root=engine_root),
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+    )
+    try:
+        ws = await connect_when_up(port)
+        async with closing_websocket(ws):
+            client = Client(ws)
+            await client.send(
+                type="attach", protocol=PROTOCOL_VERSION, session="doc-test",
+                root=str(project),
+            )
+            attached = await client.recv()
+            assert attached["type"] == "attached" and attached["root"] == str(project), attached
+            await client.wait_ready()
+
+            _, final = await client.run(1, "import os; os.getcwd()")
+            assert final["result"] == repr(str(project)), final
+
+            await client.send(type="open", id=2, path=str(document))
+            reply = await client.recv()
+            assert reply["type"] == "document" and reply["id"] == 2, reply
+            assert reply["text"] == "# %%\nx = 1\n" and reply["name"] == "analysis.py", reply
+
+            await client.send(type="save", id=3, path=str(document), text="# %%\nx = 2\n")
+            reply = await client.recv()
+            assert reply["type"] == "saved" and reply["path"] == str(document), reply
+            assert document.read_text() == "# %%\nx = 2\n"
+
+            await client.send(type="stat", id=4, path=str(document))
+            reply = await client.recv()
+            assert reply["type"] == "stat" and reply["modified"] == reply["modified"], reply
+            assert reply["modified"] == int(document.stat().st_mtime * 1000)
+
+            await client.send(type="open", id=5, path="relative.py")
+            reply = await client.recv()
+            assert reply["type"] == "document" and "absolute" in reply["error"], reply
+
+            _, final = await client.run(6, "answer = 42")
+            await client.send(type="persist", id=7)
+            reply = await client.recv()
+            assert reply["type"] == "persisted" and reply["id"] == 7, reply
+            assert reply["root"] == str(project) and reply["values"] == 1, reply
+            assert json.loads((project / "values.json").read_text()) == {"answer": 42}
+            assert not (engine_root / "values.json").exists()
+
+            # A restart may move the session to another folder.
+            elsewhere = project / "sub"
+            elsewhere.mkdir()
+            await client.send(type="restart", id=8, root=str(elsewhere))
+            while True:
+                msg = await asyncio.wait_for(client.recv(), timeout=10)
+                if msg["type"] == "ready":
+                    break
+            _, final = await client.run(9, "import os; os.getcwd()")
+            assert final["result"] == repr(str(elsewhere)), final
+
+            # An unusable root falls back to the engine's, never refuses.
+            await client.send(type="restart", id=10, root=str(project / "missing"))
+            while True:
+                msg = await asyncio.wait_for(client.recv(), timeout=10)
+                if msg["type"] == "ready":
+                    break
+            _, final = await client.run(11, "import os; os.getcwd()")
+            assert final["result"] == repr(str(engine_root)), final
+    finally:
+        server.terminate()
+        server.wait(timeout=5)
+
+
+def test_session_root_and_documents(tmp_path):
+    engine_root = (tmp_path / "engine").resolve()
+    project = (tmp_path / "project").resolve()
+    engine_root.mkdir()
+    project.mkdir()
+    asyncio.run(check_session_root_and_documents(engine_root, project))

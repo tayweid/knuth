@@ -20,6 +20,19 @@ def _resolve_root(path):
     return str(resolved)
 
 
+def _resolve_target(path):
+    """`knuth app PATH`: a folder is the project root; a file is the document
+    to open, and its folder is the root (APP.md). Returns (root, file)."""
+    if path is None:
+        return None, None
+    resolved = Path(path).expanduser().resolve()
+    if resolved.is_dir():
+        return str(resolved), None
+    if resolved.is_file():
+        return str(resolved.parent), str(resolved)
+    sys.exit(f"knuth: no such file or folder: {resolved}")
+
+
 def main():
     parser = argparse.ArgumentParser(prog="knuth")
     sub = parser.add_subparsers(dest="command")
@@ -48,9 +61,10 @@ def main():
         help="start the local engine and open the Knuth app it serves",
     )
     app_cmd.add_argument(
-        "folder",
+        "path",
         nargs="?",
-        help="project root each kernel runs in (default: this process's cwd)",
+        help="a project folder, or a document to open (its folder becomes "
+        "the project root); default: this process's cwd",
     )
     app_cmd.add_argument("--port", type=int, default=DEFAULT_PORT)
     app_cmd.add_argument(
@@ -117,13 +131,14 @@ def main():
     elif args.command == "app":
         from .hosted import run_hosted
 
-        root = _resolve_root(args.folder)
+        root, open_path = _resolve_target(args.path)
         sys.exit(run_hosted(
             args.port,
             args.grace,
             open_browser=not args.no_browser,
             browser=args.browser,
             root=root,
+            open_path=open_path,
         ))
     elif args.command == "agent":
         if args.action == "install":

@@ -7,6 +7,7 @@ from pathlib import Path
 
 import pytest
 
+import knuth.contract as contract
 import knuth.runner as runner
 from knuth.artifacts import MANIFEST_NAME, owned_figure_names
 from knuth.percent import (
@@ -322,7 +323,7 @@ def test_atomic_write_never_exposes_a_partial_destination(tmp_path, monkeypatch)
         assert Path(target).read_text() == "last complete bytes\n"
         raise OSError("simulated interruption before replace")
 
-    monkeypatch.setattr(runner.os, "replace", interrupted_replace)
+    monkeypatch.setattr(contract.os, "replace", interrupted_replace)
     with pytest.raises(OSError, match="simulated interruption"):
         runner._atomic_write(destination, "new complete bytes\n")
 

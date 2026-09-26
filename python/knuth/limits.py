@@ -29,3 +29,8 @@ MAX_KERNEL_EVENT_BYTES = 40 * 1024 * 1024
 MAX_ARTIFACT_RESPONSE_BYTES = 32 * 1024 * 1024
 MAX_NAMESPACE_RESPONSE_BYTES = 8 * 1024 * 1024
 MAX_TABLE_RESPONSE_BYTES = 8 * 1024 * 1024
+
+# Documents by path (files.py): what the engine will read into one event,
+# and how long a path it will consider at all.
+MAX_DOCUMENT_BYTES = 8 * 1024 * 1024
+MAX_PATH_CHARS = 4096

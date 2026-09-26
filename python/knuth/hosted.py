@@ -13,6 +13,7 @@ import socket
 import subprocess
 import sys
 import time
+import urllib.parse
 import webbrowser
 
 from . import agent, state
@@ -34,8 +35,13 @@ MACOS_BUNDLE_IDS = {
 }
 
 
-def app_url(port):
-    return f"http://127.0.0.1:{port}/"
+def app_url(port, open_path=None):
+    """The app, optionally told which document to open (APP.md): the page
+    asks the engine for the file by this absolute path once attached."""
+    url = f"http://127.0.0.1:{port}/"
+    if open_path:
+        url += "?open=" + urllib.parse.quote(open_path, safe="/")
+    return url
 
 
 def open_in(url, browser=None):
@@ -136,13 +142,24 @@ def _offer_login_agent(port):
     return True
 
 
-def run_hosted(port=5197, grace=GRACE_SECONDS, *, open_browser=True, browser=None, root=None):
+def run_hosted(
+    port=5197,
+    grace=GRACE_SECONDS,
+    *,
+    open_browser=True,
+    browser=None,
+    root=None,
+    open_path=None,
+):
     """Serve the app and keep the engine in the foreground.
 
     If an engine already owns the port, this just opens the app against it
-    and returns; the running one keeps serving.
+    and returns; the running one keeps serving. `open_path` names a document
+    to open; its folder is the session's root regardless of what the engine
+    was started with, which is what makes a second document from a second
+    folder work against the first document's engine.
     """
-    url = app_url(port)
+    url = app_url(port, open_path)
     if browser:
         state.set(BROWSER_KEY, browser)
     chosen = browser or state.get(BROWSER_KEY)

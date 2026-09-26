@@ -89,8 +89,8 @@ def test_cli_dispatches_app(monkeypatch):
     monkeypatch.setattr(
         hosted,
         "run_hosted",
-        lambda port, grace, *, open_browser, browser, root: called.append(
-            (port, grace, open_browser, browser, root)
+        lambda port, grace, *, open_browser, browser, root, open_path: called.append(
+            (port, grace, open_browser, browser, root, open_path)
         ) or 0,
     )
     monkeypatch.setattr(
@@ -102,7 +102,68 @@ def test_cli_dispatches_app(monkeypatch):
     with pytest.raises(SystemExit) as exit_info:
         cli.main()
     assert exit_info.value.code == 0
-    assert called == [(8123, 9, False, "chrome", None)]
+    assert called == [(8123, 9, False, "chrome", None, None)]
+
+
+def test_cli_app_with_a_document_opens_it_in_its_own_folder(monkeypatch, tmp_path):
+    """`knuth app analysis.py`: the file's folder is the root (APP.md)."""
+    document = tmp_path / "analysis.py"
+    document.write_text("# %%\nx = 1\n")
+    called = []
+    monkeypatch.setattr(
+        hosted,
+        "run_hosted",
+        lambda port, grace, **options: called.append(options) or 0,
+    )
+    monkeypatch.setattr(sys, "argv", ["knuth", "app", str(document)])
+    with pytest.raises(SystemExit) as exit_info:
+        cli.main()
+    assert exit_info.value.code == 0
+    assert called[0]["root"] == str(tmp_path.resolve())
+    assert called[0]["open_path"] == str(document.resolve())
+
+
+def test_cli_app_with_a_folder_has_no_document(monkeypatch, tmp_path):
+    called = []
+    monkeypatch.setattr(
+        hosted,
+        "run_hosted",
+        lambda port, grace, **options: called.append(options) or 0,
+    )
+    monkeypatch.setattr(sys, "argv", ["knuth", "app", str(tmp_path)])
+    with pytest.raises(SystemExit):
+        cli.main()
+    assert called[0]["root"] == str(tmp_path.resolve())
+    assert called[0]["open_path"] is None
+
+
+def test_cli_app_refuses_a_path_that_is_nothing(monkeypatch, tmp_path):
+    monkeypatch.setattr(
+        hosted, "run_hosted", lambda *a, **k: pytest.fail("nothing to open")
+    )
+    monkeypatch.setattr(sys, "argv", ["knuth", "app", str(tmp_path / "missing.py")])
+    with pytest.raises(SystemExit) as exit_info:
+        cli.main()
+    assert "missing.py" in str(exit_info.value.code)
+
+
+def test_app_url_carries_the_document_to_open():
+    """The page asks the engine for this path once attached; spaces and
+    unicode survive the trip, and the path stays readable in the bar."""
+    assert hosted.app_url(5197, "/Users/me/My Paper/analysis.py") == (
+        "http://127.0.0.1:5197/?open=/Users/me/My%20Paper/analysis.py"
+    )
+    assert hosted.app_url(5197, None) == "http://127.0.0.1:5197/"
+
+
+def test_a_document_opens_against_a_running_engine(monkeypatch):
+    """Double-clicking a second file reuses the engine and names the file."""
+    monkeypatch.setattr(hosted, "_port_is_taken", lambda _port: True)
+    monkeypatch.setattr(hosted, "_restart_if_stale", lambda _port: False)
+    opened = []
+    monkeypatch.setattr(hosted.webbrowser, "open", lambda url: opened.append(url) or True)
+    assert hosted.run_hosted(5197, open_path="/tmp/paper/analysis.py") == 0
+    assert opened == ["http://127.0.0.1:5197/?open=/tmp/paper/analysis.py"]
 
 
 def test_cli_no_longer_offers_pairing_verbs(monkeypatch, capsys):

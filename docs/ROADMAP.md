@@ -14,7 +14,14 @@ question that still needs one.
   --root PATH` / `knuth app FOLDER` start every kernel (attach and
   restart) in the project root; no root means the old behavior. One
   root per engine — per-session roots would need real paths the
-  browser withholds by design.
+  browser withholds by design. AMENDED 2026-09-25 (APP.md): roots are
+  per session now, carried on attach and restart, because the app
+  shell has the real path.
+
+- **Knuth.app** — IN PROGRESS 2026-09-25, design and decisions in
+  APP.md: a native macOS window (Swift + WKWebView, not Tauri) around
+  the served page, `.py` files opened in their own folder, file I/O
+  through the engine by path, the PWA retired as the way to a window.
 
 - **Commented scratch bodies** — SHIPPED 2026-08-23, prefix amended to
   `#| ` (DESIGN.md: lossless where `# `+escape collides). Both parsers

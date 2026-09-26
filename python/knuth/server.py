@@ -13,12 +13,21 @@ the whole authentication story: the exact Origin check on the upgrade proves
 the browser loaded the page from this process, so there is no secret to
 deliver, store, diverge, or lose. Nothing else may open the socket.
 
-Handshake: the client's first message is `attach{protocol, session}`. The
-server replies `attached{protocol, session, resumed}` (echoing a fresh id if the claimed one
-is actively held — a duplicated tab forks, it doesn't steal), then either
-synthesizes `ready{resumed:true}` for a resumed kernel or lets the fresh
-kernel's own `ready` flow through. Every later request is shape- and
-size-validated before it reaches this session's kernel.
+Handshake: the client's first message is `attach{protocol, session, root?}`.
+The server replies `attached{protocol, session, resumed}` (echoing a fresh
+id if the claimed one is actively held — a duplicated tab forks, it doesn't
+steal), then either synthesizes `ready{resumed:true}` for a resumed kernel
+or lets the fresh kernel's own `ready` flow through. Every later request is
+shape- and size-validated before it reaches this session's kernel.
+
+Roots are per session (APP.md): `root` on attach, or on a `restart`, is the
+absolute directory the session's kernel runs in — the opened document's
+folder, when the page has a real path. Without one, the engine's own root
+(`--root`, else its cwd) applies, as before.
+
+Documents by path (files.py) are answered here, not by the kernel: `open`,
+`save`, `stat`, `rename`. `persist` goes to the kernel, which writes the
+folder contract into its cwd.
 """
 
 import asyncio
@@ -33,7 +42,7 @@ import uuid
 
 import websockets
 
-from . import web
+from . import files, web
 from .ipynb import notebook_to_document
 from .percent import serialize_document
 from .limits import (
@@ -45,6 +54,7 @@ from .limits import (
     MAX_KERNEL_EVENT_BYTES,
     MAX_LIVE_SESSIONS,
     MAX_NAME_CHARS,
+    MAX_PATH_CHARS,
     MAX_REQUEST_ID,
     MAX_SESSION_ID_CHARS,
 )
@@ -145,11 +155,28 @@ class KernelProcess:
 
 
 class KernelSession:
-    def __init__(self, kernel):
+    def __init__(self, kernel, root=None):
         self.kernel = kernel
+        # Where this session's kernel runs (and restarts): the document's
+        # folder when the page has a path, else the engine's root.
+        self.root = root
         self.ws = None
         self.pump_task = None
         self.reap_task = None
+
+
+def _session_root(value, default):
+    """The directory a session asked for, or the engine's default.
+
+    A root that is not an existing directory falls back rather than
+    refusing: the page still gets a kernel, and `knuth doctor` says where.
+    """
+    if not isinstance(value, str) or not value or len(value) > MAX_PATH_CHARS:
+        return default
+    path = Path(value)
+    if not path.is_absolute() or not path.is_dir():
+        return default
+    return str(path)
 
 
 def _request_error(msg, error):
@@ -174,9 +201,14 @@ def _validate_request(msg):
         "restart",
         "namespace",
         "artifacts",
+        "persist",
         "figure",
         "table",
         "convert",
+        "open",
+        "save",
+        "stat",
+        "rename",
     }:
         return "unknown request type"
     if kind != "interrupt":
@@ -194,6 +226,17 @@ def _validate_request(msg):
     elif kind == "convert":
         if not isinstance(msg.get("text"), str):
             return "convert text must be a string"
+    elif kind == "restart":
+        if "root" in msg and not isinstance(msg["root"], str):
+            return "restart root must be a string"
+    elif kind in {"open", "save", "stat", "rename"}:
+        path = msg.get("path")
+        if not isinstance(path, str) or not path or len(path) > MAX_PATH_CHARS:
+            return f"{kind} path must be a string of at most {MAX_PATH_CHARS} characters"
+        if kind == "save" and not isinstance(msg.get("text"), str):
+            return "save text must be a string"
+        if kind == "rename" and not isinstance(msg.get("name"), str):
+            return "rename name must be a string"
     elif kind in {"figure", "table"}:
         name = msg.get("name")
         if not isinstance(name, str) or len(name) > MAX_NAME_CHARS:
@@ -206,6 +249,24 @@ def _validate_request(msg):
             if type(limit) is not int or not 1 <= limit <= MAX_TABLE_LIMIT:
                 return f"table limit must be an integer from 1 to {MAX_TABLE_LIMIT}"
     return None
+
+
+def _file_response(msg):
+    """Answer a document-by-path request from the engine itself."""
+    kind = msg["type"]
+    if kind == "open":
+        body = files.open_document(msg["path"])
+        reply = "document"
+    elif kind == "save":
+        body = files.save_document(msg["path"], msg["text"])
+        reply = "saved"
+    elif kind == "stat":
+        body = files.stat_document(msg["path"])
+        reply = "stat"
+    else:
+        body = files.rename_document(msg["path"], msg["name"])
+        reply = "renamed"
+    return {"type": reply, "id": msg["id"], **body}
 
 
 def _convert_response(msg):
@@ -368,6 +429,7 @@ async def serve(
             await ws.close(code=1002, reason="session id is too long")
             return
         sid = supplied_sid or uuid.uuid4().hex
+        session_root = _session_root(first.get("root"), root)
 
         session = sessions.get(sid)
         resumed = False
@@ -396,7 +458,7 @@ async def serve(
             kernel = KernelProcess()
             try:
                 async with start_slots:
-                    await kernel.start(cwd=root)
+                    await kernel.start(cwd=session_root)
             except asyncio.CancelledError:
                 await kernel.stop()
                 raise
@@ -408,7 +470,7 @@ async def serve(
                 return
             finally:
                 starting_sids.discard(sid)
-            session = KernelSession(kernel)
+            session = KernelSession(kernel, session_root)
             sessions[sid] = session
 
         session.ws = ws
@@ -418,6 +480,7 @@ async def serve(
                 "protocol": PROTOCOL_VERSION,
                 "session": sid,
                 "resumed": resumed,
+                "root": session.root,
             }))
             if resumed:
                 # The kernel's own ready was consumed in a previous life.
@@ -439,14 +502,18 @@ async def serve(
                     session.kernel.interrupt()
                 elif kind == "convert":
                     await ws.send(json.dumps(_convert_response(msg)))
+                elif kind in {"open", "save", "stat", "rename"}:
+                    await ws.send(json.dumps(_file_response(msg)))
                 elif kind == "restart":
+                    if "root" in msg:
+                        session.root = _session_root(msg["root"], root)
                     session.pump_task.cancel()
                     await asyncio.gather(session.pump_task, return_exceptions=True)
                     await session.kernel.stop()
                     session.kernel = KernelProcess()
                     try:
                         async with start_slots:
-                            await session.kernel.start(cwd=root)
+                            await session.kernel.start(cwd=session.root)
                     except Exception:
                         sessions.pop(sid, None)
                         await report_start_failure(session.kernel, ws, {

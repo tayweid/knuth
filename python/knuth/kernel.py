@@ -6,12 +6,18 @@ stdout carries only protocol events. SIGINT lands here as KeyboardInterrupt:
 during a run it surfaces as an `error` event, while idle it is swallowed.
 
 Events out: ready | stream{id,which,text} | done{id,result} |
-            error{id,traceback} | namespace{id,vars}
-Commands in: run{id,code} | namespace{id}
+            error{id,traceback} | namespace{id,vars} | persisted{id,...}
+Commands in: run{id,code} | namespace{id} | artifacts{id} | persist{id} | ...
+
+`persist` writes the folder contract (values.json, figs/) into this
+process's working directory — the project root the server started it in —
+through the same writer `knuth run` uses, so the app and the runner never
+disagree about what the folder should contain.
 """
 
 import io
 import json
+import os
 import signal
 import sys
 
@@ -27,6 +33,7 @@ from .limits import (
     MAX_TABLE_RESPONSE_BYTES,
     MAX_TRACEBACK_BYTES,
 )
+from .contract import write_contract
 from .session import Session, capture_open_figures
 
 
@@ -209,6 +216,24 @@ def main():
                         "request": "artifacts",
                         "id": msg["id"],
                         "error": "artifact response exceeds the configured limit",
+                    })
+            elif kind == "persist":
+                values, figures = session.artifacts()
+                try:
+                    write_contract(os.getcwd(), values, figures)
+                except (OSError, ValueError) as exc:
+                    emit({
+                        "type": "persisted",
+                        "id": msg["id"],
+                        "error": f"could not write the project folder: {exc}",
+                    })
+                else:
+                    emit({
+                        "type": "persisted",
+                        "id": msg["id"],
+                        "root": os.getcwd(),
+                        "values": len(values),
+                        "figures": sorted(figures),
                     })
             elif kind == "figure":
                 result = session.figure(msg.get("name", ""))
