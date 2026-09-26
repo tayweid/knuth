@@ -474,6 +474,49 @@ export class DocumentView {
     this.render();
   }
 
+  /** Replace the preamble alone — a header the engine grew — without
+   *  rebuilding the cells, which may be mid-run: the running cell's
+   *  output element must stay the one being written. */
+  setPreamble(lines: string[]) {
+    if (this.gridMode) {
+      this.doc.preamble = lines;
+      return;
+    }
+    if (this.sourceMode) {
+      const editor = this.preambleView?.editor;
+      const before = this.doc.preamble.join('\n');
+      const current = editor?.state.doc.toString() ?? '';
+      if (!editor || !current.startsWith(before)) {
+        this.doc.preamble = lines;
+        this.render();
+        return;
+      }
+      // The listener reparses the model from the edited text.
+      editor.dispatch({ changes: { from: 0, to: before.length, insert: lines.join('\n') } });
+      return;
+    }
+    this.doc.preamble = lines;
+    const editor = this.preambleView?.editor;
+    if (editor) {
+      const text = lines.join('\n').replace(/\n+$/, '');
+      if (editor.state.doc.toString() !== text) {
+        editor.dispatch({ changes: { from: 0, to: editor.state.doc.length, insert: text } });
+      }
+      return;
+    }
+    if (!lines.some((line) => line.trim() !== '')) return;
+    // The document had no preamble: give it cell zero, above the cells.
+    const pseudo: Cell = {
+      kind: 'program',
+      marker: '',
+      source: [...lines],
+      output: [],
+      trailing: [],
+    };
+    this.preambleView = this.buildView(pseudo, true);
+    (this.views[0]?.root ?? this.endZone).before(this.preambleView.root);
+  }
+
   /** Whether the raw single-editor source view is showing. */
   get isSource(): boolean {
     return this.sourceMode && !this.gridMode;

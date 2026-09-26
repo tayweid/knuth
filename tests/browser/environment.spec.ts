@@ -85,9 +85,11 @@ test.beforeEach(async ({ page }) => {
             // disk, and tells the page; the disk now carries the header.
             const path = '/p/analysis.py';
             this.reply({ type: 'dependency', id: msg.id, state: 'installing', module: 'seaborn', distribution: 'seaborn' });
+            this.reply({ type: 'stream', id: msg.id, which: 'stdout', text: 'before the header\n' });
             texts[path] = [...header, '', texts[path]].join('\n');
             modified[path] = 3000;
             this.reply({ type: 'header', id: msg.id, path, lines: header, modified: 3000 });
+            this.reply({ type: 'stream', id: msg.id, which: 'stdout', text: 'after the header\n' });
             this.reply({ type: 'done', id: msg.id, result: null });
             break;
           }
@@ -147,6 +149,12 @@ test('the header the engine rewrites is spliced into the preamble', async ({ pag
       page.evaluate(() => JSON.parse(sessionStorage.getItem('knuth-doc')!).text as string),
     )
     .toBe([...HEADER, '', '# %%', 'x = 1', ''].join('\n'));
+  // The splice moved only the preamble: the running cell kept its output
+  // element, so what streamed after the header still landed.
+  await expect(page.getByText('after the header')).toBeVisible();
+  await expect(page.getByText('before the header')).toBeVisible();
+  // Written by the engine, so nothing is left to save.
+  await expect(page.locator('#file-name')).not.toContainText('●');
   // The engine's mtime was adopted: the poll never reloads over the splice.
   await page.waitForTimeout(2000);
   expect((await messages(page)).filter((m) => m.type === 'open').length).toBe(1);

@@ -42,6 +42,9 @@ export interface FileHooks {
   /** The open file changed on disk under a clean document (an outside
    *  editor, knuth run receipts): here is its fresh parse. */
   onDiskChange?(doc: KnuthDocument): void;
+  /** Only the preamble changed (a header the engine grew): update it
+   *  without rebuilding the cells, which may be running. */
+  setPreamble?(lines: string[]): void;
   /** Documents by path, answered by the engine (null: no engine). */
   openPath?(path: string): Promise<DocumentResult | null>;
   savePath?(path: string, text: string): Promise<SavedResult | null>;
@@ -435,7 +438,7 @@ export class FileManager {
     // A new file gets its header from the engine: what is on disk is the
     // text plus that block, so the page adopts it rather than writing the
     // headerless version back.
-    if (saved.header) this.spliceHeader(saved.header);
+    if (saved.header) this.spliceHeader(saved.header, saved.modified);
     // Only what was written is clean: a keystroke during the round trip
     // stays dirty and reschedules.
     if (this.changes === before) {
@@ -453,7 +456,8 @@ export class FileManager {
     const preamble = spliceHeader(doc.preamble, lines);
     if (typeof modified === 'number') this.diskModified = modified;
     if (preamble.join('\n') === doc.preamble.join('\n')) return;
-    this.hooks.onDiskChange?.({ ...doc, preamble });
+    if (this.hooks.setPreamble) this.hooks.setPreamble(preamble);
+    else this.hooks.onDiskChange?.({ ...doc, preamble });
     this.stash();
   }
 
@@ -532,7 +536,7 @@ export class FileManager {
     this.name = basename(this.path);
     this.diskModified = saved.modified ?? 0;
     this.dirty = false;
-    if (saved.header) this.spliceHeader(saved.header);
+    if (saved.header) this.spliceHeader(saved.header, saved.modified);
     this.hooks.onState();
     this.hooks.message(`Saved ${this.name}`);
     this.addRecentPath(this.path, this.name);

@@ -150,8 +150,15 @@ preamble, keeping unsaved edits, and its mtime adopted so the change poll
 does not reload over it); a `saved` reply may carry the `header` a new
 file was given. The in-tab Python reads the same header for micropip
 (`knuth.env.parse_header`, loaded into the tab), so one header names the
-packages in both modes; in the tab, installs are not written back to the
-header — OPEN whether they should be, as the engine does.
+packages in both modes. DECIDED 2026-09-26 (Taylor): the tab does not
+write headers. Pinning what micropip installed back into the header was
+built, made to match uv's format through `knuth.env.add_pin`, and then
+dropped the same day: nobody uses the built-in Python for reproducible
+science, and a second header writer is complexity without a user. A
+document that needs to reproduce is opened over the engine, where uv
+owns the header. The splice for the engine's `header` events moves only
+the preamble (`setPreamble`), so a header arriving mid-run never
+rebuilds the cell that is running.
 
 - `attach{…, root?}` — absolute directory the session's kernel starts in.
   Missing or unusable: the engine's default root, as before.

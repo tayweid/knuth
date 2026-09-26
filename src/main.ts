@@ -585,6 +585,9 @@ fileManager = new FileManager({
     docView.setDoc(doc);
     if (fileManager.dir || fileManager.root) docView.hydrateAll();
   },
+  // A header that changed under a running document: only the preamble
+  // moves, so the cell that is running keeps its live output.
+  setPreamble: (lines) => docView.setPreamble(lines),
   openPath: files.open,
   savePath: files.save,
   statPath: files.stat,

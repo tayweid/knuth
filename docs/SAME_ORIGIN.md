@@ -319,7 +319,9 @@ every top-level import the tab still cannot satisfy is tried on PyPI.
 Installs are reported the way the engine reports its own — `dependency`
 events the page toasts — and never on the cell's stream, so a receipt
 never carries an "Installing" line that a run under real Python would not
-produce. A `# %pip install name` or `# !pip install name` line names a
+produce. They are not written back into the header: the tab reads a
+header and never writes one (APP.md), so reproduction stays the engine's
+job, where uv owns the header. A `# %pip install name` or `# !pip install name` line names a
 package outright, for the cases where import name and package name differ
 (`import slugify` ← `python-slugify`); it is exactly the commented form the
 notebook importer leaves behind, so a notebook's `!pip install seaborn`
