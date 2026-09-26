@@ -184,9 +184,14 @@ one the user could already `open()` — the same boundary as running Python.
 
 - **Gatekeeper.** An unsigned app downloaded from the web is blocked on
   macOS 15 until Privacy & Security → Open Anyway; the right-click trick is
-  gone. OPEN: sign and notarize with a Developer ID (99 USD/year, would
-  cover Plass too) vs document the one-time click. Until decided, the
-  landing page documents the click.
+  gone. DECIDED 2026-09-26 (Taylor): ship unsigned and document the
+  one-time click — apps from outside the App Store ask for this all the
+  time — and offer the terminal route beside it, which never sees the
+  prompt because only browser downloads are quarantined (`curl` + `ditto`
+  into /Applications, one line in the README). Each GitHub release
+  carries `Knuth.app.zip`, a universal binary built by the release
+  workflow on a macOS runner and ad-hoc signed. Signing with a Developer
+  ID stays possible later; nothing here precludes it.
 - **Which Python.** The heuristic above will be wrong for someone with two
   environments. `knuth doctor` reports which interpreter the engine runs in,
   and an "Engine Python…" chooser in the app menu is the escape hatch.

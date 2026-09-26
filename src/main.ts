@@ -81,6 +81,8 @@ toolbar.innerHTML = `
   <div class="tb-pod tb-group">
     ${labeled('toggle-panel', icon('panel'), 'Session', 'Show/hide the session panes')}
     <button type="button" id="install-app" hidden>Install</button>
+    <a id="get-app" class="tb-btn" hidden href="https://github.com/tayweid/knuth/releases/latest"
+       title="Knuth.app for macOS, and the engine for every platform — this page runs Python in the tab, the app runs it on your computer">Get Knuth</a>
     <span id="kernel-status">connecting…</span>
   </div>
 `;
@@ -274,6 +276,10 @@ function makeKernel(onState: OnState): Kernel {
 // instead of files.py. The contract is then written by the page through
 // the shell (contract.ts), since a kernel in the tab has no folder.
 const filesViaShell = !!shell && pythonInBrowser;
+
+// The hosted preview is the front door: it runs Python in the tab, and
+// the way to the real thing is one link away.
+if (!servedLocally && !shell) $('get-app').hidden = false;
 
 let hadSession = false;
 let kernelState: Parameters<typeof onboarding.setState>[0] = 'connecting';

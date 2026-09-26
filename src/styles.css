@@ -186,6 +186,8 @@ body:not([data-plain='true']):has(#panel:not([hidden])) #toolbar {
 
 #toolbar:hover .tb-btn { opacity: 1; }
 .tb-btn:hover { background: rgba(255, 255, 255, 0.12); }
+/* The hosted preview's one link out: a button in every way but the tag. */
+a.tb-btn { color: inherit; text-decoration: none; font-size: 12px; padding: 0 8px; }
 
 .tb-btn .ico { width: 19px; height: 19px; display: block; }
 

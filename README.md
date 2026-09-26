@@ -42,14 +42,25 @@ Tauri app (WYSIWYG markdown with executable cells) is retired at the
 ### Knuth.app (macOS)
 
 The app is a native window around the same local engine (design in
-[APP.md](./docs/APP.md)). Until there is a release download, build it
-from a checkout with the command-line tools alone — no Xcode project:
+[APP.md](./docs/APP.md)). Every [release](https://github.com/tayweid/knuth/releases)
+carries `Knuth.app.zip`. Two ways in:
+
+- **Download it** from the latest release, unzip, drag `Knuth.app` to
+  Applications. The app is not signed with an Apple Developer ID, so the
+  first launch of a browser download is refused until you allow it once:
+  System Settings → Privacy & Security → scroll to the message about
+  Knuth → **Open Anyway**. Every later launch is ordinary.
+- **Or install it from the terminal**, which never sees that prompt (only
+  browser downloads are quarantined):
 
 ```bash
-app/build.sh
+curl -fsSL -o /tmp/Knuth.app.zip https://github.com/tayweid/knuth/releases/latest/download/Knuth.app.zip && ditto -x -k /tmp/Knuth.app.zip /Applications
 ```
 
-Drag `app/build/Knuth.app` to Applications and open it. The first launch
+Or build it yourself from a checkout, with the command-line tools alone
+and no Xcode project (`app/build.sh` → `app/build/Knuth.app`).
+
+Open it. The first launch
 finds your Python (Anaconda, Homebrew, python.org, in that order), installs
 the engine into it if it is missing, and starts it; later launches just
 open. With no Python on the Mac, it offers its built-in one instead: cells
