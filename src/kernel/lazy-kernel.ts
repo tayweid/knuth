@@ -62,8 +62,8 @@ export class LazyKernel implements Kernel {
     void this.real().then((kernel) => kernel?.interrupt());
   }
 
-  async restart(root?: string | null): Promise<void> {
-    await (await this.real())?.restart(root);
+  async restart(root?: string | null, document?: string | null): Promise<void> {
+    await (await this.real())?.restart(root, document);
   }
 
   async namespace(): Promise<NamespaceVar[]> {

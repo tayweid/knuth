@@ -19,6 +19,7 @@ import type {
   StatResult,
 } from './kernel/kernel.ts';
 import { ARTIFACT_MANIFEST, isSafeFigureName, manifestText, parseOwnedFigureNames } from './artifacts.ts';
+import { findHeader, spliceHeader } from './header.ts';
 
 export interface FileHooks {
   getDoc(): KnuthDocument;
@@ -51,6 +52,10 @@ export interface FileHooks {
    *  Present means the page runs inside Knuth.app. */
   pickPath?(): Promise<string | null>;
   pickSavePath?(name: string): Promise<string | null>;
+  /** The document's path changed without a new document arriving (save
+   *  as, rename): the session's environment is per document, so the
+   *  caller restarts the kernel for the new path. */
+  onPathChanged?(path: string | null): void;
 }
 
 /** The folder part of an absolute path, either separator. */
@@ -196,6 +201,9 @@ export class FileManager {
   readonly supportsFS = typeof window.showOpenFilePicker === 'function';
   private saveTimer = 0;
   private stashTimer = 0;
+  /** Bumped on every edit: a save is clean only if none arrived while it
+   *  was in flight, whatever the engine did to the text meanwhile. */
+  private changes = 0;
   /** lastModified of the disk version this document reflects (read or
    *  written by us) — the watcher's baseline for "someone else wrote". */
   private diskModified = 0;
@@ -265,6 +273,7 @@ export class FileManager {
    *  and a session stash (so reload restores the document alongside the
    *  resumed kernel session). */
   noteChange() {
+    this.changes += 1;
     if (!this.dirty) {
       this.dirty = true;
       this.hooks.onState();
@@ -411,6 +420,7 @@ export class FileManager {
   private async flushPath() {
     if (!this.path || !this.hooks.savePath) return;
     const text = serializeDocument(this.hooks.getDoc());
+    const before = this.changes;
     const saved = await this.hooks.savePath(this.path, text);
     if (!saved) return; // no engine yet: the next change retries
     if (saved.error) {
@@ -422,12 +432,34 @@ export class FileManager {
     }
     this.saveFailedNotified = false;
     if (typeof saved.modified === 'number') this.diskModified = saved.modified;
+    // A new file gets its header from the engine: what is on disk is the
+    // text plus that block, so the page adopts it rather than writing the
+    // headerless version back.
+    if (saved.header) this.spliceHeader(saved.header);
     // Only what was written is clean: a keystroke during the round trip
     // stays dirty and reschedules.
-    if (text === serializeDocument(this.hooks.getDoc())) {
+    if (this.changes === before) {
       this.dirty = false;
       this.hooks.onState();
     }
+  }
+
+  /** The engine rewrote the document's PEP 723 header on disk (a package
+   *  installed for a cell, a header given to a new file): splice the new
+   *  block into the text on screen, keeping any unsaved edit, and treat
+   *  the write as our own so the change poll does not reload over it. */
+  spliceHeader(lines: string[], modified?: number) {
+    const doc = this.hooks.getDoc();
+    const preamble = spliceHeader(doc.preamble, lines);
+    if (typeof modified === 'number') this.diskModified = modified;
+    if (preamble.join('\n') === doc.preamble.join('\n')) return;
+    this.hooks.onDiskChange?.({ ...doc, preamble });
+    this.stash();
+  }
+
+  /** Whether the document declares its packages (has a PEP 723 block). */
+  get hasHeader(): boolean {
+    return findHeader(this.hooks.getDoc().preamble) !== null;
   }
 
   /** Open a document by absolute path through the engine (APP.md). The
@@ -500,11 +532,13 @@ export class FileManager {
     this.name = basename(this.path);
     this.diskModified = saved.modified ?? 0;
     this.dirty = false;
+    if (saved.header) this.spliceHeader(saved.header);
     this.hooks.onState();
     this.hooks.message(`Saved ${this.name}`);
     this.addRecentPath(this.path, this.name);
     this.stash();
     this.hooks.onOpened?.();
+    this.hooks.onPathChanged?.(this.path);
     return true;
   }
 
@@ -778,6 +812,7 @@ export class FileManager {
       this.addRecentPath(this.path, this.name);
       this.hooks.onState();
       this.stash();
+      this.hooks.onPathChanged?.(this.path);
       return true;
     }
     if (this.handle) {

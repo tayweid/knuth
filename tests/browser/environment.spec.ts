@@ -1,0 +1,182 @@
+// The page side of per-document environments (docs/ENVIRONMENT.md, APP.md)
+// against a fake engine: the document path travels on attach and restart,
+// the header the engine rewrites is spliced in place, and its events
+// become toasts rather than receipts.
+import { expect, test } from '@playwright/test';
+
+const HEADER = ['# /// script', '# dependencies = ["seaborn"]', '# ///'];
+type Probe = typeof window & {
+  __knuthMessages?: Array<Record<string, unknown>>;
+  __knuthTexts?: Record<string, string>;
+  __knuthModified?: Record<string, number>;
+  __knuthFallbackReason?: string;
+};
+
+test.beforeEach(async ({ page }) => {
+  await page.addInitScript(({ header }) => {
+    const probe = window as Probe;
+    probe.__knuthMessages = [];
+    probe.__knuthTexts = {
+      '/p/analysis.py': '# %%\nx = 1\n',
+      '/q/other.py': [...header, '', '# %%\ny = 2\n'].join('\n'),
+    };
+    // The fake disk's mtimes: a save or a header rewrite moves them, and
+    // stat reports them, as the engine's files.py would.
+    probe.__knuthModified = { '/p/analysis.py': 1000, '/q/other.py': 1000 };
+    class MockWebSocket extends EventTarget {
+      static readonly CONNECTING = 0;
+      static readonly OPEN = 1;
+      static readonly CLOSING = 2;
+      static readonly CLOSED = 3;
+      readonly url: string;
+      readyState = MockWebSocket.CONNECTING;
+
+      constructor(url: string | URL) {
+        super();
+        this.url = String(url);
+        window.setTimeout(() => {
+          this.readyState = MockWebSocket.OPEN;
+          this.dispatchEvent(new Event('open'));
+        });
+      }
+
+      send(raw: string) {
+        const msg = JSON.parse(raw) as Record<string, unknown>;
+        probe.__knuthMessages!.push(msg);
+        const texts = probe.__knuthTexts!;
+        const modified = probe.__knuthModified!;
+        switch (msg.type) {
+          case 'attach':
+            this.reply({ type: 'attached', protocol: msg.protocol, session: msg.session, resumed: false, root: msg.root ?? null });
+            this.reply({
+              type: 'environment',
+              document: msg.document ?? null,
+              state: 'fallback',
+              python: '/usr/bin/python3',
+              managed: false,
+              reason: probe.__knuthFallbackReason ?? 'no header',
+            });
+            this.reply({ type: 'ready' });
+            break;
+          case 'restart':
+            this.reply({ type: 'ready', id: msg.id });
+            break;
+          case 'open': {
+            const path = String(msg.path);
+            const text = texts[path];
+            if (text === undefined) this.reply({ type: 'document', id: msg.id, error: 'no such file' });
+            else this.reply({ type: 'document', id: msg.id, path, name: path.split('/').pop(), text, modified: modified[path] });
+            break;
+          }
+          case 'save': {
+            const path = String(msg.path);
+            texts[path] = String(msg.text);
+            modified[path] = (modified[path] ?? 0) + 1000;
+            this.reply({ type: 'saved', id: msg.id, path, modified: modified[path] });
+            break;
+          }
+          case 'stat': {
+            const path = String(msg.path);
+            this.reply({ type: 'stat', id: msg.id, path, modified: texts[path] === undefined ? null : modified[path] });
+            break;
+          }
+          case 'run': {
+            // The engine installs for the cell, rewrites the header on
+            // disk, and tells the page; the disk now carries the header.
+            const path = '/p/analysis.py';
+            this.reply({ type: 'dependency', id: msg.id, state: 'installing', module: 'seaborn', distribution: 'seaborn' });
+            texts[path] = [...header, '', texts[path]].join('\n');
+            modified[path] = 3000;
+            this.reply({ type: 'header', id: msg.id, path, lines: header, modified: 3000 });
+            this.reply({ type: 'done', id: msg.id, result: null });
+            break;
+          }
+          case 'namespace':
+            this.reply({ type: 'namespace', id: msg.id, vars: [] });
+            break;
+          case 'artifacts':
+            this.reply({ type: 'artifacts', id: msg.id, values: {}, figures: {} });
+            break;
+          case 'persist':
+            this.reply({ type: 'persisted', id: msg.id, root: '/p', values: 0, figures: [] });
+            break;
+          default:
+            break;
+        }
+      }
+
+      close() {
+        this.readyState = MockWebSocket.CLOSED;
+        this.dispatchEvent(new CloseEvent('close'));
+      }
+
+      private reply(message: object) {
+        window.setTimeout(() => {
+          this.dispatchEvent(new MessageEvent('message', { data: JSON.stringify(message) }));
+        });
+      }
+    }
+    Object.defineProperty(window, 'WebSocket', { configurable: true, value: MockWebSocket });
+  }, { header: HEADER });
+});
+
+async function messages(page: import('@playwright/test').Page) {
+  return page.evaluate(() => (window as Probe).__knuthMessages!.filter((m) => !String(m.type).startsWith('vite')));
+}
+
+test('a launched document attaches with its folder and its path', async ({ page }) => {
+  await page.goto('/?open=/p/analysis.py');
+  await expect(page.locator('#kernel-status')).toHaveText('kernel');
+  await expect(page).toHaveTitle('analysis.py');
+  await expect(page.getByText('x = 1')).toBeVisible();
+
+  const attach = (await messages(page)).find((m) => m.type === 'attach');
+  expect(attach).toMatchObject({ root: '/p', document: '/p/analysis.py' });
+  // The opened document is the session's own: no restart at boot.
+  expect((await messages(page)).some((m) => m.type === 'restart')).toBe(false);
+});
+
+test('the header the engine rewrites is spliced into the preamble', async ({ page }) => {
+  await page.goto('/?open=/p/analysis.py');
+  await expect(page.getByText('x = 1')).toBeVisible();
+
+  await page.getByTitle('Run all program cells from the top').click();
+  await expect(page.locator('#toast')).toContainText('Installing seaborn');
+  await expect
+    .poll(async () =>
+      page.evaluate(() => JSON.parse(sessionStorage.getItem('knuth-doc')!).text as string),
+    )
+    .toBe([...HEADER, '', '# %%', 'x = 1', ''].join('\n'));
+  // The engine's mtime was adopted: the poll never reloads over the splice.
+  await page.waitForTimeout(2000);
+  expect((await messages(page)).filter((m) => m.type === 'open').length).toBe(1);
+});
+
+test('opening another document restarts the session for that document', async ({ page }) => {
+  await page.addInitScript(() => {
+    localStorage.setItem('knuth-recent-paths', JSON.stringify([{ name: 'other.py', path: '/q/other.py', time: 1 }]));
+  });
+  await page.goto('/?open=/p/analysis.py');
+  await expect(page.getByText('x = 1')).toBeVisible();
+
+  // Recent lives in the hover flyout that lays over its own trigger, so a
+  // pointer hover never settles; the click itself is what matters here.
+  await page.getByTitle('Your documents').dispatchEvent('click');
+  await page.getByText('other.py', { exact: true }).click();
+  await expect(page.getByText('y = 2')).toBeVisible();
+  await expect.poll(async () => (await messages(page)).find((m) => m.type === 'restart')).toMatchObject({
+    root: '/q',
+    document: '/q/other.py',
+  });
+});
+
+test('a document with a header that fell back to the system Python says why', async ({ page }) => {
+  await page.addInitScript(() => {
+    (window as Probe).__knuthFallbackReason = 'uv was not found';
+  });
+  await page.goto('/?open=/q/other.py');
+  await expect(page.getByText('y = 2')).toBeVisible();
+  // The fallback event arrived at attach, before the document opened; the
+  // next session start (the restart for this document) tells the user.
+  await expect(page.locator('#toast')).toContainText('uv was not found');
+});

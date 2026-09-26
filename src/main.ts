@@ -8,7 +8,10 @@ import './styles.css';
 import {
   SidecarKernel,
   type ConvertResult,
+  type DependencyEvent,
   type DocumentResult,
+  type EnvironmentEvent,
+  type HeaderEvent,
   type Kernel,
   type PersistedResult,
   type RenamedResult,
@@ -162,19 +165,25 @@ if (shell) {
   });
 }
 
-// The kernel must start in the document's folder, and it attaches before
-// the document opens: take the root from the URL, else from the session
-// stash a reload is about to restore.
-function stashedRoot(): string | null {
+// The kernel must start in the document's folder and in the document's
+// own environment (ENVIRONMENT.md), and it attaches before the document
+// opens: take both from the URL, else from the session stash a reload is
+// about to restore.
+function stashedPaths(): { root: string | null; path: string | null } {
   try {
     const raw = sessionStorage.getItem('knuth-doc');
-    const root = raw ? (JSON.parse(raw) as { root?: unknown }).root : null;
-    return typeof root === 'string' ? root : null;
+    const snap = raw ? (JSON.parse(raw) as { root?: unknown; path?: unknown }) : {};
+    return {
+      root: typeof snap.root === 'string' ? snap.root : null,
+      path: typeof snap.path === 'string' ? snap.path : null,
+    };
   } catch {
-    return null;
+    return { root: null, path: null };
   }
 }
-const initialRoot = openParam ? dirname(openParam) : stashedRoot();
+const stashed = stashedPaths();
+const initialRoot = openParam ? dirname(openParam) : stashed.root;
+const initialDocument = openParam ?? stashed.path;
 
 // Served from loopback, an engine is behind this page and owns the session.
 // Served from the web, there is no engine and never will be, so the preview
@@ -186,9 +195,74 @@ const servedLocally = ['127.0.0.1', 'localhost', '[::1]'].includes(window.locati
 const pythonInBrowser =
   !servedLocally || new URLSearchParams(window.location.search).get('python') === 'browser';
 
+// The session's surroundings, as the engine reports them: which Python a
+// document runs on, a package being installed for a cell, the header the
+// engine rewrote. Toasts and the status pill; never receipts.
+let environmentSyncing = false;
+let lastEnvironment: EnvironmentEvent | null = null;
+let fallbackToldFor: string | null = null;
+// A document that declares packages but runs on the system Python
+// deserves a word; one without a header is just a document. The event
+// can arrive before the document has opened (a launch attaches first),
+// so the open also asks.
+function reportFallback() {
+  const event = lastEnvironment;
+  if (!event || event.state !== 'fallback' || !event.reason) return;
+  if (!fileManager?.path || event.document !== fileManager.path || !fileManager.hasHeader) return;
+  if (fallbackToldFor === event.document) return;
+  fallbackToldFor = event.document;
+  toast(`Running on the system Python: ${event.reason}`);
+}
+const listeners = {
+  onEnvironment: (event: EnvironmentEvent) => {
+    environmentSyncing = event.state === 'syncing';
+    if (event.state === 'syncing') {
+      status.textContent = 'preparing environment…';
+      status.title = `Setting up ${basename(event.document ?? '')}'s packages (uv)`;
+      status.className = '';
+      return;
+    }
+    lastEnvironment = event;
+    if (kernelState === 'ready') paintKernelReady();
+    reportFallback();
+  },
+  onDependency: (event: DependencyEvent) => {
+    if (event.state === 'installing') toast(`Installing ${event.distribution}…`);
+    else if (event.state === 'installed') {
+      toast(`Installed ${event.distribution}${event.version ? ' ' + event.version : ''}`);
+    } else toast(`Could not install ${event.distribution}: ${event.error ?? 'unknown error'}`);
+  },
+  onHeader: (event: HeaderEvent) => {
+    if (fileManager?.path === event.path) fileManager.spliceHeader(event.lines, event.modified);
+  },
+};
+let environmentTitle = 'Connected to the local Python engine';
+function paintKernelReady() {
+  status.textContent = 'kernel';
+  status.title = environmentTitle;
+  status.className = 'ok';
+}
+function rememberEnvironment(event: EnvironmentEvent) {
+  environmentTitle = event.managed
+    ? `Python: ${event.python} (this document's environment)`
+    : `Python: ${event.python}${event.reason ? ' — ' + event.reason : ''}`;
+}
+
 type OnState = (state: Parameters<typeof onboarding.setState>[0], resumed?: boolean) => void;
 function makeKernel(onState: OnState): Kernel {
-  if (!pythonInBrowser) return new SidecarKernel(undefined, onState, initialRoot);
+  if (!pythonInBrowser) {
+    return new SidecarKernel(undefined, onState, {
+      root: initialRoot,
+      document: initialDocument,
+      listeners: {
+        ...listeners,
+        onEnvironment: (event) => {
+          if (event.state !== 'syncing') rememberEnvironment(event);
+          listeners.onEnvironment(event);
+        },
+      },
+    });
+  }
   const pending = import('./kernel/pyodide-kernel.ts').then(
     ({ PyodideKernel }) => new PyodideKernel(onState),
   );
@@ -208,9 +282,7 @@ const kernel = makeKernel((state, resumed) => {
   onboarding.setState(state);
   shell?.postMessage({ type: 'status', state });
   if (state === 'ready') {
-    status.textContent = 'kernel';
-    status.title = 'Connected to the local Python engine';
-    status.className = 'ok';
+    if (!environmentSyncing) paintKernelReady();
     if (resumed && !hadSession) {
       // Reloaded tab reattached to its living session.
       toast('Session resumed');
@@ -481,9 +553,18 @@ fileManager = new FileManager({
     docView.setDoc(doc);
     // A different document deserves a fresh session — otherwise the
     // previous document's variables haunt the explorer and values.json.
-    // By path, the session also moves to the document's folder.
+    // By path, the session also moves to the document's folder and into
+    // the document's own environment.
     if (!restoring && kernel.isReady) {
-      void kernel.restart(fileManager?.root ?? undefined).then(() => void panel.refresh());
+      void kernel
+        .restart(fileManager?.root ?? undefined, fileManager?.path ?? null)
+        .then(() => void panel.refresh());
+    }
+  },
+  onPathChanged: (path) => {
+    // Same text, new path: the environment is per document (ENVIRONMENT.md).
+    if (kernel.isReady) {
+      void kernel.restart(fileManager.root ?? undefined, path).then(() => void panel.refresh());
     }
   },
   onState: repaintName,
@@ -516,6 +597,7 @@ fileManager = new FileManager({
       }
     : {}),
   onOpened: () => {
+    reportFallback();
     if (fileManager.root) {
       docView.hydrateAll();
       return;
