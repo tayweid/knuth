@@ -14,6 +14,7 @@ import type {
   PersistedResult,
   RenamedResult,
   RunHandlers,
+  RunOptions,
   RunOutcome,
   SavedResult,
   StatResult,
@@ -52,7 +53,7 @@ export class LazyKernel implements Kernel {
     }
   }
 
-  async run(code: string, handlers?: RunHandlers, opts?: { scratch?: boolean }): Promise<RunOutcome> {
+  async run(code: string, handlers?: RunHandlers, opts?: RunOptions): Promise<RunOutcome> {
     const kernel = await this.real();
     if (!kernel) return { ok: false, result: null, traceback: 'Python is not running' };
     return kernel.run(code, handlers, opts);

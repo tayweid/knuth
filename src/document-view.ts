@@ -634,7 +634,12 @@ export class DocumentView {
           named = n;
         },
       },
-      { scratch: v.cell.kind === 'scratch' },
+      {
+        scratch: v.cell.kind === 'scratch',
+        // The header travels with the run: the in-tab Python installs
+        // what it declares (the engine reads it from disk itself).
+        preamble: this.doc.preamble.join('\n'),
+      },
     );
     if (outcome.ok && outcome.result !== null) {
       appendOutput((text === '' || text.endsWith('\n') ? '' : '\n') + outcome.result);

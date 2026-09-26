@@ -311,10 +311,15 @@ Packages come in three tiers (2026-09-26). What Pyodide ships — 343
 packages in 0.28.3, among them numpy, pandas, scipy, matplotlib,
 statsmodels, scikit-learn, sympy, networkx, xarray, altair, bokeh — loads
 when a cell imports it. Pure-Python packages from PyPI (seaborn, plotly,
-the long tail) install through micropip the same way: before a cell runs,
-every top-level import the tab cannot satisfy is tried on PyPI, with an
-"Installing seaborn…" line on the cell's stdout so a slow first run says
-why. A `# %pip install name` or `# !pip install name` line names a
+the long tail) install through micropip: the document's PEP 723 header
+first (ENVIRONMENT.md — `knuth.env.parse_header` loads into the tab, so
+the same header names the packages in both modes; the page sends the
+preamble with each run because the tab has no disk to read it from), then
+every top-level import the tab still cannot satisfy is tried on PyPI.
+Installs are reported the way the engine reports its own — `dependency`
+events the page toasts — and never on the cell's stream, so a receipt
+never carries an "Installing" line that a run under real Python would not
+produce. A `# %pip install name` or `# !pip install name` line names a
 package outright, for the cases where import name and package name differ
 (`import slugify` ← `python-slugify`); it is exactly the commented form the
 notebook importer leaves behind, so a notebook's `!pip install seaborn`

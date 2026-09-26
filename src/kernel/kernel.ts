@@ -61,6 +61,14 @@ export type KernelStatus =
   /** The engine is fine; Python is what failed. */
   | 'kernel_failed';
 
+export interface RunOptions {
+  scratch?: boolean;
+  /** The document's preamble — where its PEP 723 header lives. The
+   *  engine reads the header from disk itself; the in-tab Python has no
+   *  disk, so the page hands it the text with each run. */
+  preamble?: string;
+}
+
 export interface RunHandlers {
   onStream?(which: StreamWhich, text: string): void;
   /** Open pyplot figures at run end rendered to SVG, plus the canonical
@@ -79,7 +87,7 @@ export interface RunOutcome {
 export interface Kernel {
   /** Connected and past `ready`: requests will be answered now. */
   readonly isReady: boolean;
-  run(code: string, handlers?: RunHandlers, opts?: { scratch?: boolean }): Promise<RunOutcome>;
+  run(code: string, handlers?: RunHandlers, opts?: RunOptions): Promise<RunOutcome>;
   interrupt(): void;
   /** Fresh session. With a root the session moves to that folder; with a
    *  document the engine gives it that document's own environment
@@ -115,8 +123,10 @@ const RECONNECT_MS = 2000;
 
 /** Events about the session's surroundings rather than a request's
  *  answer: which Python it runs on, a package being installed for a
- *  cell, the document's header rewritten on disk. */
-export interface SidecarListeners {
+ *  cell, the document's header rewritten on disk. Both kernels report
+ *  installs this way — never on a cell's stream — so receipts are the
+ *  same whichever Python ran the cell. */
+export interface KernelListeners {
   onEnvironment?(event: EnvironmentEvent): void;
   onDependency?(event: DependencyEvent): void;
   onHeader?(event: HeaderEvent): void;
@@ -125,7 +135,7 @@ export interface SidecarListeners {
 export interface SidecarOptions {
   root?: string | null;
   document?: string | null;
-  listeners?: SidecarListeners;
+  listeners?: KernelListeners;
 }
 
 interface PendingRun {
@@ -176,7 +186,7 @@ export class SidecarKernel implements Kernel {
    *  fresh one starts here, in the document's environment. */
   private wantedRoot: string | null;
   private wantedDocument: string | null;
-  private listeners: SidecarListeners;
+  private listeners: KernelListeners;
   constructor(
     private url: string = kernelUrl(),
     private onStatus?: (status: KernelStatus, resumed?: boolean) => void,
@@ -501,7 +511,7 @@ export class SidecarKernel implements Kernel {
   async run(
     code: string,
     handlers?: RunHandlers,
-    opts?: { scratch?: boolean },
+    opts?: RunOptions,
   ): Promise<RunOutcome> {
     if (!this.connectedReady) {
       return { ok: false, result: null, traceback: 'no kernel connection' };

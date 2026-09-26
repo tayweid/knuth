@@ -264,7 +264,7 @@ function makeKernel(onState: OnState): Kernel {
     });
   }
   const pending = import('./kernel/pyodide-kernel.ts').then(
-    ({ PyodideKernel }) => new PyodideKernel(onState),
+    ({ PyodideKernel }) => new PyodideKernel(onState, listeners),
   );
   return new LazyKernel(pending, onState);
 }

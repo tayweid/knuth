@@ -7,7 +7,10 @@
 //
 // Packages come in three tiers. What Pyodide ships (numpy, pandas, scipy,
 // matplotlib, statsmodels, …) is fetched from the same base URL when a
-// cell imports it. Pure-Python packages from PyPI (seaborn, plotly, …) are
+// cell imports it. The document's own PEP 723 header (ENVIRONMENT.md) is
+// honored first: its dependencies install before a cell runs, through the
+// same knuth.env parser the engine uses, so one header names the
+// packages in both modes. Pure-Python packages from PyPI (seaborn, plotly, …) are
 // installed through micropip the same way: an import the tab cannot
 // satisfy is tried on PyPI before the cell runs, and a `# %pip install x`
 // or `# !pip install x` line — what the notebook importer leaves behind —
@@ -26,11 +29,13 @@ import type {
   DocumentResult,
   FigureResult,
   Kernel,
+  KernelListeners,
   KernelStatus,
   NamespaceVar,
   PersistedResult,
   RenamedResult,
   RunHandlers,
+  RunOptions,
   RunOutcome,
   SavedResult,
   StatResult,
@@ -42,6 +47,7 @@ import { pipDirectives } from './pip-lines.ts';
 import initSource from '../../python/knuth/__init__.py?raw';
 import artifactsSource from '../../python/knuth/artifacts.py?raw';
 import contractSource from '../../python/knuth/contract.py?raw';
+import envSource from '../../python/knuth/env.py?raw';
 import ipynbSource from '../../python/knuth/ipynb.py?raw';
 import limitsSource from '../../python/knuth/limits.py?raw';
 import percentSource from '../../python/knuth/percent.py?raw';
@@ -117,6 +123,17 @@ def knuth_missing_imports(code):
             missing.append(name)
     return json.dumps(missing)
 
+def knuth_header_requirements(text):
+    # The document's declared dependencies, by the engine's own parser.
+    from knuth.env import parse_header
+    header = parse_header(text)
+    if header is None:
+        return json.dumps({"dependencies": []})
+    return json.dumps({
+        "dependencies": header.get("dependencies", []),
+        "error": header.get("error"),
+    })
+
 async def knuth_install(requirement):
     # micropip's own words for a failure ("Can't find a pure Python 3
     # wheel for 'polars'") are the useful ones; an empty string is success.
@@ -141,6 +158,10 @@ def knuth_convert(raw):
 export class PyodideKernel implements Kernel {
   private pyodide: PyodideApi | null = null;
   private micropip: Micropip | null = null;
+  /** Requirements already installed this session, and the preamble text
+   *  they came from: a header is re-read only when it changes. */
+  private installed = new Set<string>();
+  private lastPreamble: string | null = null;
   private ready: Promise<void>;
   private closed = false;
   private booted = false;
@@ -150,7 +171,10 @@ export class PyodideKernel implements Kernel {
   private runs = new Map<number, { handlers?: RunHandlers; resolve(o: RunOutcome): void }>();
   private waiters = new Map<number, (event: ServerEvent) => void>();
 
-  constructor(private onStatus?: (status: KernelStatus, resumed?: boolean) => void) {
+  constructor(
+    private onStatus?: (status: KernelStatus, resumed?: boolean) => void,
+    private listeners: KernelListeners = {},
+  ) {
     this.onStatus?.('connecting');
     this.ready = this.boot().then(
       () => {
@@ -175,6 +199,7 @@ export class PyodideKernel implements Kernel {
       ['__init__.py', initSource],
       ['artifacts.py', artifactsSource],
       ['contract.py', contractSource],
+      ['env.py', envSource],
       ['ipynb.py', ipynbSource],
       ['limits.py', limitsSource],
       ['percent.py', percentSource],
@@ -202,7 +227,7 @@ export class PyodideKernel implements Kernel {
    *  packages named on pip lines. Failures are reported on the cell's
    *  stderr and the cell still runs, so the import error that follows is
    *  the real one. */
-  private async providePackages(code: string, handlers?: RunHandlers): Promise<void> {
+  private async providePackages(code: string, id: number, handlers?: RunHandlers): Promise<void> {
     const py = this.pyodide!;
     try {
       await py.loadPackagesFromImports(code);
@@ -212,7 +237,7 @@ export class PyodideKernel implements Kernel {
     if (!this.micropip) return;
     // Named packages first: a pip line exists to say which package an
     // import name comes from, so the scan below must see it installed.
-    for (const requirement of pipDirectives(code)) await this.install(requirement, handlers);
+    for (const requirement of pipDirectives(code)) await this.install(requirement, id);
     let missing: string[] = [];
     try {
       py.globals.set('_knuth_code', code);
@@ -220,12 +245,37 @@ export class PyodideKernel implements Kernel {
     } catch (error) {
       console.warn('Could not inspect imports', error);
     }
-    for (const name of missing) await this.install(name, handlers);
+    for (const name of missing) await this.install(name, id);
   }
 
-  private async install(requirement: string, handlers?: RunHandlers): Promise<void> {
+  /** The document's declared dependencies (its PEP 723 header), installed
+   *  before anything else: the header is the source of truth in both
+   *  modes, and a name it declares may not match any import. */
+  private async provideHeader(preamble: string, id: number, handlers?: RunHandlers): Promise<void> {
+    if (!this.micropip || preamble === this.lastPreamble) return;
+    this.lastPreamble = preamble;
     const py = this.pyodide!;
-    handlers?.onStream?.('stdout', `Installing ${requirement}…\n`);
+    let parsed: { dependencies?: string[]; error?: string | null };
+    try {
+      py.globals.set('_knuth_preamble', preamble);
+      parsed = JSON.parse(String(py.runPython('knuth_header_requirements(_knuth_preamble)')));
+    } catch (error) {
+      console.warn('Could not read the document header', error);
+      return;
+    }
+    if (parsed.error) handlers?.onStream?.('stderr', `${parsed.error}\n`);
+    for (const requirement of parsed.dependencies ?? []) await this.install(requirement, id);
+  }
+
+  /** One requirement through micropip, reported as the engine reports
+   *  its own installs: dependency events for the page to toast, nothing
+   *  on the cell's stream, so receipts never carry an "Installing" line
+   *  that a run under real Python would not produce. */
+  private async install(requirement: string, id: number): Promise<void> {
+    if (this.installed.has(requirement)) return;
+    const py = this.pyodide!;
+    const module = requirement.split(/[<>=!~\[; ]/)[0];
+    this.listeners.onDependency?.({ id, state: 'installing', module, distribution: requirement });
     let reason: string;
     try {
       py.globals.set('_knuth_requirement', requirement);
@@ -233,12 +283,18 @@ export class PyodideKernel implements Kernel {
     } catch (error) {
       reason = String((error as { message?: string })?.message || error);
     }
-    if (!reason) return;
-    handlers?.onStream?.(
-      'stderr',
-      `Could not install ${requirement} in the built-in Python: ${reason}\n` +
-        'Packages with compiled code need Python installed on this computer.\n',
-    );
+    if (!reason) {
+      this.installed.add(requirement);
+      this.listeners.onDependency?.({ id, state: 'installed', module, distribution: requirement });
+      return;
+    }
+    this.listeners.onDependency?.({
+      id,
+      state: 'failed',
+      module,
+      distribution: requirement,
+      error: `${reason} (packages with compiled code need Python installed on this computer)`,
+    });
   }
 
   get isReady(): boolean {
@@ -318,16 +374,17 @@ export class PyodideKernel implements Kernel {
     });
   }
 
-  async run(code: string, handlers?: RunHandlers, opts?: { scratch?: boolean }): Promise<RunOutcome> {
+  async run(code: string, handlers?: RunHandlers, opts?: RunOptions): Promise<RunOutcome> {
     await this.ready;
     if (this.closed || !this.pyodide) {
       return { ok: false, result: null, traceback: 'Python is not running' };
     }
-    // Imports decide which packages are needed; providing them here is
-    // what makes `import pandas` — or `import seaborn` — work in a tab
-    // with nothing installed.
-    await this.providePackages(code, handlers);
+    // The header first, then the cell's imports: together they are what
+    // makes `import pandas` — or `import seaborn` — work in a tab with
+    // nothing installed.
     const id = this.nextId++;
+    if (opts?.preamble !== undefined) await this.provideHeader(opts.preamble, id, handlers);
+    await this.providePackages(code, id, handlers);
     return new Promise<RunOutcome>((resolve) => {
       this.runs.set(id, { handlers, resolve });
       void this.send({ type: 'run', id, code, scratch: opts?.scratch ?? false }).catch(
@@ -349,6 +406,7 @@ export class PyodideKernel implements Kernel {
   async restart(_root?: string | null, _document?: string | null): Promise<void> {
     await this.ready;
     if (this.closed || !this.pyodide) return;
+    this.lastPreamble = null;
     const id = this.nextId++;
     await new Promise<void>((resolve) => {
       this.waiters.set(id, () => resolve());

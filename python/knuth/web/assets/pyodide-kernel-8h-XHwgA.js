@@ -1,4 +1,4 @@
-import{t as e}from"./index-Dx48FI26.js";var t=/^\s*#\s*[%!]\s*pip\s+install\s+(.+?)\s*$/;function n(e){let n=[];for(let r of e.split(`
+import{t as e}from"./index-DLs2o7vC.js";var t=/^\s*#\s*[%!]\s*pip\s+install\s+(.+?)\s*$/;function n(e){let n=[];for(let r of e.split(`
 `)){let e=t.exec(r);if(e)for(let t of e[1].split(/\s+/))t&&!t.startsWith(`-`)&&!n.includes(t)&&n.push(t)}return n}var r=`from .session import Session
 
 __all__ = ["Session"]
@@ -164,7 +164,501 @@ def write_contract(root, values, figures, extra=()):
         for temporary, _ in staged:
             temporary.unlink(missing_ok=True)
         staged_manifest.unlink(missing_ok=True)
-`,o=`"""Import Jupyter notebooks: .ipynb in, percent-format .py out.
+`,o=`"""The document's environment: a PEP 723 header, built and run by uv.
+
+The header is the truth (ENVIRONMENT.md). This module reads it, creates it
+for a new document, asks uv for the environment it describes, and makes the
+kernel and \`knuth run\` execute on that environment's interpreter. Every
+write to an existing header goes through \`uv add\`, never through string
+edits here, so the file looks exactly as a terminal user's would.
+
+Standard library only, on purpose: the kernel imports this inside the
+document's own environment, where nothing else of the engine's exists, and
+the browser kernel loads the pure functions (\`find_header\`, \`header_lines\`,
+\`parse_header\`) into Pyodide.
+"""
+
+import ast
+import datetime
+import hashlib
+import importlib
+import importlib.util
+import os
+import shutil
+import subprocess
+import sys
+import tempfile
+import time
+import tomllib
+from dataclasses import dataclass
+from pathlib import Path
+
+HEADER_OPEN = "# /// script"
+HEADER_CLOSE = "# ///"
+
+# uv is asked to use only the Pythons it manages itself, so a document runs
+# on the same interpreter build on every machine and nothing on the machine
+# (Anaconda, Homebrew, python.org) is touched or relied on.
+UV_ENVIRON = {
+    "UV_PYTHON_PREFERENCE": "only-managed",
+    "UV_NO_PROGRESS": "1",
+}
+
+# Environment variables the server sets for a kernel it started in a
+# document's environment, and the kernel reads.
+DOCUMENT_VAR = "KNUTH_DOCUMENT"
+UV_VAR = "KNUTH_UV"
+IN_ENVIRONMENT_VAR = "KNUTH_IN_ENVIRONMENT"
+
+# Import names that differ from the distribution that provides them. Anything
+# not listed is assumed to share its name, which is the common case.
+DISTRIBUTIONS = {
+    "PIL": "pillow",
+    "bs4": "beautifulsoup4",
+    "cv2": "opencv-python",
+    "Crypto": "pycryptodome",
+    "dateutil": "python-dateutil",
+    "docx": "python-docx",
+    "dotenv": "python-dotenv",
+    "fitz": "pymupdf",
+    "gi": "PyGObject",
+    "google.protobuf": "protobuf",
+    "jwt": "pyjwt",
+    "Levenshtein": "python-Levenshtein",
+    "magic": "python-magic",
+    "nacl": "pynacl",
+    "OpenSSL": "pyopenssl",
+    "pptx": "python-pptx",
+    "serial": "pyserial",
+    "skimage": "scikit-image",
+    "sklearn": "scikit-learn",
+    "usb": "pyusb",
+    "wx": "wxPython",
+    "yaml": "pyyaml",
+    "zmq": "pyzmq",
+}
+
+MAX_REASON_CHARS = 600
+
+
+# --- the header -------------------------------------------------------------
+
+
+def _is_comment(line):
+    return line == "#" or line.startswith("# ")
+
+
+def find_header(text):
+    """(first, last) line indexes of the PEP 723 block, inclusive, or None.
+
+    The block opens at \`# /// script\` and closes at the last \`# ///\` inside
+    the same run of comment lines, as the standard's reference regex does.
+    """
+    lines = [line.rstrip("\\r") for line in text.split("\\n")]
+    for start, line in enumerate(lines):
+        if line != HEADER_OPEN:
+            continue
+        end = None
+        for index in range(start + 1, len(lines)):
+            if not _is_comment(lines[index]):
+                break
+            if lines[index] == HEADER_CLOSE:
+                end = index
+        if end is not None:
+            return start, end
+    return None
+
+
+def header_lines(text):
+    """The header block's lines, or None when the document has none."""
+    span = find_header(text)
+    if span is None:
+        return None
+    return [line.rstrip("\\r") for line in text.split("\\n")[span[0] : span[1] + 1]]
+
+
+def parse_header(text):
+    """The header as data: requires_python, dependencies, exclude_newer.
+
+    None when there is no header. A header whose TOML does not parse comes
+    back with an \`error\` and empty fields, so a caller can still report it.
+    """
+    lines = header_lines(text)
+    if lines is None:
+        return None
+    body = "\\n".join(
+        line[2:] if line.startswith("# ") else "" for line in lines[1:-1]
+    )
+    result = {"requires_python": None, "dependencies": [], "exclude_newer": None}
+    try:
+        data = tomllib.loads(body)
+    except tomllib.TOMLDecodeError as exc:
+        result["error"] = f"environment header is not valid TOML: {exc}"
+        return result
+    requires = data.get("requires-python")
+    if isinstance(requires, str):
+        result["requires_python"] = requires
+    dependencies = data.get("dependencies")
+    if isinstance(dependencies, list):
+        result["dependencies"] = [d for d in dependencies if isinstance(d, str)]
+    uv = data.get("tool", {}).get("uv", {}) if isinstance(data.get("tool"), dict) else {}
+    stamp = uv.get("exclude-newer") if isinstance(uv, dict) else None
+    if isinstance(stamp, str):
+        result["exclude_newer"] = stamp
+    return result
+
+
+def stamp_today():
+    """Midnight UTC today: the date after which the resolver sees nothing."""
+    today = datetime.datetime.now(datetime.timezone.utc).date()
+    return f"{today.isoformat()}T00:00:00Z"
+
+
+def default_requires_python():
+    """The engine's own minor version as a floor, never below Knuth's own."""
+    minor = max(sys.version_info.minor, 11)
+    return f">=3.{minor}"
+
+
+def new_header(requires_python=None, stamp=None):
+    """The header a new document gets: no packages, a floor, and the stamp.
+
+    Formatted exactly as \`uv init --script\` writes it, so a later \`uv add\`
+    changes only the lines it must.
+    """
+    return [
+        HEADER_OPEN,
+        f'# requires-python = "{requires_python or default_requires_python()}"',
+        "# dependencies = []",
+        "#",
+        "# [tool.uv]",
+        f'# exclude-newer = "{stamp or stamp_today()}"',
+        HEADER_CLOSE,
+    ]
+
+
+def with_header(text, requires_python=None, stamp=None):
+    """(text, header lines) with a fresh header prepended; (text, None) when
+    the document already has one. The existing text is untouched below the
+    blank line that separates the header from it."""
+    if find_header(text) is not None:
+        return text, None
+    lines = new_header(requires_python, stamp)
+    # A CRLF document stays CRLF throughout (files.py keeps bytes as given).
+    eol = "\\r\\n" if "\\r\\n" in text else "\\n"
+    header = eol.join(lines) + eol
+    if text == "":
+        return header, lines
+    return header + eol + text, lines
+
+
+# --- uv ---------------------------------------------------------------------
+
+
+def find_uv():
+    """The uv binary: $KNUTH_UV, then beside our interpreter, then on PATH."""
+    named = os.environ.get(UV_VAR)
+    if named and os.path.isfile(named):
+        return named
+    suffix = ".exe" if sys.platform == "win32" else ""
+    sibling = Path(sys.executable).resolve().parent / f"uv{suffix}"
+    if sibling.is_file():
+        return str(sibling)
+    return shutil.which("uv")
+
+
+def uv_version(uv=None):
+    uv = uv or find_uv()
+    if not uv:
+        return None
+    try:
+        result = subprocess.run(
+            [uv, "--version"], capture_output=True, text=True, timeout=10
+        )
+    except (OSError, subprocess.SubprocessError):
+        return None
+    return result.stdout.strip() or None
+
+
+def _uv_environ():
+    environ = dict(os.environ)
+    for key, value in UV_ENVIRON.items():
+        environ.setdefault(key, value)
+    return environ
+
+
+def run_uv(args, cwd=None):
+    """Run uv with Knuth's policy environment; never raises for uv's own
+    failures (a nonzero return code carries them), only when uv is absent."""
+    uv = find_uv()
+    if not uv:
+        raise FileNotFoundError("uv is not installed")
+    return subprocess.run(
+        [uv, *args], capture_output=True, text=True, cwd=cwd, env=_uv_environ()
+    )
+
+
+def _reason(result, fallback):
+    """The useful part of uv's stderr, bounded, for a user-facing event."""
+    lines = [line.rstrip() for line in result.stderr.splitlines() if line.strip()]
+    lines = [line for line in lines if not line.startswith(("Creating", "Resolved", "Prepared", "Installed", "Uninstalled", "Audited"))]
+    text = "\\n".join(lines).strip() or fallback
+    if len(text) > MAX_REASON_CHARS:
+        text = text[: MAX_REASON_CHARS - 1] + "…"
+    return text
+
+
+# --- the environment --------------------------------------------------------
+
+
+@dataclass
+class Environment:
+    """Where a document's kernel runs. \`managed\` means the document's own
+    uv environment; otherwise \`python\` is the engine's interpreter and
+    \`reason\` says why."""
+
+    document: str | None
+    python: str
+    managed: bool
+    reason: str | None = None
+
+    def event(self):
+        event = {
+            "type": "environment",
+            "document": self.document,
+            "state": "ready" if self.managed else "fallback",
+            "python": self.python,
+            "managed": self.managed,
+        }
+        if self.reason:
+            event["reason"] = self.reason
+        return event
+
+
+def _fallback(document, reason):
+    return Environment(document, sys.executable, False, reason)
+
+
+def _read(document):
+    try:
+        return Path(document).read_text(encoding="utf-8")
+    except (OSError, UnicodeDecodeError):
+        return None
+
+
+def is_candidate(document):
+    """Cheaply: would ensure_environment have uv work to do for this document?
+    (A header, and a uv to build it with.) The server sends \`syncing\` on
+    yes, so the page can say why the kernel is slow to appear."""
+    if not document:
+        return False
+    text = _read(document)
+    return text is not None and find_header(text) is not None and find_uv() is not None
+
+
+def ensure_environment(document):
+    """Build or refresh the document's environment and name its interpreter.
+
+    Blocking, possibly for minutes the first time (uv may download a Python).
+    Never raises: every failure is a fallback to the engine's interpreter
+    with a reason the page can show.
+    """
+    if not document:
+        return _fallback(None, "no document")
+    document = str(document)
+    text = _read(document)
+    if text is None:
+        return _fallback(document, "the document could not be read")
+    if find_header(text) is None:
+        return _fallback(document, "no environment header")
+    if find_uv() is None:
+        return _fallback(document, "uv is not installed")
+    folder = str(Path(document).parent)
+    try:
+        synced = run_uv(["sync", "--script", document], cwd=folder)
+        if synced.returncode != 0:
+            return _fallback(document, _reason(synced, "uv could not build the environment"))
+        found = run_uv(["python", "find", "--script", document], cwd=folder)
+    except (OSError, subprocess.SubprocessError) as exc:
+        return _fallback(document, f"uv could not run: {exc}")
+    if found.returncode != 0:
+        return _fallback(document, _reason(found, "uv could not find the environment"))
+    python = found.stdout.strip().splitlines()[-1] if found.stdout.strip() else ""
+    if not python or not os.path.exists(python):
+        return _fallback(document, "uv did not report an interpreter")
+    return Environment(document, python, True)
+
+
+def same_interpreter(python):
+    try:
+        return os.path.samefile(python, sys.executable)
+    except OSError:
+        return False
+
+
+# --- reaching the kernel code from another interpreter ---------------------
+
+
+def shim_dir():
+    """A directory holding a \`knuth\` package that forwards to this one.
+
+    Put on PYTHONPATH for a kernel started in a document's environment, it
+    exposes exactly one extra package — Knuth's own — and nothing else from
+    the engine's site-packages, which would otherwise leak every package
+    the engine happens to have into every document.
+    """
+    real = Path(__file__).resolve().parent
+    key = hashlib.sha256(str(real).encode("utf-8")).hexdigest()[:12]
+    base = Path(tempfile.gettempdir()) / f"knuth-shim-{key}"
+    package = base / "knuth"
+    init = package / "__init__.py"
+    wanted = f"__path__ = [{str(real)!r}]\\n"
+    try:
+        if init.is_file() and init.read_text(encoding="utf-8") == wanted:
+            return str(base)
+        package.mkdir(parents=True, exist_ok=True)
+        staged = package / f".__init__.{os.getpid()}.tmp"
+        staged.write_text(wanted, encoding="utf-8")
+        os.replace(staged, init)
+    except OSError:
+        # Last resort: the real package's parent. Correct, less isolated.
+        return str(real.parent)
+    return str(base)
+
+
+def kernel_environ(environment=None):
+    """The environment variables for a kernel process (or a re-executed
+    \`knuth run\`): headless matplotlib always; in a managed environment also
+    the shim on PYTHONPATH, the document, and the uv to install with."""
+    environ = {**os.environ, "MPLBACKEND": "Agg"}
+    if environment is None or not environment.managed:
+        return environ
+    path = shim_dir()
+    existing = environ.get("PYTHONPATH")
+    environ["PYTHONPATH"] = path if not existing else path + os.pathsep + existing
+    environ[DOCUMENT_VAR] = environment.document
+    uv = find_uv()
+    if uv:
+        environ[UV_VAR] = uv
+    for key, value in UV_ENVIRON.items():
+        environ.setdefault(key, value)
+    return environ
+
+
+# --- import installs --------------------------------------------------------
+
+
+def _importable(name):
+    if name in sys.modules:
+        return True
+    try:
+        return importlib.util.find_spec(name) is not None
+    except (ImportError, ValueError, AttributeError):
+        # A finder that cannot answer is not a reason to install anything.
+        return True
+
+
+def missing_imports(code):
+    """Top-level names a cell imports absolutely that are neither in the
+    standard library nor importable now, in first-seen order."""
+    try:
+        tree = ast.parse(code)
+    except SyntaxError:
+        return []
+    stdlib = getattr(sys, "stdlib_module_names", frozenset()) | frozenset(sys.builtin_module_names)
+    seen = []
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            names = [alias.name for alias in node.names]
+        elif isinstance(node, ast.ImportFrom) and node.level == 0 and node.module:
+            names = [node.module]
+        else:
+            continue
+        for dotted in names:
+            top = dotted.split(".")[0]
+            if not top or top in stdlib or top in seen or top == "__future__":
+                continue
+            if _importable(top):
+                continue
+            seen.append(top)
+    return seen
+
+
+def distribution_for(module):
+    return DISTRIBUTIONS.get(module, module)
+
+
+def _normalize(name):
+    return name.lower().replace("_", "-").replace(".", "-")
+
+
+def pinned_version(text, distribution):
+    """The \`==\` version the header pins \`distribution\` to, or None."""
+    header = parse_header(text) or {}
+    wanted = _normalize(distribution)
+    for spec in header.get("dependencies", []):
+        name, sep, version = spec.partition("==")
+        if sep and _normalize(name.strip()) == wanted:
+            return version.strip()
+    return None
+
+
+def add_dependency(document, distribution):
+    """\`uv add --script --bounds exact\`, then sync: the header gains an exact
+    pin and the environment gains the package. (ok, reason)."""
+    folder = str(Path(document).parent)
+    try:
+        added = run_uv(
+            ["add", "--script", document, "--bounds", "exact", distribution], cwd=folder
+        )
+        if added.returncode != 0:
+            return False, _reason(added, f"uv could not add {distribution}")
+        synced = run_uv(["sync", "--script", document], cwd=folder)
+    except (OSError, subprocess.SubprocessError) as exc:
+        return False, f"uv could not run: {exc}"
+    if synced.returncode != 0:
+        return False, _reason(synced, f"uv could not install {distribution}")
+    return True, None
+
+
+def install_missing(code, document, emit, request_id):
+    """Install what a cell imports and does not have, reporting each step as
+    \`dependency\` events and, when the header changed, a \`header\` event.
+
+    Called by the kernel before running a cell in a managed environment.
+    Failures are reported and otherwise ignored: the cell runs and its own
+    ImportError says the rest.
+    """
+    changed = False
+    for module in missing_imports(code):
+        distribution = distribution_for(module)
+        base = {"type": "dependency", "id": request_id, "module": module, "distribution": distribution}
+        emit({**base, "state": "installing"})
+        ok, reason = add_dependency(document, distribution)
+        if not ok:
+            emit({**base, "state": "failed", "error": reason})
+            continue
+        changed = True
+        text = _read(document) or ""
+        emit({**base, "state": "installed", "version": pinned_version(text, distribution)})
+    if changed:
+        importlib.invalidate_caches()
+        text = _read(document)
+        lines = header_lines(text) if text is not None else None
+        if lines is not None:
+            try:
+                modified = int(os.stat(document).st_mtime * 1000)
+            except OSError:
+                modified = int(time.time() * 1000)
+            emit({
+                "type": "header",
+                "id": request_id,
+                "path": document,
+                "lines": lines,
+                "modified": modified,
+            })
+    return changed
+`,s=`"""Import Jupyter notebooks: .ipynb in, percent-format .py out.
 
 One-way by design (DESIGN.md: the document is a plain .py file), and
 implemented once, in Python — the app converts through the server's
@@ -185,6 +679,7 @@ The mapping (decided 2026-08-19):
 from pathlib import Path
 import json
 
+from . import env
 from .percent import MARKER, Cell, Document, serialize_document
 
 MAGIC_PREFIXES = ("%", "!")
@@ -282,11 +777,12 @@ def import_files(files, echo=print):
         # newline="" so the LF the serializer emits is what lands on disk,
         # on every platform (DESIGN.md: everything Knuth writes is LF).
         with target.open("w", encoding="utf-8", newline="") as stream:
-            stream.write(serialize_document(doc))
+            # A new document, so it gets its environment header too.
+            stream.write(env.with_header(serialize_document(doc))[0])
         note = f", {commented} line(s) commented out" if commented else ""
         echo(f"{path.name} -> {target.name} ({len(doc.cells)} cells{note})")
     return 1 if failed else 0
-`,s=`"""Named resource limits at Knuth's browser/kernel trust boundaries.
+`,c=`"""Named resource limits at Knuth's browser/kernel trust boundaries.
 
 These defaults are intentionally generous for interactive analysis while
 bounding unauthenticated frames, live subprocesses, and data retained by the
@@ -322,7 +818,7 @@ MAX_TABLE_RESPONSE_BYTES = 8 * 1024 * 1024
 # and how long a path it will consider at all.
 MAX_DOCUMENT_BYTES = 8 * 1024 * 1024
 MAX_PATH_CHARS = 4096
-`,c=`"""Percent-format (.py) document model — Python port of src/format/percent.ts,
+`,l=`"""Percent-format (.py) document model — Python port of src/format/percent.ts,
 same semantics, kept honest by round-tripping the same corpus in tests.
 
 Cells open with "# %%" ("#%%" tolerated, marker preserved verbatim);
@@ -465,7 +961,7 @@ def set_output(cell, text):
     cell.output = [
         OUTPUT_PREFIX if line == "" else f"{OUTPUT_PREFIX} {line}" for line in text.split("\\n")
     ]
-`,l=`"""The live session: a persistent namespace that runs cells REPL-style.
+`,u=`"""The live session: a persistent namespace that runs cells REPL-style.
 
 Used in-process by \`knuth run\` (Milestone 5) and by the kernel subprocess
 behind the WebSocket server (this milestone). Holds no I/O of its own —
@@ -813,7 +1309,7 @@ class Session:
         while tb is not None and tb.tb_frame.f_code.co_filename != "<cell>":
             tb = tb.tb_next
         return "".join(traceback.format_exception(type(e), e, tb))
-`,u=`"""Kernel subprocess: line-delimited JSON on stdin/stdout around a Session.
+`,d=`"""Kernel subprocess: line-delimited JSON on stdin/stdout around a Session.
 
 Run as \`python -m knuth.kernel\` by the server, never directly by users.
 User code's stdout/stderr are redirected into \`stream\` events; the real
@@ -821,8 +1317,14 @@ stdout carries only protocol events. SIGINT lands here as KeyboardInterrupt:
 during a run it surfaces as an \`error\` event, while idle it is swallowed.
 
 Events out: ready | stream{id,which,text} | done{id,result} |
-            error{id,traceback} | namespace{id,vars} | persisted{id,...}
+            error{id,traceback} | namespace{id,vars} | persisted{id,...} |
+            dependency{id,state,module,distribution} | header{id,path,lines}
 Commands in: run{id,code} | namespace{id} | artifacts{id} | persist{id} | ...
+
+In a document's own environment (ENVIRONMENT.md; the server sets
+KNUTH_DOCUMENT), a \`run\` first installs any module the cell imports and
+does not have, pinning it in the document's header, and reports that as
+\`dependency\` and \`header\` events.
 
 \`handle_request\` is the dispatcher; main() is the stdin/stdout loop around
 it, and the browser preview (src/kernel/pyodide-kernel.ts) is another host
@@ -852,6 +1354,7 @@ from .limits import (
     MAX_TABLE_RESPONSE_BYTES,
     MAX_TRACEBACK_BYTES,
 )
+from . import env
 from .contract import write_contract
 from .session import Session, capture_open_figures
 
@@ -939,6 +1442,11 @@ def handle_request(msg, session, state, emit):
     if kind == "run":
         state["id"] = msg["id"]
         state["stream_bytes"] = 0
+        document = os.environ.get(env.DOCUMENT_VAR)
+        if document:
+            # Managed environment only: never under Pyodide, never on the
+            # engine's own Python, where the variable is unset.
+            env.install_missing(msg["code"], document, emit, msg["id"])
         ok, payload = session.run(msg["code"], scratch=bool(msg.get("scratch")))
         svgs = capture_open_figures(MAX_FIGURES_PER_RUN)
         named = [] if msg.get("scratch") else session.figure_receipts(
@@ -1099,7 +1607,7 @@ def main():
 
 if __name__ == "__main__":
     main()
-`,d=`https://cdn.jsdelivr.net/pyodide/v0.28.3/full/`,f=`
+`,f=`https://cdn.jsdelivr.net/pyodide/v0.28.3/full/`,p=`
 import json, sys
 import knuth.kernel as kernel_module
 from knuth.kernel import Session, _StreamOut, handle_request
@@ -1144,6 +1652,17 @@ def knuth_missing_imports(code):
             missing.append(name)
     return json.dumps(missing)
 
+def knuth_header_requirements(text):
+    # The document's declared dependencies, by the engine's own parser.
+    from knuth.env import parse_header
+    header = parse_header(text)
+    if header is None:
+        return json.dumps({"dependencies": []})
+    return json.dumps({
+        "dependencies": header.get("dependencies", []),
+        "error": header.get("error"),
+    })
+
 async def knuth_install(requirement):
     # micropip's own words for a failure ("Can't find a pure Python 3
     # wheel for 'polars'") are the useful ones; an empty string is success.
@@ -1163,5 +1682,4 @@ def knuth_convert(raw):
     except ValueError as error:
         return json.dumps({"error": str(error)})
     return json.dumps({"text": serialize_document(doc), "commented": commented})
-`,p=class{onStatus;pyodide=null;micropip=null;ready;closed=!1;booted=!1;root=null;nextId=1;runs=new Map;waiters=new Map;constructor(e){this.onStatus=e,this.onStatus?.(`connecting`),this.ready=this.boot().then(()=>{this.booted=!0,this.onStatus?.(`ready`,!1)},e=>{console.error(`Pyodide failed to start`,e),this.onStatus?.(`kernel_failed`)})}async boot(){let{loadPyodide:t}=await e(async()=>{let{loadPyodide:e}=await import(`${d}pyodide.mjs`);return{loadPyodide:e}},[],import.meta.url),n=await t({indexURL:d});n.FS.mkdirTree(`/lib/knuth`);let p=[[`__init__.py`,r],[`artifacts.py`,i],[`contract.py`,a],[`ipynb.py`,o],[`limits.py`,s],[`percent.py`,c],[`session.py`,l],[`kernel.py`,u]];for(let[e,t]of p)n.FS.writeFile(`/lib/knuth/${e}`,t,{encoding:`utf8`});n.runPython(`import sys; sys.path.insert(0, "/lib")`),n.globals.set(`_knuth_emit`,e=>this.receive(e)),n.runPython(f);try{await n.loadPackage(`micropip`),this.micropip=n.pyimport(`micropip`)}catch(e){console.warn(`micropip is unavailable; PyPI packages cannot be installed`,e)}this.pyodide=n}async providePackages(e,t){let r=this.pyodide;try{await r.loadPackagesFromImports(e)}catch(e){console.warn(`Could not preload packages for this cell`,e)}if(!this.micropip)return;for(let r of n(e))await this.install(r,t);let i=[];try{r.globals.set(`_knuth_code`,e),i=JSON.parse(String(r.runPython(`knuth_missing_imports(_knuth_code)`)))}catch(e){console.warn(`Could not inspect imports`,e)}for(let e of i)await this.install(e,t)}async install(e,t){let n=this.pyodide;t?.onStream?.(`stdout`,`Installing ${e}…\n`);let r;try{n.globals.set(`_knuth_requirement`,e),r=String(await n.runPythonAsync(`await knuth_install(_knuth_requirement)`))}catch(e){r=String(e?.message||e)}r&&t?.onStream?.(`stderr`,`Could not install ${e} in the built-in Python: ${r}\nPackages with compiled code need Python installed on this computer.
-`)}get isReady(){return this.booted&&!this.closed}receive(e){let t;try{t=JSON.parse(e)}catch{return}let n=typeof t.id==`number`?t.id:null;if(t.type===`stream`&&n!==null){this.runs.get(n)?.handlers?.onStream?.(t.which,String(t.text??``));return}if(t.type===`figures`&&n!==null){this.runs.get(n)?.handlers?.onFigures?.(t.svgs??[],t.named??[]);return}if(t.type===`done`&&n!==null){this.runs.get(n)?.resolve({ok:!0,result:t.result??null,traceback:null}),this.runs.delete(n);return}if(t.type===`error`&&n!==null){this.runs.get(n)?.resolve({ok:!1,result:null,traceback:String(t.traceback??`error`)}),this.runs.delete(n);return}n!==null&&this.waiters.has(n)&&(this.waiters.get(n)(t),this.waiters.delete(n))}async send(e){if(await this.ready,this.closed||!this.pyodide)return;let t=this.pyodide;t.globals.set(`_knuth_request`,JSON.stringify(e)),await t.runPythonAsync(`knuth_handle(_knuth_request)`)}async ask(e,t,n){if(await this.ready,this.closed||!this.pyodide)return n;let r=this.nextId++;return new Promise(i=>{this.waiters.set(r,e=>i(e.type===`protocol_error`?n:t(e))),this.send({...e,id:r}).catch(()=>{this.waiters.delete(r),i(n)})})}async run(e,t,n){if(await this.ready,this.closed||!this.pyodide)return{ok:!1,result:null,traceback:`Python is not running`};await this.providePackages(e,t);let r=this.nextId++;return new Promise(i=>{this.runs.set(r,{handlers:t,resolve:i}),this.send({type:`run`,id:r,code:e,scratch:n?.scratch??!1}).catch(e=>{this.runs.delete(r),i({ok:!1,result:null,traceback:String(e)})})})}interrupt(){console.warn(`Interrupt is not available in the browser preview.`)}async restart(e,t){if(await this.ready,this.closed||!this.pyodide)return;let n=this.nextId++;await new Promise(e=>{this.waiters.set(n,()=>e()),this.send({type:`restart`,id:n}).catch(()=>e())}),this.onStatus?.(`ready`,!1)}namespace(){return this.ask({type:`namespace`},e=>e.vars??[],[])}artifacts(){return this.ask({type:`artifacts`},e=>({values:e.values??{},figures:e.figures??{}}),null)}table(e,t=0,n=100){return this.ask({type:`table`,name:e,offset:t,limit:n},e=>e,null)}figure(e){return this.ask({type:`figure`,name:e},e=>e,null)}async convert(e){if(await this.ready,this.closed||!this.pyodide)return null;this.pyodide.globals.set(`_knuth_notebook`,e);try{let e=await this.pyodide.runPythonAsync(`knuth_convert(_knuth_notebook)`);return JSON.parse(String(e))}catch(e){return{error:String(e)}}}async openPath(e){return null}async savePath(e,t){return null}async statPath(e){return null}async renamePath(e,t){return null}async persist(){return null}close(){this.closed=!0}};export{p as PyodideKernel};
+`,m=class{onStatus;listeners;pyodide=null;micropip=null;installed=new Set;lastPreamble=null;ready;closed=!1;booted=!1;root=null;nextId=1;runs=new Map;waiters=new Map;constructor(e,t={}){this.onStatus=e,this.listeners=t,this.onStatus?.(`connecting`),this.ready=this.boot().then(()=>{this.booted=!0,this.onStatus?.(`ready`,!1)},e=>{console.error(`Pyodide failed to start`,e),this.onStatus?.(`kernel_failed`)})}async boot(){let{loadPyodide:t}=await e(async()=>{let{loadPyodide:e}=await import(`${f}pyodide.mjs`);return{loadPyodide:e}},[],import.meta.url),n=await t({indexURL:f});n.FS.mkdirTree(`/lib/knuth`);let m=[[`__init__.py`,r],[`artifacts.py`,i],[`contract.py`,a],[`env.py`,o],[`ipynb.py`,s],[`limits.py`,c],[`percent.py`,l],[`session.py`,u],[`kernel.py`,d]];for(let[e,t]of m)n.FS.writeFile(`/lib/knuth/${e}`,t,{encoding:`utf8`});n.runPython(`import sys; sys.path.insert(0, "/lib")`),n.globals.set(`_knuth_emit`,e=>this.receive(e)),n.runPython(p);try{await n.loadPackage(`micropip`),this.micropip=n.pyimport(`micropip`)}catch(e){console.warn(`micropip is unavailable; PyPI packages cannot be installed`,e)}this.pyodide=n}async providePackages(e,t,r){let i=this.pyodide;try{await i.loadPackagesFromImports(e)}catch(e){console.warn(`Could not preload packages for this cell`,e)}if(!this.micropip)return;for(let r of n(e))await this.install(r,t);let a=[];try{i.globals.set(`_knuth_code`,e),a=JSON.parse(String(i.runPython(`knuth_missing_imports(_knuth_code)`)))}catch(e){console.warn(`Could not inspect imports`,e)}for(let e of a)await this.install(e,t)}async provideHeader(e,t,n){if(!this.micropip||e===this.lastPreamble)return;this.lastPreamble=e;let r=this.pyodide,i;try{r.globals.set(`_knuth_preamble`,e),i=JSON.parse(String(r.runPython(`knuth_header_requirements(_knuth_preamble)`)))}catch(e){console.warn(`Could not read the document header`,e);return}i.error&&n?.onStream?.(`stderr`,`${i.error}\n`);for(let e of i.dependencies??[])await this.install(e,t)}async install(e,t){if(this.installed.has(e))return;let n=this.pyodide,r=e.split(/[<>=!~\[; ]/)[0];this.listeners.onDependency?.({id:t,state:`installing`,module:r,distribution:e});let i;try{n.globals.set(`_knuth_requirement`,e),i=String(await n.runPythonAsync(`await knuth_install(_knuth_requirement)`))}catch(e){i=String(e?.message||e)}if(!i){this.installed.add(e),this.listeners.onDependency?.({id:t,state:`installed`,module:r,distribution:e});return}this.listeners.onDependency?.({id:t,state:`failed`,module:r,distribution:e,error:`${i} (packages with compiled code need Python installed on this computer)`})}get isReady(){return this.booted&&!this.closed}receive(e){let t;try{t=JSON.parse(e)}catch{return}let n=typeof t.id==`number`?t.id:null;if(t.type===`stream`&&n!==null){this.runs.get(n)?.handlers?.onStream?.(t.which,String(t.text??``));return}if(t.type===`figures`&&n!==null){this.runs.get(n)?.handlers?.onFigures?.(t.svgs??[],t.named??[]);return}if(t.type===`done`&&n!==null){this.runs.get(n)?.resolve({ok:!0,result:t.result??null,traceback:null}),this.runs.delete(n);return}if(t.type===`error`&&n!==null){this.runs.get(n)?.resolve({ok:!1,result:null,traceback:String(t.traceback??`error`)}),this.runs.delete(n);return}n!==null&&this.waiters.has(n)&&(this.waiters.get(n)(t),this.waiters.delete(n))}async send(e){if(await this.ready,this.closed||!this.pyodide)return;let t=this.pyodide;t.globals.set(`_knuth_request`,JSON.stringify(e)),await t.runPythonAsync(`knuth_handle(_knuth_request)`)}async ask(e,t,n){if(await this.ready,this.closed||!this.pyodide)return n;let r=this.nextId++;return new Promise(i=>{this.waiters.set(r,e=>i(e.type===`protocol_error`?n:t(e))),this.send({...e,id:r}).catch(()=>{this.waiters.delete(r),i(n)})})}async run(e,t,n){if(await this.ready,this.closed||!this.pyodide)return{ok:!1,result:null,traceback:`Python is not running`};let r=this.nextId++;return n?.preamble!==void 0&&await this.provideHeader(n.preamble,r,t),await this.providePackages(e,r,t),new Promise(i=>{this.runs.set(r,{handlers:t,resolve:i}),this.send({type:`run`,id:r,code:e,scratch:n?.scratch??!1}).catch(e=>{this.runs.delete(r),i({ok:!1,result:null,traceback:String(e)})})})}interrupt(){console.warn(`Interrupt is not available in the browser preview.`)}async restart(e,t){if(await this.ready,this.closed||!this.pyodide)return;this.lastPreamble=null;let n=this.nextId++;await new Promise(e=>{this.waiters.set(n,()=>e()),this.send({type:`restart`,id:n}).catch(()=>e())}),this.onStatus?.(`ready`,!1)}namespace(){return this.ask({type:`namespace`},e=>e.vars??[],[])}artifacts(){return this.ask({type:`artifacts`},e=>({values:e.values??{},figures:e.figures??{}}),null)}table(e,t=0,n=100){return this.ask({type:`table`,name:e,offset:t,limit:n},e=>e,null)}figure(e){return this.ask({type:`figure`,name:e},e=>e,null)}async convert(e){if(await this.ready,this.closed||!this.pyodide)return null;this.pyodide.globals.set(`_knuth_notebook`,e);try{let e=await this.pyodide.runPythonAsync(`knuth_convert(_knuth_notebook)`);return JSON.parse(String(e))}catch(e){return{error:String(e)}}}async openPath(e){return null}async savePath(e,t){return null}async statPath(e){return null}async renamePath(e,t){return null}async persist(){return null}close(){this.closed=!0}};export{m as PyodideKernel};

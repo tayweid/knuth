@@ -148,8 +148,10 @@ being installed for a cell: toasts, never receipts), and `header` (the
 PEP 723 block the engine rewrote on disk: spliced into the page's
 preamble, keeping unsaved edits, and its mtime adopted so the change poll
 does not reload over it); a `saved` reply may carry the `header` a new
-file was given. The in-tab Python will read the same header for micropip
-once `knuth.env.parse_header` exists.
+file was given. The in-tab Python reads the same header for micropip
+(`knuth.env.parse_header`, loaded into the tab), so one header names the
+packages in both modes; in the tab, installs are not written back to the
+header — OPEN whether they should be, as the engine does.
 
 - `attach{…, root?}` — absolute directory the session's kernel starts in.
   Missing or unusable: the engine's default root, as before.
