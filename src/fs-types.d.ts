@@ -63,15 +63,26 @@ interface Window {
   };
 }
 
-// Knuth.app (APP.md): the shell registers a `knuth` message handler and
-// answers dialog requests by calling back into the page.
+// Knuth.app (APP.md): the shell registers a `knuth` message handler. The
+// page posts requests carrying an id, and the shell answers each through
+// `window.knuthShell.reply(id, result)`. Dialogs answer `{path}` (null when
+// cancelled); file requests answer like the engine's files.py replies, so
+// the same file manager hooks work against either.
+interface KnuthShellMessage {
+  type: 'open' | 'saveAs' | 'read' | 'write' | 'stat' | 'rename' | 'remove' | 'status' | 'error';
+  id?: number;
+  path?: string;
+  text?: string;
+  name?: string;
+  state?: string;
+  message?: string;
+}
+
 interface KnuthShellHandler {
-  postMessage(message: { type: 'open' } | { type: 'saveAs'; name: string }): void;
+  postMessage(message: KnuthShellMessage): void;
 }
 
 interface Window {
   webkit?: { messageHandlers?: { knuth?: KnuthShellHandler } };
-  /** Installed by the page; the shell calls `chose` with the absolute path
-   *  picked in its NSOpenPanel/NSSavePanel, or null when cancelled. */
-  knuthShell?: { chose(path: string | null): void };
+  knuthShell?: { reply(id: number, result: unknown): void };
 }

@@ -1,9 +1,12 @@
 // Knuth.app: a native window around the page the local engine serves.
 //
-// APP.md, "What the shell does, exactly". The shell owns three things and
-// nothing else: a window per document, the native open/save dialogs, and
-// the engine process's lifetime. Documents are read and written by the
-// engine over the page's own socket; the shell never touches one.
+// APP.md, "What the shell does, exactly". The shell owns a window per
+// document, the native open/save dialogs, and the engine process's
+// lifetime. With an engine, documents are read and written by it over the
+// page's own socket and the shell never touches one. With the built-in
+// Python instead (no Python on this Mac: Pyodide runs the cells in the
+// tab), there is no engine, so the shell serves the page from its bundle
+// under knuth://app/ and answers the page's file requests itself.
 //
 // Built by app/build.sh with swiftc alone — no Xcode project (not Tauri).
 
@@ -29,6 +32,16 @@ let preferencesURL: URL = {
 }()
 let installRequirement =
     "knuth @ https://github.com/tayweid/knuth/archive/refs/heads/main.zip#subdirectory=python"
+// The page, as the engine would serve it, for the built-in Python mode.
+let bundledWebRoot = Bundle.main.resourceURL?.appendingPathComponent("web")
+let appScheme = "knuth"
+let appOrigin = "\(appScheme)://app"
+
+/// Which Python runs the cells (APP.md, "Built-in Python"): the engine in
+/// a Python on this Mac, or Pyodide in the tab with the shell doing files.
+enum PythonMode: String {
+    case engine, browser
+}
 
 // MARK: - Small helpers
 
@@ -226,6 +239,171 @@ final class Engine {
     }
 }
 
+// MARK: - Serving the page from the bundle
+
+/// knuth://app/<path> → Contents/Resources/web/<path>. What the engine's
+/// web.py does over HTTP, for the mode with no engine.
+final class AppSchemeHandler: NSObject, WKURLSchemeHandler {
+    let root: URL
+
+    init(root: URL) {
+        self.root = root.standardizedFileURL
+    }
+
+    private static let contentTypes: [String: String] = [
+        "html": "text/html; charset=utf-8", "js": "text/javascript; charset=utf-8",
+        "mjs": "text/javascript; charset=utf-8", "css": "text/css; charset=utf-8",
+        "json": "application/json; charset=utf-8", "webmanifest": "application/manifest+json",
+        "svg": "image/svg+xml", "png": "image/png", "ico": "image/x-icon",
+        "woff": "font/woff", "woff2": "font/woff2", "otf": "font/otf", "ttf": "font/ttf",
+        "wasm": "application/wasm", "txt": "text/plain; charset=utf-8",
+    ]
+
+    func webView(_ webView: WKWebView, start task: WKURLSchemeTask) {
+        guard let url = task.request.url else { return }
+        var relative = url.path
+        if relative.isEmpty || relative == "/" { relative = "/index.html" }
+        let file = root.appendingPathComponent(String(relative.dropFirst())).standardizedFileURL
+        guard file.path.hasPrefix(root.path + "/"),
+              let data = FileManager.default.contents(atPath: file.path)
+        else {
+            let response = HTTPURLResponse(
+                url: url, statusCode: 404, httpVersion: "HTTP/1.1",
+                headerFields: ["Content-Type": "text/plain"])!
+            task.didReceive(response)
+            task.didReceive(Data("not found".utf8))
+            task.didFinish()
+            return
+        }
+        let type = AppSchemeHandler.contentTypes[file.pathExtension.lowercased()] ?? "application/octet-stream"
+        let response = HTTPURLResponse(
+            url: url, statusCode: 200, httpVersion: "HTTP/1.1",
+            headerFields: [
+                "Content-Type": type,
+                "Content-Length": String(data.count),
+                "Cache-Control": "no-cache",
+                "X-Content-Type-Options": "nosniff",
+            ])!
+        task.didReceive(response)
+        task.didReceive(data)
+        task.didFinish()
+    }
+
+    func webView(_ webView: WKWebView, stop task: WKURLSchemeTask) {}
+}
+
+// MARK: - Files on the page's behalf
+
+/// The shell's answers to read/write/stat/rename/remove, shaped like the
+/// engine's files.py replies so the page's one file manager serves both.
+enum FileOps {
+    static let maxDocumentBytes = 8 * 1024 * 1024
+
+    private static func modified(_ path: String) -> Int? {
+        guard let attributes = try? FileManager.default.attributesOfItem(atPath: path),
+              let date = attributes[.modificationDate] as? Date
+        else { return nil }
+        return Int(date.timeIntervalSince1970 * 1000)
+    }
+
+    private static func checked(_ value: Any?) -> (String?, [String: Any]?) {
+        guard let path = value as? String, !path.isEmpty else {
+            return (nil, ["error": "path must be a non-empty string"])
+        }
+        guard path.hasPrefix("/") else { return (nil, ["error": "path must be absolute"]) }
+        return (path, nil)
+    }
+
+    static func read(_ value: Any?) -> [String: Any] {
+        let (path, problem) = checked(value)
+        guard let path = path else { return problem! }
+        let name = (path as NSString).lastPathComponent
+        var isDirectory: ObjCBool = false
+        guard FileManager.default.fileExists(atPath: path, isDirectory: &isDirectory) else {
+            return ["error": "\(name) does not exist"]
+        }
+        if isDirectory.boolValue { return ["error": "\(name) is not a file"] }
+        guard let data = FileManager.default.contents(atPath: path) else {
+            return ["error": "\(name) could not be read"]
+        }
+        if data.count > maxDocumentBytes {
+            return ["error": "\(name) is larger than \(maxDocumentBytes / (1024 * 1024)) MB"]
+        }
+        guard let text = String(data: data, encoding: .utf8) else {
+            return ["error": "\(name) is not UTF-8 text"]
+        }
+        return ["path": path, "name": name, "text": text, "modified": modified(path) ?? NSNull()]
+    }
+
+    static func write(_ value: Any?, _ text: Any?) -> [String: Any] {
+        let (path, problem) = checked(value)
+        guard let path = path else { return problem! }
+        guard let text = text as? String else { return ["error": "text must be a string"] }
+        let name = (path as NSString).lastPathComponent
+        var isDirectory: ObjCBool = false
+        if FileManager.default.fileExists(atPath: path, isDirectory: &isDirectory), isDirectory.boolValue {
+            return ["error": "\(name) is not a file"]
+        }
+        let url = URL(fileURLWithPath: path)
+        do {
+            try FileManager.default.createDirectory(
+                at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+            // .atomic stages beside the destination and renames into place.
+            try Data(text.utf8).write(to: url, options: .atomic)
+        } catch {
+            return ["error": "\(name) could not be saved: \(error.localizedDescription)"]
+        }
+        return ["path": path, "modified": modified(path) ?? NSNull()]
+    }
+
+    static func stat(_ value: Any?) -> [String: Any] {
+        let (path, problem) = checked(value)
+        guard let path = path else { return problem! }
+        var isDirectory: ObjCBool = false
+        let exists = FileManager.default.fileExists(atPath: path, isDirectory: &isDirectory) && !isDirectory.boolValue
+        var stamp: Any = NSNull()
+        if exists, let milliseconds = modified(path) { stamp = milliseconds }
+        return ["path": path, "modified": stamp]
+    }
+
+    static func rename(_ value: Any?, _ newName: Any?) -> [String: Any] {
+        let (path, problem) = checked(value)
+        guard let path = path else { return problem! }
+        guard let raw = newName as? String else { return ["error": "name must be a string"] }
+        let name = raw.trimmingCharacters(in: .whitespaces)
+        if name.isEmpty || name == "." || name == ".." || name.contains("/") {
+            return ["error": "name must be a file name, not a path"]
+        }
+        let target = (path as NSString).deletingLastPathComponent + "/" + name
+        guard FileManager.default.fileExists(atPath: path) else {
+            return ["error": "\((path as NSString).lastPathComponent) does not exist"]
+        }
+        if target != path && FileManager.default.fileExists(atPath: target) {
+            return ["error": "\(name) already exists"]
+        }
+        do {
+            if target != path { try FileManager.default.moveItem(atPath: path, toPath: target) }
+        } catch {
+            return ["error": "could not rename: \(error.localizedDescription)"]
+        }
+        return ["path": target, "name": name, "modified": modified(target) ?? NSNull()]
+    }
+
+    static func remove(_ value: Any?) -> [String: Any] {
+        let (path, problem) = checked(value)
+        guard let path = path else { return problem! }
+        var isDirectory: ObjCBool = false
+        guard FileManager.default.fileExists(atPath: path, isDirectory: &isDirectory) else { return [:] }
+        if isDirectory.boolValue { return ["error": "not a file"] }
+        do {
+            try FileManager.default.removeItem(atPath: path)
+        } catch {
+            return ["error": "could not delete: \(error.localizedDescription)"]
+        }
+        return [:]
+    }
+}
+
 // MARK: - A document window
 
 final class DocumentWindow: NSObject, NSWindowDelegate, WKScriptMessageHandler,
@@ -241,6 +419,9 @@ final class DocumentWindow: NSObject, NSWindowDelegate, WKScriptMessageHandler,
     init(url: URL, document: URL?) {
         let configuration = WKWebViewConfiguration()
         configuration.preferences.setValue(true, forKey: "developerExtrasEnabled")
+        if let webRoot = bundledWebRoot {
+            configuration.setURLSchemeHandler(AppSchemeHandler(root: webRoot), forURLScheme: appScheme)
+        }
         webView = WKWebView(frame: .zero, configuration: configuration)
         let frame = NSRect(x: 0, y: 0, width: 1100, height: 760)
         window = NSWindow(
@@ -272,9 +453,12 @@ final class DocumentWindow: NSObject, NSWindowDelegate, WKScriptMessageHandler,
         window.makeKeyAndOrderFront(nil)
     }
 
-    // The page asked for a native dialog (fs-types.d.ts: KnuthShellHandler).
+    // Requests from the page (fs-types.d.ts: KnuthShellMessage). Dialogs and
+    // file operations carry an id and get one reply each; status and error
+    // reports only go to the log.
     func userContentController(_ controller: WKUserContentController, didReceive message: WKScriptMessage) {
         guard let body = message.body as? [String: Any], let type = body["type"] as? String else { return }
+        let id = body["id"] as? Int
         switch type {
         case "open":
             let panel = NSOpenPanel()
@@ -282,7 +466,7 @@ final class DocumentWindow: NSObject, NSWindowDelegate, WKScriptMessageHandler,
             panel.allowsMultipleSelection = false
             panel.directoryURL = documentURL?.deletingLastPathComponent()
             panel.beginSheetModal(for: window) { [weak self] response in
-                self?.reply(response == .OK ? panel.url : nil)
+                self?.chose(id, response == .OK ? panel.url : nil)
             }
         case "saveAs":
             let panel = NSSavePanel()
@@ -290,30 +474,45 @@ final class DocumentWindow: NSObject, NSWindowDelegate, WKScriptMessageHandler,
             panel.directoryURL = documentURL?.deletingLastPathComponent()
             panel.canCreateDirectories = true
             panel.beginSheetModal(for: window) { [weak self] response in
-                self?.reply(response == .OK ? panel.url : nil)
+                self?.chose(id, response == .OK ? panel.url : nil)
             }
+        case "read":
+            reply(id, FileOps.read(body["path"]))
+        case "write":
+            reply(id, FileOps.write(body["path"], body["text"]))
+        case "stat":
+            reply(id, FileOps.stat(body["path"]))
+        case "rename":
+            reply(id, FileOps.rename(body["path"], body["name"]))
+        case "remove":
+            reply(id, FileOps.remove(body["path"]))
+        case "status":
+            log("page: Python is \(body["state"] as? String ?? "?") (\(window.title))")
+        case "error":
+            log("page error: \(body["message"] as? String ?? "?") (\(window.title))")
         default:
             log("unknown shell message: \(type)")
         }
     }
 
-    private func reply(_ url: URL?) {
+    private func chose(_ id: Int?, _ url: URL?) {
         if let url = url {
             documentURL = url
             window.representedURL = url
         }
-        let literal: String
-        if let path = url?.path,
-           let data = try? JSONSerialization.data(withJSONObject: [path]),
-           let array = String(data: data, encoding: .utf8) {
-            // A JSON array is the cheapest way to get one correctly escaped
-            // string literal out of JSONSerialization.
-            literal = "\(array)[0]"
-        } else {
-            literal = "null"
+        reply(id, ["path": url?.path ?? NSNull()])
+    }
+
+    private func reply(_ id: Int?, _ result: [String: Any]) {
+        guard let id = id else { return }
+        guard let data = try? JSONSerialization.data(withJSONObject: result),
+              let json = String(data: data, encoding: .utf8)
+        else {
+            log("could not serialize a reply to request \(id)")
+            return
         }
-        webView.evaluateJavaScript("window.knuthShell && window.knuthShell.chose(\(literal))") { _, error in
-            if let error = error { log("dialog reply failed: \(error)") }
+        webView.evaluateJavaScript("window.knuthShell && window.knuthShell.reply(\(id), \(json))") { _, error in
+            if let error = error { log("reply \(id) failed: \(error)") }
         }
     }
 
@@ -354,6 +553,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     let engine = Engine()
     private var windows: [DocumentWindow] = []
     private var engineReady = false
+    private var mode: PythonMode = .engine
     private var pending: [URL] = []
     private var launching = true
 
@@ -387,6 +587,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     // MARK: engine
 
     private func ensureEngine() {
+        if readPreferences()["engine"] as? String == PythonMode.browser.rawValue {
+            useBuiltInPython()
+            return
+        }
         DispatchQueue.global(qos: .userInitiated).async { [self] in
             if Engine.isUp() {
                 log("using the engine already on port \(port)")
@@ -394,7 +598,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 return
             }
             guard let choice = Engine.choosePython() else {
-                DispatchQueue.main.async { self.fail(.noPython) }
+                DispatchQueue.main.async { self.offerBuiltIn() }
                 return
             }
             if !choice.hasKnuth {
@@ -402,6 +606,43 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 return
             }
             self.startEngine(with: choice.path)
+        }
+    }
+
+    /// The built-in Python: no engine, the page from the bundle, Pyodide in
+    /// the tab. Remembered, so later launches never go looking for Python.
+    private func useBuiltInPython() {
+        guard let webRoot = bundledWebRoot,
+              FileManager.default.fileExists(atPath: webRoot.appendingPathComponent("index.html").path)
+        else {
+            fail(.startFailed("this build of Knuth.app does not carry the page (app/build.sh copies it)"))
+            return
+        }
+        mode = .browser
+        writePreference("engine", PythonMode.browser.rawValue)
+        log("using the built-in Python (page served from the bundle)")
+        engineBecameReady()
+    }
+
+    /// No Python at all: the built-in one is the answer, and a choice.
+    private func offerBuiltIn() {
+        let alert = NSAlert()
+        alert.messageText = "Use Knuth’s built-in Python?"
+        alert.informativeText =
+            "No Python was found in the usual places (Anaconda, Homebrew, python.org). " +
+            "Knuth can run Python inside the window instead — nothing to install, though " +
+            "only the packages it ships with, and large data has a lower ceiling.\n\n" +
+            "You can switch to a Python on this Mac later from the Knuth menu."
+        alert.addButton(withTitle: "Use Built-in Python")
+        alert.addButton(withTitle: "Choose Python…")
+        alert.addButton(withTitle: "Quit")
+        switch alert.runModal() {
+        case .alertFirstButtonReturn:
+            useBuiltInPython()
+        case .alertSecondButtonReturn:
+            choosePythonManually()
+        default:
+            NSApp.terminate(nil)
         }
     }
 
@@ -418,6 +659,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func engineBecameReady() {
+        if mode == .engine { writePreference("engine", PythonMode.engine.rawValue) }
         engineReady = true
         let queued = pending
         pending = []
@@ -438,12 +680,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             "This needs the network and takes about half a minute. Choose a different " +
             "Python if this is not where your packages live."
         alert.addButton(withTitle: "Install")
+        alert.addButton(withTitle: "Use Built-in Python")
         alert.addButton(withTitle: "Choose Python…")
         alert.addButton(withTitle: "Quit")
         switch alert.runModal() {
         case .alertFirstButtonReturn:
             install(into: python)
         case .alertSecondButtonReturn:
+            useBuiltInPython()
+        case .alertThirdButtonReturn:
             choosePythonManually()
         default:
             NSApp.terminate(nil)
@@ -525,7 +770,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     // MARK: windows
 
     func pageURL(for document: URL?) -> URL {
-        var components = URLComponents(string: "\(origin)/")!
+        var components = URLComponents(string: mode == .browser ? "\(appOrigin)/" : "\(origin)/")!
         if let path = document?.path {
             components.queryItems = [URLQueryItem(name: "open", value: path)]
         }
@@ -567,6 +812,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         NSWorkspace.shared.open(logURL)
     }
 
+    // Switching Python applies to windows opened from now on; a window
+    // keeps the session it has.
+    @objc func switchToBuiltIn(_ sender: Any?) {
+        useBuiltInPython()
+    }
+
+    @objc func switchToLocal(_ sender: Any?) {
+        writePreference("engine", PythonMode.engine.rawValue)
+        mode = .engine
+        engineReady = false
+        ensureEngine()
+    }
+
     private func buildMenu() {
         let main = NSMenu()
 
@@ -574,7 +832,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let appMenu = NSMenu()
         appMenu.addItem(withTitle: "About Knuth", action: #selector(NSApplication.orderFrontStandardAboutPanel(_:)), keyEquivalent: "")
         appMenu.addItem(.separator())
-        appMenu.addItem(withTitle: "Show Engine Log", action: #selector(showLog(_:)), keyEquivalent: "")
+        appMenu.addItem(withTitle: "Use Python on This Mac…", action: #selector(switchToLocal(_:)), keyEquivalent: "")
+        appMenu.addItem(withTitle: "Use Built-in Python", action: #selector(switchToBuiltIn(_:)), keyEquivalent: "")
+        appMenu.addItem(withTitle: "Show Log", action: #selector(showLog(_:)), keyEquivalent: "")
         appMenu.addItem(.separator())
         appMenu.addItem(withTitle: "Hide Knuth", action: #selector(NSApplication.hide(_:)), keyEquivalent: "h")
         let hideOthers = appMenu.addItem(withTitle: "Hide Others", action: #selector(NSApplication.hideOtherApplications(_:)), keyEquivalent: "h")

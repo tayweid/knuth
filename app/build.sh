@@ -34,6 +34,14 @@ swiftc -O -swift-version 5 -sdk "$sdk" \
 cp Info.plist "$out/Contents/Info.plist"
 printf 'APPL????' > "$out/Contents/PkgInfo"
 
+# The page, as the engine serves it, for the built-in Python mode: the
+# shell serves this folder under knuth://app/ when there is no engine.
+if [ ! -f ../python/knuth/web/index.html ]; then
+    echo "no staged page in python/knuth/web — run: npm run build:engine" >&2
+    exit 1
+fi
+cp -R ../python/knuth/web "$out/Contents/Resources/web"
+
 # The app icon, from the same PNG the page uses for its own icon.
 iconset="$(mktemp -d)/AppIcon.iconset"
 mkdir -p "$iconset"

@@ -82,6 +82,33 @@ README documents, with an alert before (it needs the network and takes
 half a minute) and after. Every later launch skips this. `knuth doctor`'s
 build stamp is how the shell knows when to offer an upgrade.
 
+DECIDED: **Built-in Python is an explicit choice, never a silent fallback.**
+When no Python with the engine is found, the first-launch alert offers
+"Use Built-in Python" beside "Install" and "Choose Python…". Choosing it
+means Pyodide runs the cells in the window — the same backend as the hosted
+preview (SAME_ORIGIN.md, "Pyodide in the preview") — and it is remembered,
+so later launches never go looking for Python. The Knuth menu switches
+either way. It is not silent because its limits are real and invisible
+until hit: only the packages Pyodide ships, a memory ceiling of a few
+gigabytes, and no interrupt. Someone who chose it knows what they chose.
+
+DECIDED: **In built-in mode the shell is the file system.** There is no
+engine, so nothing serves the page and nothing reads files. The shell
+serves the staged page from its own bundle under `knuth://app/` — the
+non-loopback origin is what makes the page pick the in-tab backend, with
+no new switch — and answers the page's read/write/stat/rename/remove
+requests over the same message handler the dialogs use, shaped like the
+engine's replies so the one file manager serves both. The contract is
+written by the page through those primitives (src/contract.ts, the twin of
+contract.py), because a kernel in the tab has no folder. With an engine,
+nothing changes: the engine does files and the kernel writes the contract.
+
+DECIDED: **Pyodide comes from the CDN, for now.** First use of the built-in
+Python needs the network and about 25 MB; WebKit caches it after that.
+OPEN: bundle it into the app (about 60 MB more with numpy, pandas and
+matplotlib) so the built-in Python works offline and deterministically. The
+base URL is one constant in pyodide-kernel.ts.
+
 DECIDED: **Windows and Linux keep `knuth app`.** The shell is a macOS
 convenience over that command, not a new install path. A `.bat`/`.desktop`
 equivalent is a later, separate piece.
@@ -142,7 +169,7 @@ one the user could already `open()` — the same boundary as running Python.
 
 ## Migration
 
-Steps 1–4 landed 2026-09-25; step 5 remains.
+Steps 1–4 landed 2026-09-25, step 6 on 2026-09-26; step 5 remains.
 
 1. **DONE — Engine: paths and roots.** Per-session root on attach and
    restart; `open`/`save`/`stat`/`rename` by path (files.py); `persist` in
@@ -161,6 +188,17 @@ Steps 1–4 landed 2026-09-25; step 5 remains.
    the terminal-inclined.
 5. **Retire the PWA surface**: manifest, service worker, install offer,
    launch-queue consumer. The hosted demo keeps a manifest-free build.
+6. **DONE — Built-in Python.** `AppSchemeHandler` serves the bundled page;
+   `FileOps` answers file requests; the page routes its file hooks to the
+   shell when it has a shell and no engine, and writes the contract itself
+   through `src/contract.ts`; the first-launch alert and the Knuth menu
+   offer the choice. Verified 2026-09-26 with `{"engine": "browser"}` in a
+   test config dir: launched on an `.ipynb`, the page came from the bundle,
+   Pyodide reported ready in six seconds, the notebook was read through the
+   shell, converted in the tab, and the sibling `.py` written back through
+   the shell — no engine started, no page errors. Not yet exercised live:
+   a cell run writing values.json through the shell (the writer is unit
+   tested against a fake file system), and the menu switch.
 
 Verified by hand 2026-09-25 (development build against a test port, the
 login agent left alone on 5197): double-click opens the document with its

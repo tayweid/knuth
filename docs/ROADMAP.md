@@ -92,9 +92,9 @@ and sockets. The browser side is thinner:
   twice (index.html and web.py). OPEN: vendor Pyodide into the Pages
   deploy vs the CDN — vendoring removes the third-party dependency but
   would put ~25 MB of WebAssembly into every pip install until the demo
-  build and the wheel build are separated. Next (APP.md): the same
-  backend as Knuth.app's no-Python mode, once the shell serves the page
-  and does the file I/O itself.
+  build and the wheel build are separated. SHIPPED 2026-09-26 as
+  Knuth.app's built-in Python too (APP.md): the shell serves the page
+  and does the file I/O itself, and the page writes the contract.
 - **Percent format, one implementation.** `percent.py` calls itself a port
   of `percent.ts` kept honest by corpus tests; the pyodide branch
   demonstrates the browser running the real Python modules, which could end

@@ -52,7 +52,10 @@ app/build.sh
 Drag `app/build/Knuth.app` to Applications and open it. The first launch
 finds your Python (Anaconda, Homebrew, python.org, in that order), installs
 the engine into it if it is missing, and starts it; later launches just
-open. Double-clicking a `.py` (or choosing Knuth in Open With) opens it in
+open. With no Python on the Mac, it offers its built-in one instead: cells
+then run inside the window (the same Pyodide backend as the hosted
+preview), with only the packages Pyodide ships and a lower ceiling for
+large data. The Knuth menu switches between the two at any time. Double-clicking a `.py` (or choosing Knuth in Open With) opens it in
 its own folder: the kernel starts there, and `values.json` and `figs/` land
 there. The app starts the engine as its own child and stops it on quit; an
 engine already running, from a terminal or the login agent, is reused and

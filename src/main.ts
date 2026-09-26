@@ -5,11 +5,21 @@
 
 import './frame-guard.ts';
 import './styles.css';
-import { SidecarKernel, type Kernel } from './kernel/kernel.ts';
+import {
+  SidecarKernel,
+  type ConvertResult,
+  type DocumentResult,
+  type Kernel,
+  type PersistedResult,
+  type RenamedResult,
+  type SavedResult,
+  type StatResult,
+} from './kernel/kernel.ts';
 import { LazyKernel } from './kernel/lazy-kernel.ts';
+import { writeContract, type PathIO } from './contract.ts';
 import { DocumentView, plainLanguageFor } from './document-view.ts';
 import { delimiterFor } from './format/csv.ts';
-import { DEFAULT_DOC_NAME, FileManager, dirname } from './file-manager.ts';
+import { DEFAULT_DOC_NAME, FileManager, basename, dirname } from './file-manager.ts';
 import { SessionPanel } from './panel.ts';
 import { icon } from './icons.ts';
 import { Onboarding } from './onboarding.ts';
@@ -113,25 +123,42 @@ window.addEventListener('beforeinstallprompt', () => {
   }, 1200);
 });
 
-// Knuth.app (APP.md): the shell opens this page with ?open=<absolute path>,
-// and its dialogs come through a message handler it registers. Both are
-// feature-detected — a plain browser tab has neither and keeps the
-// File System Access flow.
+// Knuth.app (APP.md): the shell opens this page with ?open=<absolute path>
+// and registers a message handler. Every request carries an id and the
+// shell answers through window.knuthShell.reply. Both are feature-detected:
+// a plain browser tab has neither and keeps the File System Access flow.
 const openParam = new URLSearchParams(window.location.search).get('open');
 const shell = window.webkit?.messageHandlers?.knuth ?? null;
-let shellChoice: ((path: string | null) => void) | null = null;
+let shellNextId = 1;
+const shellWaiters = new Map<number, (result: unknown) => void>();
 window.knuthShell = {
-  chose: (path) => {
-    const resolve = shellChoice;
-    shellChoice = null;
-    resolve?.(typeof path === 'string' && path ? path : null);
+  reply: (id, result) => {
+    const resolve = shellWaiters.get(id);
+    shellWaiters.delete(id);
+    resolve?.(result);
   },
 };
-function askShell(message: Parameters<KnuthShellHandler['postMessage']>[0]) {
-  return new Promise<string | null>((resolve) => {
-    shellChoice?.(null); // one dialog at a time
-    shellChoice = resolve;
-    shell!.postMessage(message);
+function askShell<T>(message: Omit<KnuthShellMessage, 'id'>): Promise<T | null> {
+  if (!shell) return Promise.resolve(null);
+  const id = shellNextId++;
+  return new Promise((resolve) => {
+    shellWaiters.set(id, (result) => resolve((result ?? null) as T | null));
+    shell.postMessage({ ...message, id });
+  });
+}
+function askShellPath(message: Omit<KnuthShellMessage, 'id'>): Promise<string | null> {
+  return askShell<{ path?: string | null }>(message).then((reply) =>
+    typeof reply?.path === 'string' && reply.path ? reply.path : null,
+  );
+}
+// Page failures reach the shell's log, which is what "Show Log" opens when
+// someone asks why the window is blank.
+if (shell) {
+  window.addEventListener('error', (event) => {
+    shell.postMessage({ type: 'error', message: String(event.message) });
+  });
+  window.addEventListener('unhandledrejection', (event) => {
+    shell.postMessage({ type: 'error', message: String((event as PromiseRejectionEvent).reason) });
   });
 }
 
@@ -168,11 +195,18 @@ function makeKernel(onState: OnState): Kernel {
   return new LazyKernel(pending, onState);
 }
 
+// With the shell present and no engine (Python in the tab), the shell is
+// the file system: the same file manager hooks, answered by the app
+// instead of files.py. The contract is then written by the page through
+// the shell (contract.ts), since a kernel in the tab has no folder.
+const filesViaShell = !!shell && pythonInBrowser;
+
 let hadSession = false;
 let kernelState: Parameters<typeof onboarding.setState>[0] = 'connecting';
 const kernel = makeKernel((state, resumed) => {
   kernelState = state;
   onboarding.setState(state);
+  shell?.postMessage({ type: 'status', state });
   if (state === 'ready') {
     status.textContent = 'kernel';
     status.title = 'Connected to the local Python engine';
@@ -224,6 +258,102 @@ status.addEventListener('keydown', (event) => {
 
 let fileManager: FileManager;
 
+/** .ipynb → percent text through the one converter, waiting briefly for a
+ *  kernel that is still connecting (a launch converts at boot). */
+async function convertWhenReady(text: string): Promise<ConvertResult | null> {
+  for (let waited = 0; !kernel.isReady && waited < 8000; waited += 100) {
+    await new Promise((resolve) => setTimeout(resolve, 100));
+  }
+  return kernel.convert(text);
+}
+
+interface ShellFile {
+  path?: string;
+  name?: string;
+  text?: string;
+  modified?: number | null;
+  error?: string;
+}
+
+async function shellOpen(path: string): Promise<DocumentResult | null> {
+  const reply = await askShell<ShellFile>({ type: 'read', path });
+  if (!reply) return null;
+  if (reply.error || typeof reply.text !== 'string') {
+    return { error: reply.error ?? 'the file could not be read' };
+  }
+  if (!/\.ipynb$/i.test(path)) {
+    return {
+      path: reply.path ?? path,
+      name: reply.name ?? basename(path),
+      text: reply.text,
+      modified: reply.modified ?? null,
+    };
+  }
+  // A notebook converts in the tab and arrives unsaved under a sibling .py,
+  // exactly as it does from the engine.
+  const converted = await convertWhenReady(reply.text);
+  if (!converted) return { error: 'importing a notebook needs Python, which is still loading' };
+  if (typeof converted.text !== 'string') return { error: converted.error ?? 'no conversion result' };
+  const target = path.replace(/\.ipynb$/i, '.py');
+  return {
+    path: target,
+    name: basename(target),
+    text: converted.text,
+    modified: null,
+    unsaved: true,
+    commented: converted.commented,
+  };
+}
+
+// Documents by path: the engine's files.py, or the shell when Python runs
+// in the tab. One shape, two answerers.
+const files = filesViaShell
+  ? {
+      open: shellOpen,
+      save: (path: string, text: string) => askShell<SavedResult>({ type: 'write', path, text }),
+      stat: (path: string) => askShell<StatResult>({ type: 'stat', path }),
+      rename: (path: string, name: string) => askShell<RenamedResult>({ type: 'rename', path, name }),
+    }
+  : {
+      open: (path: string) => kernel.openPath(path),
+      save: (path: string, text: string) => kernel.savePath(path, text),
+      stat: (path: string) => kernel.statPath(path),
+      rename: (path: string, name: string) => kernel.renamePath(path, name),
+    };
+
+const shellIO: PathIO = {
+  read: async (path) => {
+    const reply = await askShell<ShellFile>({ type: 'read', path });
+    return reply && !reply.error && typeof reply.text === 'string' ? reply.text : null;
+  },
+  write: async (path, text) => {
+    const reply = await askShell<ShellFile>({ type: 'write', path, text });
+    return !!reply && !reply.error;
+  },
+  remove: async (path) => {
+    const reply = await askShell<ShellFile>({ type: 'remove', path });
+    return !!reply && !reply.error;
+  },
+};
+
+async function persistContract(): Promise<PersistedResult | null> {
+  if (!filesViaShell) return kernel.persist();
+  const root = fileManager.root;
+  if (!root) return null;
+  const artifacts = await kernel.artifacts();
+  if (!artifacts) return null;
+  try {
+    await writeContract(root, artifacts.values, artifacts.figures, shellIO);
+  } catch (error) {
+    return { error: error instanceof Error ? error.message : String(error) };
+  }
+  return {
+    root,
+    values: Object.keys(artifacts.values).length,
+    figures: Object.keys(artifacts.figures).sort(),
+  };
+}
+
 // After program cells run, mirror the session into the project folder
 // (values.json + figs/). Debounced so a run-all writes once at the end.
 // With no folder attached, the offer resurfaces here (throttled) — this
@@ -232,9 +362,22 @@ let artifactsTimer = 0;
 let folderOfferAt = 0;
 function syncArtifacts() {
   if (fileManager?.path || (fileManager?.root && fileManager.inShell)) {
-    // By path, the kernel writes the contract into its own folder.
+    // By path, the contract goes into the document's folder: written by
+    // the kernel, or by the page through the shell.
     clearTimeout(artifactsTimer);
     artifactsTimer = window.setTimeout(() => void fileManager.persist(), 300);
+    return;
+  }
+  if (fileManager?.inShell) {
+    // In the app, a document without a path has no folder yet: saving it
+    // is what gives values.json and figs/ their home.
+    if (Date.now() - folderOfferAt > 300_000) {
+      folderOfferAt = Date.now();
+      toast('Save the document to give values.json and figs/ a home', {
+        label: 'Save',
+        run: () => void fileManager.save(),
+      });
+    }
     return;
   }
   if (!fileManager?.dir) {
@@ -276,7 +419,7 @@ let restoreTimer = 0;
 // through the engine, else through the attached directory handle.
 async function loadFigureFromDir(path: string): Promise<string | null> {
   if (fileManager?.root) {
-    const reply = await kernel.openPath(`${fileManager.root}/${path}`);
+    const reply = await files.open(`${fileManager.root}/${path}`);
     return reply && !reply.error && typeof reply.text === 'string' ? reply.text : null;
   }
   const dir = fileManager?.dir;
@@ -347,15 +490,7 @@ fileManager = new FileManager({
   message: toast,
   getFigures: () => docView.collectFigures(),
   setFigures: (figures) => docView.restoreFigures(figures),
-  convert: async (text) => {
-    // A file-handler launch converts at boot, usually before the socket's
-    // first attach lands — and the engine that served this page is at
-    // most a reconnect away. Wait for ready briefly instead of refusing.
-    for (let waited = 0; !kernel.isReady && waited < 5000; waited += 100) {
-      await new Promise((resolve) => setTimeout(resolve, 100));
-    }
-    return kernel.convert(text);
-  },
+  convert: convertWhenReady,
   onSaveBlocked: () => {
     toast(`Allow saving to ${fileManager.name}?`, {
       label: 'Allow',
@@ -369,15 +504,15 @@ fileManager = new FileManager({
     docView.setDoc(doc);
     if (fileManager.dir || fileManager.root) docView.hydrateAll();
   },
-  openPath: (path) => kernel.openPath(path),
-  savePath: (path, text) => kernel.savePath(path, text),
-  statPath: (path) => kernel.statPath(path),
-  renamePath: (path, name) => kernel.renamePath(path, name),
-  persist: () => kernel.persist(),
+  openPath: files.open,
+  savePath: files.save,
+  statPath: files.stat,
+  renamePath: files.rename,
+  persist: persistContract,
   ...(shell
     ? {
-        pickPath: () => askShell({ type: 'open' }),
-        pickSavePath: (name: string) => askShell({ type: 'saveAs', name }),
+        pickPath: () => askShellPath({ type: 'open' }),
+        pickSavePath: (name: string) => askShellPath({ type: 'saveAs', name }),
       }
     : {}),
   onOpened: () => {
@@ -399,8 +534,9 @@ void (async () => {
   if (openParam && fileManager.path !== openParam) {
     // Launched with a document: open it as the session's own (the kernel
     // already attached in its folder, so no restart), then drop the
-    // parameter so a reload restores rather than reopens.
-    for (let waited = 0; !kernel.isReady && waited < 8000; waited += 100) {
+    // parameter so a reload restores rather than reopens. Through the
+    // engine the open needs the socket; through the shell it needs nothing.
+    for (let waited = 0; !filesViaShell && !kernel.isReady && waited < 8000; waited += 100) {
       await new Promise((resolve) => setTimeout(resolve, 100));
     }
     const opened = await fileManager.openPath(openParam);

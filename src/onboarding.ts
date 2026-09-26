@@ -233,6 +233,15 @@ export class Onboarding {
       this.detail.textContent =
         'This window is running from its cache. Start the engine to run cells ' +
         'with your local Python packages.';
+    } else if (window.webkit?.messageHandlers?.knuth) {
+      // Knuth.app with the built-in Python: the only way to land here is
+      // Pyodide failing to load, which on first use means no network.
+      this.title.textContent = 'Python could not be loaded';
+      this.detail.textContent =
+        'The built-in Python downloads on first use, so this needs a network ' +
+        'connection. To use a Python installed on this Mac instead, choose it ' +
+        'from the Knuth menu.';
+      this.root.querySelector<HTMLElement>('.onboarding-steps')?.setAttribute('hidden', '');
     } else {
       // The hosted preview: there is no engine here and never will be.
       this.title.textContent = 'Knuth runs Python on your computer';

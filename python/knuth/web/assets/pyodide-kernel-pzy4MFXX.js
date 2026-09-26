@@ -1,4 +1,4 @@
-import{t as e}from"./index-Djv6n_D4.js";var t=`from .session import Session
+import{t as e}from"./index-Cv1Ed5Ay.js";var t=`from .session import Session
 
 __all__ = ["Session"]
 `,n=`"""Safe names and ownership metadata for generated project artifacts."""
