@@ -89,8 +89,11 @@ means Pyodide runs the cells in the window — the same backend as the hosted
 preview (SAME_ORIGIN.md, "Pyodide in the preview") — and it is remembered,
 so later launches never go looking for Python. The Knuth menu switches
 either way. It is not silent because its limits are real and invisible
-until hit: only the packages Pyodide ships, a memory ceiling of a few
-gigabytes, and no interrupt. Someone who chose it knows what they chose.
+until hit: only the packages Pyodide ships or pure-Python packages from
+PyPI (micropip installs those on import — SAME_ORIGIN.md, "Pyodide in the
+preview"), nothing with compiled code beyond that set, a memory ceiling of
+a few gigabytes, and no interrupt. Someone who chose it knows what they
+chose.
 
 DECIDED: **In built-in mode the shell is the file system.** There is no
 engine, so nothing serves the page and nothing reads files. The shell

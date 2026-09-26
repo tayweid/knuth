@@ -307,6 +307,22 @@ testing the preview without deploying it. The rebase onto the app work
 documents-by-path requests as a missing engine would, so the file manager
 stays in handle mode there, which is what a static host can offer.
 
+Packages come in three tiers (2026-09-26). What Pyodide ships — 343
+packages in 0.28.3, among them numpy, pandas, scipy, matplotlib,
+statsmodels, scikit-learn, sympy, networkx, xarray, altair, bokeh — loads
+when a cell imports it. Pure-Python packages from PyPI (seaborn, plotly,
+the long tail) install through micropip the same way: before a cell runs,
+every top-level import the tab cannot satisfy is tried on PyPI, with an
+"Installing seaborn…" line on the cell's stdout so a slow first run says
+why. A `# %pip install name` or `# !pip install name` line names a
+package outright, for the cases where import name and package name differ
+(`import slugify` ← `python-slugify`); it is exactly the commented form the
+notebook importer leaves behind, so a notebook's `!pip install seaborn`
+keeps working here and stays inert under a real Python. Compiled packages
+nobody has built for WebAssembly (polars, duckdb, pyarrow, numba) are the
+wall: the cell gets micropip's own reason on stderr and then the plain
+ModuleNotFoundError. Verified in a browser for all three.
+
 Two things it cannot do, and says so rather than pretending:
 
 - **Interrupt.** Cancelling running Python needs a shared memory buffer and
@@ -314,10 +330,11 @@ Two things it cannot do, and says so rather than pretending:
 - **Figures** depend on matplotlib being loaded in the tab. The session code
   reaches it through `sys.modules`, so this degrades rather than breaks.
 
-The page's meta CSP has to admit the CDN that serves Pyodide. Nothing local
-needs that, so the engine sends its own stricter policy as a header when it
-serves the page; browsers enforce every policy they are given, so the local
-app still cannot reach the network.
+The page's meta CSP has to admit the CDN that serves Pyodide, and PyPI's
+two hosts for micropip. Nothing local needs any of that, so the engine
+sends its own stricter policy as a header when it serves the page;
+browsers enforce every policy they are given, so the local app still
+cannot reach the network.
 
 OPEN: the CDN. Vendoring Pyodide into the Pages deploy would remove the
 third-party dependency, but the staging step copies the deploy into the wheel,

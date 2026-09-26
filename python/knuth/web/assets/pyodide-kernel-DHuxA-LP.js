@@ -1,7 +1,8 @@
-import{t as e}from"./index-Cv1Ed5Ay.js";var t=`from .session import Session
+import{t as e}from"./index-Cqcfx__6.js";var t=/^\s*#\s*[%!]\s*pip\s+install\s+(.+?)\s*$/;function n(e){let n=[];for(let r of e.split(`
+`)){let e=t.exec(r);if(e)for(let t of e[1].split(/\s+/))t&&!t.startsWith(`-`)&&!n.includes(t)&&n.push(t)}return n}var r=`from .session import Session
 
 __all__ = ["Session"]
-`,n=`"""Safe names and ownership metadata for generated project artifacts."""
+`,i=`"""Safe names and ownership metadata for generated project artifacts."""
 
 import json
 import unicodedata
@@ -68,7 +69,7 @@ def owned_figure_names(raw):
             return set()
         names.add(name)
     return names
-`,r=`"""Writing the folder contract: values.json, figs/<name>.svg, and the
+`,a=`"""Writing the folder contract: values.json, figs/<name>.svg, and the
 ownership manifest, atomically and in one place.
 
 Two producers share this: \`knuth run\` (runner.py) regenerates the contract
@@ -163,7 +164,7 @@ def write_contract(root, values, figures, extra=()):
         for temporary, _ in staged:
             temporary.unlink(missing_ok=True)
         staged_manifest.unlink(missing_ok=True)
-`,i=`"""Import Jupyter notebooks: .ipynb in, percent-format .py out.
+`,o=`"""Import Jupyter notebooks: .ipynb in, percent-format .py out.
 
 One-way by design (DESIGN.md: the document is a plain .py file), and
 implemented once, in Python — the app converts through the server's
@@ -285,7 +286,7 @@ def import_files(files, echo=print):
         note = f", {commented} line(s) commented out" if commented else ""
         echo(f"{path.name} -> {target.name} ({len(doc.cells)} cells{note})")
     return 1 if failed else 0
-`,a=`"""Named resource limits at Knuth's browser/kernel trust boundaries.
+`,s=`"""Named resource limits at Knuth's browser/kernel trust boundaries.
 
 These defaults are intentionally generous for interactive analysis while
 bounding unauthenticated frames, live subprocesses, and data retained by the
@@ -321,7 +322,7 @@ MAX_TABLE_RESPONSE_BYTES = 8 * 1024 * 1024
 # and how long a path it will consider at all.
 MAX_DOCUMENT_BYTES = 8 * 1024 * 1024
 MAX_PATH_CHARS = 4096
-`,o=`"""Percent-format (.py) document model — Python port of src/format/percent.ts,
+`,c=`"""Percent-format (.py) document model — Python port of src/format/percent.ts,
 same semantics, kept honest by round-tripping the same corpus in tests.
 
 Cells open with "# %%" ("#%%" tolerated, marker preserved verbatim);
@@ -464,7 +465,7 @@ def set_output(cell, text):
     cell.output = [
         OUTPUT_PREFIX if line == "" else f"{OUTPUT_PREFIX} {line}" for line in text.split("\\n")
     ]
-`,s=`"""The live session: a persistent namespace that runs cells REPL-style.
+`,l=`"""The live session: a persistent namespace that runs cells REPL-style.
 
 Used in-process by \`knuth run\` (Milestone 5) and by the kernel subprocess
 behind the WebSocket server (this milestone). Holds no I/O of its own —
@@ -812,7 +813,7 @@ class Session:
         while tb is not None and tb.tb_frame.f_code.co_filename != "<cell>":
             tb = tb.tb_next
         return "".join(traceback.format_exception(type(e), e, tb))
-`,c=`"""Kernel subprocess: line-delimited JSON on stdin/stdout around a Session.
+`,u=`"""Kernel subprocess: line-delimited JSON on stdin/stdout around a Session.
 
 Run as \`python -m knuth.kernel\` by the server, never directly by users.
 User code's stdout/stderr are redirected into \`stream\` events; the real
@@ -1098,7 +1099,7 @@ def main():
 
 if __name__ == "__main__":
     main()
-`,l=`https://cdn.jsdelivr.net/pyodide/v0.28.3/full/`,u=`
+`,d=`https://cdn.jsdelivr.net/pyodide/v0.28.3/full/`,f=`
 import json, sys
 import knuth.kernel as kernel_module
 from knuth.kernel import Session, _StreamOut, handle_request
@@ -1125,6 +1126,34 @@ def knuth_reset():
     global _session
     _session = Session()
 
+def knuth_missing_imports(code):
+    # Top-level imports the tab cannot satisfy yet, after Pyodide's own
+    # packages were loaded: candidates for PyPI. Stdlib and installed
+    # packages resolve; a name that does not is either a PyPI package
+    # under its import name, a mismatch (sklearn vs scikit-learn), or a
+    # typo — micropip sorts those out, and the run reports the rest.
+    import importlib.util
+    from pyodide.code import find_imports
+    missing = []
+    for name in find_imports(code):
+        try:
+            found = importlib.util.find_spec(name) is not None
+        except (ImportError, ValueError):
+            found = False
+        if not found and name not in missing:
+            missing.append(name)
+    return json.dumps(missing)
+
+async def knuth_install(requirement):
+    # micropip's own words for a failure ("Can't find a pure Python 3
+    # wheel for 'polars'") are the useful ones; an empty string is success.
+    import micropip
+    try:
+        await micropip.install(requirement)
+    except Exception as error:
+        return str(error).strip().split("\\n")[0] or type(error).__name__
+    return ""
+
 def knuth_convert(raw):
     # The one converter (ipynb.py), the same call server.py makes.
     from knuth.ipynb import notebook_to_document
@@ -1134,4 +1163,5 @@ def knuth_convert(raw):
     except ValueError as error:
         return json.dumps({"error": str(error)})
     return json.dumps({"text": serialize_document(doc), "commented": commented})
-`,d=class{onStatus;pyodide=null;ready;closed=!1;booted=!1;root=null;nextId=1;runs=new Map;waiters=new Map;constructor(e){this.onStatus=e,this.onStatus?.(`connecting`),this.ready=this.boot().then(()=>{this.booted=!0,this.onStatus?.(`ready`,!1)},e=>{console.error(`Pyodide failed to start`,e),this.onStatus?.(`kernel_failed`)})}async boot(){let{loadPyodide:d}=await e(async()=>{let{loadPyodide:e}=await import(`${l}pyodide.mjs`);return{loadPyodide:e}},[],import.meta.url),f=await d({indexURL:l});f.FS.mkdirTree(`/lib/knuth`);let p=[[`__init__.py`,t],[`artifacts.py`,n],[`contract.py`,r],[`ipynb.py`,i],[`limits.py`,a],[`percent.py`,o],[`session.py`,s],[`kernel.py`,c]];for(let[e,t]of p)f.FS.writeFile(`/lib/knuth/${e}`,t,{encoding:`utf8`});f.runPython(`import sys; sys.path.insert(0, "/lib")`),f.globals.set(`_knuth_emit`,e=>this.receive(e)),f.runPython(u),this.pyodide=f}get isReady(){return this.booted&&!this.closed}receive(e){let t;try{t=JSON.parse(e)}catch{return}let n=typeof t.id==`number`?t.id:null;if(t.type===`stream`&&n!==null){this.runs.get(n)?.handlers?.onStream?.(t.which,String(t.text??``));return}if(t.type===`figures`&&n!==null){this.runs.get(n)?.handlers?.onFigures?.(t.svgs??[],t.named??[]);return}if(t.type===`done`&&n!==null){this.runs.get(n)?.resolve({ok:!0,result:t.result??null,traceback:null}),this.runs.delete(n);return}if(t.type===`error`&&n!==null){this.runs.get(n)?.resolve({ok:!1,result:null,traceback:String(t.traceback??`error`)}),this.runs.delete(n);return}n!==null&&this.waiters.has(n)&&(this.waiters.get(n)(t),this.waiters.delete(n))}async send(e){if(await this.ready,this.closed||!this.pyodide)return;let t=this.pyodide;t.globals.set(`_knuth_request`,JSON.stringify(e)),await t.runPythonAsync(`knuth_handle(_knuth_request)`)}async ask(e,t,n){if(await this.ready,this.closed||!this.pyodide)return n;let r=this.nextId++;return new Promise(i=>{this.waiters.set(r,e=>i(e.type===`protocol_error`?n:t(e))),this.send({...e,id:r}).catch(()=>{this.waiters.delete(r),i(n)})})}async run(e,t,n){if(await this.ready,this.closed||!this.pyodide)return{ok:!1,result:null,traceback:`Python is not running`};try{await this.pyodide.loadPackagesFromImports(e)}catch(e){console.warn(`Could not preload packages for this cell`,e)}let r=this.nextId++;return new Promise(i=>{this.runs.set(r,{handlers:t,resolve:i}),this.send({type:`run`,id:r,code:e,scratch:n?.scratch??!1}).catch(e=>{this.runs.delete(r),i({ok:!1,result:null,traceback:String(e)})})})}interrupt(){console.warn(`Interrupt is not available in the browser preview.`)}async restart(e){if(await this.ready,this.closed||!this.pyodide)return;let t=this.nextId++;await new Promise(e=>{this.waiters.set(t,()=>e()),this.send({type:`restart`,id:t}).catch(()=>e())}),this.onStatus?.(`ready`,!1)}namespace(){return this.ask({type:`namespace`},e=>e.vars??[],[])}artifacts(){return this.ask({type:`artifacts`},e=>({values:e.values??{},figures:e.figures??{}}),null)}table(e,t=0,n=100){return this.ask({type:`table`,name:e,offset:t,limit:n},e=>e,null)}figure(e){return this.ask({type:`figure`,name:e},e=>e,null)}async convert(e){if(await this.ready,this.closed||!this.pyodide)return null;this.pyodide.globals.set(`_knuth_notebook`,e);try{let e=await this.pyodide.runPythonAsync(`knuth_convert(_knuth_notebook)`);return JSON.parse(String(e))}catch(e){return{error:String(e)}}}async openPath(e){return null}async savePath(e,t){return null}async statPath(e){return null}async renamePath(e,t){return null}async persist(){return null}close(){this.closed=!0}};export{d as PyodideKernel};
+`,p=class{onStatus;pyodide=null;micropip=null;ready;closed=!1;booted=!1;root=null;nextId=1;runs=new Map;waiters=new Map;constructor(e){this.onStatus=e,this.onStatus?.(`connecting`),this.ready=this.boot().then(()=>{this.booted=!0,this.onStatus?.(`ready`,!1)},e=>{console.error(`Pyodide failed to start`,e),this.onStatus?.(`kernel_failed`)})}async boot(){let{loadPyodide:t}=await e(async()=>{let{loadPyodide:e}=await import(`${d}pyodide.mjs`);return{loadPyodide:e}},[],import.meta.url),n=await t({indexURL:d});n.FS.mkdirTree(`/lib/knuth`);let p=[[`__init__.py`,r],[`artifacts.py`,i],[`contract.py`,a],[`ipynb.py`,o],[`limits.py`,s],[`percent.py`,c],[`session.py`,l],[`kernel.py`,u]];for(let[e,t]of p)n.FS.writeFile(`/lib/knuth/${e}`,t,{encoding:`utf8`});n.runPython(`import sys; sys.path.insert(0, "/lib")`),n.globals.set(`_knuth_emit`,e=>this.receive(e)),n.runPython(f);try{await n.loadPackage(`micropip`),this.micropip=n.pyimport(`micropip`)}catch(e){console.warn(`micropip is unavailable; PyPI packages cannot be installed`,e)}this.pyodide=n}async providePackages(e,t){let r=this.pyodide;try{await r.loadPackagesFromImports(e)}catch(e){console.warn(`Could not preload packages for this cell`,e)}if(!this.micropip)return;for(let r of n(e))await this.install(r,t);let i=[];try{r.globals.set(`_knuth_code`,e),i=JSON.parse(String(r.runPython(`knuth_missing_imports(_knuth_code)`)))}catch(e){console.warn(`Could not inspect imports`,e)}for(let e of i)await this.install(e,t)}async install(e,t){let n=this.pyodide;t?.onStream?.(`stdout`,`Installing ${e}…\n`);let r;try{n.globals.set(`_knuth_requirement`,e),r=String(await n.runPythonAsync(`await knuth_install(_knuth_requirement)`))}catch(e){r=String(e?.message||e)}r&&t?.onStream?.(`stderr`,`Could not install ${e} in the built-in Python: ${r}\nPackages with compiled code need Python installed on this computer.
+`)}get isReady(){return this.booted&&!this.closed}receive(e){let t;try{t=JSON.parse(e)}catch{return}let n=typeof t.id==`number`?t.id:null;if(t.type===`stream`&&n!==null){this.runs.get(n)?.handlers?.onStream?.(t.which,String(t.text??``));return}if(t.type===`figures`&&n!==null){this.runs.get(n)?.handlers?.onFigures?.(t.svgs??[],t.named??[]);return}if(t.type===`done`&&n!==null){this.runs.get(n)?.resolve({ok:!0,result:t.result??null,traceback:null}),this.runs.delete(n);return}if(t.type===`error`&&n!==null){this.runs.get(n)?.resolve({ok:!1,result:null,traceback:String(t.traceback??`error`)}),this.runs.delete(n);return}n!==null&&this.waiters.has(n)&&(this.waiters.get(n)(t),this.waiters.delete(n))}async send(e){if(await this.ready,this.closed||!this.pyodide)return;let t=this.pyodide;t.globals.set(`_knuth_request`,JSON.stringify(e)),await t.runPythonAsync(`knuth_handle(_knuth_request)`)}async ask(e,t,n){if(await this.ready,this.closed||!this.pyodide)return n;let r=this.nextId++;return new Promise(i=>{this.waiters.set(r,e=>i(e.type===`protocol_error`?n:t(e))),this.send({...e,id:r}).catch(()=>{this.waiters.delete(r),i(n)})})}async run(e,t,n){if(await this.ready,this.closed||!this.pyodide)return{ok:!1,result:null,traceback:`Python is not running`};await this.providePackages(e,t);let r=this.nextId++;return new Promise(i=>{this.runs.set(r,{handlers:t,resolve:i}),this.send({type:`run`,id:r,code:e,scratch:n?.scratch??!1}).catch(e=>{this.runs.delete(r),i({ok:!1,result:null,traceback:String(e)})})})}interrupt(){console.warn(`Interrupt is not available in the browser preview.`)}async restart(e){if(await this.ready,this.closed||!this.pyodide)return;let t=this.nextId++;await new Promise(e=>{this.waiters.set(t,()=>e()),this.send({type:`restart`,id:t}).catch(()=>e())}),this.onStatus?.(`ready`,!1)}namespace(){return this.ask({type:`namespace`},e=>e.vars??[],[])}artifacts(){return this.ask({type:`artifacts`},e=>({values:e.values??{},figures:e.figures??{}}),null)}table(e,t=0,n=100){return this.ask({type:`table`,name:e,offset:t,limit:n},e=>e,null)}figure(e){return this.ask({type:`figure`,name:e},e=>e,null)}async convert(e){if(await this.ready,this.closed||!this.pyodide)return null;this.pyodide.globals.set(`_knuth_notebook`,e);try{let e=await this.pyodide.runPythonAsync(`knuth_convert(_knuth_notebook)`);return JSON.parse(String(e))}catch(e){return{error:String(e)}}}async openPath(e){return null}async savePath(e,t){return null}async statPath(e){return null}async renamePath(e,t){return null}async persist(){return null}close(){this.closed=!0}};export{p as PyodideKernel};

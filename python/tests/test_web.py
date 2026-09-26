@@ -121,6 +121,7 @@ def test_locally_served_html_carries_the_strict_policy(root):
     response = web.respond(FakeRequest("/"), root)
     policy = response.headers["Content-Security-Policy"]
     assert "cdn.jsdelivr.net" not in policy
+    assert "pypi.org" not in policy
     assert "connect-src 'self' blob:;" in policy
 
 

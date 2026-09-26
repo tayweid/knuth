@@ -5,6 +5,17 @@
 // `handle_request` dispatcher, so the two backends cannot drift on what a run
 // returns, what a namespace snapshot contains, or where the limits are.
 //
+// Packages come in three tiers. What Pyodide ships (numpy, pandas, scipy,
+// matplotlib, statsmodels, …) is fetched from the same base URL when a
+// cell imports it. Pure-Python packages from PyPI (seaborn, plotly, …) are
+// installed through micropip the same way: an import the tab cannot
+// satisfy is tried on PyPI before the cell runs, and a `# %pip install x`
+// or `# !pip install x` line — what the notebook importer leaves behind —
+// names a package outright, for the cases where import name and package
+// name differ. Anything with compiled code that nobody has built for
+// WebAssembly is the wall; the cell then fails with a plain
+// ModuleNotFoundError after a line saying why.
+//
 // What it cannot do is interrupt. Cancelling running Python needs a shared
 // memory buffer and cross-origin isolation, which a static host does not
 // offer; `interrupt()` reports that rather than pretending.
@@ -26,6 +37,8 @@ import type {
   TableWindow,
 } from './kernel.ts';
 
+import { pipDirectives } from './pip-lines.ts';
+
 import initSource from '../../python/knuth/__init__.py?raw';
 import artifactsSource from '../../python/knuth/artifacts.py?raw';
 import contractSource from '../../python/knuth/contract.py?raw';
@@ -38,10 +51,16 @@ import kernelSource from '../../python/knuth/kernel.py?raw';
 const PYODIDE_VERSION = '0.28.3';
 const PYODIDE_URL = `https://cdn.jsdelivr.net/pyodide/v${PYODIDE_VERSION}/full/`;
 
+interface Micropip {
+  install(requirement: string): Promise<void>;
+}
+
 interface PyodideApi {
   runPython(code: string): unknown;
   runPythonAsync(code: string): Promise<unknown>;
+  loadPackage(name: string): Promise<void>;
   loadPackagesFromImports(code: string): Promise<void>;
+  pyimport(name: string): unknown;
   globals: { set(name: string, value: unknown): void };
   FS: {
     mkdirTree(path: string): void;
@@ -80,6 +99,34 @@ def knuth_reset():
     global _session
     _session = Session()
 
+def knuth_missing_imports(code):
+    # Top-level imports the tab cannot satisfy yet, after Pyodide's own
+    # packages were loaded: candidates for PyPI. Stdlib and installed
+    # packages resolve; a name that does not is either a PyPI package
+    # under its import name, a mismatch (sklearn vs scikit-learn), or a
+    # typo — micropip sorts those out, and the run reports the rest.
+    import importlib.util
+    from pyodide.code import find_imports
+    missing = []
+    for name in find_imports(code):
+        try:
+            found = importlib.util.find_spec(name) is not None
+        except (ImportError, ValueError):
+            found = False
+        if not found and name not in missing:
+            missing.append(name)
+    return json.dumps(missing)
+
+async def knuth_install(requirement):
+    # micropip's own words for a failure ("Can't find a pure Python 3
+    # wheel for 'polars'") are the useful ones; an empty string is success.
+    import micropip
+    try:
+        await micropip.install(requirement)
+    except Exception as error:
+        return str(error).strip().split("\\n")[0] or type(error).__name__
+    return ""
+
 def knuth_convert(raw):
     # The one converter (ipynb.py), the same call server.py makes.
     from knuth.ipynb import notebook_to_document
@@ -93,6 +140,7 @@ def knuth_convert(raw):
 
 export class PyodideKernel implements Kernel {
   private pyodide: PyodideApi | null = null;
+  private micropip: Micropip | null = null;
   private ready: Promise<void>;
   private closed = false;
   private booted = false;
@@ -139,7 +187,58 @@ export class PyodideKernel implements Kernel {
     pyodide.runPython('import sys; sys.path.insert(0, "/lib")');
     pyodide.globals.set('_knuth_emit', (raw: string) => this.receive(raw));
     pyodide.runPython(SHIM);
+    try {
+      await pyodide.loadPackage('micropip');
+      this.micropip = pyodide.pyimport('micropip') as Micropip;
+    } catch (error) {
+      // Without micropip the shipped packages still work; only PyPI is off.
+      console.warn('micropip is unavailable; PyPI packages cannot be installed', error);
+    }
     this.pyodide = pyodide;
+  }
+
+  /** Make a cell's imports importable before it runs: Pyodide's own
+   *  packages first, then PyPI for whatever is still missing, plus any
+   *  packages named on pip lines. Failures are reported on the cell's
+   *  stderr and the cell still runs, so the import error that follows is
+   *  the real one. */
+  private async providePackages(code: string, handlers?: RunHandlers): Promise<void> {
+    const py = this.pyodide!;
+    try {
+      await py.loadPackagesFromImports(code);
+    } catch (error) {
+      console.warn('Could not preload packages for this cell', error);
+    }
+    if (!this.micropip) return;
+    // Named packages first: a pip line exists to say which package an
+    // import name comes from, so the scan below must see it installed.
+    for (const requirement of pipDirectives(code)) await this.install(requirement, handlers);
+    let missing: string[] = [];
+    try {
+      py.globals.set('_knuth_code', code);
+      missing = JSON.parse(String(py.runPython('knuth_missing_imports(_knuth_code)'))) as string[];
+    } catch (error) {
+      console.warn('Could not inspect imports', error);
+    }
+    for (const name of missing) await this.install(name, handlers);
+  }
+
+  private async install(requirement: string, handlers?: RunHandlers): Promise<void> {
+    const py = this.pyodide!;
+    handlers?.onStream?.('stdout', `Installing ${requirement}…\n`);
+    let reason: string;
+    try {
+      py.globals.set('_knuth_requirement', requirement);
+      reason = String(await py.runPythonAsync('await knuth_install(_knuth_requirement)'));
+    } catch (error) {
+      reason = String((error as { message?: string })?.message || error);
+    }
+    if (!reason) return;
+    handlers?.onStream?.(
+      'stderr',
+      `Could not install ${requirement} in the built-in Python: ${reason}\n` +
+        'Packages with compiled code need Python installed on this computer.\n',
+    );
   }
 
   get isReady(): boolean {
@@ -224,13 +323,10 @@ export class PyodideKernel implements Kernel {
     if (this.closed || !this.pyodide) {
       return { ok: false, result: null, traceback: 'Python is not running' };
     }
-    // Imports decide which packages are needed; loading them here is what
-    // makes `import pandas` work in a tab with nothing installed.
-    try {
-      await this.pyodide.loadPackagesFromImports(code);
-    } catch (error) {
-      console.warn('Could not preload packages for this cell', error);
-    }
+    // Imports decide which packages are needed; providing them here is
+    // what makes `import pandas` — or `import seaborn` — work in a tab
+    // with nothing installed.
+    await this.providePackages(code, handlers);
     const id = this.nextId++;
     return new Promise<RunOutcome>((resolve) => {
       this.runs.set(id, { handlers, resolve });
