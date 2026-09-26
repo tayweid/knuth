@@ -81,8 +81,7 @@ toolbar.innerHTML = `
   <div class="tb-pod tb-group">
     ${labeled('toggle-panel', icon('panel'), 'Session', 'Show/hide the session panes')}
     <button type="button" id="install-app" hidden>Install</button>
-    <a id="get-app" class="tb-btn" hidden href="https://github.com/tayweid/knuth/releases/latest"
-       title="Knuth.app for macOS, and the engine for every platform — this page runs Python in the tab, the app runs it on your computer">Get Knuth</a>
+    ${labeled('get-app', icon('download'), 'Get Knuth', 'Get Knuth for your Mac — this page runs Python in the tab; the app runs it on your computer, on your files')}
     <span id="kernel-status">connecting…</span>
   </div>
 `;
@@ -278,8 +277,13 @@ function makeKernel(onState: OnState): Kernel {
 const filesViaShell = !!shell && pythonInBrowser;
 
 // The hosted preview is the front door: it runs Python in the tab, and
-// the way to the real thing is one link away.
-if (!servedLocally && !shell) $('get-app').hidden = false;
+// the real thing is one click away — a download, or a line for the
+// terminal that never meets the Gatekeeper prompt (APP.md).
+const APP_ZIP = 'https://github.com/tayweid/knuth/releases/latest/download/Knuth.app.zip';
+const APP_LINE = `curl -fsSL -o /tmp/Knuth.app.zip ${APP_ZIP} && ditto -x -k /tmp/Knuth.app.zip /Applications`;
+const ENGINE_LINE =
+  'python3 -m pip install --upgrade --force-reinstall "knuth @ https://github.com/tayweid/knuth/archive/refs/heads/main.zip#subdirectory=python"';
+if (servedLocally || shell) $('get-app').hidden = true;
 
 let hadSession = false;
 let kernelState: Parameters<typeof onboarding.setState>[0] = 'connecting';
@@ -659,6 +663,55 @@ document.addEventListener('mousedown', (e) => {
   if (recentsMenu && !recentsMenu.contains(e.target as Node)) closeRecentsMenu();
 });
 
+function commandRow(command: string): HTMLElement {
+  const row = document.createElement('div');
+  row.className = 'command-row';
+  const code = document.createElement('code');
+  code.textContent = command;
+  const copy = document.createElement('button');
+  copy.type = 'button';
+  copy.className = 'command-copy';
+  copy.textContent = 'Copy';
+  copy.addEventListener('click', () => {
+    void navigator.clipboard.writeText(command).then(
+      () => (copy.textContent = 'Copied'),
+      () => (copy.textContent = 'Select'),
+    );
+    window.setTimeout(() => (copy.textContent = 'Copy'), 1600);
+  });
+  row.append(code, copy);
+  return row;
+}
+
+function showGetMenu(anchor: HTMLElement) {
+  if (recentsMenu) {
+    closeRecentsMenu();
+    return;
+  }
+  const menu = document.createElement('div');
+  menu.className = 'file-menu get-menu';
+  menu.innerHTML = `
+    <h2>Knuth for your Mac</h2>
+    <p>This page runs Python in the tab. The app runs it on your computer, on your own files, with your own packages.</p>
+    <a class="get-download" href="${APP_ZIP}">${icon('download')}<span>Download Knuth.app</span></a>
+    <p class="get-note">Unzip and drag to Applications. The first launch is refused once because the app is not signed with Apple: open System Settings → Privacy &amp; Security and click <b>Open Anyway</b>.</p>
+    <h3>Or from the terminal</h3>
+    <p class="get-note">No prompt this way — only browser downloads are quarantined.</p>
+  `;
+  menu.append(commandRow(APP_LINE));
+  const other = document.createElement('h3');
+  other.textContent = 'Windows or Linux';
+  const otherNote = document.createElement('p');
+  otherNote.className = 'get-note';
+  otherNote.textContent = 'The engine, from pip; then knuth app opens this page from your own computer.';
+  menu.append(other, otherNote, commandRow(ENGINE_LINE));
+  const rect = anchor.getBoundingClientRect();
+  menu.style.top = `${rect.bottom + 10}px`;
+  menu.style.right = `${Math.max(8, window.innerWidth - rect.right - 10)}px`;
+  document.body.append(menu);
+  recentsMenu = menu;
+}
+
 async function showRecents(anchor: HTMLElement) {
   if (recentsMenu) {
     closeRecentsMenu();
@@ -724,6 +777,7 @@ viewToggle.innerHTML =
 viewToggle.addEventListener('click', () => docView.setSource(!docView.isSource));
 document.body.append(viewToggle);
 
+$('get-app').addEventListener('click', () => showGetMenu($('get-app')));
 $('add-code').addEventListener('click', () => docView.insertRelative('program'));
 $('add-scratch').addEventListener('click', () => docView.insertRelative('scratch'));
 $('add-text').addEventListener('click', () => docView.insertRelative('text'));
