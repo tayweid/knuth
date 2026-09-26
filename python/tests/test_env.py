@@ -276,3 +276,93 @@ def test_knuth_env_prints_the_interpreter(tmp_path):
         [sys.executable, "-m", "knuth", "env", str(plain)], capture_output=True, text=True
     )
     assert result.returncode == 1 and "no environment header" in result.stderr
+
+
+# --- add_pin: uv's header edit, reproduced ---------------------------------
+
+REQUIRES = '# requires-python = ">=3.11"\n'
+STAMP = '#\n# [tool.uv]\n# exclude-newer = "2026-09-26T00:00:00Z"\n# ///\n'
+
+# (document before, (name, version), document after), each `after` taken
+# from what `uv add --script --frozen name==version` wrote on 2026-09-26.
+PIN_CASES = [
+    (  # an empty list becomes the multi-line form; the text below is untouched
+        "# /// script\n" + REQUIRES + "# dependencies = []\n" + STAMP + "\n# %%\nx = 1\n",
+        ("tomli-w", "1.2.0"),
+        "# /// script\n" + REQUIRES + '# dependencies = [\n#     "tomli-w==1.2.0",\n# ]\n' + STAMP + "\n# %%\nx = 1\n",
+    ),
+    (  # an inline array expands; sorted insert; a cell right after the header stays put
+        "# /// script\n" + REQUIRES + '# dependencies = ["rich==15.0.0"]\n' + STAMP + "# %%\nx = 1\n",
+        ("attrs", "25.3.0"),
+        "# /// script\n" + REQUIRES + '# dependencies = [\n#     "attrs==25.3.0",\n#     "rich==15.0.0",\n# ]\n' + STAMP + "# %%\nx = 1\n",
+    ),
+    (  # sorted list: insert in order
+        "# /// script\n" + REQUIRES + '# dependencies = [\n#     "pandas==2.3.2",\n#     "rich==15.0.0",\n# ]\n' + STAMP + "\n# %%\n",
+        ("numpy", "2.3.3"),
+        "# /// script\n" + REQUIRES + '# dependencies = [\n#     "numpy==2.3.3",\n#     "pandas==2.3.2",\n#     "rich==15.0.0",\n# ]\n' + STAMP + "\n# %%\n",
+    ),
+    (  # an existing entry is replaced in place
+        "# /// script\n" + REQUIRES + '# dependencies = [\n#     "numpy==2.3.3",\n#     "pandas==2.3.2",\n# ]\n' + STAMP + "\n# %%\n",
+        ("pandas", "2.2.0"),
+        "# /// script\n" + REQUIRES + '# dependencies = [\n#     "numpy==2.3.3",\n#     "pandas==2.2.0",\n# ]\n' + STAMP + "\n# %%\n",
+    ),
+    (  # the written name is normalized
+        "# /// script\n" + REQUIRES + '# dependencies = [\n#     "pandas==2.3.2",\n# ]\n' + STAMP + "\n# %%\n",
+        ("Tomli_W", "1.2.0"),
+        "# /// script\n" + REQUIRES + '# dependencies = [\n#     "pandas==2.3.2",\n#     "tomli-w==1.2.0",\n# ]\n' + STAMP + "\n# %%\n",
+    ),
+    (  # no stamp, no requires-python: only the array changes
+        "# /// script\n# dependencies = []\n# ///\n# %%\n",
+        ("tomli-w", "1.2.0"),
+        '# /// script\n# dependencies = [\n#     "tomli-w==1.2.0",\n# ]\n# ///\n# %%\n',
+    ),
+    (  # an unsorted list gets the new entry appended, others untouched
+        "# /// script\n" + REQUIRES + '# dependencies = [\n#     "rich==15.0.0",\n#     "Attrs>=25",\n#     "pandas[performance]>=2.2",\n# ]\n# ///\n# %%\n',
+        ("numpy", "2.3.3"),
+        "# /// script\n" + REQUIRES + '# dependencies = [\n#     "rich==15.0.0",\n#     "Attrs>=25",\n#     "pandas[performance]>=2.2",\n#     "numpy==2.3.3",\n# ]\n# ///\n# %%\n',
+    ),
+    (  # replacing keeps extras
+        "# /// script\n" + REQUIRES + '# dependencies = [\n#     "rich==15.0.0",\n#     "pandas[performance]>=2.2",\n# ]\n# ///\n# %%\n',
+        ("pandas", "2.3.2"),
+        "# /// script\n" + REQUIRES + '# dependencies = [\n#     "rich==15.0.0",\n#     "pandas[performance]==2.3.2",\n# ]\n# ///\n# %%\n',
+    ),
+    (  # a marker survives, quotes escaped as TOML wants them
+        "# /// script\n" + REQUIRES + '# dependencies = [\n#     "rich==15.0.0; sys_platform == \\"darwin\\"",\n# ]\n# ///\n# %%\n',
+        ("attrs", "25.3.0"),
+        "# /// script\n" + REQUIRES + '# dependencies = [\n#     "attrs==25.3.0",\n#     "rich==15.0.0; sys_platform == \\"darwin\\"",\n# ]\n# ///\n# %%\n',
+    ),
+]
+
+
+@pytest.mark.parametrize("before, pin, after", PIN_CASES, ids=[str(i) for i in range(len(PIN_CASES))])
+def test_add_pin_writes_what_uv_writes(before, pin, after):
+    new_text, lines = env.add_pin(before, *pin)
+    assert new_text == after
+    assert lines == env.header_lines(after)
+    assert env.pinned_version(new_text, pin[0]) == pin[1]
+
+
+def test_add_pin_keeps_crlf_and_refuses_without_a_header():
+    before = "# /// script\r\n# dependencies = []\r\n# ///\r\n# %%\r\nx = 1\r\n"
+    new_text, lines = env.add_pin(before, "tomli-w", "1.2.0")
+    assert new_text == '# /// script\r\n# dependencies = [\r\n#     "tomli-w==1.2.0",\r\n# ]\r\n# ///\r\n# %%\r\nx = 1\r\n'
+    assert lines == ["# /// script", "# dependencies = [", '#     "tomli-w==1.2.0",', "# ]", "# ///"]
+    assert env.add_pin("# %%\nx = 1\n", "tomli-w", "1.2.0") is None
+    assert env.add_pin("# /// script\n# dependencies = [\n# ///\n", "tomli-w", "1.2.0") is None
+
+
+def test_add_pin_adds_a_missing_dependencies_key():
+    new_text, _ = env.add_pin("# /// script\n" + REQUIRES + "# ///\n", "attrs", "25.3.0")
+    assert new_text == "# /// script\n" + REQUIRES + '# dependencies = [\n#     "attrs==25.3.0",\n# ]\n# ///\n'
+
+
+@needs_uv
+@pytest.mark.parametrize("before, pin, after", PIN_CASES, ids=[str(i) for i in range(len(PIN_CASES))])
+def test_add_pin_matches_uv_today(tmp_path, before, pin, after):
+    """The parity check behind the recorded expectations: the same edit made
+    by the uv on this machine. --frozen skips resolving, so no network."""
+    document = tmp_path / "doc.py"
+    document.write_text(before, newline="")
+    result = env.run_uv(["add", "--script", str(document), "--frozen", f"{pin[0]}=={pin[1]}"])
+    assert result.returncode == 0, result.stderr
+    assert document.read_text(newline="") == env.add_pin(before, *pin)[0]
