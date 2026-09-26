@@ -15,6 +15,11 @@
 
 import {
   PROTOCOL_VERSION,
+  DocumentResult,
+  PersistedResult,
+  RenamedResult,
+  SavedResult,
+  StatResult,
   parseServerEvent,
   type Artifacts,
   type ConvertResult,
@@ -29,8 +34,13 @@ export { PROTOCOL_VERSION } from './protocol.ts';
 export type {
   Artifacts,
   ConvertResult,
+  DocumentResult,
   FigureResult,
   NamespaceVar,
+  PersistedResult,
+  RenamedResult,
+  SavedResult,
+  StatResult,
   StreamWhich,
   TableWindow,
 } from './protocol.ts';
@@ -70,6 +80,16 @@ export interface Kernel {
   figure(name: string): Promise<FigureResult | null>;
   /** .ipynb JSON in, percent-format document text out (null: no engine). */
   convert(text: string): Promise<ConvertResult | null>;
+  /** Documents by absolute path, read and written by the engine (APP.md).
+   *  null: no engine connection. */
+  openPath(path: string): Promise<DocumentResult | null>;
+  savePath(path: string, text: string): Promise<SavedResult | null>;
+  statPath(path: string): Promise<StatResult | null>;
+  renamePath(path: string, name: string): Promise<RenamedResult | null>;
+  /** The kernel writes values.json and figs/ into its own folder. */
+  persist(): Promise<PersistedResult | null>;
+  /** The folder this session's kernel runs in, as the engine reported it. */
+  readonly root: string | null;
   close(): void;
 }
 
@@ -117,11 +137,23 @@ export class SidecarKernel implements Kernel {
   private tableWaiters = new Map<number, (window: TableWindow | null) => void>();
   private figureWaiters = new Map<number, (result: FigureResult | null) => void>();
   private convertWaiters = new Map<number, (result: ConvertResult | null) => void>();
+  private documentWaiters = new Map<number, (result: DocumentResult | null) => void>();
+  private savedWaiters = new Map<number, (result: SavedResult | null) => void>();
+  private statWaiters = new Map<number, (result: StatResult | null) => void>();
+  private renamedWaiters = new Map<number, (result: RenamedResult | null) => void>();
+  private persistedWaiters = new Map<number, (result: PersistedResult | null) => void>();
   private restartWaiters = new Map<number, () => void>();
+  /** Where the kernel runs, as last reported by `attached`. */
+  root: string | null = null;
+  /** The root to ask for on the next attach: the document's folder. A
+   *  resumed session keeps the kernel it has; a fresh one starts here. */
+  private wantedRoot: string | null;
   constructor(
     private url: string = kernelUrl(),
     private onStatus?: (status: KernelStatus, resumed?: boolean) => void,
+    root: string | null = null,
   ) {
+    this.wantedRoot = root;
     this.connect();
   }
 
@@ -147,6 +179,7 @@ export class SidecarKernel implements Kernel {
           type: 'attach',
           protocol: PROTOCOL_VERSION,
           session: sessionId(),
+          ...(this.wantedRoot ? { root: this.wantedRoot } : {}),
         }),
       ),
     );
@@ -207,6 +240,16 @@ export class SidecarKernel implements Kernel {
     this.figureWaiters.clear();
     for (const resolve of this.convertWaiters.values()) resolve(null);
     this.convertWaiters.clear();
+    for (const resolve of this.documentWaiters.values()) resolve(null);
+    this.documentWaiters.clear();
+    for (const resolve of this.savedWaiters.values()) resolve(null);
+    this.savedWaiters.clear();
+    for (const resolve of this.statWaiters.values()) resolve(null);
+    this.statWaiters.clear();
+    for (const resolve of this.renamedWaiters.values()) resolve(null);
+    this.renamedWaiters.clear();
+    for (const resolve of this.persistedWaiters.values()) resolve(null);
+    this.persistedWaiters.clear();
     for (const resolve of this.restartWaiters.values()) resolve();
     this.restartWaiters.clear();
   }
@@ -221,6 +264,7 @@ export class SidecarKernel implements Kernel {
         }
         // A duplicated tab forks: the server hands us a fresh identity.
         if (msg.session) sessionStorage.setItem('knuth-session', msg.session);
+        this.root = msg.root ?? null;
         break;
       }
       case 'ready': {
@@ -279,6 +323,31 @@ export class SidecarKernel implements Kernel {
       case 'converted': {
         this.convertWaiters.get(msg.id)?.(msg);
         this.convertWaiters.delete(msg.id);
+        break;
+      }
+      case 'document': {
+        this.documentWaiters.get(msg.id)?.(msg);
+        this.documentWaiters.delete(msg.id);
+        break;
+      }
+      case 'saved': {
+        this.savedWaiters.get(msg.id)?.(msg);
+        this.savedWaiters.delete(msg.id);
+        break;
+      }
+      case 'stat': {
+        this.statWaiters.get(msg.id)?.(msg);
+        this.statWaiters.delete(msg.id);
+        break;
+      }
+      case 'renamed': {
+        this.renamedWaiters.get(msg.id)?.(msg);
+        this.renamedWaiters.delete(msg.id);
+        break;
+      }
+      case 'persisted': {
+        this.persistedWaiters.get(msg.id)?.(msg);
+        this.persistedWaiters.delete(msg.id);
         break;
       }
       case 'protocol_error': {
@@ -344,6 +413,26 @@ export class SidecarKernel implements Kernel {
         this.convertWaiters.get(msg.id)?.({ error: reason });
         this.convertWaiters.delete(msg.id);
         break;
+      case 'open':
+        this.documentWaiters.get(msg.id)?.({ error: reason });
+        this.documentWaiters.delete(msg.id);
+        break;
+      case 'save':
+        this.savedWaiters.get(msg.id)?.({ error: reason });
+        this.savedWaiters.delete(msg.id);
+        break;
+      case 'stat':
+        this.statWaiters.get(msg.id)?.({ error: reason });
+        this.statWaiters.delete(msg.id);
+        break;
+      case 'rename':
+        this.renamedWaiters.get(msg.id)?.({ error: reason });
+        this.renamedWaiters.delete(msg.id);
+        break;
+      case 'persist':
+        this.persistedWaiters.get(msg.id)?.({ error: reason });
+        this.persistedWaiters.delete(msg.id);
+        break;
       case 'restart':
         this.restartWaiters.get(msg.id)?.();
         this.restartWaiters.delete(msg.id);
@@ -384,12 +473,16 @@ export class SidecarKernel implements Kernel {
     if (this.connectedReady) this.send({ type: 'interrupt' });
   }
 
-  async restart(): Promise<void> {
+  /** A restart may move the session: opening a document in another
+   *  folder is a new project, and its kernel belongs there. */
+  async restart(root?: string | null): Promise<void> {
+    if (root !== undefined) this.wantedRoot = root;
     if (!this.connectedReady) return;
     const id = this.nextId++;
     return new Promise((resolve) => {
       this.restartWaiters.set(id, resolve);
-      this.send({ type: 'restart', id });
+      this.send({ type: 'restart', id, ...(root ? { root } : {}) });
+      if (root !== undefined) this.root = root;
     });
   }
 
@@ -435,6 +528,51 @@ export class SidecarKernel implements Kernel {
     return new Promise((resolve) => {
       this.convertWaiters.set(id, resolve);
       this.send({ type: 'convert', id, text });
+    });
+  }
+
+  async openPath(path: string): Promise<DocumentResult | null> {
+    if (!this.connectedReady) return null;
+    const id = this.nextId++;
+    return new Promise((resolve) => {
+      this.documentWaiters.set(id, resolve);
+      this.send({ type: 'open', id, path });
+    });
+  }
+
+  async savePath(path: string, text: string): Promise<SavedResult | null> {
+    if (!this.connectedReady) return null;
+    const id = this.nextId++;
+    return new Promise((resolve) => {
+      this.savedWaiters.set(id, resolve);
+      this.send({ type: 'save', id, path, text });
+    });
+  }
+
+  async statPath(path: string): Promise<StatResult | null> {
+    if (!this.connectedReady) return null;
+    const id = this.nextId++;
+    return new Promise((resolve) => {
+      this.statWaiters.set(id, resolve);
+      this.send({ type: 'stat', id, path });
+    });
+  }
+
+  async renamePath(path: string, name: string): Promise<RenamedResult | null> {
+    if (!this.connectedReady) return null;
+    const id = this.nextId++;
+    return new Promise((resolve) => {
+      this.renamedWaiters.set(id, resolve);
+      this.send({ type: 'rename', id, path, name });
+    });
+  }
+
+  async persist(): Promise<PersistedResult | null> {
+    if (!this.connectedReady) return null;
+    const id = this.nextId++;
+    return new Promise((resolve) => {
+      this.persistedWaiters.set(id, resolve);
+      this.send({ type: 'persist', id });
     });
   }
 

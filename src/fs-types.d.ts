@@ -62,3 +62,16 @@ interface Window {
     setConsumer(consumer: (params: { files: FileSystemHandle[] }) => void): void;
   };
 }
+
+// Knuth.app (APP.md): the shell registers a `knuth` message handler and
+// answers dialog requests by calling back into the page.
+interface KnuthShellHandler {
+  postMessage(message: { type: 'open' } | { type: 'saveAs'; name: string }): void;
+}
+
+interface Window {
+  webkit?: { messageHandlers?: { knuth?: KnuthShellHandler } };
+  /** Installed by the page; the shell calls `chose` with the absolute path
+   *  picked in its NSOpenPanel/NSSavePanel, or null when cancelled. */
+  knuthShell?: { chose(path: string | null): void };
+}

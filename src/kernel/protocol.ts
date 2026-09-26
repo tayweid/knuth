@@ -42,6 +42,47 @@ export interface ConvertResult {
   commented?: number;
 }
 
+/** A document the engine read by path (APP.md). An .ipynb arrives
+ *  converted and `unsaved`, under a sibling .py path it has not written. */
+export interface DocumentResult {
+  path?: string;
+  name?: string;
+  text?: string;
+  /** Milliseconds since the epoch; null for a document not on disk. */
+  modified?: number | null;
+  unsaved?: boolean;
+  commented?: number;
+  error?: string;
+}
+
+export interface SavedResult {
+  path?: string;
+  modified?: number;
+  error?: string;
+}
+
+export interface StatResult {
+  path?: string;
+  /** null: the file is gone. */
+  modified?: number | null;
+  error?: string;
+}
+
+export interface RenamedResult {
+  path?: string;
+  name?: string;
+  modified?: number;
+  error?: string;
+}
+
+/** The kernel wrote the folder contract into its cwd. */
+export interface PersistedResult {
+  root?: string;
+  values?: number;
+  figures?: string[];
+  error?: string;
+}
+
 export interface TableWindow {
   name: string;
   error?: string;
@@ -54,7 +95,7 @@ export interface TableWindow {
 }
 
 export type ServerEvent =
-  | { type: 'attached'; protocol: number; session: string; resumed: boolean }
+  | { type: 'attached'; protocol: number; session: string; resumed: boolean; root?: string | null }
   | { type: 'incompatible'; protocol: number }
   | { type: 'ready'; resumed?: boolean; id?: number }
   | { type: 'stream'; id: number; which: StreamWhich; text: string }
@@ -66,6 +107,11 @@ export type ServerEvent =
   | ({ type: 'table'; id: number } & TableWindow)
   | ({ type: 'figure'; id: number } & FigureResult)
   | ({ type: 'converted'; id: number } & ConvertResult)
+  | ({ type: 'document'; id: number } & DocumentResult)
+  | ({ type: 'saved'; id: number } & SavedResult)
+  | ({ type: 'stat'; id: number } & StatResult)
+  | ({ type: 'renamed'; id: number } & RenamedResult)
+  | ({ type: 'persisted'; id: number } & PersistedResult)
   | { type: 'protocol_error'; error: string; request?: string; id?: number }
   | { type: 'kernel_exit'; error: string; returncode?: number; id?: number }
   | { type: 'server_busy'; error: string }
@@ -117,7 +163,9 @@ export function parseServerEvent(value: unknown): ServerEvent | null {
   switch (event.type) {
     case 'attached':
       return typeof event.protocol === 'number' && typeof event.session === 'string' &&
-        typeof event.resumed === 'boolean' ? event as ServerEvent : null;
+        typeof event.resumed === 'boolean' &&
+        (event.root === undefined || event.root === null || typeof event.root === 'string')
+        ? event as ServerEvent : null;
     case 'incompatible':
       return typeof event.protocol === 'number' ? event as ServerEvent : null;
     case 'ready':
@@ -150,6 +198,36 @@ export function parseServerEvent(value: unknown): ServerEvent | null {
         optionalString(event.text) && optionalString(event.error) &&
         (event.commented === undefined || isRequestId(event.commented))
         ? event as ServerEvent : null;
+    case 'document':
+      return isRequestId(event.id) &&
+        (typeof event.error === 'string' || (
+          typeof event.path === 'string' && typeof event.name === 'string' &&
+          typeof event.text === 'string' &&
+          (event.modified === null || isRequestId(event.modified))
+        )) &&
+        optionalString(event.error) &&
+        (event.unsaved === undefined || typeof event.unsaved === 'boolean') &&
+        (event.commented === undefined || isRequestId(event.commented))
+        ? event as ServerEvent : null;
+    case 'saved':
+    case 'renamed':
+      return isRequestId(event.id) &&
+        (typeof event.error === 'string' || (
+          typeof event.path === 'string' && isRequestId(event.modified) &&
+          (event.type === 'saved' || typeof event.name === 'string')
+        )) && optionalString(event.error) ? event as ServerEvent : null;
+    case 'stat':
+      return isRequestId(event.id) &&
+        (typeof event.error === 'string' || (
+          typeof event.path === 'string' &&
+          (event.modified === null || isRequestId(event.modified))
+        )) && optionalString(event.error) ? event as ServerEvent : null;
+    case 'persisted':
+      return isRequestId(event.id) &&
+        (typeof event.error === 'string' || (
+          typeof event.root === 'string' && isRequestId(event.values) &&
+          isStringArray(event.figures)
+        )) && optionalString(event.error) ? event as ServerEvent : null;
     case 'table':
       return isRequestId(event.id) && typeof event.name === 'string' &&
         optionalString(event.error) && optionalStringArray(event.columns) &&

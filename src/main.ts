@@ -8,7 +8,7 @@ import './styles.css';
 import { SidecarKernel } from './kernel/kernel.ts';
 import { DocumentView, plainLanguageFor } from './document-view.ts';
 import { delimiterFor } from './format/csv.ts';
-import { DEFAULT_DOC_NAME, FileManager } from './file-manager.ts';
+import { DEFAULT_DOC_NAME, FileManager, dirname } from './file-manager.ts';
 import { SessionPanel } from './panel.ts';
 import { icon } from './icons.ts';
 import { Onboarding } from './onboarding.ts';
@@ -112,6 +112,42 @@ window.addEventListener('beforeinstallprompt', () => {
   }, 1200);
 });
 
+// Knuth.app (APP.md): the shell opens this page with ?open=<absolute path>,
+// and its dialogs come through a message handler it registers. Both are
+// feature-detected — a plain browser tab has neither and keeps the
+// File System Access flow.
+const openParam = new URLSearchParams(window.location.search).get('open');
+const shell = window.webkit?.messageHandlers?.knuth ?? null;
+let shellChoice: ((path: string | null) => void) | null = null;
+window.knuthShell = {
+  chose: (path) => {
+    const resolve = shellChoice;
+    shellChoice = null;
+    resolve?.(typeof path === 'string' && path ? path : null);
+  },
+};
+function askShell(message: Parameters<KnuthShellHandler['postMessage']>[0]) {
+  return new Promise<string | null>((resolve) => {
+    shellChoice?.(null); // one dialog at a time
+    shellChoice = resolve;
+    shell!.postMessage(message);
+  });
+}
+
+// The kernel must start in the document's folder, and it attaches before
+// the document opens: take the root from the URL, else from the session
+// stash a reload is about to restore.
+function stashedRoot(): string | null {
+  try {
+    const raw = sessionStorage.getItem('knuth-doc');
+    const root = raw ? (JSON.parse(raw) as { root?: unknown }).root : null;
+    return typeof root === 'string' ? root : null;
+  } catch {
+    return null;
+  }
+}
+const initialRoot = openParam ? dirname(openParam) : stashedRoot();
+
 let hadSession = false;
 let kernelState: Parameters<typeof onboarding.setState>[0] = 'connecting';
 const kernel = new SidecarKernel(undefined, (state, resumed) => {
@@ -151,7 +187,7 @@ const kernel = new SidecarKernel(undefined, (state, resumed) => {
     status.textContent = 'connecting…';
     status.className = '';
   }
-});
+}, initialRoot);
 
 status.tabIndex = 0;
 status.setAttribute('role', 'button');
@@ -175,6 +211,12 @@ let fileManager: FileManager;
 let artifactsTimer = 0;
 let folderOfferAt = 0;
 function syncArtifacts() {
+  if (fileManager?.path || (fileManager?.root && fileManager.inShell)) {
+    // By path, the kernel writes the contract into its own folder.
+    clearTimeout(artifactsTimer);
+    artifactsTimer = window.setTimeout(() => void fileManager.persist(), 300);
+    return;
+  }
   if (!fileManager?.dir) {
     if (Date.now() - folderOfferAt > 300_000) {
       folderOfferAt = Date.now();
@@ -210,8 +252,13 @@ if (localStorage.getItem('knuth-panel') === '0') $('panel').hidden = true;
 let pendingRestore: (() => void) | null = null;
 let restoreTimer = 0;
 
-// Resolve a figs/<name>.svg receipt against the attached project folder.
+// Resolve a figs/<name>.svg receipt against the project folder: by path
+// through the engine, else through the attached directory handle.
 async function loadFigureFromDir(path: string): Promise<string | null> {
+  if (fileManager?.root) {
+    const reply = await kernel.openPath(`${fileManager.root}/${path}`);
+    return reply && !reply.error && typeof reply.text === 'string' ? reply.text : null;
+  }
   const dir = fileManager?.dir;
   if (!dir) return null;
   try {
@@ -271,8 +318,9 @@ fileManager = new FileManager({
     docView.setDoc(doc);
     // A different document deserves a fresh session — otherwise the
     // previous document's variables haunt the explorer and values.json.
+    // By path, the session also moves to the document's folder.
     if (!restoring && kernel.isReady) {
-      void kernel.restart().then(() => void panel.refresh());
+      void kernel.restart(fileManager?.root ?? undefined).then(() => void panel.refresh());
     }
   },
   onState: repaintName,
@@ -299,9 +347,24 @@ fileManager = new FileManager({
     // editor): replace in place and keep the session — restarting on
     // every external save would kill exploration state mid-thought.
     docView.setDoc(doc);
-    if (fileManager.dir) docView.hydrateAll();
+    if (fileManager.dir || fileManager.root) docView.hydrateAll();
   },
+  openPath: (path) => kernel.openPath(path),
+  savePath: (path, text) => kernel.savePath(path, text),
+  statPath: (path) => kernel.statPath(path),
+  renamePath: (path, name) => kernel.renamePath(path, name),
+  persist: () => kernel.persist(),
+  ...(shell
+    ? {
+        pickPath: () => askShell({ type: 'open' }),
+        pickSavePath: (name: string) => askShell({ type: 'saveAs', name }),
+      }
+    : {}),
   onOpened: () => {
+    if (fileManager.root) {
+      docView.hydrateAll();
+      return;
+    }
     if (!fileManager.dir) {
       toast(`Opened ${fileManager.name} — attach its folder for values.json and figs/`, {
         label: 'Attach folder',
@@ -313,10 +376,22 @@ fileManager = new FileManager({
 
 void (async () => {
   const restored = await fileManager.restoreSession();
-  if (!restored) fileManager.newDoc();
+  if (openParam && fileManager.path !== openParam) {
+    // Launched with a document: open it as the session's own (the kernel
+    // already attached in its folder, so no restart), then drop the
+    // parameter so a reload restores rather than reopens.
+    for (let waited = 0; !kernel.isReady && waited < 8000; waited += 100) {
+      await new Promise((resolve) => setTimeout(resolve, 100));
+    }
+    const opened = await fileManager.openPath(openParam);
+    if (!opened && !restored) fileManager.newDoc();
+  } else if (!restored) {
+    fileManager.newDoc();
+  }
+  if (openParam) history.replaceState(null, '', window.location.pathname);
   // The folder handle reconnects after the document renders: resolve
   // figure receipts now that figs/ is reachable.
-  if (restored && fileManager.dir) docView.hydrateAll();
+  if (restored && (fileManager.dir || fileManager.root)) docView.hydrateAll();
   restoring = false;
   if (fileManager.pendingHandle) {
     toast(`Reconnect ${fileManager.pendingHandle.name} to keep autosaving`, {
@@ -355,6 +430,7 @@ async function showRecents(anchor: HTMLElement) {
     const item = document.createElement('button');
     item.className = 'file-menu-item';
     item.textContent = entry.name;
+    if (entry.path) item.title = entry.path;
     item.addEventListener('click', () => {
       closeRecentsMenu();
       void fileManager.openRecent(entry);

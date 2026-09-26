@@ -1,8 +1,23 @@
-// Real files: open/save .py cell documents on disk. Plass's FileManager
-// pattern, trimmed: File System Access handles with silent debounced
-// autosave on Chromium; <input type=file> / download fallback elsewhere.
+// Real files: open/save .py cell documents on disk. Two modes (APP.md):
+//
+// - By PATH: the document has an absolute path and the engine reads,
+//   writes, stats and renames it over the socket. This is Knuth.app, and
+//   any page opened with ?open=. No browser file handles, no permission
+//   prompts, works in every browser.
+// - By HANDLE: Plass's FileManager pattern, trimmed — File System Access
+//   handles with silent debounced autosave on Chromium; <input type=file>
+//   / download fallback elsewhere. The plain-browser-tab path.
+//
+// `path` being set is the mode switch; everything else follows from it.
 
 import { parseDocument, serializeDocument, type KnuthDocument } from './format/percent.ts';
+import type {
+  DocumentResult,
+  PersistedResult,
+  RenamedResult,
+  SavedResult,
+  StatResult,
+} from './kernel/kernel.ts';
 import { ARTIFACT_MANIFEST, isSafeFigureName, manifestText, parseOwnedFigureNames } from './artifacts.ts';
 
 export interface FileHooks {
@@ -26,6 +41,51 @@ export interface FileHooks {
   /** The open file changed on disk under a clean document (an outside
    *  editor, knuth run receipts): here is its fresh parse. */
   onDiskChange?(doc: KnuthDocument): void;
+  /** Documents by path, answered by the engine (null: no engine). */
+  openPath?(path: string): Promise<DocumentResult | null>;
+  savePath?(path: string, text: string): Promise<SavedResult | null>;
+  statPath?(path: string): Promise<StatResult | null>;
+  renamePath?(path: string, name: string): Promise<RenamedResult | null>;
+  persist?(): Promise<PersistedResult | null>;
+  /** Native dialogs from the shell: an absolute path, or null if cancelled.
+   *  Present means the page runs inside Knuth.app. */
+  pickPath?(): Promise<string | null>;
+  pickSavePath?(name: string): Promise<string | null>;
+}
+
+/** The folder part of an absolute path, either separator. */
+export function dirname(path: string): string {
+  const cut = Math.max(path.lastIndexOf('/'), path.lastIndexOf('\\'));
+  return cut <= 0 ? path.slice(0, 1) : path.slice(0, cut);
+}
+
+export function basename(path: string): string {
+  const cut = Math.max(path.lastIndexOf('/'), path.lastIndexOf('\\'));
+  return path.slice(cut + 1);
+}
+
+const RECENT_PATHS = 'knuth-recent-paths';
+export interface RecentPath {
+  name: string;
+  path: string;
+  time: number;
+}
+
+function readRecentPaths(): RecentPath[] {
+  try {
+    const raw = localStorage.getItem(RECENT_PATHS);
+    const list = raw ? (JSON.parse(raw) as unknown) : [];
+    if (!Array.isArray(list)) return [];
+    return list.filter(
+      (e): e is RecentPath =>
+        !!e && typeof e === 'object' &&
+        typeof (e as RecentPath).name === 'string' &&
+        typeof (e as RecentPath).path === 'string' &&
+        typeof (e as RecentPath).time === 'number',
+    );
+  } catch {
+    return [];
+  }
 }
 
 // Any text file opens: .py as a cell document, .ipynb converted, and
@@ -84,7 +144,10 @@ export const DEFAULT_DOC_NAME = 'Knuth.py';
 export interface RecentEntry {
   name: string;
   time: number;
-  handle: FileSystemFileHandle;
+  /** Handle mode. */
+  handle?: FileSystemFileHandle;
+  /** Path mode. */
+  path?: string;
 }
 
 // Minimal IndexedDB kv store: file handles are structured-cloneable, so
@@ -121,6 +184,10 @@ export class FileManager {
   handle: FileSystemFileHandle | null = null;
   /** Project folder: where the contract (values.json, figs/) lands. */
   dir: FileSystemDirectoryHandle | null = null;
+  /** Path mode: the document's absolute path, and the folder the session's
+   *  kernel runs in (the path's folder; kept for a homeless new doc). */
+  path: string | null = null;
+  root: string | null = null;
   name = DEFAULT_DOC_NAME;
   dirty = false;
   /** Last session's file awaiting a permission re-grant (needs a user
@@ -151,7 +218,12 @@ export class FileManager {
    *  disk anyway (last writer wins, the same rule two autosaving windows
    *  already live by). */
   private async pollDisk() {
-    if (!this.handle || this.dirty) return;
+    if (this.dirty) return;
+    if (this.path) {
+      await this.pollPath();
+      return;
+    }
+    if (!this.handle) return;
     let file: File;
     try {
       file = await this.handle.getFile();
@@ -167,6 +239,28 @@ export class FileManager {
     this.stash();
   }
 
+  /** Path mode's change poll: a cheap stat by path, then a re-read only
+   *  when the mtime moved past what we last read or wrote. */
+  private async pollPath() {
+    if (!this.path || !this.hooks.statPath) return;
+    const stat = await this.hooks.statPath(this.path);
+    if (!stat || stat.error || stat.modified == null) return; // gone, or no engine
+    if (stat.modified === this.diskModified) return;
+    const fresh = await this.hooks.openPath?.(this.path);
+    if (!fresh || fresh.error || typeof fresh.text !== 'string') return;
+    if (this.dirty) return; // typed meanwhile: the autosave wins
+    this.diskModified = fresh.modified ?? stat.modified;
+    if (fresh.text === serializeDocument(this.hooks.getDoc())) return;
+    this.hooks.onDiskChange?.(parseDocument(fresh.text));
+    this.hooks.message(`${this.name} changed on disk — reloaded`);
+    this.stash();
+  }
+
+  /** Whether this page runs inside Knuth.app (native dialogs available). */
+  get inShell(): boolean {
+    return typeof this.hooks.pickPath === 'function';
+  }
+
   /** Call on every document change: marks dirty, schedules a disk autosave
    *  and a session stash (so reload restores the document alongside the
    *  resumed kernel session). */
@@ -175,7 +269,7 @@ export class FileManager {
       this.dirty = true;
       this.hooks.onState();
     }
-    if (this.handle) {
+    if (this.handle || this.path) {
       clearTimeout(this.saveTimer);
       this.saveTimer = window.setTimeout(() => void this.flush(), 1200);
     }
@@ -192,6 +286,9 @@ export class FileManager {
       name: this.name,
       dirty: this.dirty,
       text: serializeDocument(this.hooks.getDoc()),
+      path: this.path,
+      root: this.root,
+      modified: this.diskModified,
     };
     let figures = this.hooks.getFigures?.();
     if (figures) {
@@ -227,15 +324,26 @@ export class FileManager {
         dirty: boolean;
         text: string;
         figures?: Array<string[] | null>;
+        path?: string | null;
+        root?: string | null;
+        modified?: number;
       };
       // Name first: setDoc reads it to decide plain-file mode.
       this.name = snap.name;
+      this.path = typeof snap.path === 'string' ? snap.path : null;
+      this.root = typeof snap.root === 'string' ? snap.root : null;
+      this.diskModified = typeof snap.modified === 'number' ? snap.modified : 0;
       this.hooks.setDoc(parseDocument(snap.text));
       this.dirty = snap.dirty;
       if (snap.figures) this.hooks.setFigures?.(snap.figures);
     } catch (e) {
       console.warn('Session restore failed', e);
       return false;
+    }
+    if (this.path) {
+      // By path there is nothing to reconnect: the engine has the file.
+      this.hooks.onState();
+      return true;
     }
     try {
       const last = await idbGet<FileSystemFileHandle>('last');
@@ -272,7 +380,12 @@ export class FileManager {
   private writeBlockedNotified = false;
 
   private async flush() {
-    if (!this.handle || !this.dirty) return;
+    if (!this.dirty) return;
+    if (this.path) {
+      await this.flushPath();
+      return;
+    }
+    if (!this.handle) return;
     try {
       await this.write(this.handle);
       this.dirty = false;
@@ -290,6 +403,129 @@ export class FileManager {
       } else {
         console.warn('Autosave failed', e);
       }
+    }
+  }
+
+  private saveFailedNotified = false;
+
+  private async flushPath() {
+    if (!this.path || !this.hooks.savePath) return;
+    const text = serializeDocument(this.hooks.getDoc());
+    const saved = await this.hooks.savePath(this.path, text);
+    if (!saved) return; // no engine yet: the next change retries
+    if (saved.error) {
+      if (!this.saveFailedNotified) {
+        this.saveFailedNotified = true;
+        this.hooks.message(`Could not save: ${saved.error}`);
+      }
+      return;
+    }
+    this.saveFailedNotified = false;
+    if (typeof saved.modified === 'number') this.diskModified = saved.modified;
+    // Only what was written is clean: a keystroke during the round trip
+    // stays dirty and reschedules.
+    if (text === serializeDocument(this.hooks.getDoc())) {
+      this.dirty = false;
+      this.hooks.onState();
+    }
+  }
+
+  /** Open a document by absolute path through the engine (APP.md). The
+   *  path's folder becomes the session root; the caller restarts the
+   *  kernel there through the setDoc hook. */
+  async openPath(path: string): Promise<boolean> {
+    if (!this.hooks.openPath) return false;
+    const reply = await this.hooks.openPath(path);
+    if (!reply) {
+      this.hooks.message('Opening a document needs the engine — is it running?');
+      return false;
+    }
+    if (reply.error || typeof reply.text !== 'string' || typeof reply.path !== 'string') {
+      this.hooks.message(`Could not open ${basename(path)}: ${reply.error ?? 'no document'}`);
+      return false;
+    }
+    this.handle = null;
+    this.pendingHandle = null;
+    this.dir = null;
+    this.root = dirname(reply.path);
+    this.name = reply.name ?? basename(reply.path);
+    if (reply.unsaved) {
+      // A converted notebook: adopt the sibling .py path only if nothing is
+      // there yet — autosave would otherwise write over someone's file.
+      const existing = await this.hooks.statPath?.(reply.path);
+      const free = !!existing && !existing.error && existing.modified == null;
+      this.path = free ? reply.path : null;
+      this.hooks.setDoc(parseDocument(reply.text));
+      this.dirty = true;
+      this.diskModified = 0;
+      this.saveFailedNotified = false;
+      this.hooks.onState();
+      const note = reply.commented ? `, ${reply.commented} line(s) commented out` : '';
+      this.hooks.message(
+        free
+          ? `Imported ${basename(path)}${note} — saving as ${this.name}`
+          : `Imported ${basename(path)}${note} — ${this.name} exists, choose where to save`,
+      );
+      if (free) this.noteChange();
+      this.stash();
+      return true;
+    }
+    this.path = reply.path;
+    this.hooks.setDoc(parseDocument(reply.text));
+    this.diskModified = reply.modified ?? 0;
+    this.dirty = false;
+    this.saveFailedNotified = false;
+    this.hooks.onState();
+    this.hooks.message(`Opened ${this.name}`);
+    this.addRecentPath(reply.path, this.name);
+    this.stash();
+    this.hooks.onOpened?.();
+    return true;
+  }
+
+  /** Give a homeless document a path and write it there. */
+  async saveAs(path: string): Promise<boolean> {
+    if (!this.hooks.savePath) return false;
+    const text = serializeDocument(this.hooks.getDoc());
+    const saved = await this.hooks.savePath(path, text);
+    if (!saved || saved.error) {
+      this.hooks.message(`Could not save: ${saved?.error ?? 'the engine is not running'}`);
+      return false;
+    }
+    this.handle = null;
+    this.pendingHandle = null;
+    this.dir = null;
+    this.path = saved.path ?? path;
+    this.root = dirname(this.path);
+    this.name = basename(this.path);
+    this.diskModified = saved.modified ?? 0;
+    this.dirty = false;
+    this.hooks.onState();
+    this.hooks.message(`Saved ${this.name}`);
+    this.addRecentPath(this.path, this.name);
+    this.stash();
+    this.hooks.onOpened?.();
+    return true;
+  }
+
+  /** The kernel writes values.json and figs/ into its own folder. */
+  async persist(): Promise<void> {
+    if (!this.hooks.persist) return;
+    const result = await this.hooks.persist();
+    if (result?.error) this.hooks.message(`Could not write the project folder: ${result.error}`);
+  }
+
+  private addRecentPath(path: string, name: string) {
+    const kept: RecentPath[] = [{ name, path, time: Date.now() }];
+    for (const entry of readRecentPaths()) {
+      if (entry.path === path) continue;
+      kept.push(entry);
+      if (kept.length >= 8) break;
+    }
+    try {
+      localStorage.setItem(RECENT_PATHS, JSON.stringify(kept));
+    } catch (e) {
+      console.warn('Could not persist recents', e);
     }
   }
 
@@ -315,6 +551,7 @@ export class FileManager {
   newDoc() {
     this.handle = null;
     this.pendingHandle = null;
+    this.path = null; // root stays: the session keeps its folder
     this.name = DEFAULT_DOC_NAME;
     this.dirty = false;
     this.hooks.setDoc(parseDocument(NEW_DOC));
@@ -323,6 +560,11 @@ export class FileManager {
   }
 
   async open() {
+    if (this.hooks.pickPath) {
+      const path = await this.hooks.pickPath();
+      if (path) await this.openPath(path);
+      return;
+    }
     if (!this.supportsFS) {
       this.openViaInput();
       return;
@@ -361,6 +603,7 @@ export class FileManager {
     this.name = file.name.replace(/\.ipynb$/i, '.py');
     this.hooks.setDoc(parseDocument(result.text));
     this.handle = null;
+    this.path = null;
     this.pendingHandle = null;
     this.dirty = true;
     this.writeBlockedNotified = false;
@@ -413,6 +656,7 @@ export class FileManager {
 
   async loadHandle(handle: FileSystemFileHandle) {
     const file = await handle.getFile();
+    this.path = null;
     this.name = file.name;
     this.hooks.setDoc(parseDocument(await file.text()));
     this.handle = handle;
@@ -437,11 +681,16 @@ export class FileManager {
   // ---------- recents ----------
 
   async recents(): Promise<RecentEntry[]> {
+    const byPath: RecentEntry[] = readRecentPaths();
+    let byHandle: RecentEntry[] = [];
     try {
-      return (await idbGet<RecentEntry[]>('recents')) ?? [];
+      byHandle = (await idbGet<RecentEntry[]>('recents')) ?? [];
     } catch {
-      return [];
+      byHandle = [];
     }
+    // The shell has no use for handles it cannot open; a tab can use both.
+    const all = this.inShell ? byPath : [...byPath, ...byHandle];
+    return all.sort((a, b) => b.time - a.time).slice(0, 8);
   }
 
   private async addRecent(handle: FileSystemFileHandle, name: string) {
@@ -462,6 +711,11 @@ export class FileManager {
   /** Reopen a recent file; stored handles need a permission re-grant
    *  (browsers downgrade them across sessions — the click is our gesture). */
   async openRecent(entry: RecentEntry) {
+    if (entry.path) {
+      await this.openPath(entry.path);
+      return;
+    }
+    if (!entry.handle) return;
     try {
       const q = (await entry.handle.queryPermission?.({ mode: 'readwrite' })) ?? 'granted';
       if (q !== 'granted') {
@@ -479,6 +733,15 @@ export class FileManager {
   }
 
   async save() {
+    if (this.path) {
+      await this.flushPath();
+      return;
+    }
+    if (this.hooks.pickSavePath) {
+      const path = await this.hooks.pickSavePath(this.name);
+      if (path) await this.saveAs(path);
+      return;
+    }
     if (!this.supportsFS) {
       this.download();
       return;
@@ -503,6 +766,20 @@ export class FileManager {
       newName += this.name.match(/\.[^./]+$/)?.[0] ?? '.py';
     }
     if (newName === this.name) return true;
+    if (this.path) {
+      const renamed = await this.hooks.renamePath?.(this.path, newName);
+      if (!renamed || renamed.error || typeof renamed.path !== 'string') {
+        this.hooks.message(`Could not rename: ${renamed?.error ?? 'the engine is not running'}`);
+        return false;
+      }
+      this.path = renamed.path;
+      this.name = renamed.name ?? newName;
+      if (typeof renamed.modified === 'number') this.diskModified = renamed.modified;
+      this.addRecentPath(this.path, this.name);
+      this.hooks.onState();
+      this.stash();
+      return true;
+    }
     if (this.handle) {
       if (typeof this.handle.move !== 'function') {
         this.hooks.message('Renaming needs a newer Chrome (FileSystemHandle.move)');
@@ -664,6 +941,7 @@ export class FileManager {
       this.name = file.name;
       this.hooks.setDoc(parseDocument(await file.text()));
       this.handle = null;
+      this.path = null;
       this.dirty = false;
       this.hooks.onState();
     };

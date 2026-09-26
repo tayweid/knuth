@@ -22,6 +22,9 @@ bad({ type: 'no_such_event' });
 
 // attached: protocol + session + resumed, all required.
 ok({ type: 'attached', protocol: 2, session: 'abc', resumed: false });
+ok({ type: 'attached', protocol: 2, session: 'abc', resumed: false, root: '/p' });
+ok({ type: 'attached', protocol: 2, session: 'abc', resumed: false, root: null });
+bad({ type: 'attached', protocol: 2, session: 'abc', resumed: false, root: 3 });
 bad({ type: 'attached', protocol: '2', session: 'abc', resumed: false });
 bad({ type: 'attached', protocol: 2, session: 'abc' });
 
@@ -116,3 +119,22 @@ bad({ type: 'server_busy' });
 bad({ type: 'kernel_start_failed', error: 7 });
 
 console.log('protocol.test: all assertions passed');
+
+// Documents by path (APP.md): data or error, never neither.
+ok({ type: 'document', id: 1, path: '/p/a.py', name: 'a.py', text: '# %%\n', modified: 5 });
+ok({ type: 'document', id: 1, path: '/p/a.py', name: 'a.py', text: '', modified: null, unsaved: true, commented: 2 });
+ok({ type: 'document', id: 1, error: 'a.py does not exist' });
+bad({ type: 'document', id: 1 });
+bad({ type: 'document', id: 1, path: '/p/a.py', name: 'a.py', text: '# %%\n' });
+bad({ type: 'document', id: 1, path: '/p/a.py', name: 'a.py', text: 3, modified: 5 });
+ok({ type: 'saved', id: 2, path: '/p/a.py', modified: 9 });
+ok({ type: 'saved', id: 2, error: 'nope' });
+bad({ type: 'saved', id: 2, path: '/p/a.py' });
+ok({ type: 'stat', id: 3, path: '/p/a.py', modified: null });
+ok({ type: 'stat', id: 3, path: '/p/a.py', modified: 12 });
+bad({ type: 'stat', id: 3, path: '/p/a.py' });
+ok({ type: 'renamed', id: 4, path: '/p/b.py', name: 'b.py', modified: 1 });
+bad({ type: 'renamed', id: 4, path: '/p/b.py', modified: 1 });
+ok({ type: 'persisted', id: 5, root: '/p', values: 2, figures: ['fig'] });
+ok({ type: 'persisted', id: 5, error: 'read-only' });
+bad({ type: 'persisted', id: 5, root: '/p', values: 2 });
