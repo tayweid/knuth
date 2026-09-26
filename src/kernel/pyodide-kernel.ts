@@ -346,7 +346,7 @@ export class PyodideKernel implements Kernel {
     console.warn('Interrupt is not available in the browser preview.');
   }
 
-  async restart(_root?: string | null): Promise<void> {
+  async restart(_root?: string | null, _document?: string | null): Promise<void> {
     await this.ready;
     if (this.closed || !this.pyodide) return;
     const id = this.nextId++;

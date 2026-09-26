@@ -15,7 +15,10 @@
 
 import {
   PROTOCOL_VERSION,
+  DependencyEvent,
   DocumentResult,
+  EnvironmentEvent,
+  HeaderEvent,
   PersistedResult,
   RenamedResult,
   SavedResult,
@@ -34,7 +37,10 @@ export { PROTOCOL_VERSION } from './protocol.ts';
 export type {
   Artifacts,
   ConvertResult,
+  DependencyEvent,
   DocumentResult,
+  EnvironmentEvent,
+  HeaderEvent,
   FigureResult,
   NamespaceVar,
   PersistedResult,
@@ -75,8 +81,10 @@ export interface Kernel {
   readonly isReady: boolean;
   run(code: string, handlers?: RunHandlers, opts?: { scratch?: boolean }): Promise<RunOutcome>;
   interrupt(): void;
-  /** Fresh session; with a root, the session also moves to that folder. */
-  restart(root?: string | null): Promise<void>;
+  /** Fresh session. With a root the session moves to that folder; with a
+   *  document the engine gives it that document's own environment
+   *  (ENVIRONMENT.md), which is why a changed path restarts. */
+  restart(root?: string | null, document?: string | null): Promise<void>;
   namespace(): Promise<NamespaceVar[]>;
   artifacts(): Promise<Artifacts | null>;
   table(name: string, offset?: number, limit?: number): Promise<TableWindow | null>;
@@ -104,6 +112,21 @@ export function kernelUrl(): string {
 }
 
 const RECONNECT_MS = 2000;
+
+/** Events about the session's surroundings rather than a request's
+ *  answer: which Python it runs on, a package being installed for a
+ *  cell, the document's header rewritten on disk. */
+export interface SidecarListeners {
+  onEnvironment?(event: EnvironmentEvent): void;
+  onDependency?(event: DependencyEvent): void;
+  onHeader?(event: HeaderEvent): void;
+}
+
+export interface SidecarOptions {
+  root?: string | null;
+  document?: string | null;
+  listeners?: SidecarListeners;
+}
 
 interface PendingRun {
   handlers?: RunHandlers;
@@ -148,15 +171,20 @@ export class SidecarKernel implements Kernel {
   private restartWaiters = new Map<number, () => void>();
   /** Where the kernel runs, as last reported by `attached`. */
   root: string | null = null;
-  /** The root to ask for on the next attach: the document's folder. A
-   *  resumed session keeps the kernel it has; a fresh one starts here. */
+  /** The root and document to ask for on the next attach: the document's
+   *  folder and its path. A resumed session keeps the kernel it has; a
+   *  fresh one starts here, in the document's environment. */
   private wantedRoot: string | null;
+  private wantedDocument: string | null;
+  private listeners: SidecarListeners;
   constructor(
     private url: string = kernelUrl(),
     private onStatus?: (status: KernelStatus, resumed?: boolean) => void,
-    root: string | null = null,
+    options: SidecarOptions = {},
   ) {
-    this.wantedRoot = root;
+    this.wantedRoot = options.root ?? null;
+    this.wantedDocument = options.document ?? null;
+    this.listeners = options.listeners ?? {};
     this.connect();
   }
 
@@ -183,6 +211,7 @@ export class SidecarKernel implements Kernel {
           protocol: PROTOCOL_VERSION,
           session: sessionId(),
           ...(this.wantedRoot ? { root: this.wantedRoot } : {}),
+          ...(this.wantedDocument ? { document: this.wantedDocument } : {}),
         }),
       ),
     );
@@ -353,6 +382,18 @@ export class SidecarKernel implements Kernel {
         this.persistedWaiters.delete(msg.id);
         break;
       }
+      case 'environment': {
+        this.listeners.onEnvironment?.(msg);
+        break;
+      }
+      case 'dependency': {
+        this.listeners.onDependency?.(msg);
+        break;
+      }
+      case 'header': {
+        this.listeners.onHeader?.(msg);
+        break;
+      }
       case 'protocol_error': {
         this.rejectRequest(msg);
         break;
@@ -477,14 +518,21 @@ export class SidecarKernel implements Kernel {
   }
 
   /** A restart may move the session: opening a document in another
-   *  folder is a new project, and its kernel belongs there. */
-  async restart(root?: string | null): Promise<void> {
+   *  folder is a new project, and its kernel belongs there — and a
+   *  different document gets its own environment even in the same folder. */
+  async restart(root?: string | null, document?: string | null): Promise<void> {
     if (root !== undefined) this.wantedRoot = root;
+    if (document !== undefined) this.wantedDocument = document;
     if (!this.connectedReady) return;
     const id = this.nextId++;
     return new Promise((resolve) => {
       this.restartWaiters.set(id, resolve);
-      this.send({ type: 'restart', id, ...(root ? { root } : {}) });
+      this.send({
+        type: 'restart',
+        id,
+        ...(root ? { root } : {}),
+        ...(document ? { document } : {}),
+      });
       if (root !== undefined) this.root = root;
     });
   }

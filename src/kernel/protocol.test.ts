@@ -138,3 +138,19 @@ bad({ type: 'renamed', id: 4, path: '/p/b.py', modified: 1 });
 ok({ type: 'persisted', id: 5, root: '/p', values: 2, figures: ['fig'] });
 ok({ type: 'persisted', id: 5, error: 'read-only' });
 bad({ type: 'persisted', id: 5, root: '/p', values: 2 });
+
+// Document environments (ENVIRONMENT.md): three events and a header a
+// save may return.
+ok({ type: 'environment', document: '/p/a.py', state: 'syncing', python: '/usr/bin/python3', managed: false });
+ok({ type: 'environment', document: null, state: 'fallback', python: '/usr/bin/python3', managed: false, reason: 'no header' });
+bad({ type: 'environment', document: '/p/a.py', state: 'busy', python: '/x', managed: true });
+bad({ type: 'environment', document: '/p/a.py', state: 'ready', python: '/x' });
+ok({ type: 'dependency', id: 4, state: 'installing', module: 'sns', distribution: 'seaborn' });
+ok({ type: 'dependency', id: 4, state: 'installed', module: 'sns', distribution: 'seaborn', version: '0.13.2' });
+ok({ type: 'dependency', id: 4, state: 'failed', module: 'polars', distribution: 'polars', error: 'no wheel' });
+bad({ type: 'dependency', id: 4, state: 'done', module: 'x', distribution: 'x' });
+bad({ type: 'dependency', state: 'installing', module: 'x', distribution: 'x' });
+ok({ type: 'header', id: 4, path: '/p/a.py', lines: ['# /// script', '# ///'], modified: 12 });
+bad({ type: 'header', id: 4, path: '/p/a.py', lines: 'x', modified: 12 });
+ok({ type: 'saved', id: 2, path: '/p/a.py', modified: 9, header: ['# /// script', '# ///'] });
+bad({ type: 'saved', id: 2, path: '/p/a.py', modified: 9, header: 'no' });

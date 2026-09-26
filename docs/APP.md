@@ -136,6 +136,21 @@ equivalent is a later, separate piece.
 
 ## Protocol additions (v2, additive)
 
+Per-document environments (docs/ENVIRONMENT.md, engine side on the
+`document-environments` branch) add, page side landed 2026-09-26:
+`attach{…, document?}` and `restart{…, document?}` carry the open
+document's absolute path, sent on every attach and restart, and a changed
+path restarts even within the same folder (save as, rename), since the
+environment is per document. The engine answers with `environment`
+(syncing / ready / fallback with a reason: the status pill and a toast for
+a document that declares packages but fell back), `dependency` (a package
+being installed for a cell: toasts, never receipts), and `header` (the
+PEP 723 block the engine rewrote on disk: spliced into the page's
+preamble, keeping unsaved edits, and its mtime adopted so the change poll
+does not reload over it); a `saved` reply may carry the `header` a new
+file was given. The in-tab Python will read the same header for micropip
+once `knuth.env.parse_header` exists.
+
 - `attach{…, root?}` — absolute directory the session's kernel starts in.
   Missing or unusable: the engine's default root, as before.
 - `restart{id, root?}` — a restart may move the session: opening a document

@@ -59,6 +59,39 @@ export interface SavedResult {
   path?: string;
   modified?: number;
   error?: string;
+  /** A save that created a file with no PEP 723 header: the engine
+   *  prepended one and these are its lines, to splice into the page. */
+  header?: string[];
+}
+
+/** Which Python this session's kernel runs on (docs/ENVIRONMENT.md): the
+ *  document's own environment, or the system Python with a reason. Sent
+ *  once per kernel start; `syncing` beforehand when uv has work to do. */
+export interface EnvironmentEvent {
+  document: string | null;
+  state: 'syncing' | 'ready' | 'fallback';
+  python: string;
+  managed: boolean;
+  reason?: string;
+}
+
+/** A cell imported a module the environment lacked; the engine is
+ *  installing it. Not a stream, so it never lands in receipts. */
+export interface DependencyEvent {
+  id: number;
+  state: 'installing' | 'installed' | 'failed';
+  module: string;
+  distribution: string;
+  version?: string;
+  error?: string;
+}
+
+/** The engine rewrote the document's header on disk after an install. */
+export interface HeaderEvent {
+  id: number;
+  path: string;
+  lines: string[];
+  modified: number;
 }
 
 export interface StatResult {
@@ -112,6 +145,9 @@ export type ServerEvent =
   | ({ type: 'stat'; id: number } & StatResult)
   | ({ type: 'renamed'; id: number } & RenamedResult)
   | ({ type: 'persisted'; id: number } & PersistedResult)
+  | ({ type: 'environment' } & EnvironmentEvent)
+  | ({ type: 'dependency' } & DependencyEvent)
+  | ({ type: 'header' } & HeaderEvent)
   | { type: 'protocol_error'; error: string; request?: string; id?: number }
   | { type: 'kernel_exit'; error: string; returncode?: number; id?: number }
   | { type: 'server_busy'; error: string }
@@ -215,7 +251,22 @@ export function parseServerEvent(value: unknown): ServerEvent | null {
         (typeof event.error === 'string' || (
           typeof event.path === 'string' && isRequestId(event.modified) &&
           (event.type === 'saved' || typeof event.name === 'string')
-        )) && optionalString(event.error) ? event as ServerEvent : null;
+        )) && optionalString(event.error) &&
+        (event.type === 'renamed' || optionalStringArray(event.header))
+        ? event as ServerEvent : null;
+    case 'environment':
+      return (event.document === null || typeof event.document === 'string') &&
+        (event.state === 'syncing' || event.state === 'ready' || event.state === 'fallback') &&
+        typeof event.python === 'string' && typeof event.managed === 'boolean' &&
+        optionalString(event.reason) ? event as ServerEvent : null;
+    case 'dependency':
+      return isRequestId(event.id) &&
+        (event.state === 'installing' || event.state === 'installed' || event.state === 'failed') &&
+        typeof event.module === 'string' && typeof event.distribution === 'string' &&
+        optionalString(event.version) && optionalString(event.error) ? event as ServerEvent : null;
+    case 'header':
+      return isRequestId(event.id) && typeof event.path === 'string' &&
+        isStringArray(event.lines) && isRequestId(event.modified) ? event as ServerEvent : null;
     case 'stat':
       return isRequestId(event.id) &&
         (typeof event.error === 'string' || (
