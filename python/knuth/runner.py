@@ -11,14 +11,23 @@ exit code is nonzero.
 Every rewrite also canonicalizes scratch cell bodies to their commented
 "#|" form (same doctrine as the CRLF canonicalization below: a one-time
 diff on a legacy file, byte-stable ever after).
+
+A document with an environment header runs in its own environment
+(ENVIRONMENT.md): the runner asks uv for the interpreter and re-executes
+itself there. It never installs anything — a missing package here is the
+header's omission, and the honest result is a failure.
 """
 
+import ast
 import io
 import os
 import re
+import subprocess
+import sys
 from contextlib import redirect_stderr, redirect_stdout
 from pathlib import Path
 
+from . import env
 from .contract import atomic_write as _atomic_write, write_contract
 from .percent import (
     cell_code,
@@ -54,11 +63,45 @@ def truncate(text):
     return "\n".join(kept)
 
 
+def _has_code(lines):
+    """Whether a preamble is anything to run. Comments and blank lines alone
+    — an environment header, a license, a shebang — are not a cell."""
+    try:
+        return bool(ast.parse("\n".join(lines)).body)
+    except SyntaxError:
+        return True  # let the run report it
+
+
+def _in_own_environment(path, echo):
+    """Re-execute this run on the document's own interpreter when it has one
+    and we are not it. Returns the exit code, or None to run here."""
+    if os.environ.get(env.IN_ENVIRONMENT_VAR):
+        return None
+    environment = env.ensure_environment(str(path))
+    if environment.managed:
+        if env.same_interpreter(environment.python):
+            return None
+        echo(f"{path.name}: running in its own environment ({environment.python})")
+        # The child writes the receipts to the same terminal; ours must land first.
+        sys.stdout.flush()
+        result = subprocess.run(
+            [environment.python, "-m", "knuth", "run", str(path)],
+            env={**env.kernel_environ(environment), env.IN_ENVIRONMENT_VAR: "1"},
+        )
+        return result.returncode
+    if environment.reason not in (None, "no environment header"):
+        echo(f"knuth run: {environment.reason}; running on {sys.executable}")
+    return None
+
+
 def run_file(file, echo=print):
     path = Path(file).resolve()
     if not path.exists():
         echo(f"knuth run: no such file: {file}")
         return 1
+    delegated = _in_own_environment(path, echo)
+    if delegated is not None:
+        return delegated
     # read_text() applies universal-newline translation on purpose: knuth
     # run canonicalizes a document to LF the first time it rewrites receipts
     # (DECIDED, DESIGN.md). Receipt lines are LF either way, so preserving
@@ -75,7 +118,7 @@ def run_file(file, echo=print):
     # markers) runs whole; it gets no output block (nothing to anchor
     # one to — the file must stay byte-identical apart from receipts).
     units = []
-    if any(line.strip() for line in doc.preamble):
+    if _has_code(doc.preamble):
         units.append((None, "\n".join(doc.preamble)))
     units.extend((c, cell_code(c)) for c in doc.cells if c.kind == "program")
     if not units:

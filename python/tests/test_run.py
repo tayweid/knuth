@@ -329,3 +329,57 @@ def test_atomic_write_never_exposes_a_partial_destination(tmp_path, monkeypatch)
 
     assert destination.read_text() == "last complete bytes\n"
     assert list(tmp_path.glob(".receipt.py.*.tmp")) == []
+
+
+def test_a_comment_only_preamble_is_not_a_cell(tmp_path, monkeypatch):
+    """An environment header above the first cell (ENVIRONMENT.md) must not
+    count as cell zero: the receipts number the real cells."""
+    monkeypatch.setattr(runner.env, "find_uv", lambda: None)
+    doc_path = tmp_path / "headed.py"
+    doc_path.write_text(
+        "# /// script\n# dependencies = []\n# ///\n\n# %%\nx = 1\nx\n"
+    )
+    lines = []
+    assert run_file(doc_path, echo=lines.append) == 0
+    assert [line for line in lines if line.startswith("[")] == ["[1/1] ok"], lines
+    assert doc_path.read_text().startswith("# /// script\n# dependencies = []\n# ///\n\n# %%\n")
+    assert "#-> 1" in doc_path.read_text()
+
+
+def test_run_moves_into_the_documents_environment(tmp_path, monkeypatch):
+    """With a header and uv, the run re-executes on the document's own
+    interpreter, carrying the shim and the loop guard."""
+    doc_path = tmp_path / "headed.py"
+    doc_path.write_text("# /// script\n# dependencies = []\n# ///\n# %%\nx = 1\n")
+    fake_python = str(tmp_path / "env-python")
+    monkeypatch.setattr(
+        runner.env,
+        "ensure_environment",
+        lambda document: runner.env.Environment(document, fake_python, True),
+    )
+    calls = []
+
+    def fake_run(command, env=None, **kwargs):
+        calls.append((command, env))
+        return subprocess.CompletedProcess(command, 3)
+
+    monkeypatch.setattr(runner.subprocess, "run", fake_run)
+    lines = []
+    assert run_file(doc_path, echo=lines.append) == 3
+    (command, environ), = calls
+    assert command == [fake_python, "-m", "knuth", "run", str(doc_path)]
+    assert environ[runner.env.IN_ENVIRONMENT_VAR] == "1"
+    assert environ["PYTHONPATH"].split(":")[0] == runner.env.shim_dir()
+    assert "running in its own environment" in lines[0]
+    # Inside the environment the guard stops a second hop.
+    monkeypatch.setenv(runner.env.IN_ENVIRONMENT_VAR, "1")
+    calls.clear()
+    assert run_file(doc_path, echo=lines.append) == 0 and calls == []
+    # Already on that interpreter: run here, no hop.
+    monkeypatch.delenv(runner.env.IN_ENVIRONMENT_VAR)
+    monkeypatch.setattr(
+        runner.env,
+        "ensure_environment",
+        lambda document: runner.env.Environment(document, sys.executable, True),
+    )
+    assert run_file(doc_path, echo=lines.append) == 0 and calls == []

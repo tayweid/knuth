@@ -123,6 +123,41 @@ Scratch cells are stored commented (`#| ` lines), so running the file
 with plain `python` executes only the program cells; the app shows and
 edits them as ordinary code.
 
+### The document's environment
+
+A document carries its own environment in a standard header at the top
+of the file ([ENVIRONMENT.md](./docs/ENVIRONMENT.md)), and Knuth builds
+it with [uv](https://docs.astral.sh/uv/):
+
+```python
+# /// script
+# requires-python = ">=3.13"
+# dependencies = [
+#     "pandas==2.3.2",
+# ]
+#
+# [tool.uv]
+# exclude-newer = "2026-09-26T00:00:00Z"
+# ///
+```
+
+New documents get an empty header. Importing a package the document does
+not have installs it and pins the exact version in the header; the date
+stamp holds everything underneath, so the same file resolves the same
+way years later. Nothing lands in the project folder: the environment
+lives in uv's store, on a Python uv manages, whatever else is on the
+machine. `knuth run` reproduces in that environment and never installs.
+The header is comments, so the file still opens anywhere:
+
+```bash
+uv run analysis.py                       # build the environment and run it
+knuth env analysis.py                    # print its interpreter (for VS Code, Spyder)
+uv add --script analysis.py --bounds exact statsmodels
+```
+
+Without uv, or without a header, a document runs on the Python the
+engine was installed into, as before.
+
 ## Migrating from Jupyter
 
 ```bash

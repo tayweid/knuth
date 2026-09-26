@@ -613,13 +613,13 @@ async def check_simultaneous_duplicate_attach(monkeypatch):
     both_starting = asyncio.Event()
     starts = 0
 
-    async def delayed_start(kernel, cwd=None):
+    async def delayed_start(kernel, cwd=None, environment=None):
         nonlocal starts
         starts += 1
         if starts == 2:
             both_starting.set()
         await asyncio.wait_for(both_starting.wait(), timeout=5)
-        await original_start(kernel, cwd=cwd)
+        await original_start(kernel, cwd=cwd, environment=environment)
 
     monkeypatch.setattr(KernelProcess, "start", delayed_start)
     port = free_port()
@@ -692,7 +692,7 @@ async def check_kernel_start_failure(monkeypatch):
     """
     original_start = KernelProcess.start
 
-    async def failing_start(kernel, cwd=None):
+    async def failing_start(kernel, cwd=None, environment=None):
         raise RuntimeError("no interpreter for this test")
 
     monkeypatch.setattr(KernelProcess, "start", failing_start)
@@ -736,10 +736,10 @@ async def check_restart_failure(monkeypatch):
     original_start = KernelProcess.start
     fail_next_start = False
 
-    async def flaky_start(kernel, cwd=None):
+    async def flaky_start(kernel, cwd=None, environment=None):
         if fail_next_start:
             raise RuntimeError("interpreter went missing")
-        await original_start(kernel, cwd=cwd)
+        await original_start(kernel, cwd=cwd, environment=environment)
 
     monkeypatch.setattr(KernelProcess, "start", flaky_start)
     port = free_port()
@@ -962,6 +962,138 @@ async def check_session_root_and_documents(engine_root, project):
     finally:
         server.terminate()
         server.wait(timeout=5)
+
+
+async def check_document_environment(project):
+    """ENVIRONMENT.md: attach names the document; the page hears where the
+    kernel runs. Without a header that is the engine's Python, with a
+    reason — never a refusal."""
+    port = free_port()
+    plain = project / "plain.py"
+    plain.write_text("# %%\nx = 1\n")
+    server = subprocess.Popen(
+        server_command(port, root=project),
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+    )
+    try:
+        ws = await connect_when_up(port)
+        async with closing_websocket(ws):
+            client = Client(ws)
+            await client.send(
+                type="attach", protocol=PROTOCOL_VERSION, session="env-test",
+                root=str(project), document=str(plain),
+            )
+            attached = await client.recv()
+            assert attached["type"] == "attached" and attached["document"] == str(plain), attached
+            environment = await client.recv()
+            assert environment["type"] == "environment", environment
+            assert environment["state"] == "fallback" and not environment["managed"]
+            assert environment["reason"] == "no environment header"
+            assert environment["python"] == sys.executable
+            await client.wait_ready()
+            _, final = await client.run(1, "import sys; sys.executable")
+            assert final["result"] == repr(sys.executable), final
+
+            # A document that is not a file is no document at all.
+            await client.send(type="restart", id=2, document=str(project / "missing.py"))
+            environment = await client.recv()
+            assert environment["type"] == "environment" and environment["reason"] == "no document"
+            await client.wait_ready()
+
+            await client.send(type="restart", id=3, document=42)
+            reply = await client.recv()
+            assert reply["type"] == "protocol_error" and "document" in reply["error"], reply
+    finally:
+        server.terminate()
+        server.wait(timeout=5)
+
+
+def test_document_environment_without_a_header(tmp_path):
+    project = (tmp_path / "project").resolve()
+    project.mkdir()
+    asyncio.run(check_document_environment(project))
+
+
+def uv_with_managed_python():
+    from knuth import env
+
+    return bool(env.find_uv()) and env.run_uv(
+        ["python", "find"]
+    ).returncode == 0
+
+
+async def check_managed_environment(project):
+    """The whole path: syncing, a kernel on the document's interpreter, an
+    import that installs and pins, the header event the page splices."""
+    port = free_port()
+    document = project / "analysis.py"
+    document.write_text(
+        "# /// script\n"
+        '# requires-python = ">=3.11"\n'
+        "# dependencies = []\n"
+        "#\n"
+        "# [tool.uv]\n"
+        '# exclude-newer = "2026-09-26T00:00:00Z"\n'
+        "# ///\n\n# %%\nimport tomli_w\n"
+    )
+    server = subprocess.Popen(
+        server_command(port, root=project),
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+    )
+    try:
+        ws = await connect_when_up(port)
+        async with closing_websocket(ws):
+            client = Client(ws)
+            await client.send(
+                type="attach", protocol=PROTOCOL_VERSION, session="managed-test",
+                root=str(project), document=str(document),
+            )
+            syncing = await asyncio.wait_for(client.recv(), timeout=120)
+            assert syncing == {
+                "type": "environment", "document": str(document), "state": "syncing",
+                "python": sys.executable, "managed": False,
+            }, syncing
+            attached = await asyncio.wait_for(client.recv(), timeout=120)
+            assert attached["type"] == "attached", attached
+            environment = await client.recv()
+            assert environment["state"] == "ready" and environment["managed"], environment
+            assert environment["python"] != sys.executable
+            await asyncio.wait_for(client.wait_ready(), timeout=60)
+
+            _, final = await client.run(1, "import sys; sys.executable")
+            assert final["result"] == repr(environment["python"]), final
+
+            await client.send(type="run", id=2, code="import tomli_w\ntomli_w.__name__")
+            events = []
+            while True:
+                msg = await asyncio.wait_for(client.recv(), timeout=120)
+                events.append(msg)
+                if msg["type"] in ("done", "error"):
+                    break
+            kinds = [(e["type"], e.get("state")) for e in events]
+            assert kinds[:2] == [("dependency", "installing"), ("dependency", "installed")], kinds
+            # The name asked of uv is the import name; uv normalizes it in the header.
+            assert events[1]["distribution"] == "tomli_w" and events[1]["version"], events[1]
+            header = events[2]
+            assert header["type"] == "header" and header["path"] == str(document), header
+            assert any(line.startswith('#     "tomli-w==') for line in header["lines"]), header
+            assert header["modified"] == int(document.stat().st_mtime * 1000)
+            assert events[-1]["type"] == "done" and events[-1]["result"] == "'tomli_w'", events[-1]
+            on_disk = document.read_text()
+            assert 'exclude-newer = "2026-09-26T00:00:00Z"' in on_disk
+            assert on_disk.endswith("# ///\n\n# %%\nimport tomli_w\n"), on_disk
+    finally:
+        server.terminate()
+        server.wait(timeout=5)
+
+
+@pytest.mark.skipif(not uv_with_managed_python(), reason="needs uv and a uv-managed Python")
+def test_managed_environment_end_to_end(tmp_path):
+    project = (tmp_path / "project").resolve()
+    project.mkdir()
+    asyncio.run(check_managed_environment(project))
 
 
 def test_session_root_and_documents(tmp_path):

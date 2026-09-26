@@ -8,6 +8,7 @@ import sys
 
 import websockets
 
+from . import env
 from .hosted import app_url
 from .server import PROTOCOL_VERSION, build_stamp, local_origins
 
@@ -59,6 +60,11 @@ def run_doctor(port=5197):
     print(f"Knuth package: {installed_version}")
     print(f"Python: {platform.python_version()} ({sys.executable})")
     print(f"Platform: {platform.platform()}")
+    uv = env.find_uv()
+    if uv:
+        print(f"uv: {env.uv_version(uv) or 'unknown version'} ({uv})")
+    else:
+        print("uv: not found; documents with an environment header run on the Python above")
     try:
         status = asyncio.run(_engine_status(port))
     except RuntimeError as exc:

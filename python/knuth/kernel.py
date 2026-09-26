@@ -6,8 +6,14 @@ stdout carries only protocol events. SIGINT lands here as KeyboardInterrupt:
 during a run it surfaces as an `error` event, while idle it is swallowed.
 
 Events out: ready | stream{id,which,text} | done{id,result} |
-            error{id,traceback} | namespace{id,vars} | persisted{id,...}
+            error{id,traceback} | namespace{id,vars} | persisted{id,...} |
+            dependency{id,state,module,distribution} | header{id,path,lines}
 Commands in: run{id,code} | namespace{id} | artifacts{id} | persist{id} | ...
+
+In a document's own environment (ENVIRONMENT.md; the server sets
+KNUTH_DOCUMENT), a `run` first installs any module the cell imports and
+does not have, pinning it in the document's header, and reports that as
+`dependency` and `header` events.
 
 `handle_request` is the dispatcher; main() is the stdin/stdout loop around
 it, and the browser preview (src/kernel/pyodide-kernel.ts) is another host
@@ -37,6 +43,7 @@ from .limits import (
     MAX_TABLE_RESPONSE_BYTES,
     MAX_TRACEBACK_BYTES,
 )
+from . import env
 from .contract import write_contract
 from .session import Session, capture_open_figures
 
@@ -124,6 +131,11 @@ def handle_request(msg, session, state, emit):
     if kind == "run":
         state["id"] = msg["id"]
         state["stream_bytes"] = 0
+        document = os.environ.get(env.DOCUMENT_VAR)
+        if document:
+            # Managed environment only: never under Pyodide, never on the
+            # engine's own Python, where the variable is unset.
+            env.install_missing(msg["code"], document, emit, msg["id"])
         ok, payload = session.run(msg["code"], scratch=bool(msg.get("scratch")))
         svgs = capture_open_figures(MAX_FIGURES_PER_RUN)
         named = [] if msg.get("scratch") else session.figure_receipts(

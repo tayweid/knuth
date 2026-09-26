@@ -65,7 +65,10 @@ def test_open_names_a_broken_notebook(tmp_path):
 def test_save_writes_atomically_and_creates(tmp_path):
     path = tmp_path / "new.py"
     reply = files.save_document(str(path), "# %%\ny = 2\n")
-    assert path.read_text(encoding="utf-8") == "# %%\ny = 2\n"
+    # A new file gains its environment header (ENVIRONMENT.md); the text
+    # below it is exactly what was handed in.
+    written = path.read_text(encoding="utf-8")
+    assert written.startswith("# /// script\n") and written.endswith("\n\n# %%\ny = 2\n")
     assert reply["modified"] == int(path.stat().st_mtime * 1000)
     assert list(tmp_path.glob(".new.py.*.tmp")) == []
 
@@ -74,7 +77,9 @@ def test_save_keeps_crlf_bytes_as_given(tmp_path):
     """The page owns line endings; the engine writes what it is handed."""
     path = tmp_path / "crlf.py"
     files.save_document(str(path), "# %%\r\nx = 1\r\n")
-    assert path.read_bytes() == b"# %%\r\nx = 1\r\n"
+    written = path.read_bytes()
+    assert written.startswith(b"# /// script\r\n") and written.endswith(b"# ///\r\n\r\n# %%\r\nx = 1\r\n")
+    assert b"\n" not in written.replace(b"\r\n", b"")
 
 
 def test_save_refuses_bad_input(tmp_path):
@@ -130,3 +135,23 @@ def test_write_contract_refuses_unsafe_figure_names(tmp_path):
         contract.write_contract(tmp_path, {}, {"../escape": "<svg/>"})
     assert not (tmp_path / "values.json").exists()
     assert list(tmp_path.glob(".*.tmp")) == []
+
+
+def test_save_to_a_new_path_adds_the_environment_header(tmp_path):
+    """ENVIRONMENT.md: a new document gets a header; the reply carries the
+    lines so the page can splice them into its copy."""
+    from knuth import env
+
+    path = tmp_path / "fresh.py"
+    reply = files.save_document(str(path), "# %%\nx = 1\n")
+    assert reply["header"] == env.header_lines(path.read_text())
+    assert path.read_text().endswith("\n\n# %%\nx = 1\n")
+    assert env.parse_header(path.read_text())["dependencies"] == []
+    # An existing file is never given one, and a text that already has one
+    # is left as written.
+    again = files.save_document(str(path), "# %%\nx = 2\n")
+    assert "header" not in again and env.find_header(path.read_text()) is None
+    headed = tmp_path / "headed.py"
+    text = "# /// script\n# dependencies = []\n# ///\n# %%\n"
+    assert "header" not in files.save_document(str(headed), text)
+    assert headed.read_text() == text

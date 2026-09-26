@@ -113,7 +113,8 @@ def test_import_files_converts_and_never_overwrites(tmp_path):
     assert import_files([nb], echo=echo) == 0
     target = tmp_path / "analysis.py"
     written = target.read_bytes()
-    assert written == b"# %%\nx = 40 + 2\n"
+    # A new document, so it carries an environment header (ENVIRONMENT.md).
+    assert written.startswith(b"# /// script\n") and written.endswith(b"# ///\n\n# %%\nx = 40 + 2\n")
     assert "analysis.ipynb -> analysis.py (1 cells)" in lines[-1]
 
     # A second import must refuse to clobber the (possibly edited) .py.

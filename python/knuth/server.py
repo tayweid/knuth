@@ -28,6 +28,12 @@ folder, when the page has a real path. Without one, the engine's own root
 Documents by path (files.py) are answered here, not by the kernel: `open`,
 `save`, `stat`, `rename`. `persist` goes to the kernel, which writes the
 folder contract into its cwd.
+
+Environments are per document (ENVIRONMENT.md): `document` on attach or
+restart, beside `root`, is the absolute path of the open `.py`. When it
+carries a PEP 723 header and uv is available, the kernel starts on that
+document's own interpreter (env.py), and the page hears `environment`
+events: `syncing` while uv works, then `ready` or `fallback`.
 """
 
 import asyncio
@@ -42,7 +48,7 @@ import uuid
 
 import websockets
 
-from . import files, web
+from . import env, files, web
 from .ipynb import notebook_to_document
 from .percent import serialize_document
 from .limits import (
@@ -111,14 +117,18 @@ class KernelProcess:
     def __init__(self):
         self.proc = None
 
-    async def start(self, cwd=None):
+    async def start(self, cwd=None, environment=None):
         platform_options = {}
         if sys.platform == "win32":
             # A new process group lets the parent deliver Ctrl-Break to this
             # interpreter without terminating the foreground Knuth launcher.
             platform_options["creationflags"] = subprocess.CREATE_NEW_PROCESS_GROUP
+        # The document's own interpreter when it has one (ENVIRONMENT.md),
+        # else ours; kernel_environ adds the shim that makes `knuth.kernel`
+        # importable there, and headless matplotlib either way (no GUI
+        # windows from a background service).
         self.proc = await asyncio.create_subprocess_exec(
-            sys.executable,
+            environment.python if environment is not None else sys.executable,
             "-u",
             "-m",
             "knuth.kernel",
@@ -126,8 +136,7 @@ class KernelProcess:
             stdout=asyncio.subprocess.PIPE,
             limit=MAX_KERNEL_EVENT_BYTES,
             cwd=cwd,
-            # Headless matplotlib: no GUI windows from a background service.
-            env={**os.environ, "MPLBACKEND": "Agg"},
+            env=env.kernel_environ(environment),
             **platform_options,
         )
 
@@ -155,11 +164,15 @@ class KernelProcess:
 
 
 class KernelSession:
-    def __init__(self, kernel, root=None):
+    def __init__(self, kernel, root=None, document=None, environment=None):
         self.kernel = kernel
         # Where this session's kernel runs (and restarts): the document's
         # folder when the page has a path, else the engine's root.
         self.root = root
+        # The open document, and the environment its kernel runs in: the
+        # document's own when it has a header, else the engine's Python.
+        self.document = document
+        self.environment = environment
         self.ws = None
         self.pump_task = None
         self.reap_task = None
@@ -176,6 +189,19 @@ def _session_root(value, default):
     path = Path(value)
     if not path.is_absolute() or not path.is_dir():
         return default
+    return str(path)
+
+
+def _session_document(value):
+    """The document a session names — an absolute path to an existing file —
+    or None: no document means no environment of its own."""
+    if not isinstance(value, str) or not value or len(value) > MAX_PATH_CHARS:
+        return None
+    if "\0" in value:
+        return None
+    path = Path(value)
+    if not path.is_absolute() or not path.is_file():
+        return None
     return str(path)
 
 
@@ -229,6 +255,8 @@ def _validate_request(msg):
     elif kind == "restart":
         if "root" in msg and not isinstance(msg["root"], str):
             return "restart root must be a string"
+        if "document" in msg and not isinstance(msg["document"], str):
+            return "restart document must be a string"
     elif kind in {"open", "save", "stat", "rename"}:
         path = msg.get("path")
         if not isinstance(path, str) or not path or len(path) > MAX_PATH_CHARS:
@@ -390,6 +418,23 @@ async def serve(
         await ws.send(json.dumps(event))
         await ws.close(code=1011, reason=reason)
 
+    async def prepare_environment(ws, document):
+        """The document's environment, built or refreshed (ENVIRONMENT.md).
+
+        uv may take minutes the first time (a Python download), so the work
+        runs in a thread and the page is told it is happening first.
+        """
+        if env.is_candidate(document):
+            await ws.send(json.dumps({
+                "type": "environment",
+                "document": document,
+                "state": "syncing",
+                # Not known yet; the page's shape check wants both fields.
+                "python": sys.executable,
+                "managed": False,
+            }))
+        return await asyncio.to_thread(env.ensure_environment, document)
+
     async def handle_status(ws):
         # The read-only probe `knuth doctor` uses: answer and hang up,
         # touching no session state. Kept apart from handler() so attach
@@ -454,6 +499,7 @@ async def serve(
             return
         sid = supplied_sid or uuid.uuid4().hex
         session_root = _session_root(first.get("root"), root)
+        session_document = _session_document(first.get("document"))
 
         session = sessions.get(sid)
         resumed = False
@@ -480,9 +526,11 @@ async def serve(
                 return
             starting_sids.add(sid)
             kernel = KernelProcess()
+            environment = None
             try:
                 async with start_slots:
-                    await kernel.start(cwd=session_root)
+                    environment = await prepare_environment(ws, session_document)
+                    await kernel.start(cwd=session_root, environment=environment)
             except asyncio.CancelledError:
                 await kernel.stop()
                 raise
@@ -494,7 +542,7 @@ async def serve(
                 return
             finally:
                 starting_sids.discard(sid)
-            session = KernelSession(kernel, session_root)
+            session = KernelSession(kernel, session_root, session_document, environment)
             sessions[sid] = session
 
         session.ws = ws
@@ -505,7 +553,10 @@ async def serve(
                 "session": sid,
                 "resumed": resumed,
                 "root": session.root,
+                "document": session.document,
             }))
+            if session.environment is not None:
+                await ws.send(json.dumps(session.environment.event()))
             if resumed:
                 # The kernel's own ready was consumed in a previous life.
                 await ws.send(json.dumps({"type": "ready", "resumed": True}))
@@ -531,13 +582,20 @@ async def serve(
                 elif kind == "restart":
                     if "root" in msg:
                         session.root = _session_root(msg["root"], root)
+                    if "document" in msg:
+                        session.document = _session_document(msg["document"])
                     session.pump_task.cancel()
                     await asyncio.gather(session.pump_task, return_exceptions=True)
                     await session.kernel.stop()
                     session.kernel = KernelProcess()
                     try:
                         async with start_slots:
-                            await session.kernel.start(cwd=session.root)
+                            session.environment = await prepare_environment(
+                                ws, session.document
+                            )
+                            await session.kernel.start(
+                                cwd=session.root, environment=session.environment
+                            )
                     except Exception:
                         sessions.pop(sid, None)
                         await report_start_failure(session.kernel, ws, {
@@ -546,6 +604,7 @@ async def serve(
                             "error": "Python engine failed to restart",
                         }, "kernel failed to restart")
                         return
+                    await ws.send(json.dumps(session.environment.event()))
                     session.pump_task = asyncio.create_task(
                         _pump(session.kernel, ws, ready_id=msg["id"])
                     )

@@ -5,9 +5,17 @@ from pathlib import Path
 import sys
 
 from . import agent
-from .server import main as serve_main
 
 DEFAULT_PORT = 5197
+
+
+def serve_main(*args, **kwargs):
+    """The server, imported on use: this module must load with the standard
+    library alone, since `knuth run` re-executes inside a document's
+    environment where websockets is not installed (ENVIRONMENT.md)."""
+    from .server import main
+
+    return main(*args, **kwargs)
 
 
 def _resolve_root(path):
@@ -106,6 +114,13 @@ def main():
     )
     run_cmd.add_argument("file")
 
+    env_cmd = sub.add_parser(
+        "env",
+        help="build a document's environment from its header and print the "
+        "interpreter to point another editor at",
+    )
+    env_cmd.add_argument("file")
+
     import_cmd = sub.add_parser(
         "import",
         help="convert Jupyter notebooks to percent-format .py documents "
@@ -125,6 +140,19 @@ def main():
         from .runner import run_file
 
         sys.exit(run_file(args.file))
+    elif args.command == "env":
+        from .env import ensure_environment
+
+        path = Path(args.file).expanduser().resolve()
+        if not path.is_file():
+            sys.exit(f"knuth: no such file: {path}")
+        environment = ensure_environment(str(path))
+        print(environment.python)
+        if not environment.managed:
+            print(f"knuth env: {environment.reason}; that is the engine's own Python",
+                  file=sys.stderr)
+            return 1
+        return 0
     elif args.command == "import":
         from .ipynb import import_files
 

@@ -14,6 +14,7 @@ and `id`): either the data, or `{"error": <user-safe sentence>}`.
 import os
 from pathlib import Path
 
+from . import env
 from .ipynb import notebook_to_document
 from .limits import MAX_DOCUMENT_BYTES, MAX_PATH_CHARS
 from .percent import serialize_document
@@ -94,11 +95,19 @@ def save_document(value, text):
         return {"error": "text must be a string"}
     if path.exists() and not path.is_file():
         return {"error": f"{path.name} is not a file"}
+    header = None
+    if not path.exists():
+        # A new document gets its environment header (ENVIRONMENT.md). The
+        # reply carries the lines so the page splices them into its copy.
+        text, header = env.with_header(text)
     try:
         atomic_write(path, text)
     except OSError as exc:
         return {"error": f"{path.name} could not be saved: {exc.strerror or exc}"}
-    return {"path": str(path), "modified": _modified(path)}
+    reply = {"path": str(path), "modified": _modified(path)}
+    if header:
+        reply["header"] = header
+    return reply
 
 
 def stat_document(value):

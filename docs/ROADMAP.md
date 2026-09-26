@@ -18,6 +18,14 @@ question that still needs one.
   per session now, carried on attach and restart, because the app
   shell has the real path.
 
+- **The document's environment** — BUILT 2026-09-26, design and
+  decisions in ENVIRONMENT.md: a PEP 723 header in the document is the
+  truth, uv builds the environment in its store on a uv-managed Python,
+  the kernel and `knuth run` execute there, an import installs and pins.
+  Engine side complete; page side (send `document`, show `environment`
+  and `dependency`, splice `header`) and bundling uv in Knuth.app are the
+  open follow-ups listed there.
+
 - **Knuth.app** — IN PROGRESS 2026-09-25, design and decisions in
   APP.md: a native macOS window (Swift + WKWebView, not Tauri) around
   the served page, `.py` files opened in their own folder, file I/O

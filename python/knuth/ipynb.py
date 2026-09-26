@@ -19,6 +19,7 @@ The mapping (decided 2026-08-19):
 from pathlib import Path
 import json
 
+from . import env
 from .percent import MARKER, Cell, Document, serialize_document
 
 MAGIC_PREFIXES = ("%", "!")
@@ -116,7 +117,8 @@ def import_files(files, echo=print):
         # newline="" so the LF the serializer emits is what lands on disk,
         # on every platform (DESIGN.md: everything Knuth writes is LF).
         with target.open("w", encoding="utf-8", newline="") as stream:
-            stream.write(serialize_document(doc))
+            # A new document, so it gets its environment header too.
+            stream.write(env.with_header(serialize_document(doc))[0])
         note = f", {commented} line(s) commented out" if commented else ""
         echo(f"{path.name} -> {target.name} ({len(doc.cells)} cells{note})")
     return 1 if failed else 0
