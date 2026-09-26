@@ -95,21 +95,19 @@ engine's environment (APP.md follow-up): a single static file, permissive
 license, and once it is there uv can provision Python too, which retires
 the Anaconda/Homebrew/python.org hunt in the shell.
 
-DECIDED: **The header is written in uv's format, whoever writes it.** A
-new document (first save to a path that does not exist, and `knuth import`
-of a notebook) gets an empty header: `requires-python` at the engine's
-minor version, `dependencies = []`, and today's stamp. In the engine every
-later change goes through `uv add --script`, so the file is exactly what a
-terminal user gets from the same command. Built-in Python (Pyodide in the
-window, APP.md) has no uv, and its installs must still land in the header
-or a document written there never reproduces; it writes through
-`knuth.env.add_pin`, which reproduces uv's edit byte for byte — multi-line
-array, sorted insert when the list was sorted and append when it was not,
-replacement in place keeping extras and markers, normalized name — and is
-tested against the real uv on the same fixtures. AMENDED 2026-09-26: this
-first read "only through uv, except to create it"; the built-in mode is
-why it changed. The percent parser keeps the header in the document
-preamble, byte for byte, and output receipts can never land above it.
+DECIDED: **Knuth writes the header only through uv, except to create it.**
+A new document (first save to a path that does not exist, and `knuth
+import` of a notebook) gets an empty header: `requires-python` at the
+engine's minor version, `dependencies = []`, and today's stamp. Every later
+change goes through `uv add --script`, so the formatting is exactly what a
+terminal user gets from the same command and two writers never disagree.
+Built-in Python (Pyodide in the window, APP.md) reads the header and
+installs what it declares, but never writes it: a second writer was
+considered and dropped the same day (APP.md records the decision) — it is
+the try-it mode, not the one carrying the reproducibility claim, and a
+document authored there gets pinned the first time it runs under the
+engine. The percent parser keeps the header in the document preamble,
+byte for byte, and output receipts can never land above it.
 
 DECIDED: **Import installs.** When a cell imports a module that is not
 installed and not in the standard library, the kernel installs it before
@@ -211,8 +209,7 @@ Events:
 - `saved{…, header?}` — the lines of a header the save created.
 
 Pure functions the browser kernel can share (`knuth.env`, standard library
-only): `find_header(text)`, `header_lines(text)`, `parse_header(text)`,
-and `add_pin(text, name, version)` → `(new_text, header_lines)`.
+only): `find_header(text)`, `header_lines(text)`, `parse_header(text)`.
 
 ## In a terminal, or any other editor
 
@@ -233,7 +230,6 @@ and `add_pin(text, name, version)` → `(new_text, header_lines)`.
   events; splice headers; offer to pin a headerless document. Restart on
   document change, not only folder change.
 - DONE 2026-09-26: the browser kernel feeds `parse_header(...)["dependencies"]`
-  to micropip, so one header serves both backends; it pins what micropip
-  installed through `add_pin`.
+  to micropip, so one header serves both backends (read-only there).
 - OPEN: a first-launch `uv python install` in the app, so the first
   document does not pay the download at its first run.

@@ -13,11 +13,9 @@ the browser kernel loads the pure functions (`find_header`, `header_lines`,
 """
 
 import ast
-import bisect
 import datetime
 import hashlib
 import importlib
-import json
 import importlib.util
 import os
 import re
@@ -147,9 +145,6 @@ def parse_header(text):
 
 # A requirement's leading project name and optional extras (PEP 508).
 _REQUIREMENT = re.compile(r"^\s*([A-Za-z0-9](?:[A-Za-z0-9._-]*[A-Za-z0-9])?)\s*(\[[^\]]*\])?\s*(.*)$")
-_DEPENDENCIES_KEY = re.compile(r"^# dependencies\s*=\s*(.*)$")
-
-
 def _requirement_parts(spec):
     """(name, extras, rest) of a requirement string; rest is the specifier
     and any marker. Unparseable strings sort last and are never replaced."""
@@ -157,79 +152,6 @@ def _requirement_parts(spec):
     if not match:
         return "", "", spec
     return match.group(1), match.group(2) or "", match.group(3)
-
-
-def _dependencies_span(lines):
-    """Indexes (first, last) of the `dependencies = ...` assignment inside a
-    header's lines: one line for an inline array, the run through `# ]` for
-    a multi-line one. None when the key is absent."""
-    for index, line in enumerate(lines):
-        match = _DEPENDENCIES_KEY.match(line)
-        if not match:
-            continue
-        rest = match.group(1).strip()
-        if rest.startswith("[") and rest.endswith("]"):
-            return index, index
-        for end in range(index + 1, len(lines)):
-            if lines[end].rstrip() == "# ]":
-                return index, end
-        return None
-    return None
-
-
-def add_pin(text, name, version):
-    """The document with `name==version` in its header, formatted exactly as
-    `uv add --script --bounds exact` would write it: a multi-line array,
-    an entry already there replaced in place (its extras and marker kept),
-    a new one inserted in sorted position if the list was sorted and
-    appended if it was not, the written name normalized.
-
-    (new_text, header_lines), or None when there is no header to write to
-    or it does not parse. The browser kernel writes through this function
-    so the two backends produce the same bytes (ENVIRONMENT.md).
-    """
-    span = find_header(text)
-    parsed = parse_header(text)
-    if span is None or parsed is None or "error" in parsed:
-        return None
-    raw = text.split("\n")
-    crlf = any(line.endswith("\r") for line in raw[span[0] : span[1] + 1])
-    header = [line.rstrip("\r") for line in raw[span[0] : span[1] + 1]]
-
-    wanted = _normalize(name)
-    entries = []
-    replaced = False
-    for spec in parsed["dependencies"]:
-        existing, extras, rest = _requirement_parts(spec)
-        if existing and _normalize(existing) == wanted:
-            _, semicolon, marker = rest.partition(";")
-            entries.append(f"{existing}{extras}=={version}" + (f";{marker}" if semicolon else ""))
-            replaced = True
-        else:
-            entries.append(spec)
-    if not replaced:
-        keys = [_normalize(_requirement_parts(spec)[0]) for spec in entries]
-        entry = f"{wanted}=={version}"
-        if keys == sorted(keys):
-            entries.insert(bisect.bisect_left(keys, wanted), entry)
-        else:
-            entries.append(entry)
-
-    block = ["# dependencies = ["] + [f"#     {json.dumps(spec)}," for spec in entries] + ["# ]"]
-    where = _dependencies_span(header)
-    if where is None:
-        # No key yet: after requires-python when present, else first.
-        after = next(
-            (i for i, line in enumerate(header) if line.startswith("# requires-python")), 0
-        )
-        header[after + 1 : after + 1] = block
-    else:
-        header[where[0] : where[1] + 1] = block
-    if crlf:
-        header = [line + "\r" for line in header]
-    raw[span[0] : span[1] + 1] = header
-    new_text = "\n".join(raw)
-    return new_text, header_lines(new_text)
 
 
 def stamp_today():
