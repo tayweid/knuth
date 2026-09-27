@@ -151,7 +151,7 @@ def test_ensure_environment_falls_back_with_a_reason(tmp_path, monkeypatch):
     monkeypatch.setattr(
         env,
         "run_uv",
-        lambda args, cwd=None: subprocess.CompletedProcess(
+        lambda args, cwd=None, on_progress=None: subprocess.CompletedProcess(
             args, 1, "", "Creating script environment at: /x\n  × No solution found\n"
         ),
     )
@@ -242,3 +242,13 @@ def test_knuth_env_prints_the_interpreter(tmp_path):
     )
     assert result.returncode == 1 and "no environment header" in result.stderr
 
+
+def test_progress_steps_are_uvs_steps_not_its_package_list():
+    assert env.progress_step("Downloading scipy (33.1MiB)\n") == "Downloading scipy (33.1MiB)"
+    assert env.progress_step(" Downloaded scipy\n") == "Downloaded scipy"
+    assert env.progress_step(" + numpy==2.5.3\n") is None
+    assert env.progress_step(" - numpy==2.5.2\n") is None
+    assert env.progress_step("\n") is None
+    assert env.progress_step("Creating script environment at: /Users/x/.cache/uv/environments-v2/a-1\n") == (
+        "Creating the environment"
+    )

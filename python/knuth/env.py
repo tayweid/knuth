@@ -23,6 +23,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import threading
 import time
 import tomllib
 from dataclasses import dataclass
@@ -243,15 +244,47 @@ def _uv_environ():
     return environ
 
 
-def run_uv(args, cwd=None):
+def run_uv(args, cwd=None, on_progress=None):
     """Run uv with Knuth's policy environment; never raises for uv's own
-    failures (a nonzero return code carries them), only when uv is absent."""
+    failures (a nonzero return code carries them), only when uv is absent.
+
+    `on_progress` hears each step uv reports as it happens ("Downloading
+    scipy (33.1MiB)"), so a long build is never an opaque spinner (Taylor,
+    2026-09-27). uv writes those to stderr, one line per step."""
     uv = find_uv()
     if not uv:
         raise FileNotFoundError("uv is not installed")
-    return subprocess.run(
-        [uv, *args], capture_output=True, text=True, cwd=cwd, env=_uv_environ()
+    if on_progress is None:
+        return subprocess.run(
+            [uv, *args], capture_output=True, text=True, cwd=cwd, env=_uv_environ()
+        )
+    process = subprocess.Popen(
+        [uv, *args], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
+        cwd=cwd, env=_uv_environ(),
     )
+    stdout = []
+    reader = threading.Thread(target=lambda: stdout.append(process.stdout.read()), daemon=True)
+    reader.start()
+    stderr = []
+    for line in process.stderr:
+        stderr.append(line)
+        step = progress_step(line)
+        if step:
+            on_progress(step)
+    process.wait()
+    reader.join()
+    return subprocess.CompletedProcess(process.args, process.returncode, "".join(stdout), "".join(stderr))
+
+
+def progress_step(line):
+    """A line of uv's worth showing, or None: its steps, not the per-package
+    list (`+ numpy==2.5.3`) it prints at the end."""
+    line = line.strip()
+    if line.startswith("Creating script environment"):
+        return "Creating the environment"  # not the cache path it names
+    if not line or line[0] in "+-~" or len(line) > MAX_REASON_CHARS:
+        return None
+    return line
 
 
 def _reason(result, fallback):
@@ -312,7 +345,7 @@ def is_candidate(document):
     return text is not None and find_header(text) is not None and find_uv() is not None
 
 
-def ensure_environment(document):
+def ensure_environment(document, on_progress=None):
     """Build or refresh the document's environment and name its interpreter.
 
     Blocking, possibly for minutes the first time (uv may download a Python).
@@ -331,7 +364,7 @@ def ensure_environment(document):
         return _fallback(document, "uv is not installed")
     folder = str(Path(document).parent)
     try:
-        synced = run_uv(["sync", "--script", document], cwd=folder)
+        synced = run_uv(["sync", "--script", document], cwd=folder, on_progress=on_progress)
         if synced.returncode != 0:
             return _fallback(document, _reason(synced, "uv could not build the environment"))
         found = run_uv(["python", "find", "--script", document], cwd=folder)
@@ -460,7 +493,7 @@ def pinned_version(text, distribution):
     return None
 
 
-def add_dependency(document, distribution, offline=False):
+def add_dependency(document, distribution, offline=False, on_progress=None):
     """`uv add --script --bounds exact`, then sync: the header gains an exact
     pin and the environment gains the package. (ok, reason).
 
@@ -484,12 +517,13 @@ def add_dependency(document, distribution, offline=False):
 
     try:
         added = run_uv(
-            ["add", *network, "--script", document, "--bounds", "exact", distribution], cwd=folder
+            ["add", *network, "--script", document, "--bounds", "exact", distribution],
+            cwd=folder, on_progress=on_progress,
         )
         if added.returncode != 0:
             undo()
             return False, _reason(added, f"uv could not add {distribution}")
-        synced = run_uv(["sync", *network, "--script", document], cwd=folder)
+        synced = run_uv(["sync", *network, "--script", document], cwd=folder, on_progress=on_progress)
     except (OSError, subprocess.SubprocessError) as exc:
         undo()
         return False, f"uv could not run: {exc}"

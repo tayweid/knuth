@@ -56,6 +56,11 @@ writes `values.json`/`figs/` into its own cwd — the same code `knuth run`
 uses. The File System Access path stays as the fallback for a plain browser
 tab, so `knuth app` in a terminal still works everywhere, and Safari and
 Firefox stop being second-class (they never had the handle API).
+Opening is the exception in Knuth.app (2026-09-27): the shell reads the
+document itself, because the engine answers a session only once uv has
+built its environment, and a document whose packages must download sat
+blank for minutes, then fell back to an empty "Knuth.py". Saving stays
+with the engine, which gives a new file its header.
 
 DECIDED: **One engine, a root per session.** The attach handshake carries the
 session's root; the kernel (and its restarts) start there. Two documents in

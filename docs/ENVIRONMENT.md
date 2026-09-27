@@ -251,12 +251,17 @@ Requests:
 
 Events:
 
-- `environment{document, state, python, managed, reason?}` — `state` is
+- `environment{document, state, python, managed, reason?, detail?}` — `state` is
   `syncing` (sent before the kernel starts when uv has work; on a first
   attach this precedes `attached`), `ready` (kernel is on the document's
   interpreter), or `fallback` (engine's Python; `reason` says why). Once
-  per kernel start, and again on resume so a reloaded tab knows.
-- `dependency{id, state, module, distribution, version?, error?}` —
+  per kernel start, and again on resume so a reloaded tab knows. While
+  syncing, each step uv reports arrives as another `syncing` event with
+  `detail` ("Downloading scipy (33.1MiB)"), and the page shows it on a
+  toast once the build has taken over a second: a long build is never an
+  opaque spinner (Taylor, 2026-09-27). A download the person okayed does
+  the same on `dependency{state: installing, detail}`.
+- `dependency{id, state, module, distribution, version?, error?, detail?}` —
   during a `run`; `state` is `installing`, `installed`, or `failed`. Not a
   `stream`, so it never becomes an output receipt.
 - `header{id, path, lines, modified}` — during a `run`, after an install

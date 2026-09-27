@@ -37,6 +37,7 @@ events: `syncing` while uv works, then `ready` or `fallback`.
 """
 
 import asyncio
+import contextlib
 import importlib.metadata
 import json
 import os
@@ -536,10 +537,13 @@ async def serve(
                 saved = files.save_document(target, header_text)
                 if "error" in saved:
                     return False, saved["error"]
-            return env.add_dependency(target, distribution, offline=not download)
+            return env.add_dependency(target, distribution, offline=not download, on_progress=say)
 
+        say = None
         if download:
             await ws.send(json.dumps({**base, "state": "installing"}))
+            # What the download is doing, step by step, on the same toast.
+            say = progress_sender(ws, lambda step: {**base, "state": "installing", "detail": step})
         ok, reason = await asyncio.to_thread(work)
         if not ok:
             await refuse(reason or f"uv could not install {distribution}", needs_download=not download)
@@ -573,16 +577,33 @@ async def serve(
         uv may take minutes the first time (a Python download), so the work
         runs in a thread and the page is told it is happening first.
         """
+        syncing = {
+            "type": "environment",
+            "document": document,
+            "state": "syncing",
+            # Not known yet; the page's shape check wants both fields.
+            "python": sys.executable,
+            "managed": False,
+        }
         if env.is_candidate(document):
-            await ws.send(json.dumps({
-                "type": "environment",
-                "document": document,
-                "state": "syncing",
-                # Not known yet; the page's shape check wants both fields.
-                "python": sys.executable,
-                "managed": False,
-            }))
-        return await asyncio.to_thread(env.ensure_environment, document)
+            await ws.send(json.dumps(syncing))
+        # Each step uv reports, as it happens: the page shows it.
+        say = progress_sender(ws, lambda step: {**syncing, "detail": step})
+        return await asyncio.to_thread(env.ensure_environment, document, say)
+
+    def progress_sender(ws, event):
+        """A callback for uv's worker thread that sends `event(step)` on
+        this socket from the event loop. A closed socket just stops hearing."""
+        loop = asyncio.get_running_loop()
+
+        async def send(message):
+            with contextlib.suppress(websockets.exceptions.ConnectionClosed):
+                await ws.send(message)
+
+        def say(step):
+            asyncio.run_coroutine_threadsafe(send(json.dumps(event(step))), loop)
+
+        return say
 
     async def handle_status(ws):
         # The read-only probe `knuth doctor` uses: answer and hang up,

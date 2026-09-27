@@ -121,7 +121,12 @@ function toast(
   // `stay`: an offer the person has to see (installing a package) waits
   // until the next toast replaces it rather than timing out unseen.
   if (!options.stay) {
-    toastTimer = window.setTimeout(() => (toastEl.hidden = true), action ? 8000 : 2500);
+    // A passing message: gone when it times out — back to what uv is
+    // doing, if it is still at it.
+    toastTimer = window.setTimeout(() => {
+      if (syncShown) progress(syncStep);
+      else toastEl.hidden = true;
+    }, action ? 8000 : 2500);
   }
 }
 
@@ -219,6 +224,10 @@ const pythonInBrowser =
 // document runs on, a package being installed for a cell, the header the
 // engine rewrote. Toasts and the status pill; never receipts.
 let environmentSyncing = false;
+// The "Setting up…" toast: its latest step, and whether it is up yet.
+let syncStep = '';
+let syncShown = false;
+let syncTimer = 0;
 /** The file uv manages for this session: the document, or its scratch
  *  stand-in when the document has no header yet. */
 let environmentDocument: string | null = null;
@@ -238,13 +247,29 @@ function reportFallback() {
 }
 const listeners = {
   onEnvironment: (event: EnvironmentEvent) => {
+    const wasSyncing = environmentSyncing;
     environmentSyncing = event.state === 'syncing';
     if (event.state === 'syncing') {
       status.textContent = 'preparing environment…';
       status.title = 'uv is setting up this document’s packages';
       status.className = 'working';
+      // What uv is doing, step by step: never just a spinner. Only once it
+      // has taken a moment — a built environment syncs in a blink, and a
+      // toast flashing on every window would be noise.
+      syncStep = `Setting up packages${event.detail ? ': ' + event.detail : '…'}`;
+      if (syncShown) progress(syncStep);
+      else if (!syncTimer) {
+        syncTimer = window.setTimeout(() => {
+          syncShown = true;
+          progress(syncStep);
+        }, 1000);
+      }
       return;
     }
+    clearTimeout(syncTimer);
+    syncTimer = 0;
+    if (wasSyncing && syncShown && toastEl.classList.contains('working')) toastEl.hidden = true;
+    syncShown = false;
     lastEnvironment = event;
     environmentDocument = event.managed ? event.document : null;
     if (kernelState === 'ready') paintKernelReady();
@@ -252,7 +277,9 @@ const listeners = {
   },
   onDependency: (event: DependencyEvent) => {
     // Only downloads are reported: the rerun says the rest.
-    if (event.state === 'installing') progress(`Downloading ${event.distribution}…`);
+    if (event.state === 'installing') {
+      progress(`Downloading ${event.distribution}${event.detail ? ': ' + event.detail : '…'}`);
+    }
     else if (event.state === 'installed') toastEl.hidden = true;
     else toast(`Could not download ${event.distribution}: ${event.error ?? 'unknown error'}`);
   },
@@ -324,6 +351,12 @@ function makeKernel(onState: OnState): Kernel {
 // instead of files.py. The contract is then written by the page through
 // the shell (contract.ts), since a kernel in the tab has no folder.
 const filesViaShell = !!shell && pythonInBrowser;
+// Opening, though, is always the shell's when there is one: the engine
+// answers only once the session's environment is built, which for a
+// document with packages uv must download can take minutes, and the
+// document should be on screen meanwhile. (Saving stays with the engine,
+// which gives a new file its header.)
+const opensViaShell = !!shell;
 
 // The hosted preview is the front door: it runs Python in the tab, and
 // the real thing is one click away — a download, or a line for the
@@ -446,7 +479,7 @@ const files = filesViaShell
       rename: (path: string, name: string) => askShell<RenamedResult>({ type: 'rename', path, name }),
     }
   : {
-      open: (path: string) => kernel.openPath(path),
+      open: (path: string) => (opensViaShell ? shellOpen(path) : kernel.openPath(path)),
       save: (path: string, text: string) => kernel.savePath(path, text),
       stat: (path: string) => kernel.statPath(path),
       rename: (path: string, name: string) => kernel.renamePath(path, name),
@@ -755,7 +788,8 @@ void (async () => {
     // already attached in its folder, so no restart), then drop the
     // parameter so a reload restores rather than reopens. Through the
     // engine the open needs the socket; through the shell it needs nothing.
-    for (let waited = 0; !filesViaShell && !kernel.isReady && waited < 8000; waited += 100) {
+    // (While uv builds the environment, as long as that takes.)
+    for (let waited = 0; !opensViaShell && !kernel.isReady && (waited < 8000 || environmentSyncing); waited += 100) {
       await new Promise((resolve) => setTimeout(resolve, 100));
     }
     const opened = await fileManager.openPath(openParam);

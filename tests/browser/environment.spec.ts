@@ -13,6 +13,7 @@ type Probe = typeof window & {
   __knuthMissing?: boolean;
   __knuthScratch?: string;
   __knuthNotDownloaded?: boolean;
+  __knuthSlowSync?: boolean;
 };
 
 test.beforeEach(async ({ page }) => {
@@ -50,6 +51,17 @@ test.beforeEach(async ({ page }) => {
         const modified = probe.__knuthModified!;
         switch (msg.type) {
           case 'attach':
+            if (probe.__knuthSlowSync) {
+              // uv building an environment that needs downloads: the engine
+              // says so, then each step, and only then attaches.
+              probe.__knuthSlowSync = false;
+              const syncing = { type: 'environment', document: msg.document ?? null, state: 'syncing', python: '/usr/bin/python3', managed: false };
+              this.reply(syncing);
+              this.reply({ ...syncing, detail: 'Resolved 20 packages in 1.2s' });
+              window.setTimeout(() => this.reply({ ...syncing, detail: 'Downloading scipy (33.1MiB)' }), 1300);
+              window.setTimeout(() => this.send(raw), 2500);
+              break;
+            }
             this.reply({ type: 'attached', protocol: msg.protocol, session: msg.session, resumed: false, root: msg.root ?? null });
             this.reply(probe.__knuthScratch
               ? {
@@ -301,6 +313,18 @@ test('an unsaved document adds a package without being saved first', async ({ pa
   });
   expect((await messages(page)).some((m) => m.type === 'save')).toBe(false);
   await expect.poll(async () => (await messages(page)).filter((m) => m.type === 'run').length).toBe(2);
+});
+
+test('a slow environment build shows what uv is doing, then gets out of the way', async ({ page }) => {
+  await page.addInitScript(() => {
+    (window as Probe).__knuthSlowSync = true;
+  });
+  await page.goto('/?open=/p/analysis.py');
+  await expect(page.locator('#kernel-status')).toHaveText('preparing environment…');
+  await expect(page.locator('#toast')).toHaveText('Setting up packages: Downloading scipy (33.1MiB)');
+  await expect(page.locator('#toast')).toHaveClass(/working/);
+  await expect(page.locator('#kernel-status')).toHaveText('Python');
+  await expect(page.locator('#toast')).toBeHidden();
 });
 
 test('the package header folds to one line, and opens on a click', async ({ page }) => {

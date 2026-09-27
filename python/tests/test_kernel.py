@@ -1057,8 +1057,13 @@ async def check_managed_environment(project):
                 "type": "environment", "document": str(document), "state": "syncing",
                 "python": sys.executable, "managed": False,
             }, syncing
-            attached = await asyncio.wait_for(client.recv(), timeout=120)
+            # Then each step uv reports, as it happens, until the session is up.
+            steps = []
+            while (attached := await asyncio.wait_for(client.recv(), timeout=120))["type"] == "environment":
+                assert attached["state"] == "syncing" and attached["detail"], attached
+                steps.append(attached["detail"])
             assert attached["type"] == "attached", attached
+            assert steps and not any(step.startswith("+ ") for step in steps), steps
             environment = await client.recv()
             assert environment["state"] == "ready" and environment["managed"], environment
             assert environment["python"] != sys.executable
@@ -1079,6 +1084,9 @@ async def check_managed_environment(project):
                 events.append(msg)
                 if msg["type"] == "installed":
                     break
+            # uv's steps ride along on "installing" events with a detail.
+            assert all(e["detail"] for e in events[1:] if e.get("state") == "installing"), events
+            events = [events[0], *(e for e in events[1:] if "detail" not in e)]
             kinds = [(e["type"], e.get("state")) for e in events]
             assert kinds[:2] == [("dependency", "installing"), ("dependency", "installed")], kinds
             # The name asked of uv is the import name; uv normalizes it in the header.

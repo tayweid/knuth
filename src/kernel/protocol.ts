@@ -73,6 +73,8 @@ export interface EnvironmentEvent {
   python: string;
   managed: boolean;
   reason?: string;
+  /** While syncing: the step uv just reported ("Downloading scipy (33.1MiB)"). */
+  detail?: string;
 }
 
 /** A cell imported a module the environment lacked; the engine is
@@ -84,6 +86,8 @@ export interface DependencyEvent {
   distribution: string;
   version?: string;
   error?: string;
+  /** While installing: the step uv just reported. */
+  detail?: string;
 }
 
 /** The engine rewrote the document's header on disk after an install. */
@@ -293,12 +297,13 @@ export function parseServerEvent(value: unknown): ServerEvent | null {
       return (event.document === null || typeof event.document === 'string') &&
         (event.state === 'syncing' || event.state === 'ready' || event.state === 'fallback') &&
         typeof event.python === 'string' && typeof event.managed === 'boolean' &&
-        optionalString(event.reason) ? event as ServerEvent : null;
+        optionalString(event.reason) && optionalString(event.detail) ? event as ServerEvent : null;
     case 'dependency':
       return isRequestId(event.id) &&
         (event.state === 'installing' || event.state === 'installed' || event.state === 'failed') &&
         typeof event.module === 'string' && typeof event.distribution === 'string' &&
-        optionalString(event.version) && optionalString(event.error) ? event as ServerEvent : null;
+        optionalString(event.version) && optionalString(event.error) && optionalString(event.detail)
+        ? event as ServerEvent : null;
     case 'header':
       return isRequestId(event.id) &&
         (event.path === null || typeof event.path === 'string') &&
