@@ -33,7 +33,20 @@ let stateDir: URL = {
         .appendingPathComponent("Library/Application Support/Knuth")
 }()
 let preferencesURL = stateDir.appendingPathComponent("preferences.json")
-let uvURL = stateDir.appendingPathComponent("bin/uv")
+/// Where uv's own installer puts uv, and where Knuth puts it when a Mac
+/// has none: then it is an ordinary uv, usable from the terminal too.
+let standardUV = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".local/bin/uv")
+
+/// The uv on this Mac, wherever it came from: uv is uv. An app opened
+/// from Finder gets a bare PATH, so the usual places are asked directly.
+func findUV() -> URL? {
+    let home = FileManager.default.homeDirectoryForCurrentUser.path
+    var candidates = [environment["KNUTH_UV"] ?? ""]
+    candidates += [standardUV.path, "/opt/homebrew/bin/uv", "/usr/local/bin/uv", "\(home)/.cargo/bin/uv"]
+    candidates += (environment["PATH"] ?? "").split(separator: ":").map { "\($0)/uv" }
+    return candidates.first { !$0.isEmpty && FileManager.default.isExecutableFile(atPath: $0) }
+        .map { URL(fileURLWithPath: $0) }
+}
 let engineDir = stateDir.appendingPathComponent("engine")
 let enginePython = engineDir.appendingPathComponent("bin/python")
 /// The Python uv installs for the engine. Documents choose their own
@@ -155,19 +168,20 @@ func lastLines(_ text: String, _ count: Int = 6) -> String {
 /// run after an interrupted first — picks up where things stand.
 enum Installer {
     static var isInstalled: Bool {
-        FileManager.default.isExecutableFile(atPath: uvURL.path)
-            && FileManager.default.isExecutableFile(atPath: enginePython.path)
+        findUV() != nil && FileManager.default.isExecutableFile(atPath: enginePython.path)
     }
 
     static func install(progress: @escaping (String) -> Void) -> Result<Void, SetupError> {
-        if !FileManager.default.isExecutableFile(atPath: uvURL.path) {
+        if findUV() == nil {
             progress("Downloading uv…")
             if case .failure(let error) = fetchUV() { return .failure(error) }
         }
+        guard let uv = findUV() else { return .failure(.install("uv could not be found after installing it.")) }
+        log("using uv at \(uv.path)")
         if !FileManager.default.isExecutableFile(atPath: enginePython.path) {
             progress("Installing Python \(enginePythonVersion)… (about a minute)")
             let (status, output) = run(
-                uvURL.path, ["venv", "--python", enginePythonVersion, engineDir.path],
+                uv.path, ["venv", "--python", enginePythonVersion, engineDir.path],
                 timeout: 900, environment: uvEnvironment())
             log("uv venv: exit \(status)\n\(lastLines(output))")
             if status != 0 {
@@ -176,7 +190,7 @@ enum Installer {
         }
         progress("Preparing the engine…")
         let (status, output) = run(
-            uvURL.path,
+            uv.path,
             ["pip", "install", "--python", enginePython.path, "websockets>=14.0"],
             timeout: 600, environment: uvEnvironment())
         log("uv pip install websockets: exit \(status)\n\(lastLines(output))")
@@ -187,7 +201,7 @@ enum Installer {
     }
 
     /// The uv release for this Mac's processor, from Astral's GitHub
-    /// releases, unpacked into the app's own folder.
+    /// releases, put where uv's own installer would put it.
     private static func fetchUV() -> Result<Void, SetupError> {
         var system = utsname()
         uname(&system)
@@ -246,15 +260,14 @@ enum Installer {
         else { return .failure(.download("The uv download did not contain uv.")) }
         do {
             try FileManager.default.createDirectory(
-                at: uvURL.deletingLastPathComponent(), withIntermediateDirectories: true)
-            try? FileManager.default.removeItem(at: uvURL)
-            try FileManager.default.moveItem(at: found, to: uvURL)
-            try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: uvURL.path)
+                at: standardUV.deletingLastPathComponent(), withIntermediateDirectories: true)
+            try FileManager.default.moveItem(at: found, to: standardUV)
+            try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: standardUV.path)
         } catch {
             return .failure(.download("uv could not be put in place: \(error.localizedDescription)"))
         }
-        let (versionStatus, version) = run(uvURL.path, ["--version"], timeout: 30)
-        log("installed \(versionStatus == 0 ? version.trimmingCharacters(in: .whitespacesAndNewlines) : "uv (unverified)") at \(uvURL.path)")
+        let (versionStatus, version) = run(standardUV.path, ["--version"], timeout: 30)
+        log("installed \(versionStatus == 0 ? version.trimmingCharacters(in: .whitespacesAndNewlines) : "uv (unverified)") at \(standardUV.path)")
         return versionStatus == 0 ? .success(()) : .failure(.download("The downloaded uv does not run on this Mac."))
     }
 }
@@ -323,7 +336,7 @@ final class Engine {
         process.currentDirectoryURL = FileManager.default.homeDirectoryForCurrentUser
         var child = uvEnvironment()
         child["PYTHONPATH"] = package.path
-        child["KNUTH_UV"] = uvURL.path
+        if let uv = findUV() { child["KNUTH_UV"] = uv.path }
         child["KNUTH_CONFIG_DIR"] = stateDir.path
         child["PYTHONDONTWRITEBYTECODE"] = "1" // the bundle is not ours to write into
         process.environment = child

@@ -143,6 +143,15 @@ and the engine starts on it; each step is reported on that same screen.
 loaded from the web each time; nothing is ever installed for it. Knuth
 menu → Choose Python… asks again.
 
+DECIDED: **Any uv will do** (Taylor, 2026-09-27). uv is the same tool
+wherever it came from, so the app uses the uv already on the Mac —
+Homebrew's, uv's own installer's, anywhere on the usual paths — and only
+when there is none downloads Astral's release into `~/.local/bin/uv`,
+where uv's own installer puts it. There is then one uv on the Mac, usable
+from the terminal as well. (A private copy in the app's folder was built
+first and dropped: it bought a pinned uv version at the cost of a second,
+invisible uv.)
+
 DECIDED: **Neither ships in the download.** The zip carries the window
 and the knuth package (2.3 MB). uv is about 18 MB and its Python about
 40 MB, fetched once when chosen.
@@ -163,8 +172,8 @@ plain "Python" for an engine someone started from a terminal on a Python
 of their own. There is no "built-in Python": the earlier name for the
 Pyodide option suggested a Python shipped in the app, and there is none. The path and the reason are in its tooltip.
 
-Everything the app installs lives in `~/Library/Application Support/
-Knuth` (`bin/uv`, `engine/`, `preferences.json`); removing that folder
+Everything else the app installs lives in `~/Library/Application Support/
+Knuth` (`engine/`, `preferences.json`); removing that folder
 returns the app to its first launch. uv's own Pythons and cache are in
 uv's usual places and shared with any other use of uv.
 
