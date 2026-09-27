@@ -158,9 +158,10 @@ DECIDED: **The app's engine has its own port, 5187** (the next free one
 if taken), apart from a terminal's `knuth app` on 5197. The app never
 adopts an engine it did not start.
 
-DECIDED: **The status pill names the Python**: "uv Python", "built-in
-Python", or plain "Python" for an engine someone started from a terminal
-on a Python of their own. The path and the reason are in its tooltip.
+DECIDED: **The status pill names the Python**: "uv" or "Pyodide", or
+plain "Python" for an engine someone started from a terminal on a Python
+of their own. There is no "built-in Python": the earlier name for the
+Pyodide option suggested a Python shipped in the app, and there is none. The path and the reason are in its tooltip.
 
 Everything the app installs lives in `~/Library/Application Support/
 Knuth` (`bin/uv`, `engine/`, `preferences.json`); removing that folder
@@ -170,7 +171,7 @@ uv's usual places and shared with any other use of uv.
 Verified 2026-09-27 on a clean config folder: chose uv on the setup
 screen, uv unpacked, Python 3.13.15 installed by uv, engine up on the
 bundled package, a cell reporting that Python rather than the Mac's
-miniconda 3.13.9, the pill reading "uv Python", and the engine gone when
+miniconda 3.13.9, the pill reading "uv", and the engine gone when
 the app was killed. The uv download itself was exercised against a local
 archive; the real address is the release asset for the processor.
 

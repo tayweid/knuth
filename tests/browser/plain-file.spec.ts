@@ -1,7 +1,7 @@
 import { expect, test } from '@playwright/test';
 
 // A trimmed mock of app.spec.ts's engine socket: these tests only need the
-// app to reach "kernel" status, never to run a cell.
+// app to reach a ready status pill, never to run a cell.
 test.beforeEach(async ({ page }) => {
   await page.addInitScript(() => {
     class MockWebSocket extends EventTarget {
@@ -60,7 +60,7 @@ const YAML = 'name: knuth\nversion: 3\nlist:\n  - one\n  - two\n# a comment\n';
 test('a .yaml file is highlighted, folded, and guided in the plain editor', async ({ page }) => {
   await seed(page, 'config.yaml', YAML);
   await page.goto('/');
-  await expect(page.locator('#kernel-status')).toHaveText('kernel');
+  await expect(page.locator('#kernel-status')).toHaveText('Python');
 
   const editor = page.locator('.cm-content');
   await expect(editor).toContainText('name: knuth');
@@ -74,7 +74,7 @@ test('a .yaml file is highlighted, folded, and guided in the plain editor', asyn
 test('a .txt file stays numbered, wrapped text', async ({ page }) => {
   await seed(page, 'notes.txt', 'name: knuth\nversion: 3\n');
   await page.goto('/');
-  await expect(page.locator('#kernel-status')).toHaveText('kernel');
+  await expect(page.locator('#kernel-status')).toHaveText('Python');
 
   const editor = page.locator('.cm-content');
   await expect(editor).toContainText('name: knuth');
@@ -101,7 +101,7 @@ x = np.arange(3)
 test('a .qmd file is markdown with YAML front matter and Python fences', async ({ page }) => {
   await seed(page, 'report.qmd', QMD);
   await page.goto('/');
-  await expect(page.locator('#kernel-status')).toHaveText('kernel');
+  await expect(page.locator('#kernel-status')).toHaveText('Python');
 
   const editor = page.locator('.cm-content');
   await expect(editor).toContainText('# Heading');

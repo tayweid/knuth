@@ -2,7 +2,7 @@
 // primitives — the TypeScript twin of python/knuth/contract.py, for the one
 // case where no engine can write it: Knuth.app running Python in the tab,
 // where the shell reads and writes files on the page's behalf (APP.md,
-// "Built-in Python"). The ownership rule is the same as everywhere else:
+// "One Python, chosen once": Pyodide). The ownership rule is the same as everywhere else:
 // values.json wholesale, figs/<name>.svg for each named figure, and only
 // figures the manifest says we wrote are ever deleted.
 

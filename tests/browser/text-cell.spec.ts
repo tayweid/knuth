@@ -1,7 +1,7 @@
 import { expect, test } from '@playwright/test';
 
 // A trimmed mock of app.spec.ts's engine socket: these tests only need the
-// app to reach "kernel" status, never to run a cell or fetch a figure.
+// app to reach a ready status pill, never to run a cell or fetch a figure.
 test.beforeEach(async ({ page }) => {
   await page.addInitScript(() => {
     class MockWebSocket extends EventTarget {
@@ -80,7 +80,7 @@ y = 2
 test('a text cell is editable straight away: no rendered/edit split', async ({ page }) => {
   await seed(page, DOC_TEXT);
   await page.goto('/');
-  await expect(page.locator('#kernel-status')).toHaveText('kernel');
+  await expect(page.locator('#kernel-status')).toHaveText('Python');
 
   const prose = page.locator('.cell.kind-text .ProseMirror');
   await expect(prose).toBeVisible();
@@ -100,7 +100,7 @@ test('a text cell is editable straight away: no rendered/edit split', async ({ p
 test('an empty text cell shows its placeholder, not an overlay', async ({ page }) => {
   await seed(page, EMPTY_TEXT_DOC);
   await page.goto('/');
-  await expect(page.locator('#kernel-status')).toHaveText('kernel');
+  await expect(page.locator('#kernel-status')).toHaveText('Python');
 
   const prose = page.locator('.cell.kind-text .ProseMirror');
   await expect(prose).toBeVisible();
@@ -110,7 +110,7 @@ test('an empty text cell shows its placeholder, not an overlay', async ({ page }
 test('typing "# " renders a live heading', async ({ page }) => {
   await seed(page, EMPTY_TEXT_DOC);
   await page.goto('/');
-  await expect(page.locator('#kernel-status')).toHaveText('kernel');
+  await expect(page.locator('#kernel-status')).toHaveText('Python');
 
   const prose = page.locator('.cell.kind-text .ProseMirror');
   await prose.click();
@@ -121,7 +121,7 @@ test('typing "# " renders a live heading', async ({ page }) => {
 test('typing "**bold**" renders live strong', async ({ page }) => {
   await seed(page, EMPTY_TEXT_DOC);
   await page.goto('/');
-  await expect(page.locator('#kernel-status')).toHaveText('kernel');
+  await expect(page.locator('#kernel-status')).toHaveText('Python');
 
   const prose = page.locator('.cell.kind-text .ProseMirror');
   await prose.click();
@@ -132,7 +132,7 @@ test('typing "**bold**" renders live strong', async ({ page }) => {
 test('inline math renders as a katex atom; clicking it opens the popover with the source', async ({ page }) => {
   await seed(page, DOC_TEXT);
   await page.goto('/');
-  await expect(page.locator('#kernel-status')).toHaveText('kernel');
+  await expect(page.locator('#kernel-status')).toHaveText('Python');
 
   const atom = page.locator('.cell.kind-text .ProseMirror .math-inline');
   await expect(atom.locator('.katex')).toBeVisible();
@@ -146,7 +146,7 @@ test('inline math renders as a katex atom; clicking it opens the popover with th
 test('a single click into prose places a cursor', async ({ page }) => {
   await seed(page, DOC_TEXT);
   await page.goto('/');
-  await expect(page.locator('#kernel-status')).toHaveText('kernel');
+  await expect(page.locator('#kernel-status')).toHaveText('Python');
 
   const prose = page.locator('.cell.kind-text .ProseMirror');
   await prose.locator('h1').click();
@@ -157,7 +157,7 @@ test('a single click into prose places a cursor', async ({ page }) => {
 test('ArrowDown from a code cell focuses the text cell below; ArrowUp returns', async ({ page }) => {
   await seed(page, DOC_TEXT);
   await page.goto('/');
-  await expect(page.locator('#kernel-status')).toHaveText('kernel');
+  await expect(page.locator('#kernel-status')).toHaveText('Python');
 
   const code = page.locator('.cell.kind-program .cm-content').first();
   const prose = page.locator('.cell.kind-text .ProseMirror');
@@ -175,7 +175,7 @@ test('ArrowDown from a code cell focuses the text cell below; ArrowUp returns', 
 test('an edit lands in the session stash as "# "-prefixed markdown', async ({ page }) => {
   await seed(page, DOC_TEXT);
   await page.goto('/');
-  await expect(page.locator('#kernel-status')).toHaveText('kernel');
+  await expect(page.locator('#kernel-status')).toHaveText('Python');
 
   const prose = page.locator('.cell.kind-text .ProseMirror');
   await prose.locator('text=math.').click();
@@ -198,7 +198,7 @@ test('Cmd/Ctrl-click a link opens it in a new tab', async ({ page, context }) =>
     '# %%\nx = 1\n\n# %% [markdown]\n# [example](https://example.org)\n\n# %%\ny = 2\n',
   );
   await page.goto('/');
-  await expect(page.locator('#kernel-status')).toHaveText('kernel');
+  await expect(page.locator('#kernel-status')).toHaveText('Python');
 
   const link = page.locator('.cell.kind-text .ProseMirror a');
   await expect(link).toHaveText('example');
@@ -214,7 +214,7 @@ test('Cmd/Ctrl-click a link opens it in a new tab', async ({ page, context }) =>
 test('source view shows no ProseMirror text cell', async ({ page }) => {
   await seed(page, DOC_TEXT);
   await page.goto('/');
-  await expect(page.locator('#kernel-status')).toHaveText('kernel');
+  await expect(page.locator('#kernel-status')).toHaveText('Python');
   await expect(page.locator('.cell.kind-text .ProseMirror')).toBeVisible();
 
   // Source view is one raw editor over the whole file — the cell-view-only

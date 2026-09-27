@@ -6,7 +6,7 @@
 // - Full Python: the app downloads uv, uv installs its own Python, and
 //   the engine (the knuth package, carried in this bundle) runs on it.
 //   Every document gets its own environment from its PEP 723 header.
-// - Built-in Python: Pyodide runs the cells inside the window. Nothing is
+// - On the web: Pyodide runs the cells inside the window. Nothing is
 //   installed; the shell serves the page and does the file I/O itself.
 //
 // Neither ships in the download, which is why the download is small. The
@@ -809,7 +809,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         mode = chosen
         writePreference("python", chosen.rawValue)
-        log("running the \(chosen == .uv ? "full Python (uv), engine on port \(engine.port)" : "built-in Python (Pyodide)")")
+        log("running the \(chosen == .uv ? "full Python (uv), engine on port \(engine.port)" : "Python on the web (Pyodide)")")
         var waiting = pending
         pending = []
         if let window = window {

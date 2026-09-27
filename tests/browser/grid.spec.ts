@@ -1,7 +1,7 @@
 import { expect, test } from '@playwright/test';
 
 // A trimmed mock of app.spec.ts's engine socket: these tests only need the
-// app to reach "kernel" status, never to run a cell.
+// app to reach a ready status pill, never to run a cell.
 test.beforeEach(async ({ page }) => {
   await page.addInitScript(() => {
     class MockWebSocket extends EventTarget {
@@ -139,7 +139,7 @@ const FUSSY = '\uFEFFname,note\r\n"Lovelace, Ada","said ""hi"""\r\ngrace,x\r\n';
 test('a .csv opens as a grid of its cells', async ({ page }) => {
   await seed(page, 'people.csv', CSV);
   await page.goto('/');
-  await expect(page.locator('#kernel-status')).toHaveText('kernel');
+  await expect(page.locator('#kernel-status')).toHaveText('Python');
 
   const grid = page.locator('table.grid');
   await expect(grid).toBeVisible();

@@ -240,9 +240,9 @@ const listeners = {
 // Which Python this is, in words, on the pill itself (APP.md): the one
 // in the window, one uv installed, or — from a terminal's `knuth app` —
 // whatever Python the engine was started with.
-let pythonName = pythonInBrowser ? 'built-in Python' : 'kernel';
+let pythonName = pythonInBrowser ? 'Pyodide' : 'Python';
 let environmentTitle = pythonInBrowser
-  ? 'Python runs inside this window (Pyodide)'
+  ? 'Pyodide: Python running inside this window, loaded from the web'
   : 'Connected to the local Python engine';
 function paintKernelReady() {
   status.textContent = pythonName;
@@ -251,7 +251,7 @@ function paintKernelReady() {
 }
 function rememberEnvironment(event: EnvironmentEvent) {
   const fromUv = event.managed || /\/(engine\/bin|uv\/python)\//.test(event.python);
-  pythonName = fromUv ? 'uv Python' : 'Python';
+  pythonName = fromUv ? 'uv' : 'Python';
   environmentTitle = event.managed
     ? `${event.python}\nThis document's own environment, built by uv from its header`
     : `${event.python}${event.reason ? '\n' + event.reason : ''}`;

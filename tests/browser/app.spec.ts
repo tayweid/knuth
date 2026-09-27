@@ -146,7 +146,7 @@ test.beforeEach(async ({ page }) => {
 test('boots against the kernel protocol and renders a normal figure', async ({ page }) => {
   await page.goto('/');
 
-  await expect(page.locator('#kernel-status')).toHaveText('kernel');
+  await expect(page.locator('#kernel-status')).toHaveText('Python');
   const chart = page.getByText('chart', { exact: true });
   await expect(chart).toBeVisible();
   await chart.click();
@@ -171,7 +171,7 @@ test('connects with no credential, to the origin that served the page', async ({
   });
   await page.goto('/');
 
-  await expect(page.locator('#kernel-status')).toHaveText('kernel');
+  await expect(page.locator('#kernel-status')).toHaveText('Python');
   expect(attaches).toHaveLength(1);
   expect(attaches[0]).not.toHaveProperty('capability');
   expect(attaches[0]).not.toHaveProperty('pairing');
@@ -182,7 +182,7 @@ test('connects with no credential, to the origin that served the page', async ({
 
 test('nothing about pairing survives in storage', async ({ page }) => {
   await page.goto('/');
-  await expect(page.locator('#kernel-status')).toHaveText('kernel');
+  await expect(page.locator('#kernel-status')).toHaveText('Python');
 
   const keys = await page.evaluate(() => Object.keys(localStorage));
   expect(keys).not.toContain('knuth-agent-capability');
@@ -203,7 +203,7 @@ test('waits for an engine that is not running yet, then connects', async ({ page
   await page.evaluate(() => {
     (window as WindowWithProbe).__knuthRefuseConnections = false;
   });
-  await expect(page.locator('#kernel-status')).toHaveText('kernel', { timeout: 15_000 });
+  await expect(page.locator('#kernel-status')).toHaveText('Python', { timeout: 15_000 });
 });
 
 test('bounds a single extremely long output line in browser memory', async ({ page }) => {
@@ -295,7 +295,7 @@ test('a file opened from a folder Knuth already holds does not ask again', async
   // directory without a gesture — but it will confirm that a file sits inside
   // a directory already granted. That is enough to stop asking twice.
   await page.goto('/');
-  await expect(page.locator('#kernel-status')).toHaveText('kernel');
+  await expect(page.locator('#kernel-status')).toHaveText('Python');
 
   const adopted = await page.evaluate(async () => {
     const root = await navigator.storage.getDirectory();
@@ -329,7 +329,7 @@ test('a script opens as edge-to-edge source, and cell view is a deliberate toggl
     }));
   });
   await page.goto('/');
-  await expect(page.locator('#kernel-status')).toHaveText('kernel');
+  await expect(page.locator('#kernel-status')).toHaveText('Python');
 
   await expect(page.locator('body')).toHaveAttribute('data-view', 'source');
   const hidden = ['.run', '.insert-zone', '#panel', '#run-all', '#restart',
@@ -417,7 +417,7 @@ test('an untouched document names the tab after the app', async ({ page }) => {
   // The tab title is the document name, so a fresh one should say which app
   // the tab is — and say the same thing on the hosted preview and locally.
   await page.goto('/');
-  await expect(page.locator('#kernel-status')).toHaveText('kernel');
+  await expect(page.locator('#kernel-status')).toHaveText('Python');
 
   await expect(page).toHaveTitle('Knuth.py');
   await expect(page.locator('#file-name')).toHaveText('Knuth.py');
