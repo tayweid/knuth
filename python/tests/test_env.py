@@ -252,3 +252,11 @@ def test_progress_steps_are_uvs_steps_not_its_package_list():
     assert env.progress_step("Creating script environment at: /Users/x/.cache/uv/environments-v2/a-1\n") == (
         "Creating the environment"
     )
+
+
+def test_a_package_name_used_as_an_import_says_what_to_import():
+    assert env.import_name_hint("scikitlearn") == "it's scikit-learn, which is imported as sklearn"
+    assert env.import_name_hint("scikit_learn") == "it's scikit-learn, which is imported as sklearn"
+    assert env.import_name_hint("pillow") == "it's pillow, which is imported as PIL"
+    assert env.import_name_hint("sklearn") is None
+    assert env.import_name_hint("seaborn") is None

@@ -477,6 +477,18 @@ def distribution_for(module):
     return DISTRIBUTIONS.get(module, module)
 
 
+def import_name_hint(module):
+    """When `module` is a package's name spelled as an import (`import
+    scikitlearn`, `import pillow`) and that package imports as something
+    else, the words to say so; otherwise None. Nothing to download: the
+    import itself is what is wrong."""
+    squashed = re.sub(r"[-_.]", "", module).lower()
+    for name, distribution in DISTRIBUTIONS.items():
+        if re.sub(r"[-_.]", "", distribution).lower() == squashed and name != module:
+            return f"it's {distribution}, which is imported as {name}"
+    return None
+
+
 def _normalize(name):
     return name.lower().replace("_", "-").replace(".", "-")
 
@@ -522,6 +534,9 @@ def add_dependency(document, distribution, offline=False, on_progress=None):
         )
         if added.returncode != 0:
             undo()
+            if not offline and "not found in the package registry" in added.stderr:
+                # uv's resolver prose is a paragraph; the fact is one line.
+                return False, f"there's no package named {distribution} on PyPI. Check the import's spelling"
             return False, _reason(added, f"uv could not add {distribution}")
         synced = run_uv(["sync", *network, "--script", document], cwd=folder, on_progress=on_progress)
     except (OSError, subprocess.SubprocessError) as exc:

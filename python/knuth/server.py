@@ -518,6 +518,10 @@ async def serve(
         if env.find_uv() is None:
             await refuse("uv is not installed")
             return
+        hint = env.import_name_hint(module)
+        if hint:
+            await refuse(hint)
+            return
         if target is None:
             target, is_scratch = str(scratch), True
 

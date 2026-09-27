@@ -1245,10 +1245,14 @@ body[data-view='source'] .cell .run-num { visibility: visible; }
   border: 1px solid var(--glass-border);
   color: var(--glass-ink);
   padding: 0.45rem 0.95rem;
-  border-radius: 999px;
+  /* A pill on one line; a long message wraps inside the window. */
+  border-radius: 1.1rem;
   font-size: 13px;
   z-index: 20;
-  white-space: nowrap;
+  width: max-content;
+  max-width: min(40rem, calc(100vw - 2rem));
+  text-align: center;
+  overflow-wrap: anywhere;
 }
 
 #toast button {
