@@ -228,3 +228,22 @@ test('a missing import offers Install with uv, then runs the cell again', async 
   await expect.poll(async () => (await messages(page)).filter((m) => m.type === 'run').length).toBe(2);
   await expect(page.locator('.output.error')).toHaveCount(0);
 });
+
+test('an unsaved document installs without being saved first', async ({ page }) => {
+  await page.addInitScript(() => {
+    (window as Probe).__knuthMissing = true;
+  });
+  await page.goto('/');
+  await expect(page.locator('#kernel-status')).toHaveText('Python');
+  await page.getByTitle('Run all program cells from the top').click();
+  await expect(page.locator('#toast')).toContainText("seaborn isn't installed");
+  await page.locator('#toast').getByRole('button', { name: 'Install with uv' }).click();
+
+  // No save: the install carries the document's text instead.
+  await expect.poll(async () => (await messages(page)).find((m) => m.type === 'install')).toMatchObject({
+    module: 'seaborn',
+    text: expect.stringContaining('# %%'),
+  });
+  expect((await messages(page)).some((m) => m.type === 'save')).toBe(false);
+  await expect.poll(async () => (await messages(page)).filter((m) => m.type === 'run').length).toBe(2);
+});

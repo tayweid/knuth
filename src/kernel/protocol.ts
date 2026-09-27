@@ -89,9 +89,11 @@ export interface DependencyEvent {
 /** The engine rewrote the document's header on disk after an install. */
 export interface HeaderEvent {
   id: number;
-  path: string;
+  /** null: the document is unsaved, and the header is the page's. */
+  path: string | null;
   lines: string[];
-  modified: number;
+  /** null when nothing on disk changed that the page must adopt. */
+  modified: number | null;
 }
 
 export interface StatResult {
@@ -278,8 +280,10 @@ export function parseServerEvent(value: unknown): ServerEvent | null {
         typeof event.module === 'string' && typeof event.distribution === 'string' &&
         optionalString(event.version) && optionalString(event.error) ? event as ServerEvent : null;
     case 'header':
-      return isRequestId(event.id) && typeof event.path === 'string' &&
-        isStringArray(event.lines) && isRequestId(event.modified) ? event as ServerEvent : null;
+      return isRequestId(event.id) &&
+        (event.path === null || typeof event.path === 'string') &&
+        isStringArray(event.lines) &&
+        (event.modified === null || isRequestId(event.modified)) ? event as ServerEvent : null;
     case 'stat':
       return isRequestId(event.id) &&
         (typeof event.error === 'string' || (

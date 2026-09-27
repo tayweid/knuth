@@ -48,7 +48,7 @@ import uuid
 
 import websockets
 
-from . import env, files, web
+from . import env, files, state, web
 from .ipynb import notebook_to_document
 from .percent import serialize_document
 from .limits import (
@@ -257,6 +257,8 @@ def _validate_request(msg):
         module = msg.get("module")
         if not isinstance(module, str) or not module.isidentifier() or len(module) > MAX_NAME_CHARS:
             return "install module must be a module name"
+        if "text" in msg and not isinstance(msg["text"], str):
+            return "install text must be a string"
     elif kind == "restart":
         if "root" in msg and not isinstance(msg["root"], str):
             return "restart root must be a string"
@@ -412,6 +414,14 @@ async def serve(
         session = sessions.pop(sid, None)
         if session:
             await session.kernel.stop()
+            scratch_document(sid).unlink(missing_ok=True)
+
+    def scratch_document(sid):
+        """Where an unsaved document's packages are listed: uv reads a
+        header from a file, and an unsaved document has none, so its
+        session keeps a copy here (ENVIRONMENT.md). The header the page
+        sees is spliced from it, so it travels with the text on save."""
+        return state.state_dir() / "unsaved" / f"{sid}.py"
 
     async def report_start_failure(kernel, ws, event, reason):
         # One voice for both start-failure paths (first attach and restart):
@@ -423,7 +433,7 @@ async def serve(
         await ws.send(json.dumps(event))
         await ws.close(code=1011, reason=reason)
 
-    async def install_package(ws, session, msg):
+    async def install_package(ws, sid, session, msg):
         """Install a module a cell could not import, the one way Knuth
         installs anything: `uv add --script` into the document's header,
         then sync (ENVIRONMENT.md). Asked for by the page's toast, never
@@ -439,14 +449,24 @@ async def serve(
             await ws.send(json.dumps({**base, "state": "failed", "error": reason}))
             await ws.send(json.dumps({"type": "installed", "id": msg["id"], "ok": False, "error": reason}))
 
-        if not document:
-            await refuse("save the document first: its packages are listed in the file")
-            return
+        scratch = None
+        if not document or document == str(scratch_document(sid)):
+            # Unsaved: the page's own text is the document; keep a copy for uv.
+            if not isinstance(msg.get("text"), str):
+                await refuse("the document's text is needed to install into it")
+                return
+            scratch = scratch_document(sid)
+            document = str(scratch)
         if env.find_uv() is None:
             await refuse("uv is not installed")
             return
 
         def work():
+            if scratch is not None:
+                scratch.parent.mkdir(parents=True, exist_ok=True)
+                saved = files.save_document(document, msg["text"])
+                if "error" in saved:
+                    return False, saved["error"]
             text = env._read(document)
             if text is None:
                 return False, "the document could not be read"
@@ -473,10 +493,16 @@ async def serve(
             except OSError:
                 modified = None
             if modified is not None:
+                # For an unsaved document the header is the page's, not a
+                # file's: no path, and nothing on disk the page must adopt.
                 await ws.send(json.dumps({
-                    "type": "header", "id": msg["id"], "path": document,
-                    "lines": lines, "modified": modified,
+                    "type": "header", "id": msg["id"],
+                    "path": None if scratch is not None else document,
+                    "lines": lines,
+                    "modified": None if scratch is not None else modified,
                 }))
+        if scratch is not None:
+            session.document = document  # the restart the page sends builds its environment
         managed = session.environment is not None and session.environment.managed
         await ws.send(json.dumps({"type": "installed", "id": msg["id"], "ok": True, "restart": not managed}))
 
@@ -642,7 +668,7 @@ async def serve(
                 elif kind in {"open", "save", "stat", "rename"}:
                     await ws.send(json.dumps(_file_response(msg)))
                 elif kind == "install":
-                    await install_package(ws, session, msg)
+                    await install_package(ws, sid, session, msg)
                 elif kind == "restart":
                     if "root" in msg:
                         session.root = _session_root(msg["root"], root)

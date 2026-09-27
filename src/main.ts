@@ -22,6 +22,7 @@ import { LazyKernel } from './kernel/lazy-kernel.ts';
 import { writeContract, type PathIO } from './contract.ts';
 import { DocumentView, plainLanguageFor } from './document-view.ts';
 import { delimiterFor } from './format/csv.ts';
+import { serializeDocument } from './format/percent.ts';
 import { DEFAULT_DOC_NAME, FileManager, basename, dirname } from './file-manager.ts';
 import { SessionPanel } from './panel.ts';
 import { icon } from './icons.ts';
@@ -234,7 +235,11 @@ const listeners = {
     } else toast(`Could not install ${event.distribution}: ${event.error ?? 'unknown error'}`);
   },
   onHeader: (event: HeaderEvent) => {
-    if (fileManager?.path === event.path) fileManager.spliceHeader(event.lines, event.modified);
+    // A saved document's header came from its file; an unsaved one's
+    // (path null) belongs to the text on screen.
+    if (fileManager && fileManager.path === event.path) {
+      fileManager.spliceHeader(event.lines, event.modified ?? undefined);
+    }
   },
 };
 // Which Python this is, in words, on the pill itself (APP.md): the one
@@ -556,21 +561,15 @@ docView.onRunFailed = (traceback, rerun) => {
 
 async function installAndRerun(
   module: string,
-  install: (module: string) => Promise<{ ok: boolean; restart?: boolean; error?: string } | null>,
+  install: (module: string, text?: string) => Promise<{ ok: boolean; restart?: boolean; error?: string } | null>,
   rerun: () => Promise<boolean>,
 ) {
   let restarted = false;
-  if (!fileManager.path) {
-    // The packages live in the file, so the file comes first.
-    await fileManager.save();
-    if (!fileManager.path) {
-      toast('Save the document to install packages into it');
-      return;
-    }
-    restarted = true;
-    if (pendingRestart) await pendingRestart;
-  }
-  const result = await install(module);
+  if (pendingRestart) await pendingRestart;
+  // An unsaved document has no file for uv to read its header from: the
+  // engine keeps a copy of this text, and the header comes back into it.
+  const text = fileManager.path ? undefined : serializeDocument(docView.doc);
+  const result = await install(module, text);
   if (!result) {
     toast(`Could not install ${module}: the engine is not connected`);
     return;

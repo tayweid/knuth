@@ -160,3 +160,7 @@ ok({ type: 'installed', id: 6, ok: true, restart: false });
 ok({ type: 'installed', id: 6, ok: false, error: 'save the document first' });
 bad({ type: 'installed', id: 6 });
 bad({ type: 'installed', id: 6, ok: true, restart: 'yes' });
+
+// An unsaved document's header: no path, nothing on disk to adopt.
+ok({ type: 'header', id: 4, path: null, lines: ['# /// script', '# ///'], modified: null });
+bad({ type: 'header', id: 4, path: 3, lines: [], modified: null });

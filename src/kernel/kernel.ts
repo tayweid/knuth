@@ -111,7 +111,7 @@ export interface Kernel {
   persist(): Promise<PersistedResult | null>;
   /** Install a module a cell could not import, with uv, into the
    *  document's header and environment. Only an engine can. */
-  install?(module: string): Promise<InstalledResult | null>;
+  install?(module: string, text?: string): Promise<InstalledResult | null>;
   /** The folder this session's kernel runs in, as the engine reported it. */
   readonly root: string | null;
   close(): void;
@@ -645,12 +645,13 @@ export class SidecarKernel implements Kernel {
     });
   }
 
-  async install(module: string): Promise<InstalledResult | null> {
+  /** `text`: the document's, when it is unsaved and has no file for uv. */
+  async install(module: string, text?: string): Promise<InstalledResult | null> {
     if (!this.connectedReady) return null;
     const id = this.nextId++;
     return new Promise((resolve) => {
       this.installedWaiters.set(id, resolve);
-      this.send({ type: 'install', id, module });
+      this.send({ type: 'install', id, module, ...(text !== undefined ? { text } : {}) });
     });
   }
 

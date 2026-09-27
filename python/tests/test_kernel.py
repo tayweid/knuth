@@ -3,6 +3,7 @@
 import asyncio
 from contextlib import asynccontextmanager, suppress
 import json
+import os
 import socket
 import subprocess
 import sys
@@ -1146,7 +1147,7 @@ def test_serve_exits_with_its_parent(tmp_path):
 
 
 async def check_install_needs_a_document(project):
-    """An unsaved document has nowhere to list a package: refused, plainly."""
+    """An unsaved document installs from its text; without it, refused."""
     port = free_port()
     server = subprocess.Popen(server_command(port, root=project), stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     try:
@@ -1158,7 +1159,7 @@ async def check_install_needs_a_document(project):
             await client.send(type="install", id=1, module="tomli_w")
             failed = await asyncio.wait_for(client.recv(), timeout=10)
             assert failed["type"] == "dependency" and failed["state"] == "failed", failed
-            assert "save the document" in failed["error"], failed
+            assert "text is needed" in failed["error"], failed
             installed = await asyncio.wait_for(client.recv(), timeout=10)
             assert installed["type"] == "installed" and installed["ok"] is False, installed
             await client.send(type="install", id=2, module="not a module")
@@ -1217,3 +1218,54 @@ async def check_install_gives_a_plain_document_a_header(project):
 @pytest.mark.skipif(not uv_with_managed_python(), reason="needs uv and a uv-managed Python")
 def test_install_gives_a_plain_document_a_header(tmp_path):
     asyncio.run(check_install_gives_a_plain_document_a_header(tmp_path.resolve()))
+
+
+async def check_install_into_an_unsaved_document(project, config):
+    """No save needed: the engine keeps a copy of the unsaved text for uv,
+    and the header comes back with no path, for the page's own text."""
+    port = free_port()
+    server = subprocess.Popen(
+        server_command(port, root=project),
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+        env={**os.environ, "KNUTH_CONFIG_DIR": str(config)},
+    )
+    try:
+        ws = await connect_when_up(port)
+        async with closing_websocket(ws):
+            client = Client(ws)
+            await client.attach("unsaved-install")
+            await client.wait_ready()
+            await client.send(type="install", id=1, module="tomli_w", text="# %%\nimport tomli_w\n")
+            events = []
+            while True:
+                msg = await asyncio.wait_for(client.recv(), timeout=180)
+                events.append(msg)
+                if msg["type"] == "installed":
+                    break
+            header = next(e for e in events if e["type"] == "header")
+            assert header["path"] is None and header["modified"] is None, header
+            assert any(line.startswith('#     "tomli-w==') for line in header["lines"]), header
+            assert events[-1] == {"type": "installed", "id": 1, "ok": True, "restart": True}, events[-1]
+            assert not any(project.iterdir()), "nothing lands in the project folder"
+
+            await client.send(type="restart", id=2)
+            while True:
+                msg = await asyncio.wait_for(client.recv(), timeout=180)
+                if msg["type"] == "environment" and msg["state"] != "syncing":
+                    assert msg["managed"], msg
+                if msg["type"] == "ready":
+                    break
+            _, final = await client.run(3, "import tomli_w\ntomli_w.__name__")
+            assert final["type"] == "done" and final["result"] == "'tomli_w'", final
+    finally:
+        server.terminate()
+        server.wait(timeout=5)
+
+
+@pytest.mark.skipif(not uv_with_managed_python(), reason="needs uv and a uv-managed Python")
+def test_install_into_an_unsaved_document(tmp_path):
+    project = (tmp_path / "project").resolve()
+    config = (tmp_path / "config").resolve()
+    project.mkdir()
+    asyncio.run(check_install_into_an_unsaved_document(project, config))

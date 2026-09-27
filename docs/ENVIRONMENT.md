@@ -132,8 +132,13 @@ DECIDED: **Existing documents are untouched until asked.** A document with
 no header runs on the engine's own Python. The first "Install with uv"
 gives it a header (`knuth.env.with_header`), adds the package, and answers
 `installed{restart: true}`; the page then restarts the session into the
-new environment and reruns the stale cells. An unsaved document has
-nowhere to list packages, so the toast saves it first.
+new environment and reruns the stale cells. An unsaved document
+installs without being saved (Taylor, 2026-09-27): uv reads a header from
+a file, so the engine keeps a copy of the page's text for that session
+under the app's state folder (`unsaved/<session>.py`), installs against
+it, and sends the header back with no path, for the page to splice into
+its own text. Saving later carries the header into the real file, and the
+restart for the new path rebuilds the same environment from uv's cache.
 
 ## Resolution order
 
