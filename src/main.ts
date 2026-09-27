@@ -100,7 +100,11 @@ function progress(text: string) {
   clearTimeout(toastTimer);
 }
 
-function toast(text: string, action?: { label: string; run: () => void }) {
+function toast(
+  text: string,
+  action?: { label: string; run: () => void },
+  options: { stay?: boolean } = {},
+) {
   toastEl.classList.remove('working');
   toastEl.textContent = text;
   if (action) {
@@ -114,7 +118,11 @@ function toast(text: string, action?: { label: string; run: () => void }) {
   }
   toastEl.hidden = false;
   clearTimeout(toastTimer);
-  toastTimer = window.setTimeout(() => (toastEl.hidden = true), action ? 8000 : 2500);
+  // `stay`: an offer the person has to see (installing a package) waits
+  // until the next toast replaces it rather than timing out unseen.
+  if (!options.stay) {
+    toastTimer = window.setTimeout(() => (toastEl.hidden = true), action ? 8000 : 2500);
+  }
 }
 
 const status = $('kernel-status');
@@ -569,10 +577,11 @@ docView.onRunFailed = (traceback, rerun) => {
   const install = kernel.install?.bind(kernel);
   const module = MISSING.exec(traceback)?.[1];
   if (!install || !module) return;
-  toast(`${module} isn't installed`, {
-    label: 'Install with uv',
-    run: () => void installAndRerun(module, install, rerun),
-  });
+  toast(
+    `${module} isn't installed`,
+    { label: 'Install with uv', run: () => void installAndRerun(module, install, rerun) },
+    { stay: true },
+  );
 };
 
 async function installAndRerun(
