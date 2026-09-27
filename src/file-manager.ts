@@ -466,14 +466,19 @@ export class FileManager {
    *  installed for a cell, a header given to a new file): splice the new
    *  block into the text on screen, keeping any unsaved edit, and treat
    *  the write as our own so the change poll does not reload over it. */
-  spliceHeader(lines: string[], modified?: number) {
+  /** `edit`: the header came from somewhere other than this file on disk
+   *  (the session's scratch environment), so the text must carry it to
+   *  disk — an edit like any other, autosaved. Otherwise the engine wrote
+   *  the file itself and `modified` is its new mtime. */
+  spliceHeader(lines: string[], modified?: number, edit = false) {
     const doc = this.hooks.getDoc();
     const preamble = spliceHeader(doc.preamble, lines);
-    if (typeof modified === 'number') this.diskModified = modified;
+    if (!edit && typeof modified === 'number') this.diskModified = modified;
     if (preamble.join('\n') === doc.preamble.join('\n')) return;
     if (this.hooks.setPreamble) this.hooks.setPreamble(preamble);
     else this.hooks.onDiskChange?.({ ...doc, preamble });
-    this.stash();
+    if (edit) this.noteChange();
+    else this.stash();
   }
 
   /** Whether the document declares its packages (has a PEP 723 block). */

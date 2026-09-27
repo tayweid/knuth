@@ -91,7 +91,17 @@ const $ = (id: string) => document.getElementById(id)!;
 const toastEl = $('toast');
 let toastTimer = 0;
 
+/** A toast that stays until the next one replaces it, with a spinner: for
+ *  work the person is waiting on (installing a package). */
+function progress(text: string) {
+  toastEl.textContent = text;
+  toastEl.classList.add('working');
+  toastEl.hidden = false;
+  clearTimeout(toastTimer);
+}
+
 function toast(text: string, action?: { label: string; run: () => void }) {
+  toastEl.classList.remove('working');
   toastEl.textContent = text;
   if (action) {
     const btn = document.createElement('button');
@@ -201,6 +211,9 @@ const pythonInBrowser =
 // document runs on, a package being installed for a cell, the header the
 // engine rewrote. Toasts and the status pill; never receipts.
 let environmentSyncing = false;
+/** The file uv manages for this session: the document, or its scratch
+ *  stand-in when the document has no header yet. */
+let environmentDocument: string | null = null;
 let lastEnvironment: EnvironmentEvent | null = null;
 let fallbackToldFor: string | null = null;
 // A document that declares packages but runs on the system Python
@@ -220,25 +233,29 @@ const listeners = {
     environmentSyncing = event.state === 'syncing';
     if (event.state === 'syncing') {
       status.textContent = 'preparing environment…';
-      status.title = `Setting up ${basename(event.document ?? '')}'s packages (uv)`;
-      status.className = '';
+      status.title = 'uv is setting up this document’s packages';
+      status.className = 'working';
       return;
     }
     lastEnvironment = event;
+    environmentDocument = event.managed ? event.document : null;
     if (kernelState === 'ready') paintKernelReady();
     reportFallback();
   },
   onDependency: (event: DependencyEvent) => {
-    if (event.state === 'installing') toast(`Installing ${event.distribution}…`);
+    if (event.state === 'installing') progress(`Installing ${event.distribution}…`);
     else if (event.state === 'installed') {
       toast(`Installed ${event.distribution}${event.version ? ' ' + event.version : ''}`);
     } else toast(`Could not install ${event.distribution}: ${event.error ?? 'unknown error'}`);
   },
   onHeader: (event: HeaderEvent) => {
-    // A saved document's header came from its file; an unsaved one's
-    // (path null) belongs to the text on screen.
-    if (fileManager && fileManager.path === event.path) {
+    if (!fileManager) return;
+    if (event.path !== null && event.path === fileManager.path) {
+      // The engine rewrote this very file: adopt it.
       fileManager.spliceHeader(event.lines, event.modified ?? undefined);
+    } else if (event.path === null || event.path === environmentDocument) {
+      // The session's scratch environment: the text carries it to disk.
+      fileManager.spliceHeader(event.lines, undefined, true);
     }
   },
 };
@@ -547,7 +564,6 @@ const docView = new DocumentView(
 // A cell that could not import a module: offer to install it with uv,
 // the one way Knuth installs anything (ENVIRONMENT.md). Never silently,
 // and only with an engine — Pyodide installs from the web on import.
-let pendingRestart: Promise<void> | null = null;
 const MISSING = /ModuleNotFoundError: No module named '([A-Za-z_][A-Za-z0-9_]*)/;
 docView.onRunFailed = (traceback, rerun) => {
   const install = kernel.install?.bind(kernel);
@@ -564,26 +580,23 @@ async function installAndRerun(
   install: (module: string, text?: string) => Promise<{ ok: boolean; restart?: boolean; error?: string } | null>,
   rerun: () => Promise<boolean>,
 ) {
-  let restarted = false;
-  if (pendingRestart) await pendingRestart;
-  // An unsaved document has no file for uv to read its header from: the
-  // engine keeps a copy of this text, and the header comes back into it.
-  const text = fileManager.path ? undefined : serializeDocument(docView.doc);
-  const result = await install(module, text);
+  // Up at once and until it is done: the engine's events take it over.
+  progress(`Installing ${module}…`);
+  // The page's own text goes along: its header is the one to keep in step
+  // with when the session's environment is a scratch one.
+  const result = await install(module, serializeDocument(docView.doc));
   if (!result) {
     toast(`Could not install ${module}: the engine is not connected`);
     return;
   }
   if (!result.ok) return; // the dependency event already said why
   if (result.restart) {
-    // The document had no environment: the session moves into the new one.
+    // Only an engine without environments for every session asks this.
     await kernel.restart(fileManager.root ?? undefined, fileManager.path);
-    restarted = true;
-  }
-  if (restarted) {
     docView.markAllStale();
     await docView.runStale();
   } else {
+    // Same session, same variables: the cell just runs again.
     await rerun();
   }
   void panel.refresh();
@@ -630,11 +643,9 @@ fileManager = new FileManager({
     }
   },
   onPathChanged: (path) => {
-    // Same text, new path: the environment is per document (ENVIRONMENT.md).
-    if (kernel.isReady) {
-      pendingRestart = kernel.restart(fileManager.root ?? undefined, path);
-      void pendingRestart.then(() => void panel.refresh());
-    }
+    // Saved or renamed: the session follows the file without a restart —
+    // its variables stay, and relative paths resolve in the new folder.
+    kernel.moveTo?.(fileManager.root, path);
   },
   onState: repaintName,
   message: toast,

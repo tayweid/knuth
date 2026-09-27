@@ -323,6 +323,48 @@ body:not([data-plain='true']):has(#panel:not([hidden])) #toolbar {
 }
 
 #kernel-status.ok::before { content: '● '; color: #6ea576; }
+/* Work the person is waiting on: a spinner on the pill (uv setting up an
+   environment) and on the toast (a package installing). */
+#kernel-status.working::before,
+#toast.working::before {
+  content: '';
+  display: inline-block;
+  width: 9px;
+  height: 9px;
+  margin-right: 7px;
+  vertical-align: -1px;
+  border: 1.6px solid rgba(240, 238, 233, 0.3);
+  border-top-color: rgba(240, 238, 233, 0.95);
+  border-radius: 50%;
+  animation: knuth-turn 0.8s linear infinite;
+}
+@keyframes knuth-turn { to { transform: rotate(360deg); } }
+
+/* The package header, folded to a line (DocumentView.foldPackages). */
+.packages-summary {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  width: 100%;
+  margin: 0 0 6px;
+  padding: 6px 12px;
+  color: var(--glass-ink-soft);
+  background: transparent;
+  border: 1px dashed rgba(255, 255, 255, 0.12);
+  border-radius: 10px;
+  font: 12px/1.4 var(--sans);
+  text-align: left;
+  cursor: pointer;
+}
+.packages-summary[hidden] { display: none; }
+.packages-summary:hover { color: var(--glass-ink); border-color: rgba(255, 255, 255, 0.24); }
+.packages-summary .chevron { width: 10px; }
+.packages-summary .label { font-weight: 500; }
+.packages-summary .list { font-family: var(--mono); font-size: 11.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.packages-folded > .cell { display: none; }
+@media (prefers-reduced-motion: reduce) {
+  #kernel-status.working::before, #toast.working::before { animation: none; }
+}
 #kernel-status.bad::before { content: '● '; color: #cd6452; }
 
 #install-app {

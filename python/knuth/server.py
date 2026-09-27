@@ -170,9 +170,13 @@ class KernelSession:
         # folder when the page has a path, else the engine's root.
         self.root = root
         # The open document, and the environment its kernel runs in: the
-        # document's own when it has a header, else the engine's Python.
+        # document's own when it has a header, else the engine's Python —
+        # or, from Knuth.app, a scratch one of the session's own.
         self.document = document
         self.environment = environment
+        # The file uv manages for this session's environment: the document
+        # itself, or its scratch stand-in (see environment_document).
+        self.env_document = document
         self.ws = None
         self.pump_task = None
         self.reap_task = None
@@ -236,9 +240,10 @@ def _validate_request(msg):
         "stat",
         "rename",
         "install",
+        "chdir",
     }:
         return "unknown request type"
-    if kind != "interrupt":
+    if kind not in {"interrupt", "chdir"}:
         request_id = msg.get("id")
         if type(request_id) is not int or not 0 <= request_id <= MAX_REQUEST_ID:
             return f"{kind} id must be a non-negative safe integer"
@@ -253,6 +258,10 @@ def _validate_request(msg):
     elif kind == "convert":
         if not isinstance(msg.get("text"), str):
             return "convert text must be a string"
+    elif kind == "chdir":
+        path = msg.get("path")
+        if not isinstance(path, str) or not path or len(path) > MAX_PATH_CHARS:
+            return f"chdir path must be a string of at most {MAX_PATH_CHARS} characters"
     elif kind == "install":
         module = msg.get("module")
         if not isinstance(module, str) or not module.isidentifier() or len(module) > MAX_NAME_CHARS:
@@ -416,6 +425,28 @@ async def serve(
             await session.kernel.stop()
             scratch_document(sid).unlink(missing_ok=True)
 
+    def environment_document(sid, document, fresh):
+        """The file uv builds this session's environment from. A document
+        with a header is its own. Otherwise every session still gets an
+        environment (KNUTH_ENVIRONMENTS=off is for tests only): a scratch
+        file with a fresh header, so that installing a package later lands
+        in the environment the kernel is already running in — no restart,
+        and the session keeps its variables (Taylor, 2026-09-27). `fresh`
+        starts the scratch header over (a different document); otherwise
+        it keeps the packages installed so far."""
+        if document:
+            text = env._read(document)
+            if text is not None and env.find_header(text) is not None:
+                return document
+        if os.environ.get("KNUTH_ENVIRONMENTS") == "off" or env.find_uv() is None:
+            return document
+        scratch = scratch_document(sid)
+        current = env._read(str(scratch)) if scratch.exists() else None
+        if fresh or current is None or env.find_header(current) is None:
+            scratch.parent.mkdir(parents=True, exist_ok=True)
+            files.save_document(str(scratch), "\n".join(env.new_header()) + "\n")
+        return str(scratch)
+
     def scratch_document(sid):
         """Where an unsaved document's packages are listed: uv reads a
         header from a file, and an unsaved document has none, so its
@@ -435,76 +466,78 @@ async def serve(
 
     async def install_package(ws, sid, session, msg):
         """Install a module a cell could not import, the one way Knuth
-        installs anything: `uv add --script` into the document's header,
-        then sync (ENVIRONMENT.md). Asked for by the page's toast, never
-        done silently. A document with no header gets one first; the page
-        then restarts the session into the environment (`restart: true`).
+        installs anything: `uv add --script` into the header of the file
+        this session's environment is built from, then sync (ENVIRONMENT.md).
+        Asked for by the page's toast, never done silently. When that file
+        is the session's environment, the running kernel sees the package
+        at its next run — no restart. The header comes back as a `header`
+        event naming that file, for the page to splice into its text.
         """
         module = msg["module"]
         distribution = env.distribution_for(module)
         base = {"type": "dependency", "id": msg["id"], "module": module, "distribution": distribution}
-        document = session.document
+        target = session.env_document
+        scratch = scratch_document(sid)
+        is_scratch = target is not None and target == str(scratch)
 
         async def refuse(reason):
             await ws.send(json.dumps({**base, "state": "failed", "error": reason}))
             await ws.send(json.dumps({"type": "installed", "id": msg["id"], "ok": False, "error": reason}))
 
-        scratch = None
-        if not document or document == str(scratch_document(sid)):
-            # Unsaved: the page's own text is the document; keep a copy for uv.
-            if not isinstance(msg.get("text"), str):
-                await refuse("the document's text is needed to install into it")
-                return
-            scratch = scratch_document(sid)
-            document = str(scratch)
         if env.find_uv() is None:
             await refuse("uv is not installed")
             return
+        if target is None:
+            # A terminal engine's unsaved document: no environment to add to.
+            if not isinstance(msg.get("text"), str):
+                await refuse("the document's text is needed to install into it")
+                return
+            target, is_scratch = str(scratch), True
 
         def work():
-            if scratch is not None:
-                scratch.parent.mkdir(parents=True, exist_ok=True)
-                saved = files.save_document(document, msg["text"])
-                if "error" in saved:
-                    return False, saved["error"]
-            text = env._read(document)
+            if is_scratch and isinstance(msg.get("text"), str):
+                # The page's header is the one to keep in step with.
+                if env.find_header(msg["text"]) is not None or not scratch.exists():
+                    scratch.parent.mkdir(parents=True, exist_ok=True)
+                    saved = files.save_document(target, msg["text"])
+                    if "error" in saved:
+                        return False, saved["error"]
+            text = env._read(target)
             if text is None:
                 return False, "the document could not be read"
             if env.find_header(text) is None:
                 header_text, _ = env.with_header(text)
-                saved = files.save_document(document, header_text)
+                saved = files.save_document(target, header_text)
                 if "error" in saved:
                     return False, saved["error"]
-            return env.add_dependency(document, distribution)
+            return env.add_dependency(target, distribution)
 
         await ws.send(json.dumps({**base, "state": "installing"}))
         ok, reason = await asyncio.to_thread(work)
         if not ok:
             await refuse(reason or f"uv could not install {distribution}")
             return
-        text = env._read(document) or ""
+        text = env._read(target) or ""
         await ws.send(json.dumps({
             **base, "state": "installed", "version": env.pinned_version(text, distribution),
         }))
         lines = env.header_lines(text)
         if lines is not None:
             try:
-                modified = int(os.stat(document).st_mtime * 1000)
+                modified = int(os.stat(target).st_mtime * 1000)
             except OSError:
                 modified = None
-            if modified is not None:
-                # For an unsaved document the header is the page's, not a
-                # file's: no path, and nothing on disk the page must adopt.
-                await ws.send(json.dumps({
-                    "type": "header", "id": msg["id"],
-                    "path": None if scratch is not None else document,
-                    "lines": lines,
-                    "modified": None if scratch is not None else modified,
-                }))
-        if scratch is not None:
-            session.document = document  # the restart the page sends builds its environment
-        managed = session.environment is not None and session.environment.managed
-        await ws.send(json.dumps({"type": "installed", "id": msg["id"], "ok": True, "restart": not managed}))
+            await ws.send(json.dumps({
+                "type": "header", "id": msg["id"], "path": target,
+                "lines": lines, "modified": modified,
+            }))
+        in_place = (
+            session.environment is not None and session.environment.managed
+            and session.env_document == target
+        )
+        if not in_place:
+            session.env_document = target  # the restart the page sends builds it
+        await ws.send(json.dumps({"type": "installed", "id": msg["id"], "ok": True, "restart": not in_place}))
 
     async def prepare_environment(ws, document):
         """The document's environment, built or refreshed (ENVIRONMENT.md).
@@ -615,9 +648,10 @@ async def serve(
             starting_sids.add(sid)
             kernel = KernelProcess()
             environment = None
+            env_document = environment_document(sid, session_document, fresh=True)
             try:
                 async with start_slots:
-                    environment = await prepare_environment(ws, session_document)
+                    environment = await prepare_environment(ws, env_document)
                     await kernel.start(cwd=session_root, environment=environment)
             except asyncio.CancelledError:
                 await kernel.stop()
@@ -631,6 +665,7 @@ async def serve(
             finally:
                 starting_sids.discard(sid)
             session = KernelSession(kernel, session_root, session_document, environment)
+            session.env_document = env_document
             sessions[sid] = session
 
         session.ws = ws
@@ -669,11 +704,18 @@ async def serve(
                     await ws.send(json.dumps(_file_response(msg)))
                 elif kind == "install":
                     await install_package(ws, sid, session, msg)
+                elif kind == "chdir":
+                    session.root = _session_root(msg["path"], session.root)
+                    await session.kernel.send(msg)
                 elif kind == "restart":
                     if "root" in msg:
                         session.root = _session_root(msg["root"], root)
+                    fresh = False
                     if "document" in msg:
-                        session.document = _session_document(msg["document"])
+                        document = _session_document(msg["document"])
+                        fresh = document != session.document
+                        session.document = document
+                    session.env_document = environment_document(sid, session.document, fresh)
                     session.pump_task.cancel()
                     await asyncio.gather(session.pump_task, return_exceptions=True)
                     await session.kernel.stop()
@@ -681,7 +723,7 @@ async def serve(
                     try:
                         async with start_slots:
                             session.environment = await prepare_environment(
-                                ws, session.document
+                                ws, session.env_document
                             )
                             await session.kernel.start(
                                 cwd=session.root, environment=session.environment

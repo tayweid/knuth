@@ -129,6 +129,13 @@ def handle_request(msg, session, state, emit):
     should.
     """
     kind = msg.get("type")
+    if kind == "chdir":
+        # The document was saved into a folder: relative paths follow it,
+        # without a restart. No answer; a bad path leaves things as they were.
+        path = msg.get("path")
+        if isinstance(path, str) and os.path.isdir(path):
+            os.chdir(path)
+        return
     if kind == "run":
         state["id"] = msg["id"]
         state["stream_bytes"] = 0
@@ -182,6 +189,10 @@ def handle_request(msg, session, state, emit):
             if truncated:
                 event["truncated"] = True
             emit(event)
+            document = os.environ.get(env.DOCUMENT_VAR)
+            if document and not msg.get("scratch"):
+                # After the answer, so the cell's result is never held up.
+                env.declare_imports(msg["code"], document, emit, msg["id"])
         else:
             traceback, truncated = _truncate_utf8(payload, MAX_TRACEBACK_BYTES)
             event = {"type": "error", "id": msg["id"], "traceback": traceback}

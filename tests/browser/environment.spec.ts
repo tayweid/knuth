@@ -11,6 +11,7 @@ type Probe = typeof window & {
   __knuthModified?: Record<string, number>;
   __knuthFallbackReason?: string;
   __knuthMissing?: boolean;
+  __knuthScratch?: string;
 };
 
 test.beforeEach(async ({ page }) => {
@@ -49,14 +50,22 @@ test.beforeEach(async ({ page }) => {
         switch (msg.type) {
           case 'attach':
             this.reply({ type: 'attached', protocol: msg.protocol, session: msg.session, resumed: false, root: msg.root ?? null });
-            this.reply({
-              type: 'environment',
-              document: msg.document ?? null,
-              state: 'fallback',
-              python: '/usr/bin/python3',
-              managed: false,
-              reason: probe.__knuthFallbackReason ?? 'no header',
-            });
+            this.reply(probe.__knuthScratch
+              ? {
+                  type: 'environment',
+                  document: probe.__knuthScratch,
+                  state: 'ready',
+                  python: '/uv/envs/s/bin/python',
+                  managed: true,
+                }
+              : {
+                  type: 'environment',
+                  document: msg.document ?? null,
+                  state: 'fallback',
+                  python: '/usr/bin/python3',
+                  managed: false,
+                  reason: probe.__knuthFallbackReason ?? 'no header',
+                });
             this.reply({ type: 'ready' });
             break;
           case 'restart':
@@ -88,6 +97,12 @@ test.beforeEach(async ({ page }) => {
                 id: msg.id,
                 traceback: "Traceback (most recent call last):\nModuleNotFoundError: No module named 'seaborn'",
               });
+              break;
+            }
+            if (probe.__knuthScratch) {
+              // A package listed after the run, in the session's scratch file.
+              this.reply({ type: 'done', id: msg.id, result: null });
+              this.reply({ type: 'header', id: msg.id, path: probe.__knuthScratch, lines: header, modified: 5000 });
               break;
             }
             // The engine installs for the cell, rewrites the header on
@@ -246,4 +261,32 @@ test('an unsaved document installs without being saved first', async ({ page }) 
   });
   expect((await messages(page)).some((m) => m.type === 'save')).toBe(false);
   await expect.poll(async () => (await messages(page)).filter((m) => m.type === 'run').length).toBe(2);
+});
+
+test('the package header folds to one line, and opens on a click', async ({ page }) => {
+  await page.goto('/?open=/q/other.py');
+  await expect(page.getByText('y = 2')).toBeVisible();
+  const summary = page.locator('.packages-summary');
+  await expect(summary).toContainText('Packages');
+  await expect(summary).toContainText('seaborn');
+  await expect(page.getByText('# dependencies = ["seaborn"]')).toBeHidden();
+  await summary.click();
+  await expect(page.getByText('# dependencies = ["seaborn"]')).toBeVisible();
+  await summary.click();
+  await expect(page.getByText('# dependencies = ["seaborn"]')).toBeHidden();
+});
+
+test('a header from the session scratch environment lands in the document as an edit', async ({ page }) => {
+  await page.addInitScript(() => {
+    (window as Probe).__knuthScratch = '/scratch/unsaved/s.py';
+  });
+  await page.goto('/?open=/p/analysis.py');
+  await expect(page.locator('#kernel-status')).toHaveText('uv');
+  await expect(page.getByText('x = 1')).toBeVisible();
+  await page.getByTitle('Run all program cells from the top').click();
+  // Folded to its summary, and marked unsaved so autosave carries it to disk.
+  await expect(page.locator('.packages-summary')).toContainText('seaborn');
+  await expect(page.locator('#file-name')).toContainText('●');
+  // No restart for any of it.
+  expect((await messages(page)).some((m) => m.type === 'restart')).toBe(false);
 });

@@ -109,6 +109,9 @@ export interface Kernel {
   renamePath(path: string, name: string): Promise<RenamedResult | null>;
   /** The kernel writes values.json and figs/ into its own folder. */
   persist(): Promise<PersistedResult | null>;
+  /** The document was saved or renamed: follow it — relative paths
+   *  resolve in its folder — without restarting the session. */
+  moveTo?(root: string | null, document: string | null): void;
   /** Install a module a cell could not import, with uv, into the
    *  document's header and environment. Only an engine can. */
   install?(module: string, text?: string): Promise<InstalledResult | null>;
@@ -643,6 +646,15 @@ export class SidecarKernel implements Kernel {
       this.renamedWaiters.set(id, resolve);
       this.send({ type: 'rename', id, path, name });
     });
+  }
+
+  moveTo(root: string | null, document: string | null): void {
+    this.wantedRoot = root;
+    this.wantedDocument = document;
+    if (root) {
+      this.root = root;
+      if (this.connectedReady) this.send({ type: 'chdir', path: root });
+    }
   }
 
   /** `text`: the document's, when it is unsaved and has no file for uv. */

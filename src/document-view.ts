@@ -53,6 +53,7 @@ import {
   outputText,
 } from './format/percent.ts';
 import type { Kernel } from './kernel/kernel.ts';
+import { findHeader, headerPackages } from './header.ts';
 import { GridView, GridHistory } from './grid.ts';
 import { icon } from './icons.ts';
 import { clearSafeSvgImages, createSafeSvgImage } from './safe-svg.ts';
@@ -502,6 +503,10 @@ export class DocumentView {
       if (editor.state.doc.toString() !== text) {
         editor.dispatch({ changes: { from: 0, to: editor.state.doc.length, insert: text } });
       }
+      if (this.preambleView) {
+        if (!this.preambleView.root.querySelector(':scope > .packages-summary')) this.foldPackages(this.preambleView);
+        else this.paintPackages(this.preambleView);
+      }
       return;
     }
     if (!lines.some((line) => line.trim() !== '')) return;
@@ -880,7 +885,51 @@ export class DocumentView {
     // No insert strip above the preamble: nothing can precede cell zero.
     if (isPreamble) root.append(row);
     else root.append(this.buildZone(v), row);
+    if (isPreamble && !this.sourceMode) this.foldPackages(v);
     return v;
+  }
+
+  /** Open or closed, the package header across re-renders of cell zero. */
+  private packagesOpen = false;
+
+  /** A preamble holding the package header folds to one line naming the
+   *  packages; a click opens the header itself (Taylor, 2026-09-27). The
+   *  header is uv's bookkeeping, there to be read now and then, not a cell
+   *  to look at every day. Source view always shows everything. */
+  private foldPackages(v: CellView) {
+    const summary = document.createElement('button');
+    summary.type = 'button';
+    summary.className = 'packages-summary';
+    summary.addEventListener('mousedown', (event) => event.preventDefault());
+    summary.addEventListener('click', () => {
+      this.packagesOpen = !this.packagesOpen;
+      this.paintPackages(v);
+    });
+    v.root.prepend(summary);
+    this.paintPackages(v);
+  }
+
+  private paintPackages(v: CellView) {
+    const summary = v.root.querySelector<HTMLButtonElement>(':scope > .packages-summary');
+    if (!summary) return;
+    const lines = this.doc.preamble;
+    const hasHeader = findHeader(lines) !== null;
+    summary.hidden = !hasHeader;
+    v.root.classList.toggle('packages-folded', hasHeader && !this.packagesOpen);
+    if (!hasHeader) return;
+    const packages = headerPackages(lines);
+    summary.textContent = '';
+    const chevron = document.createElement('span');
+    chevron.className = 'chevron';
+    chevron.textContent = this.packagesOpen ? '▾' : '▸';
+    const label = document.createElement('span');
+    label.className = 'label';
+    label.textContent = 'Packages';
+    const list = document.createElement('span');
+    list.className = 'list';
+    list.textContent = packages.length ? packages.join(' · ') : 'none yet';
+    summary.append(chevron, label, list);
+    summary.title = this.packagesOpen ? 'Hide the package header' : 'Show the package header';
   }
 
   private buildEditor(v: CellView) {

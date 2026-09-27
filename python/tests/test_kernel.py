@@ -1220,23 +1220,31 @@ def test_install_gives_a_plain_document_a_header(tmp_path):
     asyncio.run(check_install_gives_a_plain_document_a_header(tmp_path.resolve()))
 
 
+def environments_on(config):
+    """An engine as Knuth.app runs it: every session in a uv environment."""
+    environ = {**os.environ, "KNUTH_CONFIG_DIR": str(config)}
+    environ.pop("KNUTH_ENVIRONMENTS", None)
+    return environ
+
+
 async def check_install_into_an_unsaved_document(project, config):
-    """No save needed: the engine keeps a copy of the unsaved text for uv,
-    and the header comes back with no path, for the page's own text."""
+    """An unsaved window already runs in a scratch uv environment, so an
+    install lands where the kernel is: no restart, variables kept."""
     port = free_port()
     server = subprocess.Popen(
         server_command(port, root=project),
-        stdout=subprocess.DEVNULL,
-        stderr=subprocess.DEVNULL,
-        env={**os.environ, "KNUTH_CONFIG_DIR": str(config)},
+        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, env=environments_on(config),
     )
     try:
         ws = await connect_when_up(port)
         async with closing_websocket(ws):
             client = Client(ws)
             await client.attach("unsaved-install")
-            await client.wait_ready()
-            await client.send(type="install", id=1, module="tomli_w", text="# %%\nimport tomli_w\n")
+            await asyncio.wait_for(client.wait_ready(), timeout=180)
+            _, final = await client.run(1, "kept = 41 + 1")
+            assert final["type"] == "done", final
+
+            await client.send(type="install", id=2, module="tomli_w", text="# %%\nimport tomli_w\n")
             events = []
             while True:
                 msg = await asyncio.wait_for(client.recv(), timeout=180)
@@ -1244,23 +1252,59 @@ async def check_install_into_an_unsaved_document(project, config):
                 if msg["type"] == "installed":
                     break
             header = next(e for e in events if e["type"] == "header")
-            assert header["path"] is None and header["modified"] is None, header
+            assert header["path"].startswith(str(config)), header
             assert any(line.startswith('#     "tomli-w==') for line in header["lines"]), header
-            assert events[-1] == {"type": "installed", "id": 1, "ok": True, "restart": True}, events[-1]
+            assert events[-1] == {"type": "installed", "id": 2, "ok": True, "restart": False}, events[-1]
             assert not any(project.iterdir()), "nothing lands in the project folder"
 
-            await client.send(type="restart", id=2)
-            while True:
-                msg = await asyncio.wait_for(client.recv(), timeout=180)
-                if msg["type"] == "environment" and msg["state"] != "syncing":
-                    assert msg["managed"], msg
-                if msg["type"] == "ready":
-                    break
-            _, final = await client.run(3, "import tomli_w\ntomli_w.__name__")
-            assert final["type"] == "done" and final["result"] == "'tomli_w'", final
+            _, final = await client.run(3, "import tomli_w\n(tomli_w.__name__, kept)")
+            assert final["type"] == "done" and final["result"] == "('tomli_w', 42)", final
     finally:
         server.terminate()
         server.wait(timeout=5)
+
+
+async def check_imports_are_declared(project, config):
+    """A package that arrived with another is listed once a cell imports it."""
+    port = free_port()
+    document = project / "declared.py"
+    document.write_text(
+        '# /// script\n# requires-python = ">=3.11"\n# dependencies = ["python-slugify"]\n# ///\n\n# %%\n'
+    )
+    server = subprocess.Popen(
+        server_command(port, root=project),
+        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, env=environments_on(config),
+    )
+    try:
+        ws = await connect_when_up(port)
+        async with closing_websocket(ws):
+            client = Client(ws)
+            await client.send(
+                type="attach", protocol=PROTOCOL_VERSION, session="declare",
+                root=str(project), document=str(document),
+            )
+            await asyncio.wait_for(client.wait_ready(), timeout=180)
+            await client.send(type="run", id=1, code="import text_unidecode, os")
+            header = None
+            while header is None:
+                msg = await asyncio.wait_for(client.recv(), timeout=120)
+                assert msg["type"] != "error", msg
+                if msg["type"] == "header":
+                    header = msg
+            assert header["path"] == str(document), header
+            assert any(line.startswith('#     "text-unidecode==') for line in header["lines"]), header
+            assert not any('"os' in line for line in header["lines"]), "the standard library is never listed"
+            assert '"text-unidecode==' in document.read_text()
+    finally:
+        server.terminate()
+        server.wait(timeout=5)
+
+
+@pytest.mark.skipif(not uv_with_managed_python(), reason="needs uv and a uv-managed Python")
+def test_imports_are_declared(tmp_path):
+    project = (tmp_path / "project").resolve()
+    project.mkdir()
+    asyncio.run(check_imports_are_declared(project, (tmp_path / "config").resolve()))
 
 
 @pytest.mark.skipif(not uv_with_managed_python(), reason="needs uv and a uv-managed Python")

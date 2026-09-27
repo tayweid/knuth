@@ -20,4 +20,12 @@ assert.deepEqual(spliceHeader([], block), [...block, '']);
 // Idempotent: splicing the same block twice changes nothing more.
 const once = spliceHeader(['# note'], block);
 assert.deepEqual(spliceHeader(once, block), once);
+import { headerPackages } from './header.ts';
+assert.deepEqual(
+  headerPackages(['# /// script', '# dependencies = [', '#     "seaborn==0.13.2",', '#     "pandas[perf]==2.3.1",', '#     "numpy>=2",', '# ]', '# ///']),
+  ['seaborn 0.13.2', 'pandas 2.3.1', 'numpy>=2'],
+);
+assert.deepEqual(headerPackages(['# /// script', '# dependencies = []', '# ///']), []);
+assert.deepEqual(headerPackages(['# /// script', '# dependencies = ["a==1", "b"]', '# ///']), ['a 1', 'b']);
+assert.deepEqual(headerPackages(['x = 1']), []);
 console.log('header.test: all assertions passed');

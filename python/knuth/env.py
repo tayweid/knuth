@@ -468,3 +468,67 @@ def add_dependency(document, distribution):
     return True, None
 
 
+def declare_imports(code, document, emit, request_id):
+    """After a clean run: every package the cell imports that is installed
+    but not listed in the header gets listed, pinned to the version already
+    installed. `import pandas` arrives with seaborn and never fails, so
+    without this it would never reach the header, and the document would
+    depend on it silently (Taylor, 2026-09-27). No download and no install:
+    `uv add --offline` only writes what is already there. Emits `header`
+    when the header changed."""
+    import importlib.metadata as metadata
+
+    text = _read(document)
+    header = parse_header(text) if text is not None else None
+    if not header or header.get("error"):
+        return False
+    listed = {_normalize(_requirement_parts(spec)[0]) for spec in header["dependencies"]}
+    try:
+        tree = ast.parse(code)
+    except SyntaxError:
+        return False
+    stdlib = getattr(sys, "stdlib_module_names", frozenset()) | frozenset(sys.builtin_module_names)
+    provided = metadata.packages_distributions()
+    pins = []
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            names = [alias.name for alias in node.names]
+        elif isinstance(node, ast.ImportFrom) and node.level == 0 and node.module:
+            names = [node.module]
+        else:
+            continue
+        for dotted in names:
+            top = dotted.split(".")[0]
+            if not top or top in stdlib or top == "knuth":
+                continue
+            for distribution in provided.get(top, [])[:1]:  # a local module has none
+                key = _normalize(distribution)
+                if key in listed:
+                    continue
+                try:
+                    version = metadata.version(distribution)
+                except metadata.PackageNotFoundError:
+                    continue
+                listed.add(key)
+                pins.append(f"{key}=={version}")
+    if not pins:
+        return False
+    try:
+        added = run_uv(
+            ["add", "--script", document, "--bounds", "exact", "--offline", *pins],
+            cwd=str(Path(document).parent),
+        )
+    except (OSError, subprocess.SubprocessError):
+        return False
+    if added.returncode != 0:
+        return False
+    text = _read(document)
+    lines = header_lines(text) if text is not None else None
+    if lines is None:
+        return False
+    try:
+        modified = int(os.stat(document).st_mtime * 1000)
+    except OSError:
+        modified = int(time.time() * 1000)
+    emit({"type": "header", "id": request_id, "path": document, "lines": lines, "modified": modified})
+    return True

@@ -17,6 +17,9 @@ def pytest_configure():
     os.environ["MPLBACKEND"] = "Agg"
     os.environ["MPLCONFIGDIR"] = str(_MPL_CONFIG)
     os.environ["KNUTH_CONFIG_DIR"] = str(_KNUTH_CONFIG)
+    # Sessions without a header get a scratch uv environment by default;
+    # the tests that are about that turn it back on for their engine.
+    os.environ["KNUTH_ENVIRONMENTS"] = "off"
 
 
 def pytest_unconfigure():

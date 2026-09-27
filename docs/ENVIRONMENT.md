@@ -148,6 +148,34 @@ Running every document on Knuth's own Python instead was built and
 reverted the same day: it saved package downloads when a newer Python
 arrived, at the cost of a second rule beside uv's.
 
+DECIDED: **Every session runs in a uv environment from the start, and
+nothing restarts it but a restart** (Taylor, 2026-09-27). Installing used
+to restart the session whenever the document had no environment yet (an
+unsaved document, a file without a header), and saving restarted it too;
+pip in a notebook does neither. Now a document with a header gets its own
+environment, and any other session gets a scratch one under the state
+folder (`unsaved/<session>.py`, a fresh header), so "Install with uv"
+always lands in the environment the kernel is already running in: the
+cell runs again with every variable intact. The header comes back as a
+`header` event naming the scratch file; the page splices it into the
+document as an edit and autosave carries it to the real file. Saving or
+renaming sends `chdir` so relative paths follow the file, without a
+restart; the session moves to the document's own environment at the next
+restart, rebuilt from uv's cache. `KNUTH_ENVIRONMENTS=off` turns scratch
+environments off for the tests that predate them.
+
+DECIDED: **What a cell imports is listed, right after it runs.** A package
+that arrives with another (pandas with seaborn) imports without failing,
+so no toast ever offered it and the header never named it: the document
+depended on it silently. After a clean run the kernel lists every
+imported, installed, non-standard-library package the header lacks,
+pinned to the version installed, with `uv add --offline` — bookkeeping,
+no download (`knuth.env.declare_imports`).
+
+DECIDED: **The header folds to one line** in cell view, "Packages:
+seaborn 0.13.2 · pandas 2.3.1", and opens on a click. Source view shows
+it as text, as always.
+
 ## Resolution order
 
 For a document the engine is asked to run:
