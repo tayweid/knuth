@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "knuth"
-version = "2.0.0.dev0"
+version = "2.0.0"
 description = "Knuth kernel sidecar: the live-session server and reproducibility runner of the Claerbout suite"
 readme = "README.md"
 license = "MIT"
