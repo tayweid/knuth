@@ -59,18 +59,20 @@ curl -fsSL -o /tmp/Knuth.app.zip https://github.com/tayweid/knuth/raw/main/app/K
 `app/build.sh` rebuilds the app and that zip from a checkout, with the
 command-line tools alone and no Xcode project.
 
-Open it. The first launch
-finds your Python (Anaconda, Homebrew, python.org, in that order), installs
-the engine into it if it is missing, and starts it; later launches just
-open. With no Python on the Mac, it offers its built-in one instead: cells
-then run inside the window (the same Pyodide backend as the hosted
-preview). Packages Pyodide ships load on import, pure-Python packages from
-PyPI install on import, and packages with compiled code outside that set
-do not work; large data has a lower ceiling. The Knuth menu switches between the two at any time. Double-clicking a `.py` (or choosing Knuth in Open With) opens it in
-its own folder: the kernel starts there, and `values.json` and `figs/` land
-there. The app starts the engine as its own child and stops it on quit; an
-engine already running, from a terminal or the login agent, is reused and
-left alone.
+Open it. The first launch asks one question, in the window: install
+Python? Knuth runs Python through [uv](https://docs.astral.sh/uv/), and
+only uv — the package manager built for reproducible work. Say yes and
+the app downloads uv, uv installs a Python that belongs to Knuth (about
+60 MB, once), and nothing already on the Mac is used or changed. Say not
+now and Python runs inside the window through Pyodide, loaded from the
+web, with the common packages and no reproducibility. The status pill
+always says which one is running, and Knuth menu → Choose Python… asks
+again.
+
+Double-clicking a `.py` (or choosing Knuth in Open With) opens it in its
+own folder: the kernel starts there, and `values.json` and `figs/` land
+there. The app starts its engine when it opens and stops it when it
+quits.
 
 ### The terminal (every platform)
 

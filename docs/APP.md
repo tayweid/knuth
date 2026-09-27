@@ -116,13 +116,72 @@ DECIDED: **Windows and Linux keep `knuth app`.** The shell is a macOS
 convenience over that command, not a new install path. A `.bat`/`.desktop`
 equivalent is a later, separate piece.
 
+## One Python, chosen once (2026-09-27)
+
+The decisions above about finding a Python on the Mac, installing the
+engine into it, and reusing an engine already on port 5197 are superseded
+by this section. They made it unclear which Python was running: the app
+could be talking to miniconda, to an engine started that morning, or to
+the window. Taylor's call, after using it:
+
+DECIDED: **The app never uses a Python that is already on the Mac.** Not
+Anaconda, not Homebrew, not python.org. There is no discovery, no
+"install into your Python", no interpreter chooser.
+
+DECIDED: **Knuth runs Python through uv, and only uv.** It is the package
+manager built for reproducible work (ENVIRONMENT.md), and the only one
+Knuth uses. The alternative is not another package manager; it is running
+on the web.
+
+DECIDED: **The first launch asks one question, in the window: install
+Python?** The bundled `setup.html` explains uv in two sentences and
+offers two answers. "Install Python with uv": the app downloads uv's
+release for this processor from Astral's GitHub into its own folder, uv
+installs a Python it manages itself (`UV_PYTHON_PREFERENCE=only-managed`),
+and the engine starts on it; each step is reported on that same screen.
+"Not now — run on the web": Python runs in the window through Pyodide,
+loaded from the web each time; nothing is ever installed for it. Knuth
+menu → Choose Python… asks again.
+
+DECIDED: **Neither ships in the download.** The zip carries the window
+and the knuth package (2.3 MB). uv is about 18 MB and its Python about
+40 MB, fetched once when chosen.
+
+DECIDED: **The engine is the one in the bundle.** `Contents/Resources/
+python/knuth` is the package, the page inside it; the engine runs it
+with `PYTHONPATH`, on the Python uv installed, with `websockets` as the
+only thing installed beside it. The app and its engine are therefore
+always the same version, and a stale engine from a login agent or a
+pip install cannot be what the window is talking to.
+
+DECIDED: **The app's engine has its own port, 5187** (the next free one
+if taken), apart from a terminal's `knuth app` on 5197. The app never
+adopts an engine it did not start.
+
+DECIDED: **The status pill names the Python**: "uv Python", "built-in
+Python", or plain "Python" for an engine someone started from a terminal
+on a Python of their own. The path and the reason are in its tooltip.
+
+Everything the app installs lives in `~/Library/Application Support/
+Knuth` (`bin/uv`, `engine/`, `preferences.json`); removing that folder
+returns the app to its first launch. uv's own Pythons and cache are in
+uv's usual places and shared with any other use of uv.
+
+Verified 2026-09-27 on a clean config folder: chose uv on the setup
+screen, uv unpacked, Python 3.13.15 installed by uv, engine up on the
+bundled package, a cell reporting that Python rather than the Mac's
+miniconda 3.13.9, the pill reading "uv Python", and the engine gone when
+the app was killed. The uv download itself was exercised against a local
+archive; the real address is the release asset for the processor.
+
 ## What the shell does, exactly
 
-1. On launch, and on every `application(_:open:)`, ensure an engine: probe
-   the port; if free, find Python (above), start `python -m knuth serve
-   --port 5197` as a child, wait for `GET /` to answer.
-2. Open a window per document at `http://127.0.0.1:5197/?open=<absolute
-   path>`. With no file (Dock click, ⌘N), open `/` — the page restores its
+1. On launch, start what was chosen: the engine on uv's Python, from the
+   bundle, as a child; or nothing, for the built-in Python. With no
+   choice yet, show the setup screen and hold any documents until it is
+   answered.
+2. Open a window per document at `http://127.0.0.1:5187/?open=<absolute
+   path>` (or `knuth://app/?open=…` for the built-in Python). With no file (Dock click, ⌘N), open `/` — the page restores its
    last document, or shows a new one.
 3. Bridge two dialogs. The page posts `{type: "open"}` or `{type: "saveAs",
    name}` to the `knuth` message handler; the shell shows NSOpenPanel or

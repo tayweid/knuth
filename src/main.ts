@@ -237,16 +237,24 @@ const listeners = {
     if (fileManager?.path === event.path) fileManager.spliceHeader(event.lines, event.modified);
   },
 };
-let environmentTitle = 'Connected to the local Python engine';
+// Which Python this is, in words, on the pill itself (APP.md): the one
+// in the window, one uv installed, or — from a terminal's `knuth app` —
+// whatever Python the engine was started with.
+let pythonName = pythonInBrowser ? 'built-in Python' : 'kernel';
+let environmentTitle = pythonInBrowser
+  ? 'Python runs inside this window (Pyodide)'
+  : 'Connected to the local Python engine';
 function paintKernelReady() {
-  status.textContent = 'kernel';
+  status.textContent = pythonName;
   status.title = environmentTitle;
   status.className = 'ok';
 }
 function rememberEnvironment(event: EnvironmentEvent) {
+  const fromUv = event.managed || /\/(engine\/bin|uv\/python)\//.test(event.python);
+  pythonName = fromUv ? 'uv Python' : 'Python';
   environmentTitle = event.managed
-    ? `Python: ${event.python} (this document's environment)`
-    : `Python: ${event.python}${event.reason ? ' — ' + event.reason : ''}`;
+    ? `${event.python}\nThis document's own environment, built by uv from its header`
+    : `${event.python}${event.reason ? '\n' + event.reason : ''}`;
 }
 
 type OnState = (state: Parameters<typeof onboarding.setState>[0], resumed?: boolean) => void;

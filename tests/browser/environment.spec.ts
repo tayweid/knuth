@@ -128,7 +128,8 @@ async function messages(page: import('@playwright/test').Page) {
 
 test('a launched document attaches with its folder and its path', async ({ page }) => {
   await page.goto('/?open=/p/analysis.py');
-  await expect(page.locator('#kernel-status')).toHaveText('kernel');
+  // The pill names the Python: the fake engine reports a plain one.
+  await expect(page.locator('#kernel-status')).toHaveText('Python');
   await expect(page).toHaveTitle('analysis.py');
   await expect(page.getByText('x = 1')).toBeVisible();
 

@@ -56,13 +56,15 @@ if [ -n "$version" ]; then
 fi
 printf 'APPL????' > "$out/Contents/PkgInfo"
 
-# The page, as the engine serves it, for the built-in Python mode: the
-# shell serves this folder under knuth://app/ when there is no engine.
+# The knuth package rides in the bundle: the engine's code and, inside
+# it, the staged page. No Python does — the first launch installs one
+# (uv) or runs cells in the window (Pyodide), which is why this is small.
 if [ ! -f ../python/knuth/web/index.html ]; then
     echo "no staged page in python/knuth/web — run: npm run build:engine" >&2
     exit 1
 fi
-cp -R ../python/knuth/web "$out/Contents/Resources/web"
+mkdir -p "$out/Contents/Resources/python"
+rsync -a --exclude '__pycache__' --exclude '*.pyc' ../python/knuth "$out/Contents/Resources/python/"
 
 # The app icon, from the same PNG the page uses for its own icon.
 iconset="$(mktemp -d)/AppIcon.iconset"

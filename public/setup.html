@@ -1,0 +1,46 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="referrer" content="no-referrer" />
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self'; base-uri 'none'; form-action 'none'"
+    />
+    <link rel="stylesheet" href="./setup.css" />
+    <title>Knuth</title>
+  </head>
+  <body>
+    <main>
+      <img src="./icons/knuth-192.png" alt="" width="56" height="56" />
+      <h1>Install Python?</h1>
+      <p class="lead">Knuth runs Python through <b>uv</b>, and only uv. It is the
+        package manager built for reproducible work: every document lists its
+        packages at the top of the file, pinned, so it runs the same next year
+        and on someone else’s computer.</p>
+
+      <div class="options">
+        <button type="button" class="primary" data-python="uv">
+          <span class="name">Install Python with uv</span>
+          <span class="what">Knuth downloads uv, and uv installs a Python that belongs to
+            Knuth. Nothing already on this Mac is used or changed. Any package
+            works.</span>
+          <span class="cost">About 60 MB, once</span>
+        </button>
+        <button type="button" data-python="browser">
+          <span class="name">Not now — run on the web</span>
+          <span class="what">Python runs inside this window through Pyodide, loaded from the
+            web each time. Nothing is installed. Common packages work (numpy,
+            pandas, matplotlib, seaborn, statsmodels); documents are not
+            reproducible this way.</span>
+          <span class="cost">Needs the network</span>
+        </button>
+      </div>
+
+      <p id="status" role="status" aria-live="polite"></p>
+      <p class="foot">You can change this any time: Knuth menu → Choose Python…</p>
+    </main>
+    <script src="./setup.js"></script>
+  </body>
+</html>

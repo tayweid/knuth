@@ -1,12 +1,17 @@
-// Knuth.app: a native window around the page the local engine serves.
+// Knuth.app: a native window around Knuth, with a Python of its own.
 //
-// APP.md, "What the shell does, exactly". The shell owns a window per
-// document, the native open/save dialogs, and the engine process's
-// lifetime. With an engine, documents are read and written by it over the
-// page's own socket and the shell never touches one. With the built-in
-// Python instead (no Python on this Mac: Pyodide runs the cells in the
-// tab), there is no engine, so the shell serves the page from its bundle
-// under knuth://app/ and answers the page's file requests itself.
+// APP.md. The app never uses a Python that happens to be on the Mac. The
+// first launch asks, inside the window, which of two it should run:
+//
+// - Full Python: the app downloads uv, uv installs its own Python, and
+//   the engine (the knuth package, carried in this bundle) runs on it.
+//   Every document gets its own environment from its PEP 723 header.
+// - Built-in Python: Pyodide runs the cells inside the window. Nothing is
+//   installed; the shell serves the page and does the file I/O itself.
+//
+// Neither ships in the download, which is why the download is small. The
+// shell owns a window per document, the native open/save dialogs, the
+// setup, and the engine process's lifetime.
 //
 // Built by app/build.sh with swiftc alone — no Xcode project (not Tauri).
 
@@ -14,33 +19,40 @@ import AppKit
 import WebKit
 
 let environment = ProcessInfo.processInfo.environment
-// KNUTH_PORT and KNUTH_CONFIG_DIR are for development (`open --env`): a
-// Finder launch has neither and gets the defaults the engine also uses.
-let port = Int(environment["KNUTH_PORT"] ?? "") ?? 5197
-let origin = "http://127.0.0.1:\(port)"
 let logURL = FileManager.default.homeDirectoryForCurrentUser
     .appendingPathComponent("Library/Logs/Knuth.log")
-// The engine's own preference store (python/knuth/state.py): the shell
-// reads and writes one key there, "python", so `knuth doctor` and the app
-// agree about which interpreter is the engine.
-let preferencesURL: URL = {
+// Everything the app installs or remembers lives in one folder, which is
+// also the engine's own preference store (python/knuth/state.py).
+// KNUTH_CONFIG_DIR, KNUTH_PORT, KNUTH_UV_ARCHIVE and KNUTH_CHOOSE are for
+// development (`open --env`); a Finder launch has none of them.
+let stateDir: URL = {
     if let override = environment["KNUTH_CONFIG_DIR"], !override.isEmpty {
-        return URL(fileURLWithPath: override).appendingPathComponent("preferences.json")
+        return URL(fileURLWithPath: override)
     }
     return FileManager.default.homeDirectoryForCurrentUser
-        .appendingPathComponent("Library/Application Support/Knuth/preferences.json")
+        .appendingPathComponent("Library/Application Support/Knuth")
 }()
-let installRequirement =
-    "knuth @ https://github.com/tayweid/knuth/archive/refs/heads/main.zip#subdirectory=python"
-// The page, as the engine would serve it, for the built-in Python mode.
-let bundledWebRoot = Bundle.main.resourceURL?.appendingPathComponent("web")
+let preferencesURL = stateDir.appendingPathComponent("preferences.json")
+let uvURL = stateDir.appendingPathComponent("bin/uv")
+let engineDir = stateDir.appendingPathComponent("engine")
+let enginePython = engineDir.appendingPathComponent("bin/python")
+/// The Python uv installs for the engine. Documents choose their own
+/// through their headers; this is only what the engine itself runs on.
+let enginePythonVersion = "3.13"
+// The app's engine keeps to its own port, apart from a `knuth app` someone
+// runs in a terminal on 5197: two engines, two Pythons, never confused.
+let preferredPort = Int(environment["KNUTH_PORT"] ?? "") ?? 5187
+// The knuth package, carried in the bundle: the engine's code and, inside
+// it, the page. The app and its engine are therefore always one version.
+let bundledPython = Bundle.main.resourceURL?.appendingPathComponent("python")
+let bundledWebRoot = bundledPython?.appendingPathComponent("knuth/web")
 let appScheme = "knuth"
 let appOrigin = "\(appScheme)://app"
 
-/// Which Python runs the cells (APP.md, "Built-in Python"): the engine in
-/// a Python on this Mac, or Pyodide in the tab with the shell doing files.
+/// Which Python runs the cells: the engine on a Python uv installed, or
+/// Pyodide in the window with the shell doing files.
 enum PythonMode: String {
-    case engine, browser
+    case uv, browser
 }
 
 // MARK: - Small helpers
@@ -66,10 +78,14 @@ func log(_ line: String) {
 /// Run a command to completion; (exit status, combined output). A timeout
 /// kills it and reports -1, so a hung interpreter never hangs the launch.
 @discardableResult
-func run(_ executable: String, _ arguments: [String], timeout: TimeInterval = 30) -> (Int32, String) {
+func run(
+    _ executable: String, _ arguments: [String], timeout: TimeInterval = 30,
+    environment child: [String: String]? = nil
+) -> (Int32, String) {
     let process = Process()
     process.executableURL = URL(fileURLWithPath: executable)
     process.arguments = arguments
+    if let child = child { process.environment = child }
     let pipe = Pipe()
     process.standardOutput = pipe
     process.standardError = pipe
@@ -106,23 +122,171 @@ func writePreference(_ key: String, _ value: Any) {
     try? data.write(to: preferencesURL)
 }
 
-// MARK: - The engine
+// MARK: - Setting up the full Python
 
-enum EngineError: Error {
-    case noPython
-    case installFailed(String)
-    case startFailed(String)
+enum SetupError: Error {
+    case download(String)
+    case install(String)
+    case start(String)
+
+    var message: String {
+        switch self {
+        case .download(let text), .install(let text), .start(let text): return text
+        }
+    }
 }
 
-/// Starts `knuth serve` when nothing owns the port, reuses whatever does,
-/// and stops only what it started.
+/// What uv is told, always: use only Pythons it manages itself, so
+/// nothing on the Mac (Anaconda, Homebrew, python.org) is touched or
+/// relied on.
+func uvEnvironment() -> [String: String] {
+    var child = environment
+    child["UV_PYTHON_PREFERENCE"] = "only-managed"
+    child["UV_NO_PROGRESS"] = "1"
+    return child
+}
+
+func lastLines(_ text: String, _ count: Int = 6) -> String {
+    text.split(separator: "\n").suffix(count).joined(separator: "\n")
+}
+
+/// uv, then a Python, then the one package the engine needs. Each step is
+/// skipped when its result is already in place, so a second run — or a
+/// run after an interrupted first — picks up where things stand.
+enum Installer {
+    static var isInstalled: Bool {
+        FileManager.default.isExecutableFile(atPath: uvURL.path)
+            && FileManager.default.isExecutableFile(atPath: enginePython.path)
+    }
+
+    static func install(progress: @escaping (String) -> Void) -> Result<Void, SetupError> {
+        if !FileManager.default.isExecutableFile(atPath: uvURL.path) {
+            progress("Downloading uv…")
+            if case .failure(let error) = fetchUV() { return .failure(error) }
+        }
+        if !FileManager.default.isExecutableFile(atPath: enginePython.path) {
+            progress("Installing Python \(enginePythonVersion)… (about a minute)")
+            let (status, output) = run(
+                uvURL.path, ["venv", "--python", enginePythonVersion, engineDir.path],
+                timeout: 900, environment: uvEnvironment())
+            log("uv venv: exit \(status)\n\(lastLines(output))")
+            if status != 0 {
+                return .failure(.install("Python could not be installed.\n\(lastLines(output, 3))"))
+            }
+        }
+        progress("Preparing the engine…")
+        let (status, output) = run(
+            uvURL.path,
+            ["pip", "install", "--python", enginePython.path, "websockets>=14.0"],
+            timeout: 600, environment: uvEnvironment())
+        log("uv pip install websockets: exit \(status)\n\(lastLines(output))")
+        if status != 0 {
+            return .failure(.install("The engine could not be prepared.\n\(lastLines(output, 3))"))
+        }
+        return .success(())
+    }
+
+    /// The uv release for this Mac's processor, from Astral's GitHub
+    /// releases, unpacked into the app's own folder.
+    private static func fetchUV() -> Result<Void, SetupError> {
+        var system = utsname()
+        uname(&system)
+        let machine = withUnsafePointer(to: &system.machine) {
+            $0.withMemoryRebound(to: CChar.self, capacity: 1) { String(cString: $0) }
+        }
+        let arch = machine == "arm64" ? "aarch64" : "x86_64"
+        let source = environment["KNUTH_UV_ARCHIVE"]
+            ?? "https://github.com/astral-sh/uv/releases/latest/download/uv-\(arch)-apple-darwin.tar.gz"
+        let work = FileManager.default.temporaryDirectory
+            .appendingPathComponent("knuth-uv-\(ProcessInfo.processInfo.processIdentifier)")
+        try? FileManager.default.removeItem(at: work)
+        defer { try? FileManager.default.removeItem(at: work) }
+        do {
+            try FileManager.default.createDirectory(at: work, withIntermediateDirectories: true)
+        } catch {
+            return .failure(.download("Could not create a working folder: \(error.localizedDescription)"))
+        }
+        let archive = work.appendingPathComponent("uv.tar.gz")
+        if source.hasPrefix("/") {
+            do {
+                try FileManager.default.copyItem(atPath: source, toPath: archive.path)
+            } catch {
+                return .failure(.download("Could not read \(source): \(error.localizedDescription)"))
+            }
+        } else {
+            guard let url = URL(string: source) else { return .failure(.download("Bad uv address: \(source)")) }
+            var problem: String?
+            let done = DispatchSemaphore(value: 0)
+            URLSession.shared.downloadTask(with: url) { file, response, error in
+                defer { done.signal() }
+                if let error = error {
+                    problem = error.localizedDescription
+                    return
+                }
+                guard let file = file, let http = response as? HTTPURLResponse, http.statusCode == 200 else {
+                    problem = "the server answered \((response as? HTTPURLResponse)?.statusCode ?? 0)"
+                    return
+                }
+                do {
+                    try FileManager.default.moveItem(at: file, to: archive)
+                } catch {
+                    problem = error.localizedDescription
+                }
+            }.resume()
+            if done.wait(timeout: .now() + 600) == .timedOut { problem = "the download timed out" }
+            if let problem = problem {
+                log("uv download failed: \(problem)")
+                return .failure(.download("uv could not be downloaded: \(problem). Check the network and try again."))
+            }
+        }
+        let (status, output) = run("/usr/bin/tar", ["-xzf", archive.path, "-C", work.path], timeout: 120)
+        if status != 0 { return .failure(.download("uv could not be unpacked.\n\(lastLines(output, 3))")) }
+        guard let found = FileManager.default.enumerator(at: work, includingPropertiesForKeys: nil)?
+            .compactMap({ $0 as? URL }).first(where: { $0.lastPathComponent == "uv" })
+        else { return .failure(.download("The uv download did not contain uv.")) }
+        do {
+            try FileManager.default.createDirectory(
+                at: uvURL.deletingLastPathComponent(), withIntermediateDirectories: true)
+            try? FileManager.default.removeItem(at: uvURL)
+            try FileManager.default.moveItem(at: found, to: uvURL)
+            try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: uvURL.path)
+        } catch {
+            return .failure(.download("uv could not be put in place: \(error.localizedDescription)"))
+        }
+        let (versionStatus, version) = run(uvURL.path, ["--version"], timeout: 30)
+        log("installed \(versionStatus == 0 ? version.trimmingCharacters(in: .whitespacesAndNewlines) : "uv (unverified)") at \(uvURL.path)")
+        return versionStatus == 0 ? .success(()) : .failure(.download("The downloaded uv does not run on this Mac."))
+    }
+}
+
+// MARK: - The engine
+
+/// The knuth engine from this bundle, on the Python uv installed, as the
+/// app's own child: started at launch, stopped at quit, and told the
+/// app's pid so it stops by itself if the app is killed.
 final class Engine {
     private var child: Process?
-    private(set) var python: String?
+    private(set) var port = preferredPort
 
-    /// Whether the engine answers on its port (any engine: ours, the
-    /// launchd agent, or a terminal's).
-    static func isUp() -> Bool {
+    var origin: String { "http://127.0.0.1:\(port)" }
+
+    static func isFree(_ port: Int) -> Bool {
+        let descriptor = socket(AF_INET, SOCK_STREAM, 0)
+        guard descriptor >= 0 else { return false }
+        defer { close(descriptor) }
+        var address = sockaddr_in()
+        address.sin_family = sa_family_t(AF_INET)
+        address.sin_port = in_port_t(port).bigEndian
+        address.sin_addr.s_addr = inet_addr("127.0.0.1")
+        let result = withUnsafePointer(to: &address) {
+            $0.withMemoryRebound(to: sockaddr.self, capacity: 1) {
+                connect(descriptor, $0, socklen_t(MemoryLayout<sockaddr_in>.size))
+            }
+        }
+        return result != 0
+    }
+
+    func isUp() -> Bool {
         var up = false
         let done = DispatchSemaphore(value: 0)
         var request = URLRequest(url: URL(string: "\(origin)/")!)
@@ -140,67 +304,29 @@ final class Engine {
         return up
     }
 
-    /// Interpreters worth trying, most likely science environment first
-    /// (APP.md, "First launch installs the engine"). A remembered choice
-    /// goes ahead of all of them.
-    static func candidatePythons() -> [String] {
-        let home = FileManager.default.homeDirectoryForCurrentUser.path
-        var list: [String] = []
-        if let remembered = readPreferences()["python"] as? String { list.append(remembered) }
-        list += [
-            "\(home)/anaconda3/bin/python3",
-            "/opt/anaconda3/bin/python3",
-            "\(home)/miniconda3/bin/python3",
-            "/opt/miniconda3/bin/python3",
-            "\(home)/miniforge3/bin/python3",
-            "/opt/homebrew/bin/python3",
-            "/usr/local/bin/python3",
-            "/Library/Frameworks/Python.framework/Versions/Current/bin/python3",
-        ]
-        // Apple's stub pops a "install the command line tools" dialog when
-        // they are missing; only consider it when it is a real Python.
-        if FileManager.default.fileExists(atPath: "/Library/Developer/CommandLineTools/usr/bin/python3") {
-            list.append("/usr/bin/python3")
-        }
-        var seen = Set<String>()
-        return list.filter { FileManager.default.isExecutableFile(atPath: $0) && seen.insert($0).inserted }
-    }
+    var isRunning: Bool { child?.isRunning ?? false }
 
-    static func hasModule(_ python: String, _ module: String) -> Bool {
-        run(python, ["-c", "import sys; assert sys.version_info >= (3, 11); import \(module)"], timeout: 60).0 == 0
-    }
+    func start() -> Result<Void, SetupError> {
+        if isRunning { return .success(()) }
+        guard let package = bundledPython,
+              FileManager.default.fileExists(atPath: package.appendingPathComponent("knuth/server.py").path)
+        else { return .failure(.start("This build of Knuth.app does not carry the engine (app/build.sh copies it).")) }
+        port = preferredPort
+        while !Engine.isFree(port) && port < preferredPort + 40 { port += 1 }
 
-    /// The interpreter to run the engine in: one that already has knuth,
-    /// else the best one to install it into (nil when knuth is missing).
-    static func choosePython() -> (path: String, hasKnuth: Bool)? {
-        let candidates = candidatePythons()
-        if let ready = candidates.first(where: { hasModule($0, "knuth") }) { return (ready, true) }
-        if let science = candidates.first(where: { hasModule($0, "pandas") }) { return (science, false) }
-        if let any = candidates.first(where: { hasModule($0, "sys") }) { return (any, false) }
-        return nil
-    }
-
-    static func install(into python: String) -> Result<Void, EngineError> {
-        let (status, output) = run(
-            python,
-            ["-m", "pip", "install", "--upgrade", "--force-reinstall", installRequirement],
-            timeout: 600)
-        log("pip install into \(python): exit \(status)\n\(output.suffix(2000))")
-        return status == 0 ? .success(()) : .failure(.installFailed(String(output.suffix(1500))))
-    }
-
-    /// Start `knuth serve` as our child and wait for it to answer.
-    func start(with python: String) -> Result<Void, EngineError> {
         let process = Process()
-        process.executableURL = URL(fileURLWithPath: python)
-        // --parent: the engine watches this process and stops when it is
-        // gone, so a crash or force-quit never leaves an orphan (APP.md).
+        process.executableURL = enginePython
         process.arguments = [
             "-m", "knuth", "serve", "--port", String(port),
             "--parent", String(ProcessInfo.processInfo.processIdentifier),
         ]
         process.currentDirectoryURL = FileManager.default.homeDirectoryForCurrentUser
-        process.environment = environment
+        var child = uvEnvironment()
+        child["PYTHONPATH"] = package.path
+        child["KNUTH_UV"] = uvURL.path
+        child["KNUTH_CONFIG_DIR"] = stateDir.path
+        child["PYTHONDONTWRITEBYTECODE"] = "1" // the bundle is not ours to write into
+        process.environment = child
         if let handle = openLog() {
             process.standardOutput = handle
             process.standardError = handle
@@ -211,20 +337,19 @@ final class Engine {
         do {
             try process.run()
         } catch {
-            return .failure(.startFailed("\(error)"))
+            return .failure(.start("The engine could not be started: \(error.localizedDescription)"))
         }
-        child = process
-        self.python = python
-        log("started engine: \(python) -m knuth serve --port \(port) --parent \(ProcessInfo.processInfo.processIdentifier) (pid \(process.processIdentifier))")
-        let deadline = Date().addingTimeInterval(20)
+        self.child = process
+        log("started engine on port \(port): \(enginePython.path) -m knuth serve (pid \(process.processIdentifier))")
+        let deadline = Date().addingTimeInterval(25)
         while Date() < deadline {
-            if Engine.isUp() { return .success(()) }
+            if isUp() { return .success(()) }
             if !process.isRunning {
-                return .failure(.startFailed("the engine exited with status \(process.terminationStatus); see \(logURL.path)"))
+                return .failure(.start("The engine stopped as it started (status \(process.terminationStatus)). The log has the reason."))
             }
             Thread.sleep(forTimeInterval: 0.2)
         }
-        return .failure(.startFailed("the engine did not answer on port \(port) within 20 seconds"))
+        return .failure(.start("The engine did not answer within 25 seconds."))
     }
 
     func stop() {
@@ -486,6 +611,8 @@ final class DocumentWindow: NSObject, NSWindowDelegate, WKScriptMessageHandler,
             reply(id, FileOps.rename(body["path"], body["name"]))
         case "remove":
             reply(id, FileOps.remove(body["path"]))
+        case "choose":
+            (NSApp.delegate as? AppDelegate)?.choose(body["python"], in: self)
         case "status":
             log("page: Python is \(body["state"] as? String ?? "?") (\(window.title))")
         case "error":
@@ -493,6 +620,22 @@ final class DocumentWindow: NSObject, NSWindowDelegate, WKScriptMessageHandler,
         default:
             log("unknown shell message: \(type)")
         }
+    }
+
+    /// Tell the setup page something: `progress` or `failed`, with a line.
+    func setup(_ kind: String, _ text: String) {
+        guard let data = try? JSONSerialization.data(withJSONObject: [text]),
+              let array = String(data: data, encoding: .utf8)
+        else { return }
+        webView.evaluateJavaScript("window.knuthSetup && window.knuthSetup.\(kind)(\(array)[0])", completionHandler: nil)
+    }
+
+    /// Leave setup for a document (or a new one), in this same window.
+    func show(_ url: URL, document: URL?) {
+        documentURL = document
+        window.representedURL = document
+        window.title = document?.lastPathComponent ?? "Knuth"
+        webView.load(URLRequest(url: url))
     }
 
     private func chose(_ id: Int?, _ url: URL?) {
@@ -552,10 +695,10 @@ final class DocumentWindow: NSObject, NSWindowDelegate, WKScriptMessageHandler,
 final class AppDelegate: NSObject, NSApplicationDelegate {
     let engine = Engine()
     private var windows: [DocumentWindow] = []
-    private var engineReady = false
-    private var mode: PythonMode = .engine
+    /// nil until a Python is chosen and ready: documents wait in `pending`.
+    private var mode: PythonMode?
     private var pending: [URL] = []
-    private var launching = true
+    private var installing = false
 
     func applicationWillFinishLaunching(_ notification: Notification) {
         buildMenu()
@@ -563,18 +706,32 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.activate(ignoringOtherApps: true)
-        ensureEngine()
+        let remembered = (readPreferences()["python"] as? String).flatMap(PythonMode.init(rawValue:))
+        switch remembered {
+        case .browser:
+            becomeReady(.browser, in: nil)
+        case .uv where Installer.isInstalled:
+            startEngine(in: nil)
+        case .uv:
+            // Chosen before, but its pieces are gone: set it up again.
+            showSetup(choosing: PythonMode.uv.rawValue)
+        case nil:
+            showSetup(choosing: environment["KNUTH_CHOOSE"])
+        }
     }
 
     func application(_ application: NSApplication, open urls: [URL]) {
         for url in urls where url.isFileURL {
-            if engineReady { openWindow(url: pageURL(for: url), document: url) }
+            if mode != nil { openWindow(url: pageURL(for: url), document: url) }
             else { pending.append(url) }
         }
     }
 
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
-        if !flag && engineReady { openWindow(url: pageURL(for: nil), document: nil) }
+        if !flag {
+            if mode != nil { openWindow(url: pageURL(for: nil), document: nil) }
+            else if !installing { showSetup(choosing: nil) }
+        }
         return true
     }
 
@@ -584,193 +741,104 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         engine.stop()
     }
 
-    // MARK: engine
+    // MARK: choosing a Python
 
-    private func ensureEngine() {
-        if readPreferences()["engine"] as? String == PythonMode.browser.rawValue {
-            useBuiltInPython()
+    /// The choice, inside a window: the bundled setup page, which posts
+    /// `choose` back and shows the progress the install reports.
+    private func showSetup(choosing: String?) {
+        var components = URLComponents(string: "\(appOrigin)/setup.html")!
+        if let choosing = choosing, PythonMode(rawValue: choosing) != nil {
+            components.queryItems = [URLQueryItem(name: "choose", value: choosing)]
+        }
+        let controller = DocumentWindow(url: components.url!, document: nil)
+        controller.window.title = "Knuth"
+        windows.append(controller)
+    }
+
+    func choose(_ value: Any?, in window: DocumentWindow) {
+        guard let name = value as? String, let chosen = PythonMode(rawValue: name), !installing else { return }
+        log("chosen: \(chosen.rawValue) Python")
+        switch chosen {
+        case .browser:
+            becomeReady(.browser, in: window)
+        case .uv:
+            installing = true
+            DispatchQueue.global(qos: .userInitiated).async { [self] in
+                let installed = Installer.install { line in
+                    log("setup: \(line)")
+                    DispatchQueue.main.async { window.setup("progress", line) }
+                }
+                DispatchQueue.main.async { [self] in
+                    installing = false
+                    switch installed {
+                    case .failure(let error):
+                        log("setup failed: \(error.message)")
+                        window.setup("failed", error.message)
+                    case .success:
+                        window.setup("progress", "Starting Python…")
+                        startEngine(in: window)
+                    }
+                }
+            }
+        }
+    }
+
+    private func startEngine(in window: DocumentWindow?) {
+        DispatchQueue.global(qos: .userInitiated).async { [self] in
+            let started = engine.start()
+            DispatchQueue.main.async { [self] in
+                switch started {
+                case .success:
+                    becomeReady(.uv, in: window)
+                case .failure(let error):
+                    log("engine failed: \(error.message)")
+                    if let window = window { window.setup("failed", error.message) }
+                    else { fail(error) }
+                }
+            }
+        }
+    }
+
+    /// A Python is running: remember the choice, and open what was waiting
+    /// — the first of it in the setup window, if that is where we are.
+    private func becomeReady(_ chosen: PythonMode, in window: DocumentWindow?) {
+        if chosen == .browser,
+           bundledWebRoot.map({ FileManager.default.fileExists(atPath: $0.appendingPathComponent("index.html").path) }) != true {
+            fail(.start("This build of Knuth.app does not carry the page (app/build.sh copies it)."))
             return
         }
-        DispatchQueue.global(qos: .userInitiated).async { [self] in
-            if Engine.isUp() {
-                log("using the engine already on port \(port)")
-                DispatchQueue.main.async { self.engineBecameReady() }
-                return
-            }
-            guard let choice = Engine.choosePython() else {
-                DispatchQueue.main.async { self.offerBuiltIn() }
-                return
-            }
-            if !choice.hasKnuth {
-                DispatchQueue.main.async { self.offerInstall(into: choice.path) }
-                return
-            }
-            self.startEngine(with: choice.path)
-        }
-    }
-
-    /// The built-in Python: no engine, the page from the bundle, Pyodide in
-    /// the tab. Remembered, so later launches never go looking for Python.
-    private func useBuiltInPython() {
-        guard let webRoot = bundledWebRoot,
-              FileManager.default.fileExists(atPath: webRoot.appendingPathComponent("index.html").path)
-        else {
-            fail(.startFailed("this build of Knuth.app does not carry the page (app/build.sh copies it)"))
-            return
-        }
-        mode = .browser
-        writePreference("engine", PythonMode.browser.rawValue)
-        log("using the built-in Python (page served from the bundle)")
-        engineBecameReady()
-    }
-
-    /// No Python at all: the built-in one is the answer, and a choice.
-    private func offerBuiltIn() {
-        let alert = NSAlert()
-        alert.messageText = "Use Knuth’s built-in Python?"
-        alert.informativeText =
-            "No Python was found in the usual places (Anaconda, Homebrew, python.org). " +
-            "Knuth can run Python inside the window instead — nothing to install, though " +
-            "only the packages it ships with, and large data has a lower ceiling.\n\n" +
-            "You can switch to a Python on this Mac later from the Knuth menu."
-        alert.addButton(withTitle: "Use Built-in Python")
-        alert.addButton(withTitle: "Choose Python…")
-        alert.addButton(withTitle: "Quit")
-        switch alert.runModal() {
-        case .alertFirstButtonReturn:
-            useBuiltInPython()
-        case .alertSecondButtonReturn:
-            choosePythonManually()
-        default:
-            NSApp.terminate(nil)
-        }
-    }
-
-    private func startEngine(with python: String) {
-        DispatchQueue.global(qos: .userInitiated).async { [self] in
-            switch engine.start(with: python) {
-            case .success:
-                writePreference("python", python)
-                DispatchQueue.main.async { self.engineBecameReady() }
-            case .failure(let error):
-                DispatchQueue.main.async { self.fail(error) }
-            }
-        }
-    }
-
-    private func engineBecameReady() {
-        if mode == .engine { writePreference("engine", PythonMode.engine.rawValue) }
-        engineReady = true
-        let queued = pending
+        mode = chosen
+        writePreference("python", chosen.rawValue)
+        log("running the \(chosen == .uv ? "full Python (uv), engine on port \(engine.port)" : "built-in Python (Pyodide)")")
+        var waiting = pending
         pending = []
-        for url in queued { openWindow(url: pageURL(for: url), document: url) }
+        if let window = window {
+            let first = waiting.isEmpty ? nil : waiting.removeFirst()
+            window.show(pageURL(for: first), document: first)
+        }
+        for url in waiting { openWindow(url: pageURL(for: url), document: url) }
         // Launched with nothing to open (Dock, Finder): show the app. Files
         // arriving at launch land before this, so a short wait is enough.
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { [self] in
-            launching = false
             if windows.isEmpty { openWindow(url: pageURL(for: nil), document: nil) }
         }
     }
 
-    private func offerInstall(into python: String) {
-        let alert = NSAlert()
-        alert.messageText = "Install the Knuth engine?"
-        alert.informativeText =
-            "Knuth runs Python on this Mac. The engine will be installed into\n\(python)\n\n" +
-            "This needs the network and takes about half a minute. Choose a different " +
-            "Python if this is not where your packages live."
-        alert.addButton(withTitle: "Install")
-        alert.addButton(withTitle: "Use Built-in Python")
-        alert.addButton(withTitle: "Choose Python…")
-        alert.addButton(withTitle: "Quit")
-        switch alert.runModal() {
-        case .alertFirstButtonReturn:
-            install(into: python)
-        case .alertSecondButtonReturn:
-            useBuiltInPython()
-        case .alertThirdButtonReturn:
-            choosePythonManually()
-        default:
-            NSApp.terminate(nil)
-        }
-    }
-
-    private func choosePythonManually() {
-        let panel = NSOpenPanel()
-        panel.message = "Choose the python3 executable the engine should run in"
-        panel.canChooseDirectories = false
-        panel.showsHiddenFiles = true
-        panel.directoryURL = URL(fileURLWithPath: "/opt")
-        guard panel.runModal() == .OK, let url = panel.url else {
-            NSApp.terminate(nil)
-            return
-        }
-        let python = url.path
-        DispatchQueue.global(qos: .userInitiated).async { [self] in
-            let ready = Engine.hasModule(python, "knuth")
-            DispatchQueue.main.async {
-                if ready { self.startEngine(with: python) } else { self.install(into: python) }
-            }
-        }
-    }
-
-    private func install(into python: String) {
-        let progress = NSAlert()
-        progress.messageText = "Installing the Knuth engine…"
-        progress.informativeText = "Into \(python)"
-        let spinner = NSProgressIndicator(frame: NSRect(x: 0, y: 0, width: 32, height: 32))
-        spinner.style = .spinning
-        spinner.startAnimation(nil)
-        progress.accessoryView = spinner
-        progress.addButton(withTitle: "Cancel")
-        var cancelled = false
-        DispatchQueue.global(qos: .userInitiated).async { [self] in
-            let result = Engine.install(into: python)
-            DispatchQueue.main.async {
-                if cancelled { return }
-                NSApp.abortModal()
-                switch result {
-                case .success:
-                    writePreference("python", python)
-                    self.startEngine(with: python)
-                case .failure(let error):
-                    self.fail(error)
-                }
-            }
-        }
-        if progress.runModal() == .alertFirstButtonReturn {
-            cancelled = true
-            NSApp.terminate(nil)
-        }
-    }
-
-    private func fail(_ error: EngineError) {
+    private func fail(_ error: SetupError) {
         let alert = NSAlert()
         alert.alertStyle = .warning
-        switch error {
-        case .noPython:
-            alert.messageText = "Knuth needs Python 3.11 or newer"
-            alert.informativeText =
-                "No Python was found in the usual places (Anaconda, Homebrew, python.org). " +
-                "Install one, then open Knuth again."
-            alert.addButton(withTitle: "Quit")
-        case .installFailed(let detail):
-            alert.messageText = "The engine could not be installed"
-            alert.informativeText = "pip reported:\n\n\(detail)\n\nFull log: \(logURL.path)"
-            alert.addButton(withTitle: "Quit")
-        case .startFailed(let detail):
-            alert.messageText = "The engine did not start"
-            alert.informativeText = "\(detail)\n\nLog: \(logURL.path)"
-            alert.addButton(withTitle: "Quit")
-        }
-        alert.runModal()
-        NSApp.terminate(nil)
+        alert.messageText = "Knuth could not start Python"
+        alert.informativeText = "\(error.message)\n\nLog: \(logURL.path)"
+        alert.addButton(withTitle: "Choose Python…")
+        alert.addButton(withTitle: "Quit")
+        if alert.runModal() == .alertFirstButtonReturn { showSetup(choosing: nil) }
+        else { NSApp.terminate(nil) }
     }
 
     // MARK: windows
 
     func pageURL(for document: URL?) -> URL {
-        var components = URLComponents(string: mode == .browser ? "\(appOrigin)/" : "\(origin)/")!
+        var components = URLComponents(string: mode == .browser ? "\(appOrigin)/" : "\(engine.origin)/")!
         if let path = document?.path {
             components.queryItems = [URLQueryItem(name: "open", value: path)]
         }
@@ -792,13 +860,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     // MARK: menu
 
     @objc func newWindow(_ sender: Any?) {
-        guard engineReady else { return }
+        guard mode != nil else { return }
         openWindow(url: pageURL(for: nil), document: nil)
     }
 
     /// File → Open…: a document app opens each file in its own window.
     @objc func openDocument(_ sender: Any?) {
-        guard engineReady else { return }
+        guard mode != nil else { return }
         let panel = NSOpenPanel()
         panel.canChooseDirectories = false
         panel.allowsMultipleSelection = true
@@ -812,17 +880,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         NSWorkspace.shared.open(logURL)
     }
 
-    // Switching Python applies to windows opened from now on; a window
-    // keeps the session it has.
-    @objc func switchToBuiltIn(_ sender: Any?) {
-        useBuiltInPython()
-    }
-
-    @objc func switchToLocal(_ sender: Any?) {
-        writePreference("engine", PythonMode.engine.rawValue)
-        mode = .engine
-        engineReady = false
-        ensureEngine()
+    /// The same choice as the first launch. It applies to windows opened
+    /// from then on; a window already open keeps the Python it has.
+    @objc func choosePython(_ sender: Any?) {
+        guard !installing else { return }
+        showSetup(choosing: nil)
     }
 
     private func buildMenu() {
@@ -832,8 +894,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let appMenu = NSMenu()
         appMenu.addItem(withTitle: "About Knuth", action: #selector(NSApplication.orderFrontStandardAboutPanel(_:)), keyEquivalent: "")
         appMenu.addItem(.separator())
-        appMenu.addItem(withTitle: "Use Python on This Mac…", action: #selector(switchToLocal(_:)), keyEquivalent: "")
-        appMenu.addItem(withTitle: "Use Built-in Python", action: #selector(switchToBuiltIn(_:)), keyEquivalent: "")
+        appMenu.addItem(withTitle: "Choose Python…", action: #selector(choosePython(_:)), keyEquivalent: "")
         appMenu.addItem(withTitle: "Show Log", action: #selector(showLog(_:)), keyEquivalent: "")
         appMenu.addItem(.separator())
         appMenu.addItem(withTitle: "Hide Knuth", action: #selector(NSApplication.hide(_:)), keyEquivalent: "h")
