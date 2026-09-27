@@ -722,6 +722,13 @@ async def serve(
             process_request=lambda connection, request: web.respond(request, web_root),
             max_size=MAX_INBOUND_MESSAGE_BYTES,
             max_queue=MAX_INBOUND_MESSAGE_QUEUE,
+            # No keepalive pings. While a restart waits on uv (minutes, the
+            # first time), this loop reads nothing; the page's requests fill
+            # the queue, reading pauses, the page's pong goes unread, and the
+            # library closed the socket at 60 s — the page reconnected and
+            # started a second sync. The socket is loopback: a closed window
+            # closes it, and there is no network in between to watch.
+            ping_interval=None,
         ):
             if on_ready:
                 on_ready()

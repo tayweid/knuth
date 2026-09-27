@@ -252,7 +252,22 @@ export class FileManager {
 
   /** Path mode's change poll: a cheap stat by path, then a re-read only
    *  when the mtime moved past what we last read or wrote. */
+  private polling = false;
+
   private async pollPath() {
+    if (!this.path || !this.hooks.statPath) return;
+    // One question at a time: while the engine is busy (a restart waiting
+    // on uv), unanswered checks must not pile up behind each other.
+    if (this.polling) return;
+    this.polling = true;
+    try {
+      await this.pollPathOnce();
+    } finally {
+      this.polling = false;
+    }
+  }
+
+  private async pollPathOnce() {
     if (!this.path || !this.hooks.statPath) return;
     const stat = await this.hooks.statPath(this.path);
     if (!stat || stat.error || stat.modified == null) return; // gone, or no engine
