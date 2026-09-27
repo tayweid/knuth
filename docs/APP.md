@@ -188,10 +188,14 @@ one the user could already `open()` — the same boundary as running Python.
   one-time click — apps from outside the App Store ask for this all the
   time — and offer the terminal route beside it, which never sees the
   prompt because only browser downloads are quarantined (`curl` + `ditto`
-  into /Applications, one line in the README). Each GitHub release
-  carries `Knuth.app.zip`, a universal binary built by the release
-  workflow on a macOS runner and ad-hoc signed. Signing with a Developer
-  ID stays possible later; nothing here precludes it.
+  into /Applications, one line in the README). The download is a file in
+  the repository, `app/Knuth.app.zip`: a universal binary, ad-hoc signed,
+  rebuilt by `app/build.sh` and committed like the staged page is. A
+  release job that built and attached it was written and removed the
+  same day — a file on GitHub needs no release, no version and no
+  workflow, and the app changes rarely (the page and the engine are what
+  move, and they come from pip). Signing with a Developer ID stays
+  possible later; nothing here precludes it.
 - **Which Python.** The heuristic above will be wrong for someone with two
   environments. `knuth doctor` reports which interpreter the engine runs in,
   and an "Engine Python…" chooser in the app menu is the escape hatch.

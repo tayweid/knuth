@@ -82,3 +82,11 @@ rm -rf "$(dirname "$iconset")"
 # signing and notarization are the open Gatekeeper question in APP.md.
 codesign --force --sign - "$out" >/dev/null 2>&1
 echo "built $out"
+
+# The download is this zip, committed to the repo: a file on GitHub, no
+# release and no workflow. ditto keeps the bundle's metadata.
+if [ "$out" = "build/Knuth.app" ]; then
+    rm -f Knuth.app.zip
+    ditto -c -k --keepParent "$out" Knuth.app.zip
+    echo "zipped app/Knuth.app.zip ($(du -h Knuth.app.zip | cut -f1 | tr -d ' '))"
+fi

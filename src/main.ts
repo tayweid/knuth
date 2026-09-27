@@ -279,7 +279,7 @@ const filesViaShell = !!shell && pythonInBrowser;
 // The hosted preview is the front door: it runs Python in the tab, and
 // the real thing is one click away — a download, or a line for the
 // terminal that never meets the Gatekeeper prompt (APP.md).
-const APP_ZIP = 'https://github.com/tayweid/knuth/releases/latest/download/Knuth.app.zip';
+const APP_ZIP = 'https://github.com/tayweid/knuth/raw/main/app/Knuth.app.zip';
 const APP_LINE = `curl -fsSL -o /tmp/Knuth.app.zip ${APP_ZIP} && ditto -x -k /tmp/Knuth.app.zip /Applications`;
 const ENGINE_LINE =
   'python3 -m pip install --upgrade --force-reinstall "knuth @ https://github.com/tayweid/knuth/archive/refs/heads/main.zip#subdirectory=python"';

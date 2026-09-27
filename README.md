@@ -42,11 +42,10 @@ Tauri app (WYSIWYG markdown with executable cells) is retired at the
 ### Knuth.app (macOS)
 
 The app is a native window around the same local engine (design in
-[APP.md](./docs/APP.md)). Every [release](https://github.com/tayweid/knuth/releases)
-carries `Knuth.app.zip`. Two ways in:
+[APP.md](./docs/APP.md)). It is one file in this repository,
+[`app/Knuth.app.zip`](https://github.com/tayweid/knuth/raw/main/app/Knuth.app.zip). Two ways in:
 
-- **Download it** from the latest release, unzip, drag `Knuth.app` to
-  Applications. The app is not signed with an Apple Developer ID, so the
+- **Download it**, unzip, drag `Knuth.app` to Applications. The app is not signed with an Apple Developer ID, so the
   first launch of a browser download is refused until you allow it once:
   System Settings → Privacy & Security → scroll to the message about
   Knuth → **Open Anyway**. Every later launch is ordinary.
@@ -54,11 +53,11 @@ carries `Knuth.app.zip`. Two ways in:
   browser downloads are quarantined):
 
 ```bash
-curl -fsSL -o /tmp/Knuth.app.zip https://github.com/tayweid/knuth/releases/latest/download/Knuth.app.zip && ditto -x -k /tmp/Knuth.app.zip /Applications
+curl -fsSL -o /tmp/Knuth.app.zip https://github.com/tayweid/knuth/raw/main/app/Knuth.app.zip && ditto -x -k /tmp/Knuth.app.zip /Applications
 ```
 
-Or build it yourself from a checkout, with the command-line tools alone
-and no Xcode project (`app/build.sh` → `app/build/Knuth.app`).
+`app/build.sh` rebuilds the app and that zip from a checkout, with the
+command-line tools alone and no Xcode project.
 
 Open it. The first launch
 finds your Python (Anaconda, Homebrew, python.org, in that order), installs
