@@ -258,8 +258,7 @@ function rememberEnvironment(event: EnvironmentEvent) {
   const fromUv = event.managed || /\/(engine\/bin|uv\/python)\//.test(event.python);
   pythonName = fromUv ? 'uv' : 'Python';
   environmentTitle = event.managed
-    ? `${event.python}\nThis document's own environment, built by uv from its header` +
-      (event.reason ? `\n${event.reason}` : '')
+    ? `${event.python}\nThis document's own environment, built by uv from its header`
     : `${event.python}${event.reason ? '\n' + event.reason : ''}`;
 }
 

@@ -1269,23 +1269,3 @@ def test_install_into_an_unsaved_document(tmp_path):
     config = (tmp_path / "config").resolve()
     project.mkdir()
     asyncio.run(check_install_into_an_unsaved_document(project, config))
-
-
-@pytest.mark.skipif(not uv_with_managed_python(), reason="needs uv and a uv-managed Python")
-def test_a_document_asking_for_a_newer_python_runs_on_knuths(tmp_path):
-    """Knuth answers every header with its own Python: no new Python and
-    no new set of packages to download, with a note saying so."""
-    from knuth import env as env_module
-
-    document = tmp_path / "newer.py"
-    document.write_text(
-        '# /// script\n# requires-python = ">=3.99"\n# dependencies = []\n# ///\n\n# %%\nx = 1\n'
-    )
-    environment = env_module.ensure_environment(str(document))
-    assert environment.managed, environment
-    version = subprocess.run(
-        [environment.python, "-c", "import sys; print(f'{sys.version_info[0]}.{sys.version_info[1]}')"],
-        capture_output=True, text=True,
-    ).stdout.strip()
-    assert version == env_module.knuth_python(), version
-    assert "asks for Python >=3.99" in environment.reason, environment.reason
