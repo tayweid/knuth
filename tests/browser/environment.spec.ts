@@ -10,6 +10,7 @@ type Probe = typeof window & {
   __knuthTexts?: Record<string, string>;
   __knuthModified?: Record<string, number>;
   __knuthFallbackReason?: string;
+  __knuthMissing?: boolean;
 };
 
 test.beforeEach(async ({ page }) => {
@@ -81,6 +82,14 @@ test.beforeEach(async ({ page }) => {
             break;
           }
           case 'run': {
+            if (probe.__knuthMissing) {
+              this.reply({
+                type: 'error',
+                id: msg.id,
+                traceback: "Traceback (most recent call last):\nModuleNotFoundError: No module named 'seaborn'",
+              });
+              break;
+            }
             // The engine installs for the cell, rewrites the header on
             // disk, and tells the page; the disk now carries the header.
             const path = '/p/analysis.py';
@@ -91,6 +100,13 @@ test.beforeEach(async ({ page }) => {
             this.reply({ type: 'header', id: msg.id, path, lines: header, modified: 3000 });
             this.reply({ type: 'stream', id: msg.id, which: 'stdout', text: 'after the header\n' });
             this.reply({ type: 'done', id: msg.id, result: null });
+            break;
+          }
+          case 'install': {
+            probe.__knuthMissing = false;
+            this.reply({ type: 'dependency', id: msg.id, state: 'installing', module: msg.module, distribution: msg.module });
+            this.reply({ type: 'dependency', id: msg.id, state: 'installed', module: msg.module, distribution: msg.module, version: '0.13.2' });
+            this.reply({ type: 'installed', id: msg.id, ok: true, restart: false });
             break;
           }
           case 'namespace':
@@ -132,6 +148,10 @@ test('a launched document attaches with its folder and its path', async ({ page 
   await expect(page.locator('#kernel-status')).toHaveText('Python');
   await expect(page).toHaveTitle('analysis.py');
   await expect(page.getByText('x = 1')).toBeVisible();
+
+  // Served by an engine (or inside the app): the website's download button
+  // has no business here, and must not show.
+  await expect(page.locator('#get-app')).toBeHidden();
 
   const attach = (await messages(page)).find((m) => m.type === 'attach');
   expect(attach).toMatchObject({ root: '/p', document: '/p/analysis.py' });
@@ -188,4 +208,23 @@ test('a document with a header that fell back to the system Python says why', as
   // The fallback event arrived at attach, before the document opened; the
   // next session start (the restart for this document) tells the user.
   await expect(page.locator('#toast')).toContainText('uv was not found');
+});
+
+test('a missing import offers Install with uv, then runs the cell again', async ({ page }) => {
+  await page.addInitScript(() => {
+    (window as Probe).__knuthMissing = true;
+  });
+  await page.goto('/?open=/p/analysis.py');
+  await expect(page.getByText('x = 1')).toBeVisible();
+
+  await page.getByTitle('Run all program cells from the top').click();
+  await expect(page.locator('#toast')).toContainText("seaborn isn't installed");
+  await page.locator('#toast').getByRole('button', { name: 'Install with uv' }).click();
+
+  await expect.poll(async () => (await messages(page)).find((m) => m.type === 'install')).toMatchObject({
+    module: 'seaborn',
+  });
+  // The cell ran again after the install, and nothing was installed before the click.
+  await expect.poll(async () => (await messages(page)).filter((m) => m.type === 'run').length).toBe(2);
+  await expect(page.locator('.output.error')).toHaveCount(0);
 });

@@ -11,7 +11,7 @@ Events out: ready | stream{id,which,text} | done{id,result} |
 Commands in: run{id,code} | namespace{id} | artifacts{id} | persist{id} | ...
 
 In a document's own environment (ENVIRONMENT.md; the server sets
-KNUTH_DOCUMENT), a `run` first installs any module the cell imports and
+KNUTH_DOCUMENT), a `run` first refreshes the import caches, since the page may have had a package installed into it; it used to install any module the cell imports and
 does not have, pinning it in the document's header, and reports that as
 `dependency` and `header` events.
 
@@ -25,6 +25,7 @@ through the same writer `knuth run` uses, so the app and the runner never
 disagree about what the folder should contain.
 """
 
+import importlib
 import io
 import json
 import os
@@ -131,11 +132,10 @@ def handle_request(msg, session, state, emit):
     if kind == "run":
         state["id"] = msg["id"]
         state["stream_bytes"] = 0
-        document = os.environ.get(env.DOCUMENT_VAR)
-        if document:
-            # Managed environment only: never under Pyodide, never on the
-            # engine's own Python, where the variable is unset.
-            env.install_missing(msg["code"], document, emit, msg["id"])
+        if os.environ.get(env.DOCUMENT_VAR):
+            # A package may have been installed into this environment since
+            # the last run (the page's "Install with uv", ENVIRONMENT.md).
+            importlib.invalidate_caches()
         ok, payload = session.run(msg["code"], scratch=bool(msg.get("scratch")))
         svgs = capture_open_figures(MAX_FIGURES_PER_RUN)
         named = [] if msg.get("scratch") else session.figure_receipts(

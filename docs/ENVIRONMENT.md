@@ -109,15 +109,18 @@ document authored there gets pinned the first time it runs under the
 engine. The percent parser keeps the header in the document preamble,
 byte for byte, and output receipts can never land above it.
 
-DECIDED: **Import installs.** When a cell imports a module that is not
-installed and not in the standard library, the kernel installs it before
-running the cell: `uv add --script <doc> --bounds exact <distribution>`
-then `uv sync --script <doc>`, so the header gains the exact pin and the
-environment gains the package. A small table maps import names to
+DECIDED: **Installs are asked for, never silent** (Taylor, 2026-09-27,
+superseding "Import installs"). When a cell fails with `No module named
+X`, the page shows a toast with **Install with uv**; clicking it sends
+`install{id, module}` and the engine runs `uv add --script <doc> --bounds
+exact <distribution>` then `uv sync --script <doc>`, so the header gains
+the exact pin and the environment gains the package, and the cell runs
+again. It used to happen on every run of a managed document before the
+cell ran, which was invisible: a document without a header never
+installed, and nothing said why. A small table maps import names to
 distribution names where they differ (`sklearn` → `scikit-learn`, `PIL` →
 `pillow`, `cv2` → `opencv-python`, …); everything else is assumed to share
-its name. A name uv cannot resolve is reported and the cell runs anyway,
-so the ImportError is the user's, not Knuth's. If the document is already
+its name. A name uv cannot resolve is reported on the toast. If the document is already
 pinned to a version, that is the version installed, and `import pandas`
 gets it. To want a different one, edit the pin.
 
@@ -125,11 +128,12 @@ gets it. To want a different one, edit the pin.
 package there means the header is incomplete, and the honest answer is a
 failure.
 
-DECIDED: **Existing documents are untouched.** A document with no header
-runs on the engine's own Python, as before, with no auto-install. OPEN: the
-page should offer to pin such a document (write a header from the
-top-level packages the session has imported); the engine side of that
-offer is `knuth.env.with_header`, the page side is not built.
+DECIDED: **Existing documents are untouched until asked.** A document with
+no header runs on the engine's own Python. The first "Install with uv"
+gives it a header (`knuth.env.with_header`), adds the package, and answers
+`installed{restart: true}`; the page then restarts the session into the
+new environment and reruns the stale cells. An unsaved document has
+nowhere to list packages, so the toast saves it first.
 
 ## Resolution order
 
@@ -164,15 +168,13 @@ appears in the header, which is what "the folder regenerates without the
 app" requires. A test imports the kernel modules with the engine's
 third-party packages hidden, so this stays true.
 
-**Auto-install** is the kernel's job, in `handle_request` for `run`: it
-parses the cell, resolves each absolute import's top-level name, skips the
-standard library and anything `importlib` can already find (which includes
-sibling modules in the document's folder, since the kernel runs there),
-and installs the rest. The kernel knows its document from
-`KNUTH_DOCUMENT`, set by the server only for a managed environment, so a
-system-Python kernel and the Pyodide kernel never attempt it. After an
-install the kernel invalidates the import caches and emits the rewritten
-header so the page can splice it into its copy of the text.
+**Installing** is the server's job, on the page's `install` request: it
+emits `dependency` (installing, then installed with the pinned version, or
+failed with uv's reason), the rewritten `header` for the page to splice,
+and `installed{ok, restart}`. The kernel, in a managed environment (it
+knows its document from `KNUTH_DOCUMENT`), invalidates the import caches
+at the start of every run, so a package installed into its environment
+imports without a restart.
 
 **`knuth run`** resolves the document's environment the same way and, if
 it is not already running on that interpreter, re-executes itself there

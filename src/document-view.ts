@@ -643,6 +643,9 @@ export class DocumentView {
     }
   }
 
+  /** A run failed: its traceback, and a way to run the cell again. */
+  onRunFailed?: (traceback: string, rerun: () => Promise<boolean>) => void;
+
   /** Run one code cell; resolves true when it finished cleanly. */
   private async runCell(v: CellView): Promise<boolean> {
     if (v.cell.kind === 'text' || v.running) return false;
@@ -709,6 +712,7 @@ export class DocumentView {
     if (!v.isPreamble) this.onChange();
     if (outcome.ok && v.cell.kind === 'program') this.onProgramRun?.();
     this.onRun?.();
+    if (!outcome.ok && outcome.traceback) this.onRunFailed?.(outcome.traceback, () => this.runCell(v));
     return outcome.ok;
   }
 

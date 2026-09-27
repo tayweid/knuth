@@ -235,6 +235,7 @@ def _validate_request(msg):
         "save",
         "stat",
         "rename",
+        "install",
     }:
         return "unknown request type"
     if kind != "interrupt":
@@ -252,6 +253,10 @@ def _validate_request(msg):
     elif kind == "convert":
         if not isinstance(msg.get("text"), str):
             return "convert text must be a string"
+    elif kind == "install":
+        module = msg.get("module")
+        if not isinstance(module, str) or not module.isidentifier() or len(module) > MAX_NAME_CHARS:
+            return "install module must be a module name"
     elif kind == "restart":
         if "root" in msg and not isinstance(msg["root"], str):
             return "restart root must be a string"
@@ -418,6 +423,63 @@ async def serve(
         await ws.send(json.dumps(event))
         await ws.close(code=1011, reason=reason)
 
+    async def install_package(ws, session, msg):
+        """Install a module a cell could not import, the one way Knuth
+        installs anything: `uv add --script` into the document's header,
+        then sync (ENVIRONMENT.md). Asked for by the page's toast, never
+        done silently. A document with no header gets one first; the page
+        then restarts the session into the environment (`restart: true`).
+        """
+        module = msg["module"]
+        distribution = env.distribution_for(module)
+        base = {"type": "dependency", "id": msg["id"], "module": module, "distribution": distribution}
+        document = session.document
+
+        async def refuse(reason):
+            await ws.send(json.dumps({**base, "state": "failed", "error": reason}))
+            await ws.send(json.dumps({"type": "installed", "id": msg["id"], "ok": False, "error": reason}))
+
+        if not document:
+            await refuse("save the document first: its packages are listed in the file")
+            return
+        if env.find_uv() is None:
+            await refuse("uv is not installed")
+            return
+
+        def work():
+            text = env._read(document)
+            if text is None:
+                return False, "the document could not be read"
+            if env.find_header(text) is None:
+                header_text, _ = env.with_header(text)
+                saved = files.save_document(document, header_text)
+                if "error" in saved:
+                    return False, saved["error"]
+            return env.add_dependency(document, distribution)
+
+        await ws.send(json.dumps({**base, "state": "installing"}))
+        ok, reason = await asyncio.to_thread(work)
+        if not ok:
+            await refuse(reason or f"uv could not install {distribution}")
+            return
+        text = env._read(document) or ""
+        await ws.send(json.dumps({
+            **base, "state": "installed", "version": env.pinned_version(text, distribution),
+        }))
+        lines = env.header_lines(text)
+        if lines is not None:
+            try:
+                modified = int(os.stat(document).st_mtime * 1000)
+            except OSError:
+                modified = None
+            if modified is not None:
+                await ws.send(json.dumps({
+                    "type": "header", "id": msg["id"], "path": document,
+                    "lines": lines, "modified": modified,
+                }))
+        managed = session.environment is not None and session.environment.managed
+        await ws.send(json.dumps({"type": "installed", "id": msg["id"], "ok": True, "restart": not managed}))
+
     async def prepare_environment(ws, document):
         """The document's environment, built or refreshed (ENVIRONMENT.md).
 
@@ -579,6 +641,8 @@ async def serve(
                     await ws.send(json.dumps(_convert_response(msg)))
                 elif kind in {"open", "save", "stat", "rename"}:
                     await ws.send(json.dumps(_file_response(msg)))
+                elif kind == "install":
+                    await install_package(ws, session, msg)
                 elif kind == "restart":
                     if "root" in msg:
                         session.root = _session_root(msg["root"], root)

@@ -131,42 +131,6 @@ def test_distribution_names():
     assert env.distribution_for("pandas") == "pandas"
 
 
-def test_install_missing_reports_each_step_and_the_new_header(tmp_path, monkeypatch):
-    document = tmp_path / "analysis.py"
-    document.write_text(DOC)
-    events = []
-    monkeypatch.setattr(env, "missing_imports", lambda code: ["pandas", "nope"])
-
-    def fake_add(path, distribution):
-        assert path == str(document)
-        if distribution == "nope":
-            return False, "No solution found"
-        return True, None
-
-    monkeypatch.setattr(env, "add_dependency", fake_add)
-    changed = env.install_missing("import pandas, nope", str(document), events.append, 7)
-    assert changed
-    assert [e["type"] for e in events] == ["dependency", "dependency", "dependency", "dependency", "header"]
-    assert events[0] == {"type": "dependency", "id": 7, "module": "pandas", "distribution": "pandas", "state": "installing"}
-    assert events[1]["state"] == "installed" and events[1]["version"] == "2.3.2"
-    assert events[3]["state"] == "failed" and "No solution" in events[3]["error"]
-    header = events[4]
-    assert header["path"] == str(document) and header["lines"] == HEADER
-    assert header["modified"] == int(document.stat().st_mtime * 1000)
-
-
-def test_install_missing_is_silent_when_nothing_is_missing(tmp_path, monkeypatch):
-    document = tmp_path / "analysis.py"
-    document.write_text(DOC)
-    events = []
-    monkeypatch.setattr(env, "add_dependency", lambda *a: pytest.fail("must not install"))
-    assert not env.install_missing("import os\n", str(document), events.append, 1)
-    assert events == []
-
-
-# --- the environment --------------------------------------------------------
-
-
 def test_ensure_environment_falls_back_with_a_reason(tmp_path, monkeypatch):
     assert env.ensure_environment(None).reason == "no document"
     plain = tmp_path / "plain.py"

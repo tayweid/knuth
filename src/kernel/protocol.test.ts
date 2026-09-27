@@ -154,3 +154,9 @@ ok({ type: 'header', id: 4, path: '/p/a.py', lines: ['# /// script', '# ///'], m
 bad({ type: 'header', id: 4, path: '/p/a.py', lines: 'x', modified: 12 });
 ok({ type: 'saved', id: 2, path: '/p/a.py', modified: 9, header: ['# /// script', '# ///'] });
 bad({ type: 'saved', id: 2, path: '/p/a.py', modified: 9, header: 'no' });
+
+// Installing a package the toast offered.
+ok({ type: 'installed', id: 6, ok: true, restart: false });
+ok({ type: 'installed', id: 6, ok: false, error: 'save the document first' });
+bad({ type: 'installed', id: 6 });
+bad({ type: 'installed', id: 6, ok: true, restart: 'yes' });

@@ -53,7 +53,7 @@ The app is a native window around the same local engine (design in
   browser downloads are quarantined):
 
 ```bash
-curl -fsSL -o /tmp/Knuth.app.zip https://github.com/tayweid/knuth/raw/main/app/Knuth.app.zip && ditto -x -k /tmp/Knuth.app.zip /Applications
+curl -fsSL -o /tmp/Knuth.app.zip https://github.com/tayweid/knuth/raw/main/app/Knuth.app.zip && rm -rf /Applications/Knuth.app && ditto -x -k /tmp/Knuth.app.zip /Applications
 ```
 
 `app/build.sh` rebuilds the app and that zip from a checkout, with the
@@ -153,8 +153,9 @@ it with [uv](https://docs.astral.sh/uv/):
 # ///
 ```
 
-New documents get an empty header. Importing a package the document does
-not have installs it and pins the exact version in the header; the date
+New documents get an empty header. When a cell imports a package the
+document does not have, Knuth offers **Install with uv**, which installs
+it and pins the exact version in the header; the date
 stamp holds everything underneath, so the same file resolves the same
 way years later. Nothing lands in the project folder: the environment
 lives in uv's store, on a Python uv manages, whatever else is on the

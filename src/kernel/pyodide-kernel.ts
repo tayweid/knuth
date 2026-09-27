@@ -237,7 +237,7 @@ export class PyodideKernel implements Kernel {
     if (!this.micropip) return;
     // Named packages first: a pip line exists to say which package an
     // import name comes from, so the scan below must see it installed.
-    for (const requirement of pipDirectives(code)) await this.install(requirement, id);
+    for (const requirement of pipDirectives(code)) await this.micropipInstall(requirement, id);
     let missing: string[] = [];
     try {
       py.globals.set('_knuth_code', code);
@@ -245,7 +245,7 @@ export class PyodideKernel implements Kernel {
     } catch (error) {
       console.warn('Could not inspect imports', error);
     }
-    for (const name of missing) await this.install(name, id);
+    for (const name of missing) await this.micropipInstall(name, id);
   }
 
   /** The document's declared dependencies (its PEP 723 header), installed
@@ -264,14 +264,14 @@ export class PyodideKernel implements Kernel {
       return;
     }
     if (parsed.error) handlers?.onStream?.('stderr', `${parsed.error}\n`);
-    for (const requirement of parsed.dependencies ?? []) await this.install(requirement, id);
+    for (const requirement of parsed.dependencies ?? []) await this.micropipInstall(requirement, id);
   }
 
   /** One requirement through micropip, reported as the engine reports
    *  its own installs: dependency events for the page to toast, nothing
    *  on the cell's stream, so receipts never carry an "Installing" line
    *  that a run under real Python would not produce. */
-  private async install(requirement: string, id: number): Promise<void> {
+  private async micropipInstall(requirement: string, id: number): Promise<void> {
     if (this.installed.has(requirement)) return;
     const py = this.pyodide!;
     const module = requirement.split(/[<>=!~\[; ]/)[0];

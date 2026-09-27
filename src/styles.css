@@ -186,6 +186,8 @@ body:not([data-plain='true']):has(#panel:not([hidden])) #toolbar {
 
 #toolbar:hover .tb-btn { opacity: 1; }
 .tb-btn:hover { background: rgba(255, 255, 255, 0.12); }
+/* display above out-specifies the UA's [hidden] rule. */
+.tb-btn[hidden] { display: none; }
 /* The hosted preview's way to the app: a popup under the toolbar button. */
 .file-menu.get-menu {
   width: min(460px, calc(100vw - 16px));

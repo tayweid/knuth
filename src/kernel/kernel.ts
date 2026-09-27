@@ -19,6 +19,7 @@ import {
   DocumentResult,
   EnvironmentEvent,
   HeaderEvent,
+  InstalledResult,
   PersistedResult,
   RenamedResult,
   SavedResult,
@@ -41,6 +42,7 @@ export type {
   DocumentResult,
   EnvironmentEvent,
   HeaderEvent,
+  InstalledResult,
   FigureResult,
   NamespaceVar,
   PersistedResult,
@@ -107,6 +109,9 @@ export interface Kernel {
   renamePath(path: string, name: string): Promise<RenamedResult | null>;
   /** The kernel writes values.json and figs/ into its own folder. */
   persist(): Promise<PersistedResult | null>;
+  /** Install a module a cell could not import, with uv, into the
+   *  document's header and environment. Only an engine can. */
+  install?(module: string): Promise<InstalledResult | null>;
   /** The folder this session's kernel runs in, as the engine reported it. */
   readonly root: string | null;
   close(): void;
@@ -178,6 +183,7 @@ export class SidecarKernel implements Kernel {
   private statWaiters = new Map<number, (result: StatResult | null) => void>();
   private renamedWaiters = new Map<number, (result: RenamedResult | null) => void>();
   private persistedWaiters = new Map<number, (result: PersistedResult | null) => void>();
+  private installedWaiters = new Map<number, (result: InstalledResult | null) => void>();
   private restartWaiters = new Map<number, () => void>();
   /** Where the kernel runs, as last reported by `attached`. */
   root: string | null = null;
@@ -292,6 +298,8 @@ export class SidecarKernel implements Kernel {
     this.renamedWaiters.clear();
     for (const resolve of this.persistedWaiters.values()) resolve(null);
     this.persistedWaiters.clear();
+    for (const resolve of this.installedWaiters.values()) resolve(null);
+    this.installedWaiters.clear();
     for (const resolve of this.restartWaiters.values()) resolve();
     this.restartWaiters.clear();
   }
@@ -392,6 +400,11 @@ export class SidecarKernel implements Kernel {
         this.persistedWaiters.delete(msg.id);
         break;
       }
+      case 'installed': {
+        this.installedWaiters.get(msg.id)?.(msg);
+        this.installedWaiters.delete(msg.id);
+        break;
+      }
       case 'environment': {
         this.listeners.onEnvironment?.(msg);
         break;
@@ -486,6 +499,10 @@ export class SidecarKernel implements Kernel {
       case 'persist':
         this.persistedWaiters.get(msg.id)?.({ error: reason });
         this.persistedWaiters.delete(msg.id);
+        break;
+      case 'install':
+        this.installedWaiters.get(msg.id)?.({ ok: false, error: reason });
+        this.installedWaiters.delete(msg.id);
         break;
       case 'restart':
         this.restartWaiters.get(msg.id)?.();
@@ -625,6 +642,15 @@ export class SidecarKernel implements Kernel {
     return new Promise((resolve) => {
       this.renamedWaiters.set(id, resolve);
       this.send({ type: 'rename', id, path, name });
+    });
+  }
+
+  async install(module: string): Promise<InstalledResult | null> {
+    if (!this.connectedReady) return null;
+    const id = this.nextId++;
+    return new Promise((resolve) => {
+      this.installedWaiters.set(id, resolve);
+      this.send({ type: 'install', id, module });
     });
   }
 

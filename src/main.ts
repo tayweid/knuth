@@ -288,7 +288,7 @@ const filesViaShell = !!shell && pythonInBrowser;
 // the real thing is one click away — a download, or a line for the
 // terminal that never meets the Gatekeeper prompt (APP.md).
 const APP_ZIP = 'https://github.com/tayweid/knuth/raw/main/app/Knuth.app.zip';
-const APP_LINE = `curl -fsSL -o /tmp/Knuth.app.zip ${APP_ZIP} && ditto -x -k /tmp/Knuth.app.zip /Applications`;
+const APP_LINE = `curl -fsSL -o /tmp/Knuth.app.zip ${APP_ZIP} && rm -rf /Applications/Knuth.app && ditto -x -k /tmp/Knuth.app.zip /Applications`;
 const ENGINE_LINE =
   'python3 -m pip install --upgrade --force-reinstall "knuth @ https://github.com/tayweid/knuth/archive/refs/heads/main.zip#subdirectory=python"';
 if (servedLocally || shell) $('get-app').hidden = true;
@@ -539,6 +539,57 @@ const docView = new DocumentView(
   loadFigureFromDir,
 );
 
+// A cell that could not import a module: offer to install it with uv,
+// the one way Knuth installs anything (ENVIRONMENT.md). Never silently,
+// and only with an engine — Pyodide installs from the web on import.
+let pendingRestart: Promise<void> | null = null;
+const MISSING = /ModuleNotFoundError: No module named '([A-Za-z_][A-Za-z0-9_]*)/;
+docView.onRunFailed = (traceback, rerun) => {
+  const install = kernel.install?.bind(kernel);
+  const module = MISSING.exec(traceback)?.[1];
+  if (!install || !module) return;
+  toast(`${module} isn't installed`, {
+    label: 'Install with uv',
+    run: () => void installAndRerun(module, install, rerun),
+  });
+};
+
+async function installAndRerun(
+  module: string,
+  install: (module: string) => Promise<{ ok: boolean; restart?: boolean; error?: string } | null>,
+  rerun: () => Promise<boolean>,
+) {
+  let restarted = false;
+  if (!fileManager.path) {
+    // The packages live in the file, so the file comes first.
+    await fileManager.save();
+    if (!fileManager.path) {
+      toast('Save the document to install packages into it');
+      return;
+    }
+    restarted = true;
+    if (pendingRestart) await pendingRestart;
+  }
+  const result = await install(module);
+  if (!result) {
+    toast(`Could not install ${module}: the engine is not connected`);
+    return;
+  }
+  if (!result.ok) return; // the dependency event already said why
+  if (result.restart) {
+    // The document had no environment: the session moves into the new one.
+    await kernel.restart(fileManager.root ?? undefined, fileManager.path);
+    restarted = true;
+  }
+  if (restarted) {
+    docView.markAllStale();
+    await docView.runStale();
+  } else {
+    await rerun();
+  }
+  void panel.refresh();
+}
+
 function repaintName() {
   const label = $('file-name');
   label.textContent = '';
@@ -582,7 +633,8 @@ fileManager = new FileManager({
   onPathChanged: (path) => {
     // Same text, new path: the environment is per document (ENVIRONMENT.md).
     if (kernel.isReady) {
-      void kernel.restart(fileManager.root ?? undefined, path).then(() => void panel.refresh());
+      pendingRestart = kernel.restart(fileManager.root ?? undefined, path);
+      void pendingRestart.then(() => void panel.refresh());
     }
   },
   onState: repaintName,

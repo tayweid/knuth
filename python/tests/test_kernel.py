@@ -1065,12 +1065,17 @@ async def check_managed_environment(project):
             _, final = await client.run(1, "import sys; sys.executable")
             assert final["result"] == repr(environment["python"]), final
 
-            await client.send(type="run", id=2, code="import tomli_w\ntomli_w.__name__")
+            # Nothing installs silently: the import fails, and the page offers
+            # "Install with uv", which is the install request below.
+            _, final = await client.run(2, "import tomli_w\ntomli_w.__name__")
+            assert final["type"] == "error" and "No module named 'tomli_w'" in final["traceback"], final
+
+            await client.send(type="install", id=3, module="tomli_w")
             events = []
             while True:
                 msg = await asyncio.wait_for(client.recv(), timeout=120)
                 events.append(msg)
-                if msg["type"] in ("done", "error"):
+                if msg["type"] == "installed":
                     break
             kinds = [(e["type"], e.get("state")) for e in events]
             assert kinds[:2] == [("dependency", "installing"), ("dependency", "installed")], kinds
@@ -1080,7 +1085,11 @@ async def check_managed_environment(project):
             assert header["type"] == "header" and header["path"] == str(document), header
             assert any(line.startswith('#     "tomli-w==') for line in header["lines"]), header
             assert header["modified"] == int(document.stat().st_mtime * 1000)
-            assert events[-1]["type"] == "done" and events[-1]["result"] == "'tomli_w'", events[-1]
+            # Already in its environment: the same session can import it now.
+            assert events[-1] == {"type": "installed", "id": 3, "ok": True, "restart": False}, events[-1]
+
+            _, final = await client.run(4, "import tomli_w\ntomli_w.__name__")
+            assert final["type"] == "done" and final["result"] == "'tomli_w'", final
             on_disk = document.read_text()
             assert 'exclude-newer = "2026-09-26T00:00:00Z"' in on_disk
             assert on_disk.endswith("# ///\n\n# %%\nimport tomli_w\n"), on_disk
@@ -1134,3 +1143,77 @@ def test_serve_exits_with_its_parent(tmp_path):
             parent.kill()
         if server.poll() is None:
             server.kill()
+
+
+async def check_install_needs_a_document(project):
+    """An unsaved document has nowhere to list a package: refused, plainly."""
+    port = free_port()
+    server = subprocess.Popen(server_command(port, root=project), stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    try:
+        ws = await connect_when_up(port)
+        async with closing_websocket(ws):
+            client = Client(ws)
+            await client.attach("no-document")
+            await client.wait_ready()
+            await client.send(type="install", id=1, module="tomli_w")
+            failed = await asyncio.wait_for(client.recv(), timeout=10)
+            assert failed["type"] == "dependency" and failed["state"] == "failed", failed
+            assert "save the document" in failed["error"], failed
+            installed = await asyncio.wait_for(client.recv(), timeout=10)
+            assert installed["type"] == "installed" and installed["ok"] is False, installed
+            await client.send(type="install", id=2, module="not a module")
+            refused = await asyncio.wait_for(client.recv(), timeout=10)
+            assert refused["type"] == "protocol_error", refused
+    finally:
+        server.terminate()
+        server.wait(timeout=5)
+
+
+def test_install_needs_a_document(tmp_path):
+    asyncio.run(check_install_needs_a_document(tmp_path.resolve()))
+
+
+async def check_install_gives_a_plain_document_a_header(project):
+    """A saved file with no header gets one, then the package; the session
+    must move into the new environment, so the reply says restart."""
+    port = free_port()
+    document = project / "plain.py"
+    document.write_text("# %%\nimport tomli_w\n")
+    server = subprocess.Popen(server_command(port, root=project), stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    try:
+        ws = await connect_when_up(port)
+        async with closing_websocket(ws):
+            client = Client(ws)
+            await client.send(
+                type="attach", protocol=PROTOCOL_VERSION, session="plain-install",
+                root=str(project), document=str(document),
+            )
+            await asyncio.wait_for(client.wait_ready(), timeout=60)
+            await client.send(type="install", id=5, module="tomli_w")
+            while True:
+                msg = await asyncio.wait_for(client.recv(), timeout=180)
+                if msg["type"] == "installed":
+                    break
+            assert msg == {"type": "installed", "id": 5, "ok": True, "restart": True}, msg
+            text = document.read_text()
+            assert text.startswith("# /// script\n"), text
+            assert '#     "tomli-w==' in text and text.endswith("# ///\n\n# %%\nimport tomli_w\n"), text
+
+            # The page's restart: the session moves into the environment.
+            await client.send(type="restart", id=6, document=str(document))
+            while True:
+                msg = await asyncio.wait_for(client.recv(), timeout=180)
+                if msg["type"] == "environment" and msg["state"] != "syncing":
+                    assert msg["managed"], msg
+                if msg["type"] == "ready":
+                    break
+            _, final = await client.run(7, "import tomli_w\ntomli_w.__name__")
+            assert final["type"] == "done" and final["result"] == "'tomli_w'", final
+    finally:
+        server.terminate()
+        server.wait(timeout=5)
+
+
+@pytest.mark.skipif(not uv_with_managed_python(), reason="needs uv and a uv-managed Python")
+def test_install_gives_a_plain_document_a_header(tmp_path):
+    asyncio.run(check_install_gives_a_plain_document_a_header(tmp_path.resolve()))
