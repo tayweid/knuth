@@ -5,6 +5,7 @@
 
 import type {
   Artifacts,
+  CompletionsResult,
   ConvertResult,
   DocumentResult,
   FigureResult,
@@ -105,6 +106,10 @@ export class LazyKernel implements Kernel {
 
   async persist(): Promise<PersistedResult | null> {
     return (await (await this.real())?.persist()) ?? null;
+  }
+
+  async complete(code: string, offset: number): Promise<CompletionsResult | null> {
+    return (await (await this.real())?.complete?.(code, offset)) ?? null;
   }
 
   close(): void {

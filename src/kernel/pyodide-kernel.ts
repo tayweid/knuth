@@ -25,6 +25,7 @@
 
 import type {
   Artifacts,
+  CompletionsResult,
   ConvertResult,
   DocumentResult,
   FigureResult,
@@ -46,6 +47,7 @@ import { pipDirectives } from './pip-lines.ts';
 
 import initSource from '../../python/knuth/__init__.py?raw';
 import artifactsSource from '../../python/knuth/artifacts.py?raw';
+import completeSource from '../../python/knuth/complete.py?raw';
 import contractSource from '../../python/knuth/contract.py?raw';
 import envSource from '../../python/knuth/env.py?raw';
 import ipynbSource from '../../python/knuth/ipynb.py?raw';
@@ -198,6 +200,7 @@ export class PyodideKernel implements Kernel {
     const files: Array<[string, string]> = [
       ['__init__.py', initSource],
       ['artifacts.py', artifactsSource],
+      ['complete.py', completeSource],
       ['contract.py', contractSource],
       ['env.py', envSource],
       ['ipynb.py', ipynbSource],
@@ -413,6 +416,21 @@ export class PyodideKernel implements Kernel {
       void this.send({ type: 'restart', id }).catch(() => resolve());
     });
     this.onStatus?.('ready', false);
+  }
+
+  private jediLoading: Promise<void> | null = null;
+
+  async complete(code: string, offset: number): Promise<CompletionsResult | null> {
+    await this.ready;
+    if (this.closed || !this.pyodide) return null;
+    // Jedi ships with Pyodide; fetched the first time it is wanted, and
+    // until then the standard library's completer answers.
+    this.jediLoading ??= this.pyodide.loadPackage('jedi').catch(() => undefined);
+    return this.ask(
+      { type: 'complete', code, offset },
+      (event) => ({ start: Number(event.start ?? offset), items: (event.items as CompletionsResult['items']) ?? [] }),
+      null as CompletionsResult | null,
+    );
   }
 
   namespace(): Promise<NamespaceVar[]> {

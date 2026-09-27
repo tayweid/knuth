@@ -118,6 +118,18 @@ export interface InstalledResult {
   error?: string;
 }
 
+/** What fits at the cursor (knuth.complete): items replace from `start`. */
+export interface CompletionItem {
+  label: string;
+  /** Jedi's kind: module, class, function, instance, keyword, param, … */
+  type: string;
+}
+
+export interface CompletionsResult {
+  start: number;
+  items: CompletionItem[];
+}
+
 /** The kernel wrote the folder contract into its cwd. */
 export interface PersistedResult {
   root?: string;
@@ -156,6 +168,7 @@ export type ServerEvent =
   | ({ type: 'renamed'; id: number } & RenamedResult)
   | ({ type: 'persisted'; id: number } & PersistedResult)
   | ({ type: 'installed'; id: number } & InstalledResult)
+  | ({ type: 'completions'; id: number } & CompletionsResult)
   | ({ type: 'environment' } & EnvironmentEvent)
   | ({ type: 'dependency' } & DependencyEvent)
   | ({ type: 'header' } & HeaderEvent)
@@ -264,6 +277,10 @@ export function parseServerEvent(value: unknown): ServerEvent | null {
           (event.type === 'saved' || typeof event.name === 'string')
         )) && optionalString(event.error) &&
         (event.type === 'renamed' || optionalStringArray(event.header))
+        ? event as ServerEvent : null;
+    case 'completions':
+      return isRequestId(event.id) && isRequestId(event.start) && Array.isArray(event.items) &&
+        event.items.every((item) => isRecord(item) && typeof item.label === 'string' && typeof item.type === 'string')
         ? event as ServerEvent : null;
     case 'installed':
       return isRequestId(event.id) && typeof event.ok === 'boolean' &&

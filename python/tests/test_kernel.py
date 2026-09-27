@@ -1313,3 +1313,35 @@ def test_install_into_an_unsaved_document(tmp_path):
     config = (tmp_path / "config").resolve()
     project.mkdir()
     asyncio.run(check_install_into_an_unsaved_document(project, config))
+
+
+async def check_an_unsaved_documents_header_builds_its_environment(project, config):
+    """Relaunched with an unsaved document whose header lists a package:
+    the page sends its text, and the session's environment has it."""
+    port = free_port()
+    server = subprocess.Popen(
+        server_command(port, root=project),
+        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, env=environments_on(config),
+    )
+    text = (
+        '# /// script\n# requires-python = ">=3.11"\n# dependencies = ["tomli-w"]\n# ///\n\n'
+        "# %%\nimport tomli_w\n"
+    )
+    try:
+        ws = await connect_when_up(port)
+        async with closing_websocket(ws):
+            client = Client(ws)
+            await client.send(type="attach", protocol=PROTOCOL_VERSION, session="relaunch", text=text)
+            await asyncio.wait_for(client.wait_ready(), timeout=180)
+            _, final = await client.run(1, "import tomli_w\ntomli_w.__name__")
+            assert final["type"] == "done" and final["result"] == "'tomli_w'", final
+    finally:
+        server.terminate()
+        server.wait(timeout=5)
+
+
+@pytest.mark.skipif(not uv_with_managed_python(), reason="needs uv and a uv-managed Python")
+def test_an_unsaved_documents_header_builds_its_environment(tmp_path):
+    project = (tmp_path / "project").resolve()
+    project.mkdir()
+    asyncio.run(check_an_unsaved_documents_header_builds_its_environment(project, (tmp_path / "config").resolve()))

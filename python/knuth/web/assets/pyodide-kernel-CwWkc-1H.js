@@ -1,4 +1,4 @@
-import{t as e}from"./index-DIkSBS8Y.js";var t=/^\s*#\s*[%!]\s*pip\s+install\s+(.+?)\s*$/;function n(e){let n=[];for(let r of e.split(`
+import{t as e}from"./index-B-3yEevB.js";var t=/^\s*#\s*[%!]\s*pip\s+install\s+(.+?)\s*$/;function n(e){let n=[];for(let r of e.split(`
 `)){let e=t.exec(r);if(e)for(let t of e[1].split(/\s+/))t&&!t.startsWith(`-`)&&!n.includes(t)&&n.push(t)}return n}var r=`from .session import Session
 
 __all__ = ["Session"]
@@ -69,7 +69,104 @@ def owned_figure_names(raw):
             return set()
         names.add(name)
     return names
-`,a=`"""Writing the folder contract: values.json, figs/<name>.svg, and the
+`,a=`"""Code completion against the live session: what fits at the cursor.
+
+Jedi when it is importable — what IPython, Jupyter and Spyder use; it reads
+the live namespace (\`jedi.Interpreter\`), so after \`df.\` it knows \`df\` is a
+DataFrame — and otherwise the standard library's rlcompleter, which only
+knows names and attributes. Pure: no I/O, no state beyond the namespace it
+is handed, so the subprocess kernel and the Pyodide kernel answer the same.
+
+Knuth.app installs Jedi beside the engine, never into a document's own
+environment, so it never appears in a package header.
+"""
+
+import keyword
+import os
+import re
+import sys
+
+MAX_ITEMS = 200
+_WORD = re.compile(r"[A-Za-z_][A-Za-z0-9_]*$")
+_DOTTED = re.compile(r"((?:[A-Za-z_][A-Za-z0-9_]*\\.)*[A-Za-z_][A-Za-z0-9_]*)\\.([A-Za-z_][A-Za-z0-9_]*)?$")
+
+
+def complete(code, offset, namespace):
+    """Completions for \`code\` at character \`offset\`: (start, items), where
+    items are {"label", "type"} dicts and \`start\` is the offset the
+    completed word begins at, so the page replaces from there."""
+    offset = max(0, min(offset, len(code)))
+    before = code[:offset]
+    typed = _WORD.search(before)
+    start = offset - (len(typed.group(0)) if typed else 0)
+    items = _jedi(code, offset, namespace)
+    if items is None:
+        items = _rlcompleter(before, namespace)
+    return start, items[:MAX_ITEMS]
+
+
+def _jedi(code, offset, namespace):
+    try:
+        import jedi
+    except ImportError:
+        # The engine keeps Jedi beside it, not in the document's packages
+        # (knuth.env.tools_dir): appended, so it never shadows the document's.
+        tools = os.environ.get("KNUTH_TOOLS")
+        if not tools or not os.path.isdir(os.path.join(tools, "jedi")):
+            return None
+        if tools not in sys.path:
+            sys.path.append(tools)
+        try:
+            import jedi
+        except ImportError:
+            return None
+    lines = code[:offset].split("\\n")
+    try:
+        script = jedi.Interpreter(code, [namespace])
+        found = script.complete(line=len(lines), column=len(lines[-1]))
+    except Exception:
+        # Jedi on a half-typed line can fail in odd ways; the fallback is
+        # better than nothing and never raises.
+        return None
+    return [{"label": c.name, "type": c.type} for c in found if not c.name.startswith("__")] or []
+
+
+def _rlcompleter(before, namespace):
+    dotted = _DOTTED.search(before)
+    if dotted:
+        base, partial = dotted.group(1), dotted.group(2) or ""
+        try:
+            value = eval(base, dict(namespace))  # names and attributes only
+        except Exception:
+            return []
+        names = [n for n in dir(value) if n.startswith(partial)]
+        if not partial.startswith("_"):
+            names = [n for n in names if not n.startswith("_")]
+        return [{"label": n, "type": _kind(getattr(value, n, None))} for n in sorted(names)]
+    typed = _WORD.search(before)
+    partial = typed.group(0) if typed else ""
+    if not partial:
+        return []
+    import builtins
+
+    pool = {**vars(builtins), **namespace}
+    names = sorted(n for n in pool if n.startswith(partial) and not n.startswith("_"))
+    items = [{"label": n, "type": _kind(pool[n])} for n in names]
+    items += [{"label": k, "type": "keyword"} for k in keyword.kwlist if k.startswith(partial)]
+    return items
+
+
+def _kind(value):
+    import inspect
+
+    if inspect.ismodule(value):
+        return "module"
+    if inspect.isclass(value):
+        return "class"
+    if callable(value):
+        return "function"
+    return "instance"
+`,o=`"""Writing the folder contract: values.json, figs/<name>.svg, and the
 ownership manifest, atomically and in one place.
 
 Two producers share this: \`knuth run\` (runner.py) regenerates the contract
@@ -164,7 +261,7 @@ def write_contract(root, values, figures, extra=()):
         for temporary, _ in staged:
             temporary.unlink(missing_ok=True)
         staged_manifest.unlink(missing_ok=True)
-`,o=`"""The document's environment: a PEP 723 header, built and run by uv.
+`,s=`"""The document's environment: a PEP 723 header, built and run by uv.
 
 The header is the truth (ENVIRONMENT.md). This module reads it, creates it
 for a new document, asks uv for the environment it describes, and makes the
@@ -542,7 +639,7 @@ def kernel_environ(environment=None):
     """The environment variables for a kernel process (or a re-executed
     \`knuth run\`): headless matplotlib always; in a managed environment also
     the shim on PYTHONPATH, the document, and the uv to install with."""
-    environ = {**os.environ, "MPLBACKEND": "Agg"}
+    environ = {**os.environ, "MPLBACKEND": "Agg", TOOLS_VAR: str(tools_dir())}
     if environment is None or not environment.managed:
         return environ
     path = shim_dir()
@@ -698,7 +795,33 @@ def declare_imports(code, document, emit, request_id):
         modified = int(time.time() * 1000)
     emit({"type": "header", "id": request_id, "path": document, "lines": lines, "modified": modified})
     return True
-`,s=`"""Import Jupyter notebooks: .ipynb in, percent-format .py out.
+
+
+TOOLS_VAR = "KNUTH_TOOLS"
+
+
+def tools_dir():
+    """Where the engine keeps what the kernel uses but documents never list:
+    Jedi, for code hints (knuth.complete). Beside the preferences, installed
+    once, and appended to a kernel's path only when a completion asks."""
+    from . import state
+
+    return state.state_dir() / "tools"
+
+
+def ensure_tools():
+    """Install Jedi into tools_dir() if it is not there: pure Python, one
+    download, shared by every environment. Never raises; code hints fall
+    back to the standard library's completer until it is in place."""
+    target = tools_dir()
+    if (target / "jedi").is_dir() or find_uv() is None:
+        return False
+    try:
+        result = run_uv(["pip", "install", "--target", str(target), "--python", sys.executable, "jedi"])
+    except (OSError, subprocess.SubprocessError):
+        return False
+    return result.returncode == 0
+`,c=`"""Import Jupyter notebooks: .ipynb in, percent-format .py out.
 
 One-way by design (DESIGN.md: the document is a plain .py file), and
 implemented once, in Python — the app converts through the server's
@@ -822,7 +945,7 @@ def import_files(files, echo=print):
         note = f", {commented} line(s) commented out" if commented else ""
         echo(f"{path.name} -> {target.name} ({len(doc.cells)} cells{note})")
     return 1 if failed else 0
-`,c=`"""Named resource limits at Knuth's browser/kernel trust boundaries.
+`,l=`"""Named resource limits at Knuth's browser/kernel trust boundaries.
 
 These defaults are intentionally generous for interactive analysis while
 bounding unauthenticated frames, live subprocesses, and data retained by the
@@ -858,7 +981,7 @@ MAX_TABLE_RESPONSE_BYTES = 8 * 1024 * 1024
 # and how long a path it will consider at all.
 MAX_DOCUMENT_BYTES = 8 * 1024 * 1024
 MAX_PATH_CHARS = 4096
-`,l=`"""Percent-format (.py) document model — Python port of src/format/percent.ts,
+`,u=`"""Percent-format (.py) document model — Python port of src/format/percent.ts,
 same semantics, kept honest by round-tripping the same corpus in tests.
 
 Cells open with "# %%" ("#%%" tolerated, marker preserved verbatim);
@@ -1001,7 +1124,7 @@ def set_output(cell, text):
     cell.output = [
         OUTPUT_PREFIX if line == "" else f"{OUTPUT_PREFIX} {line}" for line in text.split("\\n")
     ]
-`,u=`"""The live session: a persistent namespace that runs cells REPL-style.
+`,d=`"""The live session: a persistent namespace that runs cells REPL-style.
 
 Used in-process by \`knuth run\` (Milestone 5) and by the kernel subprocess
 behind the WebSocket server (this milestone). Holds no I/O of its own —
@@ -1349,7 +1472,7 @@ class Session:
         while tb is not None and tb.tb_frame.f_code.co_filename != "<cell>":
             tb = tb.tb_next
         return "".join(traceback.format_exception(type(e), e, tb))
-`,d=`"""Kernel subprocess: line-delimited JSON on stdin/stdout around a Session.
+`,f=`"""Kernel subprocess: line-delimited JSON on stdin/stdout around a Session.
 
 Run as \`python -m knuth.kernel\` by the server, never directly by users.
 User code's stdout/stderr are redirected into \`stream\` events; the real
@@ -1486,6 +1609,12 @@ def handle_request(msg, session, state, emit):
         path = msg.get("path")
         if isinstance(path, str) and os.path.isdir(path):
             os.chdir(path)
+        return
+    if kind == "complete":
+        from .complete import complete
+
+        start, items = complete(msg.get("code", ""), msg.get("offset", 0), session.namespace)
+        emit({"type": "completions", "id": msg["id"], "start": start, "items": items})
         return
     if kind == "run":
         state["id"] = msg["id"]
@@ -1658,7 +1787,7 @@ def main():
 
 if __name__ == "__main__":
     main()
-`,f=`https://cdn.jsdelivr.net/pyodide/v0.28.3/full/`,p=`
+`,p=`https://cdn.jsdelivr.net/pyodide/v0.28.3/full/`,m=`
 import json, sys
 import knuth.kernel as kernel_module
 from knuth.kernel import Session, _StreamOut, handle_request
@@ -1733,4 +1862,4 @@ def knuth_convert(raw):
     except ValueError as error:
         return json.dumps({"error": str(error)})
     return json.dumps({"text": serialize_document(doc), "commented": commented})
-`,m=class{onStatus;listeners;pyodide=null;micropip=null;installed=new Set;lastPreamble=null;ready;closed=!1;booted=!1;root=null;nextId=1;runs=new Map;waiters=new Map;constructor(e,t={}){this.onStatus=e,this.listeners=t,this.onStatus?.(`connecting`),this.ready=this.boot().then(()=>{this.booted=!0,this.onStatus?.(`ready`,!1)},e=>{console.error(`Pyodide failed to start`,e),this.onStatus?.(`kernel_failed`)})}async boot(){let{loadPyodide:t}=await e(async()=>{let{loadPyodide:e}=await import(`${f}pyodide.mjs`);return{loadPyodide:e}},[],import.meta.url),n=await t({indexURL:f});n.FS.mkdirTree(`/lib/knuth`);let m=[[`__init__.py`,r],[`artifacts.py`,i],[`contract.py`,a],[`env.py`,o],[`ipynb.py`,s],[`limits.py`,c],[`percent.py`,l],[`session.py`,u],[`kernel.py`,d]];for(let[e,t]of m)n.FS.writeFile(`/lib/knuth/${e}`,t,{encoding:`utf8`});n.runPython(`import sys; sys.path.insert(0, "/lib")`),n.globals.set(`_knuth_emit`,e=>this.receive(e)),n.runPython(p);try{await n.loadPackage(`micropip`),this.micropip=n.pyimport(`micropip`)}catch(e){console.warn(`micropip is unavailable; PyPI packages cannot be installed`,e)}this.pyodide=n}async providePackages(e,t,r){let i=this.pyodide;try{await i.loadPackagesFromImports(e)}catch(e){console.warn(`Could not preload packages for this cell`,e)}if(!this.micropip)return;for(let r of n(e))await this.micropipInstall(r,t);let a=[];try{i.globals.set(`_knuth_code`,e),a=JSON.parse(String(i.runPython(`knuth_missing_imports(_knuth_code)`)))}catch(e){console.warn(`Could not inspect imports`,e)}for(let e of a)await this.micropipInstall(e,t)}async provideHeader(e,t,n){if(!this.micropip||e===this.lastPreamble)return;this.lastPreamble=e;let r=this.pyodide,i;try{r.globals.set(`_knuth_preamble`,e),i=JSON.parse(String(r.runPython(`knuth_header_requirements(_knuth_preamble)`)))}catch(e){console.warn(`Could not read the document header`,e);return}i.error&&n?.onStream?.(`stderr`,`${i.error}\n`);for(let e of i.dependencies??[])await this.micropipInstall(e,t)}async micropipInstall(e,t){if(this.installed.has(e))return;let n=this.pyodide,r=e.split(/[<>=!~\[; ]/)[0];this.listeners.onDependency?.({id:t,state:`installing`,module:r,distribution:e});let i;try{n.globals.set(`_knuth_requirement`,e),i=String(await n.runPythonAsync(`await knuth_install(_knuth_requirement)`))}catch(e){i=String(e?.message||e)}if(!i){this.installed.add(e),this.listeners.onDependency?.({id:t,state:`installed`,module:r,distribution:e});return}this.listeners.onDependency?.({id:t,state:`failed`,module:r,distribution:e,error:`${i} (packages with compiled code need Python installed on this computer)`})}get isReady(){return this.booted&&!this.closed}receive(e){let t;try{t=JSON.parse(e)}catch{return}let n=typeof t.id==`number`?t.id:null;if(t.type===`stream`&&n!==null){this.runs.get(n)?.handlers?.onStream?.(t.which,String(t.text??``));return}if(t.type===`figures`&&n!==null){this.runs.get(n)?.handlers?.onFigures?.(t.svgs??[],t.named??[]);return}if(t.type===`done`&&n!==null){this.runs.get(n)?.resolve({ok:!0,result:t.result??null,traceback:null}),this.runs.delete(n);return}if(t.type===`error`&&n!==null){this.runs.get(n)?.resolve({ok:!1,result:null,traceback:String(t.traceback??`error`)}),this.runs.delete(n);return}n!==null&&this.waiters.has(n)&&(this.waiters.get(n)(t),this.waiters.delete(n))}async send(e){if(await this.ready,this.closed||!this.pyodide)return;let t=this.pyodide;t.globals.set(`_knuth_request`,JSON.stringify(e)),await t.runPythonAsync(`knuth_handle(_knuth_request)`)}async ask(e,t,n){if(await this.ready,this.closed||!this.pyodide)return n;let r=this.nextId++;return new Promise(i=>{this.waiters.set(r,e=>i(e.type===`protocol_error`?n:t(e))),this.send({...e,id:r}).catch(()=>{this.waiters.delete(r),i(n)})})}async run(e,t,n){if(await this.ready,this.closed||!this.pyodide)return{ok:!1,result:null,traceback:`Python is not running`};let r=this.nextId++;return n?.preamble!==void 0&&await this.provideHeader(n.preamble,r,t),await this.providePackages(e,r,t),new Promise(i=>{this.runs.set(r,{handlers:t,resolve:i}),this.send({type:`run`,id:r,code:e,scratch:n?.scratch??!1}).catch(e=>{this.runs.delete(r),i({ok:!1,result:null,traceback:String(e)})})})}interrupt(){console.warn(`Interrupt is not available in the browser preview.`)}async restart(e,t){if(await this.ready,this.closed||!this.pyodide)return;this.lastPreamble=null;let n=this.nextId++;await new Promise(e=>{this.waiters.set(n,()=>e()),this.send({type:`restart`,id:n}).catch(()=>e())}),this.onStatus?.(`ready`,!1)}namespace(){return this.ask({type:`namespace`},e=>e.vars??[],[])}artifacts(){return this.ask({type:`artifacts`},e=>({values:e.values??{},figures:e.figures??{}}),null)}table(e,t=0,n=100){return this.ask({type:`table`,name:e,offset:t,limit:n},e=>e,null)}figure(e){return this.ask({type:`figure`,name:e},e=>e,null)}async convert(e){if(await this.ready,this.closed||!this.pyodide)return null;this.pyodide.globals.set(`_knuth_notebook`,e);try{let e=await this.pyodide.runPythonAsync(`knuth_convert(_knuth_notebook)`);return JSON.parse(String(e))}catch(e){return{error:String(e)}}}async openPath(e){return null}async savePath(e,t){return null}async statPath(e){return null}async renamePath(e,t){return null}async persist(){return null}close(){this.closed=!0}};export{m as PyodideKernel};
+`,h=class{onStatus;listeners;pyodide=null;micropip=null;installed=new Set;lastPreamble=null;ready;closed=!1;booted=!1;root=null;nextId=1;runs=new Map;waiters=new Map;constructor(e,t={}){this.onStatus=e,this.listeners=t,this.onStatus?.(`connecting`),this.ready=this.boot().then(()=>{this.booted=!0,this.onStatus?.(`ready`,!1)},e=>{console.error(`Pyodide failed to start`,e),this.onStatus?.(`kernel_failed`)})}async boot(){let{loadPyodide:t}=await e(async()=>{let{loadPyodide:e}=await import(`${p}pyodide.mjs`);return{loadPyodide:e}},[],import.meta.url),n=await t({indexURL:p});n.FS.mkdirTree(`/lib/knuth`);let h=[[`__init__.py`,r],[`artifacts.py`,i],[`complete.py`,a],[`contract.py`,o],[`env.py`,s],[`ipynb.py`,c],[`limits.py`,l],[`percent.py`,u],[`session.py`,d],[`kernel.py`,f]];for(let[e,t]of h)n.FS.writeFile(`/lib/knuth/${e}`,t,{encoding:`utf8`});n.runPython(`import sys; sys.path.insert(0, "/lib")`),n.globals.set(`_knuth_emit`,e=>this.receive(e)),n.runPython(m);try{await n.loadPackage(`micropip`),this.micropip=n.pyimport(`micropip`)}catch(e){console.warn(`micropip is unavailable; PyPI packages cannot be installed`,e)}this.pyodide=n}async providePackages(e,t,r){let i=this.pyodide;try{await i.loadPackagesFromImports(e)}catch(e){console.warn(`Could not preload packages for this cell`,e)}if(!this.micropip)return;for(let r of n(e))await this.micropipInstall(r,t);let a=[];try{i.globals.set(`_knuth_code`,e),a=JSON.parse(String(i.runPython(`knuth_missing_imports(_knuth_code)`)))}catch(e){console.warn(`Could not inspect imports`,e)}for(let e of a)await this.micropipInstall(e,t)}async provideHeader(e,t,n){if(!this.micropip||e===this.lastPreamble)return;this.lastPreamble=e;let r=this.pyodide,i;try{r.globals.set(`_knuth_preamble`,e),i=JSON.parse(String(r.runPython(`knuth_header_requirements(_knuth_preamble)`)))}catch(e){console.warn(`Could not read the document header`,e);return}i.error&&n?.onStream?.(`stderr`,`${i.error}\n`);for(let e of i.dependencies??[])await this.micropipInstall(e,t)}async micropipInstall(e,t){if(this.installed.has(e))return;let n=this.pyodide,r=e.split(/[<>=!~\[; ]/)[0];this.listeners.onDependency?.({id:t,state:`installing`,module:r,distribution:e});let i;try{n.globals.set(`_knuth_requirement`,e),i=String(await n.runPythonAsync(`await knuth_install(_knuth_requirement)`))}catch(e){i=String(e?.message||e)}if(!i){this.installed.add(e),this.listeners.onDependency?.({id:t,state:`installed`,module:r,distribution:e});return}this.listeners.onDependency?.({id:t,state:`failed`,module:r,distribution:e,error:`${i} (packages with compiled code need Python installed on this computer)`})}get isReady(){return this.booted&&!this.closed}receive(e){let t;try{t=JSON.parse(e)}catch{return}let n=typeof t.id==`number`?t.id:null;if(t.type===`stream`&&n!==null){this.runs.get(n)?.handlers?.onStream?.(t.which,String(t.text??``));return}if(t.type===`figures`&&n!==null){this.runs.get(n)?.handlers?.onFigures?.(t.svgs??[],t.named??[]);return}if(t.type===`done`&&n!==null){this.runs.get(n)?.resolve({ok:!0,result:t.result??null,traceback:null}),this.runs.delete(n);return}if(t.type===`error`&&n!==null){this.runs.get(n)?.resolve({ok:!1,result:null,traceback:String(t.traceback??`error`)}),this.runs.delete(n);return}n!==null&&this.waiters.has(n)&&(this.waiters.get(n)(t),this.waiters.delete(n))}async send(e){if(await this.ready,this.closed||!this.pyodide)return;let t=this.pyodide;t.globals.set(`_knuth_request`,JSON.stringify(e)),await t.runPythonAsync(`knuth_handle(_knuth_request)`)}async ask(e,t,n){if(await this.ready,this.closed||!this.pyodide)return n;let r=this.nextId++;return new Promise(i=>{this.waiters.set(r,e=>i(e.type===`protocol_error`?n:t(e))),this.send({...e,id:r}).catch(()=>{this.waiters.delete(r),i(n)})})}async run(e,t,n){if(await this.ready,this.closed||!this.pyodide)return{ok:!1,result:null,traceback:`Python is not running`};let r=this.nextId++;return n?.preamble!==void 0&&await this.provideHeader(n.preamble,r,t),await this.providePackages(e,r,t),new Promise(i=>{this.runs.set(r,{handlers:t,resolve:i}),this.send({type:`run`,id:r,code:e,scratch:n?.scratch??!1}).catch(e=>{this.runs.delete(r),i({ok:!1,result:null,traceback:String(e)})})})}interrupt(){console.warn(`Interrupt is not available in the browser preview.`)}async restart(e,t){if(await this.ready,this.closed||!this.pyodide)return;this.lastPreamble=null;let n=this.nextId++;await new Promise(e=>{this.waiters.set(n,()=>e()),this.send({type:`restart`,id:n}).catch(()=>e())}),this.onStatus?.(`ready`,!1)}jediLoading=null;async complete(e,t){return await this.ready,this.closed||!this.pyodide?null:(this.jediLoading??=this.pyodide.loadPackage(`jedi`).catch(()=>void 0),this.ask({type:`complete`,code:e,offset:t},e=>({start:Number(e.start??t),items:e.items??[]}),null))}namespace(){return this.ask({type:`namespace`},e=>e.vars??[],[])}artifacts(){return this.ask({type:`artifacts`},e=>({values:e.values??{},figures:e.figures??{}}),null)}table(e,t=0,n=100){return this.ask({type:`table`,name:e,offset:t,limit:n},e=>e,null)}figure(e){return this.ask({type:`figure`,name:e},e=>e,null)}async convert(e){if(await this.ready,this.closed||!this.pyodide)return null;this.pyodide.globals.set(`_knuth_notebook`,e);try{let e=await this.pyodide.runPythonAsync(`knuth_convert(_knuth_notebook)`);return JSON.parse(String(e))}catch(e){return{error:String(e)}}}async openPath(e){return null}async savePath(e,t){return null}async statPath(e){return null}async renamePath(e,t){return null}async persist(){return null}close(){this.closed=!0}};export{h as PyodideKernel};

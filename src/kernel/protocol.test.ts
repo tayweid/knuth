@@ -164,3 +164,9 @@ bad({ type: 'installed', id: 6, ok: true, restart: 'yes' });
 // An unsaved document's header: no path, nothing on disk to adopt.
 ok({ type: 'header', id: 4, path: null, lines: ['# /// script', '# ///'], modified: null });
 bad({ type: 'header', id: 4, path: 3, lines: [], modified: null });
+
+// Completions at the cursor.
+ok({ type: 'completions', id: 7, start: 3, items: [{ label: 'describe', type: 'function' }] });
+ok({ type: 'completions', id: 7, start: 0, items: [] });
+bad({ type: 'completions', id: 7, start: -1, items: [] });
+bad({ type: 'completions', id: 7, start: 0, items: [{ label: 3, type: 'x' }] });

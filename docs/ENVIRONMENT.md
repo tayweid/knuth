@@ -162,7 +162,10 @@ document as an edit and autosave carries it to the real file. Saving or
 renaming sends `chdir` so relative paths follow the file, without a
 restart; the session moves to the document's own environment at the next
 restart, rebuilt from uv's cache. `KNUTH_ENVIRONMENTS=off` turns scratch
-environments off for the tests that predate them.
+environments off for the tests that predate them. An unsaved document's
+text goes with the attach and each restart, so a scratch environment
+starts from its header: after a relaunch, an unsaved document that had
+installed packages has them again.
 
 DECIDED: **What a cell imports is listed, right after it runs.** A package
 that arrives with another (pandas with seaborn) imports without failing,

@@ -136,6 +136,12 @@ def handle_request(msg, session, state, emit):
         if isinstance(path, str) and os.path.isdir(path):
             os.chdir(path)
         return
+    if kind == "complete":
+        from .complete import complete
+
+        start, items = complete(msg.get("code", ""), msg.get("offset", 0), session.namespace)
+        emit({"type": "completions", "id": msg["id"], "start": start, "items": items})
+        return
     if kind == "run":
         state["id"] = msg["id"]
         state["stream_bytes"] = 0

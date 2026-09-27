@@ -241,6 +241,7 @@ def _validate_request(msg):
         "rename",
         "install",
         "chdir",
+        "complete",
     }:
         return "unknown request type"
     if kind not in {"interrupt", "chdir"}:
@@ -258,6 +259,12 @@ def _validate_request(msg):
     elif kind == "convert":
         if not isinstance(msg.get("text"), str):
             return "convert text must be a string"
+    elif kind == "complete":
+        if not isinstance(msg.get("code"), str) or len(msg["code"].encode("utf-8")) > MAX_CODE_BYTES:
+            return "complete code must be a string within the code limit"
+        offset = msg.get("offset")
+        if type(offset) is not int or offset < 0:
+            return "complete offset must be a non-negative integer"
     elif kind == "chdir":
         path = msg.get("path")
         if not isinstance(path, str) or not path or len(path) > MAX_PATH_CHARS:
@@ -269,6 +276,8 @@ def _validate_request(msg):
         if "text" in msg and not isinstance(msg["text"], str):
             return "install text must be a string"
     elif kind == "restart":
+        if "text" in msg and not isinstance(msg["text"], str):
+            return "restart text must be a string"
         if "root" in msg and not isinstance(msg["root"], str):
             return "restart root must be a string"
         if "document" in msg and not isinstance(msg["document"], str):
@@ -425,7 +434,7 @@ async def serve(
             await session.kernel.stop()
             scratch_document(sid).unlink(missing_ok=True)
 
-    def environment_document(sid, document, fresh):
+    def environment_document(sid, document, fresh, unsaved_text=None):
         """The file uv builds this session's environment from. A document
         with a header is its own. Otherwise every session still gets an
         environment (KNUTH_ENVIRONMENTS=off is for tests only): a scratch
@@ -433,7 +442,9 @@ async def serve(
         in the environment the kernel is already running in — no restart,
         and the session keeps its variables (Taylor, 2026-09-27). `fresh`
         starts the scratch header over (a different document); otherwise
-        it keeps the packages installed so far."""
+        it keeps the packages installed so far. `unsaved_text` is an unsaved
+        document's own: when it has a header the scratch starts from it, so
+        a document restored after a relaunch gets its packages back."""
         if document:
             text = env._read(document)
             if text is not None and env.find_header(text) is not None:
@@ -444,7 +455,12 @@ async def serve(
         current = env._read(str(scratch)) if scratch.exists() else None
         if fresh or current is None or env.find_header(current) is None:
             scratch.parent.mkdir(parents=True, exist_ok=True)
-            files.save_document(str(scratch), "\n".join(env.new_header()) + "\n")
+            seeded = (
+                unsaved_text
+                if not document and isinstance(unsaved_text, str) and env.find_header(unsaved_text) is not None
+                else "\n".join(env.new_header()) + "\n"
+            )
+            files.save_document(str(scratch), seeded)
         return str(scratch)
 
     def scratch_document(sid):
@@ -648,7 +664,10 @@ async def serve(
             starting_sids.add(sid)
             kernel = KernelProcess()
             environment = None
-            env_document = environment_document(sid, session_document, fresh=True)
+            unsaved_text = first.get("text")
+            if not isinstance(unsaved_text, str) or len(unsaved_text.encode("utf-8")) > MAX_CODE_BYTES:
+                unsaved_text = None
+            env_document = environment_document(sid, session_document, fresh=True, unsaved_text=unsaved_text)
             try:
                 async with start_slots:
                     environment = await prepare_environment(ws, env_document)
@@ -715,7 +734,9 @@ async def serve(
                         document = _session_document(msg["document"])
                         fresh = document != session.document
                         session.document = document
-                    session.env_document = environment_document(sid, session.document, fresh)
+                    session.env_document = environment_document(
+                        sid, session.document, fresh or "text" in msg, unsaved_text=msg.get("text")
+                    )
                     session.pump_task.cancel()
                     await asyncio.gather(session.pump_task, return_exceptions=True)
                     await session.kernel.stop()
@@ -782,6 +803,10 @@ async def serve(
             )
             if web.available(web_root):
                 print(f"knuth app on http://127.0.0.1:{port}", flush=True)
+            if os.environ.get("KNUTH_ENVIRONMENTS") != "off":
+                # Code hints: Jedi, once, in the background (knuth.env.tools_dir).
+                tools = asyncio.create_task(asyncio.to_thread(env.ensure_tools))
+                tools.add_done_callback(lambda task: task.exception())
             if parent:
                 await _exit_with_parent(parent)
             else:

@@ -376,7 +376,7 @@ def kernel_environ(environment=None):
     """The environment variables for a kernel process (or a re-executed
     `knuth run`): headless matplotlib always; in a managed environment also
     the shim on PYTHONPATH, the document, and the uv to install with."""
-    environ = {**os.environ, "MPLBACKEND": "Agg"}
+    environ = {**os.environ, "MPLBACKEND": "Agg", TOOLS_VAR: str(tools_dir())}
     if environment is None or not environment.managed:
         return environ
     path = shim_dir()
@@ -532,3 +532,29 @@ def declare_imports(code, document, emit, request_id):
         modified = int(time.time() * 1000)
     emit({"type": "header", "id": request_id, "path": document, "lines": lines, "modified": modified})
     return True
+
+
+TOOLS_VAR = "KNUTH_TOOLS"
+
+
+def tools_dir():
+    """Where the engine keeps what the kernel uses but documents never list:
+    Jedi, for code hints (knuth.complete). Beside the preferences, installed
+    once, and appended to a kernel's path only when a completion asks."""
+    from . import state
+
+    return state.state_dir() / "tools"
+
+
+def ensure_tools():
+    """Install Jedi into tools_dir() if it is not there: pure Python, one
+    download, shared by every environment. Never raises; code hints fall
+    back to the standard library's completer until it is in place."""
+    target = tools_dir()
+    if (target / "jedi").is_dir() or find_uv() is None:
+        return False
+    try:
+        result = run_uv(["pip", "install", "--target", str(target), "--python", sys.executable, "jedi"])
+    except (OSError, subprocess.SubprocessError):
+        return False
+    return result.returncode == 0

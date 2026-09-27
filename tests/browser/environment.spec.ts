@@ -124,6 +124,17 @@ test.beforeEach(async ({ page }) => {
             this.reply({ type: 'installed', id: msg.id, ok: true, restart: false });
             break;
           }
+          case 'complete':
+            this.reply({
+              type: 'completions',
+              id: msg.id,
+              start: msg.offset,
+              items: [
+                { label: 'describe', type: 'function' },
+                { label: 'shape', type: 'instance' },
+              ],
+            });
+            break;
           case 'namespace':
             this.reply({ type: 'namespace', id: msg.id, vars: [] });
             break;
@@ -289,4 +300,19 @@ test('a header from the session scratch environment lands in the document as an 
   await expect(page.locator('#file-name')).toContainText('●');
   // No restart for any of it.
   expect((await messages(page)).some((m) => m.type === 'restart')).toBe(false);
+});
+
+test('typing a dot offers what the live object has', async ({ page }) => {
+  await page.goto('/?open=/p/analysis.py');
+  await expect(page.getByText('x = 1')).toBeVisible();
+  await page.getByText('x = 1').click();
+  await page.keyboard.press('End');
+  await page.keyboard.type('\ndf.');
+  const popup = page.locator('.cm-tooltip-autocomplete');
+  await expect(popup).toContainText('describe');
+  await expect(popup).toContainText('shape');
+  const asked = (await messages(page)).find((m) => m.type === 'complete');
+  expect(asked).toMatchObject({ code: 'x = 1\ndf.', offset: 9 });
+  await page.keyboard.press('Enter');
+  await expect(page.getByText('df.describe')).toBeVisible();
 });

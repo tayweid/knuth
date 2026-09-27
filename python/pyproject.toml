@@ -45,6 +45,7 @@ Issues = "https://github.com/tayweid/knuth/issues"
 
 [project.optional-dependencies]
 test = [
+    "jedi>=0.19",
     "matplotlib>=3.8",
     "numpy>=1.26",
     "pandas>=2.1",

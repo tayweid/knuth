@@ -293,6 +293,17 @@ function makeKernel(onState: OnState): Kernel {
     return new SidecarKernel(undefined, onState, {
       root: initialRoot,
       document: initialDocument,
+      // The latest stash: current within a keystroke's debounce, and there
+      // before the document is restored on a relaunch.
+      documentText: () => {
+        try {
+          const raw = sessionStorage.getItem('knuth-doc');
+          const text = raw ? (JSON.parse(raw) as { text?: unknown }).text : null;
+          return typeof text === 'string' ? text : null;
+        } catch {
+          return null;
+        }
+      },
       listeners: {
         ...listeners,
         onEnvironment: (event) => {

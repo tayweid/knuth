@@ -108,6 +108,17 @@ and sockets. The browser side is thinner:
   demonstrates the browser running the real Python modules, which could end
   the dual implementation outright rather than pinning it with parity
   fixtures.
+- **Code hints** — STARTED 2026-09-27. The kernel answers `complete{code,
+  offset}` against the live session with Jedi (what IPython, Jupyter and
+  Spyder use), falling back to the standard library's rlcompleter;
+  `knuth/complete.py`, shared by the Pyodide kernel, which loads Pyodide's
+  own Jedi on first use. The engine installs Jedi once into
+  `tools/` beside its preferences — never into a document's environment,
+  so it never reaches a header — and the completer appends that folder to
+  the path when it first needs it. The editor uses CodeMirror's
+  `@codemirror/autocomplete`: offered after a "." or two typed letters and
+  on Ctrl-Space. Next: signature help inside a call's parentheses, and a
+  docstring panel beside the list (Jedi has both).
 - Editable DataFrames in the data viewer: edits materialize as code
   appended to a cell (`df.loc[3, 'wage'] = 12.5`) rather than mutating
   silently — the viewer becomes a code generator, the document stays the

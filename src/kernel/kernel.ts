@@ -15,6 +15,7 @@
 
 import {
   PROTOCOL_VERSION,
+  CompletionsResult,
   DependencyEvent,
   DocumentResult,
   EnvironmentEvent,
@@ -37,6 +38,7 @@ import {
 export { PROTOCOL_VERSION } from './protocol.ts';
 export type {
   Artifacts,
+  CompletionsResult,
   ConvertResult,
   DependencyEvent,
   DocumentResult,
@@ -115,6 +117,8 @@ export interface Kernel {
   /** Install a module a cell could not import, with uv, into the
    *  document's header and environment. Only an engine can. */
   install?(module: string, text?: string): Promise<InstalledResult | null>;
+  /** What fits at `offset` in `code`, against the live session. */
+  complete?(code: string, offset: number): Promise<CompletionsResult | null>;
   /** The folder this session's kernel runs in, as the engine reported it. */
   readonly root: string | null;
   close(): void;
@@ -144,6 +148,9 @@ export interface SidecarOptions {
   root?: string | null;
   document?: string | null;
   listeners?: KernelListeners;
+  /** The document's text when it is unsaved, so the engine can build its
+   *  environment from its header; null when it has a file to read. */
+  documentText?: () => string | null;
 }
 
 interface PendingRun {
@@ -187,6 +194,7 @@ export class SidecarKernel implements Kernel {
   private renamedWaiters = new Map<number, (result: RenamedResult | null) => void>();
   private persistedWaiters = new Map<number, (result: PersistedResult | null) => void>();
   private installedWaiters = new Map<number, (result: InstalledResult | null) => void>();
+  private completionWaiters = new Map<number, (result: CompletionsResult | null) => void>();
   private restartWaiters = new Map<number, () => void>();
   /** Where the kernel runs, as last reported by `attached`. */
   root: string | null = null;
@@ -196,6 +204,7 @@ export class SidecarKernel implements Kernel {
   private wantedRoot: string | null;
   private wantedDocument: string | null;
   private listeners: KernelListeners;
+  private documentText: () => string | null;
   constructor(
     private url: string = kernelUrl(),
     private onStatus?: (status: KernelStatus, resumed?: boolean) => void,
@@ -204,6 +213,7 @@ export class SidecarKernel implements Kernel {
     this.wantedRoot = options.root ?? null;
     this.wantedDocument = options.document ?? null;
     this.listeners = options.listeners ?? {};
+    this.documentText = options.documentText ?? (() => null);
     this.connect();
   }
 
@@ -231,6 +241,7 @@ export class SidecarKernel implements Kernel {
           session: sessionId(),
           ...(this.wantedRoot ? { root: this.wantedRoot } : {}),
           ...(this.wantedDocument ? { document: this.wantedDocument } : {}),
+          ...this.unsavedText(),
         }),
       ),
     );
@@ -303,6 +314,8 @@ export class SidecarKernel implements Kernel {
     this.persistedWaiters.clear();
     for (const resolve of this.installedWaiters.values()) resolve(null);
     this.installedWaiters.clear();
+    for (const resolve of this.completionWaiters.values()) resolve(null);
+    this.completionWaiters.clear();
     for (const resolve of this.restartWaiters.values()) resolve();
     this.restartWaiters.clear();
   }
@@ -408,6 +421,11 @@ export class SidecarKernel implements Kernel {
         this.installedWaiters.delete(msg.id);
         break;
       }
+      case 'completions': {
+        this.completionWaiters.get(msg.id)?.(msg);
+        this.completionWaiters.delete(msg.id);
+        break;
+      }
       case 'environment': {
         this.listeners.onEnvironment?.(msg);
         break;
@@ -507,6 +525,10 @@ export class SidecarKernel implements Kernel {
         this.installedWaiters.get(msg.id)?.({ ok: false, error: reason });
         this.installedWaiters.delete(msg.id);
         break;
+      case 'complete':
+        this.completionWaiters.get(msg.id)?.(null);
+        this.completionWaiters.delete(msg.id);
+        break;
       case 'restart':
         this.restartWaiters.get(msg.id)?.();
         this.restartWaiters.delete(msg.id);
@@ -562,6 +584,7 @@ export class SidecarKernel implements Kernel {
         id,
         ...(root ? { root } : {}),
         ...(document ? { document } : {}),
+        ...(document === undefined ? {} : this.unsavedText()),
       });
       if (root !== undefined) this.root = root;
     });
@@ -645,6 +668,22 @@ export class SidecarKernel implements Kernel {
     return new Promise((resolve) => {
       this.renamedWaiters.set(id, resolve);
       this.send({ type: 'rename', id, path, name });
+    });
+  }
+
+  /** `{text}` for an unsaved document, else nothing. */
+  private unsavedText(): { text?: string } {
+    if (this.wantedDocument) return {};
+    const text = this.documentText();
+    return typeof text === 'string' ? { text } : {};
+  }
+
+  async complete(code: string, offset: number): Promise<CompletionsResult | null> {
+    if (!this.connectedReady) return null;
+    const id = this.nextId++;
+    return new Promise((resolve) => {
+      this.completionWaiters.set(id, resolve);
+      this.send({ type: 'complete', id, code, offset });
     });
   }
 

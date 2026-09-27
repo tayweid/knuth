@@ -20,6 +20,7 @@ import {
   type ViewUpdate,
 } from '@codemirror/view';
 import { Compartment, RangeSet, RangeSetBuilder, type Extension } from '@codemirror/state';
+import { autocompletion, type CompletionContext, type CompletionResult } from '@codemirror/autocomplete';
 import { foldGutter, foldKeymap, indentUnit } from '@codemirror/language';
 import { indentationMarkers } from '@replit/codemirror-indentation-markers';
 import { python, pythonLanguage } from '@codemirror/lang-python';
@@ -235,6 +236,19 @@ const wrapHang = ViewPlugin.fromClass(
   },
   { decorations: (plugin) => plugin.decorations },
 );
+
+/** Jedi's kinds, in CodeMirror's icon vocabulary. */
+const COMPLETION_KIND: Record<string, string> = {
+  module: 'namespace',
+  class: 'class',
+  function: 'function',
+  instance: 'variable',
+  statement: 'variable',
+  param: 'variable',
+  property: 'property',
+  keyword: 'keyword',
+  path: 'text',
+};
 
 export class DocumentView {
   doc: KnuthDocument = parseDocument('# %%\n');
@@ -951,6 +965,7 @@ export class DocumentView {
         oneDark,
         v.lang.of(this.langFor(v)),
         EditorView.lineWrapping,
+        autocompletion({ override: [(context) => this.completions(context)], icons: true }),
         EditorView.updateListener.of((update) => {
           if (!update.docChanged) return;
           this.syncModel(v, update.state.doc.toString());
@@ -960,6 +975,23 @@ export class DocumentView {
       ],
     });
     v.body.append(v.editor.dom);
+  }
+
+  /** Code hints: what fits at the cursor, from the live session (the
+   *  kernel's knuth.complete — Jedi, or the standard library's completer).
+   *  Offered after a "." or two typed letters, and on Ctrl-Space. */
+  private async completions(context: CompletionContext): Promise<CompletionResult | null> {
+    if (this.plainFile || !this.kernel.complete || !this.kernel.isReady) return null;
+    const word = context.matchBefore(/[A-Za-z_][A-Za-z0-9_]*/);
+    const afterDot = context.state.sliceDoc(Math.max(0, (word?.from ?? context.pos) - 1), word?.from ?? context.pos) === '.';
+    if (!context.explicit && !afterDot && (!word || word.to - word.from < 2)) return null;
+    const result = await this.kernel.complete(context.state.doc.toString(), context.pos);
+    if (!result || context.aborted || result.items.length === 0) return null;
+    return {
+      from: Math.min(result.start, context.pos),
+      options: result.items.map((item) => ({ label: item.label, type: COMPLETION_KIND[item.type] ?? 'variable' })),
+      validFor: /^[A-Za-z0-9_]*$/,
+    };
   }
 
   /** A text cell is an always-editable ProseMirror view — no rendered/edit
