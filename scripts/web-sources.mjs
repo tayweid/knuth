@@ -9,8 +9,9 @@ import { fileURLToPath } from 'node:url';
 const ROOT = new URL('../', import.meta.url);
 const TREES = ['src', 'public'];
 const FILES = ['index.html', 'vite.config.ts', 'tsconfig.json', 'package-lock.json'];
-// Test corpora and unit tests do not reach the bundle.
-const SKIP = /(\.test\.ts$|\/corpus\/)/;
+// Test corpora and unit tests do not reach the bundle, and Finder's
+// .DS_Store is on this Mac only: counting it made a stamp CI never matches.
+const SKIP = /(\.test\.ts$|\/corpus\/|\/\.DS_Store$)/;
 // The in-tab Python embeds engine modules as text (`import x from
 // '../../python/knuth/env.py?raw'`), so those files are inputs too: a
 // change to one of them changes the bundle without touching src/.

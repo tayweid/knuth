@@ -500,14 +500,14 @@ async def serve(
             await ws.send(json.dumps({**base, "state": "failed", "error": reason}))
             await ws.send(json.dumps({"type": "installed", "id": msg["id"], "ok": False, "error": reason}))
 
+        if target is None and not isinstance(msg.get("text"), str):
+            # A terminal engine's unsaved document: no environment to add to.
+            await refuse("the document's text is needed to install into it")
+            return
         if env.find_uv() is None:
             await refuse("uv is not installed")
             return
         if target is None:
-            # A terminal engine's unsaved document: no environment to add to.
-            if not isinstance(msg.get("text"), str):
-                await refuse("the document's text is needed to install into it")
-                return
             target, is_scratch = str(scratch), True
 
         def work():
