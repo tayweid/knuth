@@ -1,4 +1,4 @@
-import{t as e}from"./index-CQjiz7j1.js";var t=/^\s*#\s*[%!]\s*pip\s+install\s+(.+?)\s*$/;function n(e){let n=[];for(let r of e.split(`
+import{t as e}from"./index-Y6MwnJ7M.js";var t=/^\s*#\s*[%!]\s*pip\s+install\s+(.+?)\s*$/;function n(e){let n=[];for(let r of e.split(`
 `)){let e=t.exec(r);if(e)for(let t of e[1].split(/\s+/))t&&!t.startsWith(`-`)&&!n.includes(t)&&n.push(t)}return n}var r=`from .session import Session
 
 __all__ = ["Session"]
@@ -468,6 +468,31 @@ def is_candidate(document):
     return text is not None and find_header(text) is not None and find_uv() is not None
 
 
+def knuth_python():
+    """The one Python every document runs on: the engine's own minor
+    version (Knuth.app installs it with uv). Documents float — their
+    headers say "this or newer" — but uv, asked for "this or newer",
+    picks the newest Python it can find, and every new Python means
+    downloading every package again. So Knuth always answers with its
+    own, even for a header asking for something newer (Taylor,
+    2026-09-27); uv warns and builds it anyway."""
+    return f"{sys.version_info.major}.{sys.version_info.minor}"
+
+
+_ENVIRONMENT_AT = re.compile(r"environment at: (.+?)\\s*$", re.MULTILINE)
+_INCOMPATIBLE = re.compile(r"incompatible with the script's Python requirement: \`([^\`]+)\`")
+
+
+def _environment_python(result):
+    """The interpreter of the environment uv just built, from what it said
+    ("Creating/Updating script environment at: …")."""
+    match = _ENVIRONMENT_AT.search((result.stderr or "") + "\\n" + (result.stdout or ""))
+    if not match:
+        return None
+    python = Path(match.group(1)) / "bin" / "python"
+    return str(python) if python.exists() else None
+
+
 def ensure_environment(document):
     """Build or refresh the document's environment and name its interpreter.
 
@@ -487,18 +512,20 @@ def ensure_environment(document):
         return _fallback(document, "uv is not installed")
     folder = str(Path(document).parent)
     try:
-        synced = run_uv(["sync", "--script", document], cwd=folder)
-        if synced.returncode != 0:
-            return _fallback(document, _reason(synced, "uv could not build the environment"))
-        found = run_uv(["python", "find", "--script", document], cwd=folder)
+        synced = run_uv(["sync", "--script", document, "--python", knuth_python()], cwd=folder)
     except (OSError, subprocess.SubprocessError) as exc:
         return _fallback(document, f"uv could not run: {exc}")
-    if found.returncode != 0:
-        return _fallback(document, _reason(found, "uv could not find the environment"))
-    python = found.stdout.strip().splitlines()[-1] if found.stdout.strip() else ""
-    if not python or not os.path.exists(python):
-        return _fallback(document, "uv did not report an interpreter")
-    return Environment(document, python, True)
+    if synced.returncode != 0:
+        return _fallback(document, _reason(synced, "uv could not build the environment"))
+    python = _environment_python(synced)
+    if not python:
+        return _fallback(document, "uv did not report the environment it built")
+    asked = _INCOMPATIBLE.search(synced.stderr or "")
+    note = (
+        f"the document asks for Python {asked.group(1)}; running on Knuth's {knuth_python()}"
+        if asked else None
+    )
+    return Environment(document, python, True, note)
 
 
 def same_interpreter(python):
@@ -622,11 +649,12 @@ def add_dependency(document, distribution):
     folder = str(Path(document).parent)
     try:
         added = run_uv(
-            ["add", "--script", document, "--bounds", "exact", distribution], cwd=folder
+            ["add", "--script", document, "--bounds", "exact", "--python", knuth_python(), distribution],
+            cwd=folder,
         )
         if added.returncode != 0:
             return False, _reason(added, f"uv could not add {distribution}")
-        synced = run_uv(["sync", "--script", document], cwd=folder)
+        synced = run_uv(["sync", "--script", document, "--python", knuth_python()], cwd=folder)
     except (OSError, subprocess.SubprocessError) as exc:
         return False, f"uv could not run: {exc}"
     if synced.returncode != 0:

@@ -140,6 +140,20 @@ it, and sends the header back with no path, for the page to splice into
 its own text. Saving later carries the header into the real file, and the
 restart for the new path rebuilds the same environment from uv's cache.
 
+DECIDED: **One Python for every document: Knuth's own** (Taylor,
+2026-09-27). Headers float — `requires-python = ">=3.13"` — but uv,
+asked for "this or newer", picks the newest Python it can find, and
+every Python version needs its own copy of every compiled package. A
+3.14 installed for something else once made a document download numpy,
+pandas and matplotlib again. So the engine passes `--python` with its own
+minor version (`knuth.env.knuth_python()`) to `uv sync --script` and `uv
+add --script`: every document runs on the Python Knuth.app installed,
+and each package is downloaded once. A header asking for something newer
+is honored in the file and overridden in the build — uv warns and builds
+anyway — and the environment event carries a note that the pill's
+tooltip shows. The interpreter comes from what `uv sync` reports it built,
+since `uv python find --script` would name the newest again.
+
 ## Resolution order
 
 For a document the engine is asked to run:
