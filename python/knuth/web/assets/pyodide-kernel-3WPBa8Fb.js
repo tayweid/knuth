@@ -1,4 +1,4 @@
-import{t as e}from"./index-B-3yEevB.js";var t=/^\s*#\s*[%!]\s*pip\s+install\s+(.+?)\s*$/;function n(e){let n=[];for(let r of e.split(`
+import{t as e}from"./index-CMrIVrBs.js";var t=/^\s*#\s*[%!]\s*pip\s+install\s+(.+?)\s*$/;function n(e){let n=[];for(let r of e.split(`
 `)){let e=t.exec(r);if(e)for(let t of e[1].split(/\s+/))t&&!t.startsWith(`-`)&&!n.includes(t)&&n.push(t)}return n}var r=`from .session import Session
 
 __all__ = ["Session"]
@@ -423,6 +423,16 @@ def stamp_today():
     return f"{today.isoformat()}T00:00:00Z"
 
 
+def stamp_now():
+    """This second, UTC: a package added now comes at its newest version."""
+    now = datetime.datetime.now(datetime.timezone.utc).replace(microsecond=0)
+    return now.strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+# The header's date line, \`# exclude-newer = "..."\`, value replaced whole.
+_EXCLUDE_NEWER = re.compile(r'^(#\\s*exclude-newer\\s*=\\s*)"[^"\\n]*"', re.MULTILINE)
+
+
 def default_requires_python():
     """The engine's own minor version as a floor, never below Knuth's own."""
     minor = max(sys.version_info.minor, 11)
@@ -713,20 +723,41 @@ def pinned_version(text, distribution):
     return None
 
 
-def add_dependency(document, distribution):
+def add_dependency(document, distribution, offline=False):
     """\`uv add --script --bounds exact\`, then sync: the header gains an exact
-    pin and the environment gains the package. (ok, reason)."""
+    pin and the environment gains the package. (ok, reason).
+
+    The header's date moves to now first, so the package comes at its
+    newest version; everything already listed is pinned exactly, so
+    nothing else moves. \`offline\`: only what uv already has on this Mac,
+    never a download (Taylor, 2026-09-27: using a downloaded package
+    needs no permission, downloading does). A failure leaves the file as
+    it was, date included."""
     folder = str(Path(document).parent)
+    before = _read(document)
+    if before is not None:
+        moved = _EXCLUDE_NEWER.sub(lambda m: f'{m.group(1)}"{stamp_now()}"', before, count=1)
+        if moved != before:
+            Path(document).write_text(moved, encoding="utf-8")
+    network = ["--offline"] if offline else []
+
+    def undo():
+        if before is not None:
+            Path(document).write_text(before, encoding="utf-8")
+
     try:
         added = run_uv(
-            ["add", "--script", document, "--bounds", "exact", distribution], cwd=folder
+            ["add", *network, "--script", document, "--bounds", "exact", distribution], cwd=folder
         )
         if added.returncode != 0:
+            undo()
             return False, _reason(added, f"uv could not add {distribution}")
-        synced = run_uv(["sync", "--script", document], cwd=folder)
+        synced = run_uv(["sync", *network, "--script", document], cwd=folder)
     except (OSError, subprocess.SubprocessError) as exc:
+        undo()
         return False, f"uv could not run: {exc}"
     if synced.returncode != 0:
+        undo()
         return False, _reason(synced, f"uv could not install {distribution}")
     return True, None
 

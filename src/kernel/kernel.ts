@@ -114,9 +114,10 @@ export interface Kernel {
   /** The document was saved or renamed: follow it — relative paths
    *  resolve in its folder — without restarting the session. */
   moveTo?(root: string | null, document: string | null): void;
-  /** Install a module a cell could not import, with uv, into the
-   *  document's header and environment. Only an engine can. */
-  install?(module: string, text?: string): Promise<InstalledResult | null>;
+  /** Add a module a cell could not import, with uv, to the document's
+   *  header and environment: from what uv already has on this Mac, or,
+   *  with `download`, from the web. Only an engine can. */
+  install?(module: string, text?: string, download?: boolean): Promise<InstalledResult | null>;
   /** What fits at `offset` in `code`, against the live session. */
   complete?(code: string, offset: number): Promise<CompletionsResult | null>;
   /** The folder this session's kernel runs in, as the engine reported it. */
@@ -697,12 +698,16 @@ export class SidecarKernel implements Kernel {
   }
 
   /** `text`: the document's, when it is unsaved and has no file for uv. */
-  async install(module: string, text?: string): Promise<InstalledResult | null> {
+  async install(module: string, text?: string, download = false): Promise<InstalledResult | null> {
     if (!this.connectedReady) return null;
     const id = this.nextId++;
     return new Promise((resolve) => {
       this.installedWaiters.set(id, resolve);
-      this.send({ type: 'install', id, module, ...(text !== undefined ? { text } : {}) });
+      this.send({
+        type: 'install', id, module,
+        ...(text !== undefined ? { text } : {}),
+        ...(download ? { download } : {}),
+      });
     });
   }
 

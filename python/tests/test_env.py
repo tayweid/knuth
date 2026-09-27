@@ -210,7 +210,8 @@ def test_uv_builds_the_environment_and_pins_what_it_adds(tmp_path):
     parsed = env.parse_header(document.read_text())
     assert len(parsed["dependencies"]) == 1
     assert parsed["dependencies"][0].startswith("tomli-w==")
-    assert parsed["exclude_newer"] == "2026-09-26T00:00:00Z", "uv kept the stamp"
+    # Moved to now, so the package came at its newest; uv kept it there.
+    assert parsed["exclude_newer"] > "2026-09-26T00:00:00Z", parsed
     assert env.pinned_version(document.read_text(), "tomli-w") is not None
 
     # The kernel imports it there, through the shim, without knuth installed.

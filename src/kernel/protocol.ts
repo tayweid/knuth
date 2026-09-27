@@ -116,6 +116,8 @@ export interface InstalledResult {
   ok: boolean;
   restart?: boolean;
   error?: string;
+  /** Not on this Mac: adding it needs a download, which the person okays. */
+  download?: boolean;
 }
 
 /** What fits at the cursor (knuth.complete): items replace from `start`. */
@@ -285,6 +287,7 @@ export function parseServerEvent(value: unknown): ServerEvent | null {
     case 'installed':
       return isRequestId(event.id) && typeof event.ok === 'boolean' &&
         (event.restart === undefined || typeof event.restart === 'boolean') &&
+        (event.download === undefined || typeof event.download === 'boolean') &&
         optionalString(event.error) ? event as ServerEvent : null;
     case 'environment':
       return (event.document === null || typeof event.document === 'string') &&

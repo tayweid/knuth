@@ -251,10 +251,10 @@ const listeners = {
     reportFallback();
   },
   onDependency: (event: DependencyEvent) => {
-    if (event.state === 'installing') progress(`Installing ${event.distribution}…`);
-    else if (event.state === 'installed') {
-      toast(`Installed ${event.distribution}${event.version ? ' ' + event.version : ''}`);
-    } else toast(`Could not install ${event.distribution}: ${event.error ?? 'unknown error'}`);
+    // Only downloads are reported: the rerun says the rest.
+    if (event.state === 'installing') progress(`Downloading ${event.distribution}…`);
+    else if (event.state === 'installed') toastEl.hidden = true;
+    else toast(`Could not download ${event.distribution}: ${event.error ?? 'unknown error'}`);
   },
   onHeader: (event: HeaderEvent) => {
     if (!fileManager) return;
@@ -580,36 +580,70 @@ const docView = new DocumentView(
   loadFigureFromDir,
 );
 
-// A cell that could not import a module: offer to install it with uv,
-// the one way Knuth installs anything (ENVIRONMENT.md). Never silently,
-// and only with an engine — Pyodide installs from the web on import.
+// A cell that could not import a module (ENVIRONMENT.md). A package uv
+// already has on this Mac goes into the document's environment at once,
+// with no question: using what is downloaded needs no permission. Only a
+// download asks (Taylor, 2026-09-27). Either way the header gains the
+// pin and the cell runs again in the same session. Only with an engine —
+// Pyodide downloads from the web on import.
 const MISSING = /ModuleNotFoundError: No module named '([A-Za-z_][A-Za-z0-9_]*)/;
+// Modules already added without asking: if one still will not import
+// (its package is named differently), ask rather than loop.
+const addedQuietly = new Set<string>();
 docView.onRunFailed = (traceback, rerun) => {
   const install = kernel.install?.bind(kernel);
   const module = MISSING.exec(traceback)?.[1];
   if (!install || !module) return;
-  toast(
-    `${module} isn't installed`,
-    { label: 'Install with uv', run: () => void installAndRerun(module, install, rerun) },
-    { stay: true },
-  );
+  if (addedQuietly.has(module)) {
+    offerDownload(module, install, rerun);
+    return;
+  }
+  addedQuietly.add(module);
+  void (async () => {
+    status.textContent = pythonName;
+    status.title = `uv is adding ${module} to this document`;
+    status.className = 'working';
+    const result = await install(module, serializeDocument(docView.doc));
+    if (kernelState === 'ready') paintKernelReady();
+    if (result?.ok) {
+      await afterInstall(result, rerun);
+    } else if (result?.download) {
+      offerDownload(module, install, rerun);
+    } else {
+      toast(`Could not add ${module}: ${result?.error ?? 'the engine is not connected'}`);
+    }
+  })();
 };
 
-async function installAndRerun(
+type Install = (
   module: string,
-  install: (module: string, text?: string) => Promise<{ ok: boolean; restart?: boolean; error?: string } | null>,
-  rerun: () => Promise<boolean>,
-) {
+  text?: string,
+  download?: boolean,
+) => Promise<{ ok: boolean; restart?: boolean; error?: string; download?: boolean } | null>;
+
+function offerDownload(module: string, install: Install, rerun: () => Promise<boolean>) {
+  toast(
+    `${module} isn't on this Mac`,
+    { label: 'Download with uv', run: () => void downloadAndRerun(module, install, rerun) },
+    { stay: true },
+  );
+}
+
+async function downloadAndRerun(module: string, install: Install, rerun: () => Promise<boolean>) {
   // Up at once and until it is done: the engine's events take it over.
-  progress(`Installing ${module}…`);
+  progress(`Downloading ${module}…`);
   // The page's own text goes along: its header is the one to keep in step
   // with when the session's environment is a scratch one.
-  const result = await install(module, serializeDocument(docView.doc));
+  const result = await install(module, serializeDocument(docView.doc), true);
   if (!result) {
-    toast(`Could not install ${module}: the engine is not connected`);
+    toast(`Could not download ${module}: the engine is not connected`);
     return;
   }
   if (!result.ok) return; // the dependency event already said why
+  await afterInstall(result, rerun);
+}
+
+async function afterInstall(result: { restart?: boolean }, rerun: () => Promise<boolean>) {
   if (result.restart) {
     // Only an engine without environments for every session asks this.
     await kernel.restart(fileManager.root ?? undefined, fileManager.path);

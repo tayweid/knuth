@@ -12,6 +12,7 @@ type Probe = typeof window & {
   __knuthFallbackReason?: string;
   __knuthMissing?: boolean;
   __knuthScratch?: string;
+  __knuthNotDownloaded?: boolean;
 };
 
 test.beforeEach(async ({ page }) => {
@@ -118,7 +119,17 @@ test.beforeEach(async ({ page }) => {
             break;
           }
           case 'install': {
+            if (probe.__knuthNotDownloaded && !msg.download) {
+              // Not in uv's cache: the engine asks the page to ask.
+              this.reply({ type: 'installed', id: msg.id, ok: false, download: true, error: 'offline' });
+              break;
+            }
             probe.__knuthMissing = false;
+            if (!msg.download) {
+              // Already on this Mac: added without a word.
+              this.reply({ type: 'installed', id: msg.id, ok: true, restart: false });
+              break;
+            }
             this.reply({ type: 'dependency', id: msg.id, state: 'installing', module: msg.module, distribution: msg.module });
             this.reply({ type: 'dependency', id: msg.id, state: 'installed', module: msg.module, distribution: msg.module, version: '0.13.2' });
             this.reply({ type: 'installed', id: msg.id, ok: true, restart: false });
@@ -190,7 +201,7 @@ test('the header the engine rewrites is spliced into the preamble', async ({ pag
   await expect(page.getByText('x = 1')).toBeVisible();
 
   await page.getByTitle('Run all program cells from the top').click();
-  await expect(page.locator('#toast')).toContainText('Installing seaborn');
+  await expect(page.locator('#toast')).toContainText('Downloading seaborn');
   await expect
     .poll(async () =>
       page.evaluate(() => JSON.parse(sessionStorage.getItem('knuth-doc')!).text as string),
@@ -236,7 +247,7 @@ test('a document with a header that fell back to the system Python says why', as
   await expect(page.locator('#toast')).toContainText('uv was not found');
 });
 
-test('a missing import offers Install with uv, then runs the cell again', async ({ page }) => {
+test('a missing import uv already has is added without asking, then the cell runs again', async ({ page }) => {
   await page.addInitScript(() => {
     (window as Probe).__knuthMissing = true;
   });
@@ -244,26 +255,44 @@ test('a missing import offers Install with uv, then runs the cell again', async 
   await expect(page.getByText('x = 1')).toBeVisible();
 
   await page.getByTitle('Run all program cells from the top').click();
-  await expect(page.locator('#toast')).toContainText("seaborn isn't installed");
-  await page.locator('#toast').getByRole('button', { name: 'Install with uv' }).click();
-
   await expect.poll(async () => (await messages(page)).find((m) => m.type === 'install')).toMatchObject({
     module: 'seaborn',
   });
-  // The cell ran again after the install, and nothing was installed before the click.
+  expect((await messages(page)).find((m) => m.type === 'install')!.download).toBeUndefined();
+  // The cell ran again, and nothing asked.
+  await expect.poll(async () => (await messages(page)).filter((m) => m.type === 'run').length).toBe(2);
+  await expect(page.locator('.output.error')).toHaveCount(0);
+  await expect(page.locator('#toast')).not.toContainText("isn't");
+});
+
+test('a missing import that needs a download asks first', async ({ page }) => {
+  await page.addInitScript(() => {
+    (window as Probe).__knuthMissing = true;
+    (window as Probe).__knuthNotDownloaded = true;
+  });
+  await page.goto('/?open=/p/analysis.py');
+  await expect(page.getByText('x = 1')).toBeVisible();
+
+  await page.getByTitle('Run all program cells from the top').click();
+  await expect(page.locator('#toast')).toContainText("seaborn isn't on this Mac");
+  // Asked, not downloaded: one try without the network, and no rerun yet.
+  expect((await messages(page)).filter((m) => m.type === 'run').length).toBe(1);
+  await page.locator('#toast').getByRole('button', { name: 'Download with uv' }).click();
+
+  await expect
+    .poll(async () => (await messages(page)).filter((m) => m.type === 'install').at(-1))
+    .toMatchObject({ module: 'seaborn', download: true });
   await expect.poll(async () => (await messages(page)).filter((m) => m.type === 'run').length).toBe(2);
   await expect(page.locator('.output.error')).toHaveCount(0);
 });
 
-test('an unsaved document installs without being saved first', async ({ page }) => {
+test('an unsaved document adds a package without being saved first', async ({ page }) => {
   await page.addInitScript(() => {
     (window as Probe).__knuthMissing = true;
   });
   await page.goto('/');
   await expect(page.locator('#kernel-status')).toHaveText('Python');
   await page.getByTitle('Run all program cells from the top').click();
-  await expect(page.locator('#toast')).toContainText("seaborn isn't installed");
-  await page.locator('#toast').getByRole('button', { name: 'Install with uv' }).click();
 
   // No save: the install carries the document's text instead.
   await expect.poll(async () => (await messages(page)).find((m) => m.type === 'install')).toMatchObject({

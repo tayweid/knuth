@@ -109,27 +109,37 @@ document authored there gets pinned the first time it runs under the
 engine. The percent parser keeps the header in the document preamble,
 byte for byte, and output receipts can never land above it.
 
-DECIDED: **Installs are asked for, never silent** (Taylor, 2026-09-27,
-superseding "Import installs"). When a cell fails with `No module named
-X`, the page shows a toast with **Install with uv**; clicking it sends
-`install{id, module}` and the engine runs `uv add --script <doc> --bounds
-exact <distribution>` then `uv sync --script <doc>`, so the header gains
-the exact pin and the environment gains the package, and the cell runs
-again. It used to happen on every run of a managed document before the
-cell ran, which was invisible: a document without a header never
-installed, and nothing said why. A small table maps import names to
-distribution names where they differ (`sklearn` → `scikit-learn`, `PIL` →
-`pillow`, `cv2` → `opencv-python`, …); everything else is assumed to share
-its name. A name uv cannot resolve is reported on the toast. If the document is already
-pinned to a version, that is the version installed, and `import pandas`
-gets it. To want a different one, edit the pin.
+DECIDED: **Only a download asks** (Taylor, 2026-09-27, superseding
+"Installs are asked for, never silent", which itself superseded "Import
+installs"). The words are the person's: *downloading* puts a package on
+this Mac, and needs their OK; putting a package that is already here
+into a document's environment is just using it, and needs none. When a
+cell fails with `No module named X`, the page sends `install{id,
+module}` at once, with no toast; the engine moves the header's
+`exclude-newer` date to now (so the package comes at its newest; every
+other entry is pinned exactly, so nothing else moves) and runs `uv add
+--offline --script <doc> --bounds exact <distribution>` then `uv sync
+--offline --script <doc>`, and the cell runs again in the same session.
+If uv would need the network, nothing changes on disk (the date goes
+back too) and the reply is `installed{ok: false, download: true}`; only
+then does the page ask, "X isn't on this Mac" with **Download with uv**,
+which sends `install{…, download: true}` and shows "Downloading X…" until
+it is done. This also keeps a mistyped import from fetching whatever
+package on PyPI happens to carry the typo. A module added without asking
+that still will not import (its package goes by another name) is asked
+about rather than retried. A small table maps import names to
+distribution names where they differ (`sklearn` → `scikit-learn`, `PIL`
+→ `pillow`, `cv2` → `opencv-python`, …); everything else is assumed to
+share its name. A name uv cannot resolve is reported on the toast. If the
+document is already pinned to a version, that is the version installed,
+and `import pandas` gets it. To want a different one, edit the pin.
 
 `knuth run` never installs. It is the reproducibility check; a missing
 package there means the header is incomplete, and the honest answer is a
 failure.
 
 DECIDED: **Existing documents are untouched until asked.** A document with
-no header runs on the engine's own Python. The first "Install with uv"
+no header runs on the engine's own Python. The first package added
 gives it a header (`knuth.env.with_header`), adds the package, and answers
 `installed{restart: true}`; the page then restarts the session into the
 new environment and reruns the stale cells. An unsaved document
@@ -154,7 +164,7 @@ to restart the session whenever the document had no environment yet (an
 unsaved document, a file without a header), and saving restarted it too;
 pip in a notebook does neither. Now a document with a header gets its own
 environment, and any other session gets a scratch one under the state
-folder (`unsaved/<session>.py`, a fresh header), so "Install with uv"
+folder (`unsaved/<session>.py`, a fresh header), so adding a package
 always lands in the environment the kernel is already running in: the
 cell runs again with every variable intact. The header comes back as a
 `header` event naming the scratch file; the page splices it into the

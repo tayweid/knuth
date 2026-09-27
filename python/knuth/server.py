@@ -275,6 +275,8 @@ def _validate_request(msg):
             return "install module must be a module name"
         if "text" in msg and not isinstance(msg["text"], str):
             return "install text must be a string"
+        if "download" in msg and not isinstance(msg["download"], bool):
+            return "install download must be a boolean"
     elif kind == "restart":
         if "text" in msg and not isinstance(msg["text"], str):
             return "restart text must be a string"
@@ -484,10 +486,13 @@ async def serve(
         """Install a module a cell could not import, the one way Knuth
         installs anything: `uv add --script` into the header of the file
         this session's environment is built from, then sync (ENVIRONMENT.md).
-        Asked for by the page's toast, never done silently. When that file
-        is the session's environment, the running kernel sees the package
-        at its next run — no restart. The header comes back as a `header`
-        event naming that file, for the page to splice into its text.
+        Without `download`, only from what uv already has on this Mac, and
+        silently: no `dependency` events, and a failure answers `installed`
+        with `download: true` so the page can ask. With it (the page's
+        toast, the person said yes), uv may download, and says so. When
+        that file is the session's environment, the running kernel sees
+        the package at its next run — no restart. The header comes back as
+        a `header` event naming that file, for the page to splice in.
         """
         module = msg["module"]
         distribution = env.distribution_for(module)
@@ -495,10 +500,15 @@ async def serve(
         target = session.env_document
         scratch = scratch_document(sid)
         is_scratch = target is not None and target == str(scratch)
+        download = msg.get("download") is True
 
-        async def refuse(reason):
-            await ws.send(json.dumps({**base, "state": "failed", "error": reason}))
-            await ws.send(json.dumps({"type": "installed", "id": msg["id"], "ok": False, "error": reason}))
+        async def refuse(reason, needs_download=False):
+            if download:
+                await ws.send(json.dumps({**base, "state": "failed", "error": reason}))
+            await ws.send(json.dumps({
+                "type": "installed", "id": msg["id"], "ok": False, "error": reason,
+                **({"download": True} if needs_download else {}),
+            }))
 
         if target is None and not isinstance(msg.get("text"), str):
             # A terminal engine's unsaved document: no environment to add to.
@@ -526,17 +536,19 @@ async def serve(
                 saved = files.save_document(target, header_text)
                 if "error" in saved:
                     return False, saved["error"]
-            return env.add_dependency(target, distribution)
+            return env.add_dependency(target, distribution, offline=not download)
 
-        await ws.send(json.dumps({**base, "state": "installing"}))
+        if download:
+            await ws.send(json.dumps({**base, "state": "installing"}))
         ok, reason = await asyncio.to_thread(work)
         if not ok:
-            await refuse(reason or f"uv could not install {distribution}")
+            await refuse(reason or f"uv could not install {distribution}", needs_download=not download)
             return
         text = env._read(target) or ""
-        await ws.send(json.dumps({
-            **base, "state": "installed", "version": env.pinned_version(text, distribution),
-        }))
+        if download:
+            await ws.send(json.dumps({
+                **base, "state": "installed", "version": env.pinned_version(text, distribution),
+            }))
         lines = env.header_lines(text)
         if lines is not None:
             try:

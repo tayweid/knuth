@@ -154,8 +154,10 @@ it with [uv](https://docs.astral.sh/uv/):
 ```
 
 New documents get an empty header. When a cell imports a package the
-document does not have, Knuth offers **Install with uv**, which installs
-it and pins the exact version in the header; the date
+document does not have, Knuth adds it at its newest version and pins
+that exact version in the header, then runs the cell again. A package
+already on the Mac goes in without a word; one that needs a download
+asks first (**Download with uv**). The date
 stamp holds everything underneath, so the same file resolves the same
 way years later. Nothing lands in the project folder: the environment
 lives in uv's store, on a Python uv manages, whatever else is on the

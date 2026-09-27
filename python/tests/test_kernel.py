@@ -4,6 +4,7 @@ import asyncio
 from contextlib import asynccontextmanager, suppress
 import json
 import os
+import re
 import socket
 import subprocess
 import sys
@@ -1066,12 +1067,12 @@ async def check_managed_environment(project):
             _, final = await client.run(1, "import sys; sys.executable")
             assert final["result"] == repr(environment["python"]), final
 
-            # Nothing installs silently: the import fails, and the page offers
-            # "Install with uv", which is the install request below.
+            # Nothing downloads silently: the import fails, and the page asks
+            # "Download with uv", which is the install request below.
             _, final = await client.run(2, "import tomli_w\ntomli_w.__name__")
             assert final["type"] == "error" and "No module named 'tomli_w'" in final["traceback"], final
 
-            await client.send(type="install", id=3, module="tomli_w")
+            await client.send(type="install", id=3, module="tomli_w", download=True)
             events = []
             while True:
                 msg = await asyncio.wait_for(client.recv(), timeout=120)
@@ -1092,7 +1093,9 @@ async def check_managed_environment(project):
             _, final = await client.run(4, "import tomli_w\ntomli_w.__name__")
             assert final["type"] == "done" and final["result"] == "'tomli_w'", final
             on_disk = document.read_text()
-            assert 'exclude-newer = "2026-09-26T00:00:00Z"' in on_disk
+            # The date moved to now, so the package came at its newest version.
+            assert 'exclude-newer = "2026-09-26T00:00:00Z"' not in on_disk
+            assert re.search(r'exclude-newer = "\d{4}-\d\d-\d\dT\d\d:\d\d:\d\dZ"', on_disk), on_disk
             assert on_disk.endswith("# ///\n\n# %%\nimport tomli_w\n"), on_disk
     finally:
         server.terminate()
@@ -1157,11 +1160,9 @@ async def check_install_needs_a_document(project):
             await client.attach("no-document")
             await client.wait_ready()
             await client.send(type="install", id=1, module="tomli_w")
-            failed = await asyncio.wait_for(client.recv(), timeout=10)
-            assert failed["type"] == "dependency" and failed["state"] == "failed", failed
-            assert "text is needed" in failed["error"], failed
             installed = await asyncio.wait_for(client.recv(), timeout=10)
             assert installed["type"] == "installed" and installed["ok"] is False, installed
+            assert "text is needed" in installed["error"] and "download" not in installed, installed
             await client.send(type="install", id=2, module="not a module")
             refused = await asyncio.wait_for(client.recv(), timeout=10)
             assert refused["type"] == "protocol_error", refused
@@ -1190,7 +1191,7 @@ async def check_install_gives_a_plain_document_a_header(project):
                 root=str(project), document=str(document),
             )
             await asyncio.wait_for(client.wait_ready(), timeout=60)
-            await client.send(type="install", id=5, module="tomli_w")
+            await client.send(type="install", id=5, module="tomli_w", download=True)
             while True:
                 msg = await asyncio.wait_for(client.recv(), timeout=180)
                 if msg["type"] == "installed":
@@ -1244,7 +1245,7 @@ async def check_install_into_an_unsaved_document(project, config):
             _, final = await client.run(1, "kept = 41 + 1")
             assert final["type"] == "done", final
 
-            await client.send(type="install", id=2, module="tomli_w", text="# %%\nimport tomli_w\n")
+            await client.send(type="install", id=2, module="tomli_w", text="# %%\nimport tomli_w\n", download=True)
             events = []
             while True:
                 msg = await asyncio.wait_for(client.recv(), timeout=180)
@@ -1262,6 +1263,71 @@ async def check_install_into_an_unsaved_document(project, config):
     finally:
         server.terminate()
         server.wait(timeout=5)
+
+
+async def check_only_a_download_asks(project, config):
+    """A package uv already has goes in without a word; one it would have
+    to download is refused with `download: true`, the file untouched."""
+    port = free_port()
+    first, second = project / "first.py", project / "second.py"
+    for document in (first, second):
+        document.write_text(
+            '# /// script\n# requires-python = ">=3.11"\n# dependencies = []\n#\n'
+            '# [tool.uv]\n# exclude-newer = "2026-09-26T00:00:00Z"\n# ///\n\n# %%\n'
+        )
+    server = subprocess.Popen(
+        server_command(port, root=project),
+        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, env=environments_on(config),
+    )
+
+    async def install(client, id, module, **extra):
+        await client.send(type="install", id=id, module=module, **extra)
+        events = []
+        while True:
+            msg = await asyncio.wait_for(client.recv(), timeout=180)
+            events.append(msg)
+            if msg["type"] == "installed":
+                return events
+
+    try:
+        ws = await connect_when_up(port)
+        async with closing_websocket(ws):
+            client = Client(ws)
+            await client.send(
+                type="attach", protocol=PROTOCOL_VERSION, session="first",
+                root=str(project), document=str(first),
+            )
+            await asyncio.wait_for(client.wait_ready(), timeout=180)
+            # Downloaded once (or already in uv's cache)...
+            events = await install(client, 1, "tomli_w", download=True)
+            assert events[-1]["ok"], events
+
+            await client.send(type="restart", id=2, document=str(second))
+            while (await asyncio.wait_for(client.recv(), timeout=180))["type"] != "ready":
+                pass
+            # ...so another document gets it without asking, and silently.
+            events = await install(client, 3, "tomli_w")
+            assert [e["type"] for e in events] == ["header", "installed"], events
+            assert events[-1] == {"type": "installed", "id": 3, "ok": True, "restart": False}, events
+            _, final = await client.run(4, "import tomli_w\ntomli_w.__name__")
+            assert final["type"] == "done", final
+
+            # A name uv has never seen would be a download: ask first.
+            before = second.read_text()
+            events = await install(client, 5, "knuth_no_such_package_anywhere")
+            assert [e["type"] for e in events] == ["installed"], events
+            assert events[0]["ok"] is False and events[0]["download"] is True, events
+            assert second.read_text() == before, "a refused add leaves the file as it was"
+    finally:
+        server.terminate()
+        server.wait(timeout=5)
+
+
+@pytest.mark.skipif(not uv_with_managed_python(), reason="needs uv and a uv-managed Python")
+def test_only_a_download_asks(tmp_path):
+    project = (tmp_path / "project").resolve()
+    project.mkdir()
+    asyncio.run(check_only_a_download_asks(project, (tmp_path / "config").resolve()))
 
 
 async def check_imports_are_declared(project, config):
