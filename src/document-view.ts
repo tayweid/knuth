@@ -128,6 +128,9 @@ interface CellView {
   lang: Compartment;
   stale: boolean;
   running: boolean;
+  /** Between runs, on the cell's behalf: uv adding or downloading a
+   *  package its import needs, before the cell runs again. */
+  working: boolean;
 }
 
 /** An empty doc is the schema's default: one paragraph, no content. */
@@ -407,7 +410,7 @@ export class DocumentView {
       lineNumberMarkers.of(RangeSet.of(
         new RunMarker(() => {
           if (v.running) this.kernel.interrupt();
-          else void this.runCell(v);
+          else if (!v.working) void this.runCell(v);
         }).range(0),
       )),
     ];
@@ -662,13 +665,19 @@ export class DocumentView {
     }
   }
 
-  /** A run failed: its traceback, and a way to run the cell again. */
-  onRunFailed?: (traceback: string, rerun: () => Promise<boolean>) => void;
+  /** A run failed: its traceback, a way to run the cell again, and a way
+   *  to show work done on the cell's behalf in the meantime (its spinner). */
+  onRunFailed?: (
+    traceback: string,
+    rerun: () => Promise<boolean>,
+    working: (on: boolean) => void,
+  ) => void;
 
   /** Run one code cell; resolves true when it finished cleanly. */
   private async runCell(v: CellView): Promise<boolean> {
     if (v.cell.kind === 'text' || v.running) return false;
     v.running = true;
+    v.working = false;
     this.refreshRunControl(v);
     v.outEl.textContent = '';
     v.outEl.hidden = false;
@@ -731,7 +740,12 @@ export class DocumentView {
     if (!v.isPreamble) this.onChange();
     if (outcome.ok && v.cell.kind === 'program') this.onProgramRun?.();
     this.onRun?.();
-    if (!outcome.ok && outcome.traceback) this.onRunFailed?.(outcome.traceback, () => this.runCell(v));
+    if (!outcome.ok && outcome.traceback) {
+      this.onRunFailed?.(outcome.traceback, () => this.runCell(v), (on) => {
+        v.working = on;
+        this.refreshRunControl(v);
+      });
+    }
     return outcome.ok;
   }
 
@@ -883,6 +897,7 @@ export class DocumentView {
       lang: new Compartment(),
       stale: false,
       running: false,
+      working: false,
       isPreamble,
     };
 
@@ -1293,5 +1308,6 @@ export class DocumentView {
     // follow these classes in CSS.
     v.row.classList.toggle('stale', v.stale);
     v.row.classList.toggle('running', v.running);
+    v.row.classList.toggle('working', v.working);
   }
 }

@@ -14,6 +14,7 @@ type Probe = typeof window & {
   __knuthScratch?: string;
   __knuthNotDownloaded?: boolean;
   __knuthSlowSync?: boolean;
+  __knuthInstallDelay?: number;
 };
 
 test.beforeEach(async ({ page }) => {
@@ -131,6 +132,14 @@ test.beforeEach(async ({ page }) => {
             break;
           }
           case 'install': {
+            if (probe.__knuthInstallDelay) {
+              // uv taking its time: answer the same request later.
+              const delay = probe.__knuthInstallDelay;
+              probe.__knuthInstallDelay = 0;
+              probe.__knuthMessages!.pop();
+              window.setTimeout(() => this.send(raw), delay);
+              break;
+            }
             if (probe.__knuthNotDownloaded && !msg.download) {
               // Not in uv's cache: the engine asks the page to ask.
               this.reply({ type: 'installed', id: msg.id, ok: false, download: true, error: 'offline' });
@@ -277,6 +286,26 @@ test('a missing import uv already has is added without asking, then the cell run
   await expect(page.locator('#toast')).not.toContainText("isn't");
 });
 
+test('the cell spins while uv adds its package, then runs', async ({ page }) => {
+  await page.addInitScript(() => {
+    (window as Probe).__knuthMissing = true;
+    (window as Probe).__knuthInstallDelay = 1500;
+  });
+  await page.goto('/?open=/p/analysis.py');
+  await expect(page.getByText('x = 1')).toBeVisible();
+  const cell = page.locator('.cell', { hasText: 'x = 1' });
+
+  await page.getByTitle('Run all program cells from the top').click();
+  await expect(cell).toHaveClass(/working/);
+  // Spinning on the cell's behalf: a click is not a second run.
+  await cell.locator('.run').click();
+  expect((await messages(page)).filter((m) => m.type === 'run').length).toBe(1);
+
+  await expect.poll(async () => (await messages(page)).filter((m) => m.type === 'run').length).toBe(2);
+  await expect(cell).not.toHaveClass(/working/);
+  await expect(cell).not.toHaveClass(/running/);
+});
+
 test('a missing import that needs a download asks first', async ({ page }) => {
   await page.addInitScript(() => {
     (window as Probe).__knuthMissing = true;
@@ -366,6 +395,10 @@ test('typing a dot offers what the live object has', async ({ page }) => {
   await expect(popup).toContainText('shape');
   const asked = (await messages(page)).find((m) => m.type === 'complete');
   expect(asked).toMatchObject({ code: 'x = 1\ndf.', offset: 9 });
+  // CodeMirror ignores keys for a moment after the list opens (its
+  // interactionDelay), so a quick Enter under load would be a newline.
+  await expect(popup.locator('li[aria-selected]')).toBeVisible();
+  await page.waitForTimeout(150);
   await page.keyboard.press('Enter');
   await expect(page.getByText('df.describe')).toBeVisible();
 });

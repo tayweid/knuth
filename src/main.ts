@@ -623,26 +623,26 @@ const MISSING = /ModuleNotFoundError: No module named '([A-Za-z_][A-Za-z0-9_]*)/
 // Modules already added without asking: if one still will not import
 // (its package is named differently), ask rather than loop.
 const addedQuietly = new Set<string>();
-docView.onRunFailed = (traceback, rerun) => {
+docView.onRunFailed = (traceback, rerun, working) => {
   const install = kernel.install?.bind(kernel);
   const module = MISSING.exec(traceback)?.[1];
   if (!install || !module) return;
+  const cell = { rerun, working };
   if (addedQuietly.has(module)) {
-    offerDownload(module, install, rerun);
+    offerDownload(module, install, cell);
     return;
   }
   addedQuietly.add(module);
   void (async () => {
-    status.textContent = pythonName;
-    status.title = `uv is adding ${module} to this document`;
-    status.className = 'working';
+    // The cell's own spinner says uv is at work on it; nothing else does.
+    working(true);
     const result = await install(module, serializeDocument(docView.doc));
-    if (kernelState === 'ready') paintKernelReady();
     if (result?.ok) {
-      await afterInstall(result, rerun);
+      await afterInstall(result, cell);
     } else if (result?.download) {
-      offerDownload(module, install, rerun);
+      offerDownload(module, install, cell);
     } else {
+      working(false);
       toast(`Could not add ${module}: ${result?.error ?? 'the engine is not connected'}`);
     }
   })();
@@ -654,37 +654,49 @@ type Install = (
   download?: boolean,
 ) => Promise<{ ok: boolean; restart?: boolean; error?: string; download?: boolean } | null>;
 
-function offerDownload(module: string, install: Install, rerun: () => Promise<boolean>) {
+/** The cell a missing import came from: run it again, or show uv working. */
+interface FailedCell {
+  rerun: () => Promise<boolean>;
+  working: (on: boolean) => void;
+}
+
+function offerDownload(module: string, install: Install, cell: FailedCell) {
+  // Waiting on the person, not on uv: no spinner until they say yes.
+  cell.working(false);
   toast(
     `${module} isn't on this Mac`,
-    { label: 'Download with uv', run: () => void downloadAndRerun(module, install, rerun) },
+    { label: 'Download with uv', run: () => void downloadAndRerun(module, install, cell) },
     { stay: true },
   );
 }
 
-async function downloadAndRerun(module: string, install: Install, rerun: () => Promise<boolean>) {
+async function downloadAndRerun(module: string, install: Install, cell: FailedCell) {
   // Up at once and until it is done: the engine's events take it over.
   progress(`Downloading ${module}…`);
+  cell.working(true);
   // The page's own text goes along: its header is the one to keep in step
   // with when the session's environment is a scratch one.
   const result = await install(module, serializeDocument(docView.doc), true);
+  if (!result?.ok) cell.working(false);
   if (!result) {
     toast(`Could not download ${module}: the engine is not connected`);
     return;
   }
   if (!result.ok) return; // the dependency event already said why
-  await afterInstall(result, rerun);
+  await afterInstall(result, cell);
 }
 
-async function afterInstall(result: { restart?: boolean }, rerun: () => Promise<boolean>) {
+async function afterInstall(result: { restart?: boolean }, cell: FailedCell) {
   if (result.restart) {
     // Only an engine without environments for every session asks this.
+    cell.working(false);
     await kernel.restart(fileManager.root ?? undefined, fileManager.path);
     docView.markAllStale();
     await docView.runStale();
   } else {
-    // Same session, same variables: the cell just runs again.
-    await rerun();
+    // Same session, same variables: the cell just runs again (and its
+    // spinner carries straight on into the run).
+    await cell.rerun();
   }
   void panel.refresh();
 }
