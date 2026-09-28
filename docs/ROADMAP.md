@@ -31,6 +31,37 @@ question that still needs one.
   the served page, `.py` files opened in their own folder, file I/O
   through the engine by path, the PWA retired as the way to a window.
 
+- **Floating session panes** — PLANNED 2026-09-27 (Taylor). The side
+  panel's three parts (variables, figures, the data viewer; panel.ts)
+  become three rounded boxes floating off the document's right edge,
+  mostly tucked out of sight by default. When one changes (a new
+  variable, a new figure) it grows and eases partway into view, then
+  settles back. A click brings it fully out and it stays out; a click
+  back in a cell tucks it away again. On a wider window the boxes show
+  as much as the right margin allows, so a wide screen sees them whole
+  without a click. The panel button then cycles three modes: **hidden**,
+  **floating** (the default, as above), and **docked** (the full panel
+  beside the document, as today), offered only when the window is wide
+  enough for it. OPEN: how far "partway" is, how long a change keeps a
+  box forward, and whether the mode is remembered per window or once.
+
+- **Autosave: a git track of every edit** — PLANNED 2026-09-27, spec in
+  AUTOSAVE.md (Claerbout-wide, Plass and Knuth alike). Every project
+  keeps a full, never-pruned git record of its work, start to finish:
+  a commit on every cell run and every minute when anything changed,
+  written with git plumbing to one autosave branch per repository so
+  the person's own branch and staging area are never touched; messages
+  name the app and the trigger (`knuth: cell run [4]`). Large data goes
+  in an ignored `untracked/`, kept inside the track by a hashed
+  manifest. The autosave branch is pushed regularly, since the remote
+  is what pins the times. For Knuth this lands mostly for free: the
+  receipts and the uv header are already in the file, so each run is a
+  diffable change, and values.json and figs/ ride along. OPEN, per the
+  spec: outside edits and gaps, preregistration as the first commit, a
+  remote the person can push to but not rewrite, the replay viewer,
+  and where the shared module lives (a Claerbout package both apps
+  call).
+
 - **Commented scratch bodies** — SHIPPED 2026-08-23, prefix amended to
   `#| ` (DESIGN.md: lossless where `# `+escape collides). Both parsers
   and the corpus moved together; the editor decodes for display and
