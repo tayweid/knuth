@@ -42,22 +42,19 @@ Tauri app (WYSIWYG markdown with executable cells) is retired at the
 ### Knuth.app (macOS)
 
 The app is a native window around the same local engine (design in
-[APP.md](./docs/APP.md)). It is one file in this repository,
-[`app/Knuth.app.zip`](https://github.com/tayweid/knuth/raw/main/app/Knuth.app.zip). Two ways in:
-
-- **Download it**, unzip, drag `Knuth.app` to Applications. The app is not signed with an Apple Developer ID, so the
-  first launch of a browser download is refused until you allow it once:
-  System Settings → Privacy & Security → scroll to the message about
-  Knuth → **Open Anyway**. Every later launch is ordinary.
-- **Or install it from the terminal**, which never sees that prompt (only
-  browser downloads are quarantined):
+[APP.md](./docs/APP.md)). Paste this into Terminal (in Applications →
+Utilities):
 
 ```bash
-curl -fsSL -o /tmp/Knuth.app.zip https://github.com/tayweid/knuth/raw/main/app/Knuth.app.zip && rm -rf /Applications/Knuth.app && ditto -x -k /tmp/Knuth.app.zip /Applications
+curl -fsSL https://knuth.tayweid.io/install | bash
 ```
 
-`app/build.sh` rebuilds the app and that zip from a checkout, with the
-command-line tools alone and no Xcode project.
+It downloads Knuth.app (about 2.5 MB) and puts it in Applications. Run
+the same line again to update. Every deploy builds the app on a GitHub Mac
+from that deploy's site and publishes it beside the site, so the app and
+knuth.tayweid.io are always the same version. To build it yourself from a
+checkout (needs Apple's Command Line Tools): `app/build.sh`, which writes
+`app/build/Knuth.app`.
 
 Open it. The first launch asks one question, in the window: install
 Python? Knuth runs Python through [uv](https://docs.astral.sh/uv/), and

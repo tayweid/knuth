@@ -261,15 +261,19 @@ one the user could already `open()` — the same boundary as running Python.
   gone. DECIDED 2026-09-26 (Taylor): ship unsigned and document the
   one-time click — apps from outside the App Store ask for this all the
   time — and offer the terminal route beside it, which never sees the
-  prompt because only browser downloads are quarantined (`curl` + `ditto`
-  into /Applications, one line in the README). The download is a file in
-  the repository, `app/Knuth.app.zip`: a universal binary, ad-hoc signed,
-  rebuilt by `app/build.sh` and committed like the staged page is. A
-  release job that built and attached it was written and removed the
-  same day — a file on GitHub needs no release, no version and no
-  workflow, and the app changes rarely (the page and the engine are what
-  move, and they come from pip). Signing with a Developer ID stays
-  possible later; nothing here precludes it.
+  prompt because only browser downloads are quarantined. The download was
+  first a file committed to the repository by `app/build.sh`. DECIDED
+  2026-09-28 (Taylor: one distribution system for all his apps, the one
+  Plass uses): nothing binary is committed. Every push to main deploys the
+  site and builds the app on a GitHub Mac from that same deploy — the site
+  job's verified `dist` is the page, the checkout supplies the knuth
+  package and the shell — and publishes it beside the site as
+  `app/Knuth.app.zip`, a universal binary, ad-hoc signed. The install line
+  is `curl -fsSL https://knuth.tayweid.io/install | bash` (`public/install`),
+  which unzips it into Applications; running it again updates. A failed
+  app build never holds the site: the deploy republishes the live zip.
+  This is the standard finished-app shape, so signing with a Developer ID
+  and notarization can slot into the app job later.
 - **Which Python.** The heuristic above will be wrong for someone with two
   environments. `knuth doctor` reports which interpreter the engine runs in,
   and an "Engine Python…" chooser in the app menu is the escape hatch.
