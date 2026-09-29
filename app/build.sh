@@ -1,10 +1,9 @@
 #!/bin/bash
 # Build Knuth.app from app/Sources with the command-line tools alone: no
-# Xcode project, no package manager (APP.md). Output: app/build/Knuth.app,
-# or the path given as the first argument.
+# Xcode project, no package manager (APP.md), and install it.
 #
-#   app/build.sh                 # -> app/build/Knuth.app
-#   app/build.sh /Applications/Knuth.app
+#   app/build.sh                     # your own copy, into /Applications
+#   app/build.sh ~/Desktop/K.app     # anywhere else
 #   APP_VERSION=2.0.0 app/build.sh   # stamp the bundle
 #   KNUTH_WEB=dist app/build.sh      # the page from a site build, not the staged one
 #
@@ -12,8 +11,23 @@
 # publishes the zipped result beside it, where knuth.tayweid.io/install
 # fetches it (.github/workflows/deploy.yml). Nothing is committed.
 set -euo pipefail
+if [ -n "${1:-}" ]; then
+    case "$1" in
+        /*) out="$1" ;;
+        *) out="$PWD/$1" ;;
+    esac
+elif [ -w /Applications ]; then
+    out="/Applications/Knuth.app"
+else
+    mkdir -p "$HOME/Applications"
+    out="$HOME/Applications/Knuth.app"
+fi
+# The target is replaced wholesale, so it must be an app bundle.
+case "$out" in
+    *.app) ;;
+    *) echo "build.sh: the target must end in .app (got $out)" >&2; exit 1 ;;
+esac
 cd "$(dirname "$0")"
-out="${1:-build/Knuth.app}"
 icon_source="../python/knuth/web/icons/knuth-512.png"
 version="${APP_VERSION:-}"
 

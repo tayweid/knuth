@@ -53,8 +53,9 @@ It downloads Knuth.app (about 2.5 MB) and puts it in Applications. Run
 the same line again to update. Every deploy builds the app on a GitHub Mac
 from that deploy's site and publishes it beside the site, so the app and
 knuth.tayweid.io are always the same version. To build it yourself from a
-checkout (needs Apple's Command Line Tools): `app/build.sh`, which writes
-`app/build/Knuth.app`.
+checkout (needs Apple's Command Line Tools): `app/build.sh`, which installs
+your build in Applications (after `npm run build:engine` if you changed
+`src/`).
 
 Open it. The first launch asks one question, in the window: install
 Python? Knuth runs Python through [uv](https://docs.astral.sh/uv/), and
