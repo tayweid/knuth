@@ -5,7 +5,12 @@
 #
 #   app/build.sh                 # -> app/build/Knuth.app
 #   app/build.sh /Applications/Knuth.app
-#   APP_VERSION=2.0.0 app/build.sh   # stamp the bundle (the release does)
+#   APP_VERSION=2.0.0 app/build.sh   # stamp the bundle
+#   KNUTH_WEB=dist app/build.sh      # the page from a site build, not the staged one
+#
+# The deploy runs this on a GitHub Mac against the site it verified and
+# publishes the zipped result beside it, where knuth.tayweid.io/install
+# fetches it (.github/workflows/deploy.yml). Nothing is committed.
 set -euo pipefail
 cd "$(dirname "$0")"
 out="${1:-build/Knuth.app}"
@@ -59,12 +64,21 @@ printf 'APPL????' > "$out/Contents/PkgInfo"
 # The knuth package rides in the bundle: the engine's code and, inside
 # it, the staged page. No Python does — the first launch installs one
 # (uv) or runs cells in the window (Pyodide), which is why this is small.
-if [ ! -f ../python/knuth/web/index.html ]; then
-    echo "no staged page in python/knuth/web — run: npm run build:engine" >&2
+# KNUTH_WEB names a site build to use as the page instead of the staged
+# one (the deploy passes the site it verified, so no Node is needed here);
+# a path relative to the repository root.
+web="${KNUTH_WEB:+../${KNUTH_WEB#./}}"
+case "${KNUTH_WEB:-}" in /*) web="$KNUTH_WEB" ;; esac
+web="${web:-../python/knuth/web}"
+if [ ! -f "$web/index.html" ]; then
+    echo "no page at $web — run: npm run build:engine" >&2
     exit 1
 fi
 mkdir -p "$out/Contents/Resources/python"
-rsync -a --exclude '__pycache__' --exclude '*.pyc' ../python/knuth "$out/Contents/Resources/python/"
+rsync -a --exclude '__pycache__' --exclude '*.pyc' --exclude '/knuth/web' \
+    ../python/knuth "$out/Contents/Resources/python/"
+# The site's installer and app download are not part of the page.
+rsync -a --exclude /install --exclude /app "$web/" "$out/Contents/Resources/python/knuth/web/"
 
 # The app icon, from the same PNG the page uses for its own icon.
 iconset="$(mktemp -d)/AppIcon.iconset"
@@ -85,10 +99,3 @@ rm -rf "$(dirname "$iconset")"
 codesign --force --sign - "$out" >/dev/null 2>&1
 echo "built $out"
 
-# The download is this zip, committed to the repo: a file on GitHub, no
-# release and no workflow. ditto keeps the bundle's metadata.
-if [ "$out" = "build/Knuth.app" ]; then
-    rm -f Knuth.app.zip
-    ditto -c -k --keepParent "$out" Knuth.app.zip
-    echo "zipped app/Knuth.app.zip ($(du -h Knuth.app.zip | cut -f1 | tr -d ' '))"
-fi

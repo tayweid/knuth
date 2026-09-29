@@ -1,0 +1,43 @@
+#!/bin/bash
+# Install or update Knuth.app:
+#
+#   curl -fsSL https://knuth.tayweid.io/install | bash
+#
+# This file ships with the site (public/install). Every deploy builds the
+# app on a Mac and publishes it beside the site as app/Knuth.app.zip
+# (.github/workflows/deploy.yml), so this always installs the site's current
+# version, and running it again updates. Needs nothing but macOS; the app
+# asks about Python on its first launch (docs/APP.md).
+#
+# Overrides, for testing: KNUTH_SITE (a URL or a local folder holding
+# app/Knuth.app.zip), KNUTH_APP (the .app to write).
+set -euo pipefail
+
+site="${KNUTH_SITE:-https://knuth.tayweid.io}"
+
+die() { printf 'Knuth install: %s\n' "$*" >&2; exit 1; }
+[ "$(uname -s)" = "Darwin" ] || die "Knuth.app is for macOS. Elsewhere, see https://github.com/tayweid/knuth#readme for pip."
+
+if [ -n "${KNUTH_APP:-}" ]; then
+    app="$KNUTH_APP"
+elif [ -w /Applications ]; then
+    app="/Applications/Knuth.app"
+else
+    mkdir -p "$HOME/Applications"
+    app="$HOME/Applications/Knuth.app"
+fi
+
+work="$(mktemp -d)"
+trap 'rm -rf "$work"' EXIT
+echo "Knuth: downloading (about 2.5 MB)…"
+case "$site" in
+    http*) curl -fsSL -o "$work/Knuth.app.zip" "$site/app/Knuth.app.zip" ;;
+    *) cp "$site/app/Knuth.app.zip" "$work/Knuth.app.zip" ;;
+esac || die "could not download Knuth — check the connection and run this again."
+ditto -x -k "$work/Knuth.app.zip" "$work"
+[ -x "$work/Knuth.app/Contents/MacOS/Knuth" ] || die "the download was incomplete — run this again."
+
+rm -rf "$app"
+mkdir -p "$(dirname "$app")"
+mv "$work/Knuth.app" "$app"
+echo "Knuth: installed $app — open it from $(dirname "$app")."

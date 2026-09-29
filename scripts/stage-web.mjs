@@ -20,7 +20,9 @@ if (!existsSync(fileURLToPath(new URL('index.html', dist)))) {
 // would ship inside the wheel forever.
 await rm(staged, { recursive: true, force: true });
 await mkdir(staged, { recursive: true });
-await cp(dist, staged, { recursive: true });
+// The site's Mac installer (public/install) is not part of the page.
+const installer = fileURLToPath(new URL('install', dist));
+await cp(dist, staged, { recursive: true, filter: (source) => source !== installer });
 
 // What these bytes were built from, so CI can tell a stale commit from a
 // fresh one without rebuilding (and without depending on the build being
