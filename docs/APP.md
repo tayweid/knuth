@@ -289,8 +289,9 @@ way.
    processors, installs through the install line and smoke-tests the
    result (`app/smoke.mjs`) before publishing.
 4. **Mac trial**: the Electron build is the one in Applications from
-   2026-09-30; the Swift source stays (`app/build.sh`) until it has
-   proved itself.
+   2026-09-30 (the self-completing one since that morning, installed
+   through the page's download); the Swift source stays (`app/build.sh`)
+   until it has proved itself.
 5. **Windows.** The engine's Mac-only corners first: `--parent` checks
    liveness with `os.kill(pid, 0)`, which is not a liveness test there;
    interrupt, if it leans on signals; paths. Then `install.ps1` and
@@ -354,11 +355,11 @@ way.
   on launch. The launched process must be a program in `Contents/MacOS`
   that is itself the AppKit app, so it is Swift, built by `swiftc` in
   `app/package.mjs` (about 100 lines, one per processor).
-- **OPEN: the browser-download path under Gatekeeper.** Verified here
-  without quarantine only. Still to try by hand: a real download from
-  the page, "Open Anyway", the translocation prompt when opened from
-  Downloads, completing after moving it, and whether macOS objects to
-  the completed bundle on later launches.
+- **The browser-download path under Gatekeeper**, verified by hand
+  2026-09-30 (Taylor, through Zen): "Not Opened", Open Anyway, the
+  move-to-Applications prompt when opened from Downloads, the app
+  completing itself by download (6 s) after the move, and later launches
+  with no further prompt although the bundle changed after approval.
 - **No service worker inside a shell.** It kept the PWA's shell for a
   launch without an engine; in the app it could only serve a stale page,
   and under Playwright's debugger a registered worker wedged navigation.
