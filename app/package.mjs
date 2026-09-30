@@ -251,6 +251,20 @@ for (const arch of archs) {
     // Replaced wholesale, through a sibling path so a failed copy never
     // leaves no app at all. The framework goes in as a clone of the one
     // this build set aside, as the install line would put it.
+    // Replacing the bundle of a running app pulls it out from under the
+    // windows it opens next.
+    let running = false;
+    try {
+      // macOS may report a path under /private without that prefix.
+      execFileSync('pgrep', ['-f', `^(/private)?${installTo.replace(/^\/private/, '')}/Contents/MacOS/`], { stdio: 'ignore' });
+      running = true;
+    } catch {
+      // pgrep exits 1 when nothing matches.
+    }
+    if (running) {
+      console.error(`package.mjs: ${config.name} is open (${installTo}); quit it, then install again`);
+      process.exit(1);
+    }
     const incoming = `${installTo}.incoming`;
     rmSync(incoming, { recursive: true, force: true });
     mkdirSync(path.dirname(installTo), { recursive: true });

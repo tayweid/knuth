@@ -508,18 +508,33 @@ let mode = null;
 let pending = [];
 let installing = false;
 
-/** Only the app's own pages talk to the shell: the engine's origin, or the
- *  bundled page's. */
-function trusted(url) {
+/** window → the origin the shell itself loaded into it. A window keeps
+ *  trusting the page it opened with after the app switches Python: a
+ *  window on the engine still gets its dialogs once new windows run in
+ *  the tab. */
+const origins = new Map();
+
+/** Node's URL gives a custom scheme the opaque origin "null", so an origin
+ *  is built from scheme and host. */
+function originOf(url) {
   try {
-    // Node's URL gives a custom scheme the opaque origin "null", so the
-    // bundled page is recognized by its scheme and host.
     const parsed = new URL(url);
-    if (parsed.protocol === `${scheme}:`) return parsed.host === 'app';
-    return mode === 'uv' && parsed.origin === engine.origin;
+    return `${parsed.protocol}//${parsed.host}`;
   } catch {
-    return false;
+    return null;
   }
+}
+
+function load(window, url) {
+  origins.set(window, originOf(url));
+  void window.loadURL(url);
+}
+
+/** Only the app's own pages talk to the shell: a request is answered when
+ *  it comes from the origin this window was given. */
+function trusted(window, url) {
+  const origin = originOf(url);
+  return origin !== null && origin === origins.get(window);
 }
 
 function isOwnURL(url) {
@@ -579,8 +594,11 @@ function openWindow(url, document = null) {
   window.on('close', () => {
     if (!window.isMaximized() && !window.isFullScreen()) writePreference('windowSize', window.getSize());
   });
-  window.on('closed', () => documents.delete(window));
-  void window.loadURL(url);
+  window.on('closed', () => {
+    documents.delete(window);
+    origins.delete(window);
+  });
+  load(window, url);
   return window;
 }
 
@@ -655,7 +673,7 @@ function becomeReady(chosen, window) {
     const first = waiting.shift() ?? null;
     setDocument(window, first);
     window.setTitle(first ? path.basename(first) : NAME);
-    void window.loadURL(pageURL(first));
+    load(window, pageURL(first));
   }
   for (const file of waiting) openWindow(pageURL(file), file);
   // Launched with nothing to open (Dock, Finder): show the app. Files
@@ -735,7 +753,7 @@ async function answer(window, message) {
 
 ipcMain.handle('claerbout:request', async (event, message) => {
   const window = BrowserWindow.fromWebContents(event.sender);
-  if (!window || !trusted(event.senderFrame?.url ?? '')) {
+  if (!window || !trusted(window, event.senderFrame?.url ?? '')) {
     log(`refused a shell request from ${event.senderFrame?.url ?? 'an unknown frame'}`);
     return null;
   }
