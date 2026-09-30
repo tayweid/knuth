@@ -19,7 +19,7 @@
     "requirements": ["websockets>=14.0"]
   },
   "window": { "width": 1100, "height": 760, "minWidth": 520, "minHeight": 360 },
-  "icon": "../python/knuth/web/icons/knuth-512.png",
+  "icon": "../python/knuth/web/icons/knuth-tiles-512.png",
   "copyright": "© 2026 Taylor J Weidman. MIT License.",
   "smoke": {
     "document": "smoke.py",
