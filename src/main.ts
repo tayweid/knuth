@@ -1023,7 +1023,10 @@ window.launchQueue?.setConsumer((params) => {
   }
 });
 
-if ('serviceWorker' in navigator) {
+// The service worker keeps the PWA's shell for a launch with no engine.
+// Inside Knuth.app the shell starts the engine and serves the page, so it
+// has no job there, and a cached page could only be a stale one.
+if ('serviceWorker' in navigator && !shell) {
   window.addEventListener('load', () => {
     void navigator.serviceWorker.register('./sw.js', { scope: './' }).catch((error) => {
       console.warn('Knuth service worker registration failed', error);
