@@ -4,19 +4,35 @@
 #   curl -fsSL https://knuth.tayweid.io/install | bash
 #
 # This file ships with the site (public/install). Every deploy builds the
-# app on a Mac and publishes it beside the site as app/Knuth.app.zip
+# app on a Mac and publishes it beside the site as app/Knuth-<arch>.zip
 # (.github/workflows/deploy.yml), so this always installs the site's current
-# version, and running it again updates. Needs nothing but macOS; the app
+# version, and running it again updates. Needs nothing but macOS 13; the app
 # asks about Python on its first launch (docs/APP.md).
 #
+# The zip is the app without Electron's framework (Chromium, 286 MB). It is
+# cloned in from an installed Claerbout app on the same Electron version —
+# Knuth itself when updating, Plass or ManimLive otherwise — which on APFS
+# costs no disk space; with none, Electron's release is downloaded from
+# GitHub and checked against its published SHA-256 sums (APP.md, "Electron,
+# one shell for Claerbout").
+#
 # Overrides, for testing: KNUTH_SITE (a URL or a local folder holding
-# app/Knuth.app.zip), KNUTH_APP (the .app to write).
+# app/Knuth-<arch>.zip), KNUTH_APP (the .app to write), KNUTH_SIBLINGS
+# (folders to look in for a sibling, instead of the Applications folders;
+# empty means none), ELECTRON_MIRROR (where Electron's releases are).
 set -euo pipefail
 
 site="${KNUTH_SITE:-https://knuth.tayweid.io}"
+mirror="${ELECTRON_MIRROR:-https://github.com/electron/electron/releases/download}"
+framework="Electron Framework.framework"
 
 die() { printf 'Knuth install: %s\n' "$*" >&2; exit 1; }
 [ "$(uname -s)" = "Darwin" ] || die "Knuth.app is for macOS. Elsewhere, see https://github.com/tayweid/knuth#readme for pip."
+case "$(uname -m)" in
+    arm64) arch=arm64 ;;
+    x86_64) arch=x64 ;;
+    *) die "no Knuth.app for this processor ($(uname -m))." ;;
+esac
 
 if [ -n "${KNUTH_APP:-}" ]; then
     app="$KNUTH_APP"
@@ -26,18 +42,79 @@ else
     mkdir -p "$HOME/Applications"
     app="$HOME/Applications/Knuth.app"
 fi
+mkdir -p "$(dirname "$app")"
 
 work="$(mktemp -d)"
 trap 'rm -rf "$work"' EXIT
-echo "Knuth: downloading (about 2.5 MB)…"
-case "$site" in
-    http*) curl -fsSL -o "$work/Knuth.app.zip" "$site/app/Knuth.app.zip" ;;
-    *) cp "$site/app/Knuth.app.zip" "$work/Knuth.app.zip" ;;
-esac || die "could not download Knuth — check the connection and run this again."
-ditto -x -k "$work/Knuth.app.zip" "$work"
-[ -x "$work/Knuth.app/Contents/MacOS/Knuth" ] || die "the download was incomplete — run this again."
+fetch() { # fetch <url-or-path> <file>
+    case "$1" in
+        http*) curl -fsSL -o "$2" "$1" ;;
+        *) cp "$1" "$2" ;;
+    esac
+}
+
+echo "Knuth: downloading (about 3 MB)…"
+fetch "$site/app/Knuth-$arch.zip" "$work/Knuth.zip" \
+    || die "could not download Knuth — check the connection and run this again."
+ditto -x -k "$work/Knuth.zip" "$work"
+new="$work/Knuth.app"
+[ -x "$new/Contents/MacOS/Knuth" ] || die "the download was incomplete — run this again."
+plist() { /usr/libexec/PlistBuddy -c "Print :$2" "$1/Contents/Info.plist" 2>/dev/null || true; }
+version="$(plist "$new" ClaerboutElectronVersion)"
+expected="$(plist "$new" ClaerboutFrameworkSHA256)"
+[ -n "$version" ] && [ -n "$expected" ] || die "the download does not say which Electron it needs — run this again."
+
+# A sibling: a Claerbout app on the same Electron version and processor, on
+# the same volume (a clone cannot cross volumes), whose framework is the
+# exact bytes this app was built against.
+binary_hash() { shasum -a 256 "$1/Versions/A/Electron Framework" 2>/dev/null | cut -d' ' -f1; }
+volume() { stat -f %d "$1" 2>/dev/null; }
+here="$(volume "$(dirname "$app")")"
+sibling=""
+candidates=("$app")
+if [ -n "${KNUTH_SIBLINGS+set}" ]; then
+    for folder in $KNUTH_SIBLINGS; do candidates+=("$folder"/*.app); done
+else
+    candidates+=(/Applications/*.app "$HOME/Applications"/*.app)
+fi
+for candidate in "${candidates[@]}"; do
+    fw="$candidate/Contents/Frameworks/$framework"
+    [ -d "$fw" ] || continue
+    [ "$(plist "$candidate" ClaerboutElectronVersion)" = "$version" ] || continue
+    [ "$(volume "$candidate")" = "$here" ] || continue
+    [ "$(binary_hash "$fw")" = "$expected" ] || continue
+    sibling="$candidate"
+    break
+done
+
+if [ -n "$sibling" ]; then
+    echo "Knuth: sharing Electron $version with $(basename "$sibling")"
+    # -c clones (APFS): a complete, independent copy that takes no space
+    # until one side changes. Falls back to an ordinary copy by itself.
+    cp -Rc "$sibling/Contents/Frameworks/$framework" "$new/Contents/Frameworks/" \
+        || die "could not copy Electron from $(basename "$sibling")."
+else
+    release="electron-v$version-darwin-$arch.zip"
+    echo "Knuth: downloading Electron $version (about 130 MB, once)…"
+    fetch "$mirror/v$version/$release" "$work/$release" \
+        || die "could not download Electron — check the connection and run this again."
+    fetch "$mirror/v$version/SHASUMS256.txt" "$work/SHASUMS256.txt" \
+        || die "could not download Electron's checksums — run this again."
+    sum="$(grep " \*\{0,1\}$release\$" "$work/SHASUMS256.txt" | cut -d' ' -f1)"
+    [ -n "$sum" ] && [ "$(shasum -a 256 "$work/$release" | cut -d' ' -f1)" = "$sum" ] \
+        || die "the Electron download does not match its published checksum — run this again."
+    mkdir "$work/electron"
+    ditto -x -k "$work/$release" "$work/electron"
+    ditto "$work/electron/Electron.app/Contents/Frameworks/$framework" "$new/Contents/Frameworks/$framework"
+    [ "$(binary_hash "$new/Contents/Frameworks/$framework")" = "$expected" ] \
+        || die "Electron's release is not the build this app expects — run this again."
+fi
+# Apple silicon runs only signed code; Electron's x64 release, and so this
+# app on an Intel Mac, is unsigned.
+if [ "$arch" = arm64 ]; then
+    codesign --verify --strict "$new" 2>/dev/null || die "the assembled app does not verify — run this again."
+fi
 
 rm -rf "$app"
-mkdir -p "$(dirname "$app")"
-mv "$work/Knuth.app" "$app"
+mv "$new" "$app"
 echo "Knuth: installed $app — open it from $(dirname "$app")."

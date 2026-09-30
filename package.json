@@ -10,14 +10,19 @@
     "build": "tsc --noEmit && vite build",
     "build:engine": "npm run build && node scripts/stage-web.mjs",
     "preview": "vite preview",
+    "app": "CLAERBOUT_APP=app/knuth.json electron app/shell",
+    "app:build": "node app/package.mjs",
+    "app:smoke": "node app/smoke.mjs browser && node app/smoke.mjs uv",
     "check:web": "node scripts/check-web-fresh.mjs",
     "test": "node --import tsx src/format/round-trip.test.ts && node --import tsx src/format/csv.test.ts && node --import tsx src/kernel/protocol.test.ts && node --import tsx src/artifacts.test.ts && node --import tsx src/contract.test.ts && node --import tsx src/kernel/pip-lines.test.ts && node --import tsx src/header.test.ts && node --import tsx src/prose/md-round.test.ts && node --import tsx src/shell.test.ts",
     "test:browser": "playwright test"
   },
   "devDependencies": {
+    "@electron/packager": "^20.3.0",
     "@playwright/test": "^1.62.1",
     "@types/markdown-it": "^14.1.2",
     "@types/node": "^26.1.1",
+    "electron": "44.5.0",
     "tsx": "^4.23.0",
     "typescript": "^5.6.2",
     "vite": "^8.2.1"
