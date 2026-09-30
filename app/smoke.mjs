@@ -4,7 +4,7 @@
 //
 //   node app/smoke.mjs browser              # the checkout, Pyodide
 //   node app/smoke.mjs uv                   # the checkout, uv's Python
-//   node app/smoke.mjs uv path/to/Knuth.app # a built app
+//   node app/smoke.mjs uv path/to/Knuth.app # a built app, complete or not
 //
 // The uv run installs Python into the throwaway folder (and uv itself into
 // ~/.local/bin if the machine has none), as a first launch would.
@@ -36,7 +36,9 @@ const app = await electron.launch({
     KNUTH_CHOOSE: mode,
     KNUTH_PORT: port,
   },
-  timeout: 60_000,
+  // A slim app completes itself before Electron starts: allow for
+  // Electron's download.
+  timeout: 300_000,
 });
 const fail = async (message) => {
   console.error(`smoke (${mode}): ${message}`);

@@ -312,20 +312,46 @@ way.
   the install line clones or downloads only a framework with that hash.
   This holds for Plass and ManimLive too; it is the suite's rule.
 - **Signing.** The packager renames the helper apps, which invalidates
-  their signatures; they and the outer bundle are signed ad-hoc, the
-  framework left alone. Only on arm64: Electron's x64 release is
-  unsigned, and Intel Macs run it so. Electron's own arm64 release fails
-  `codesign --verify --deep --strict` (Squirrel.framework), so the check
-  is the outer bundle's, not deep.
+  their signatures; they and the outer bundle are signed ad-hoc as the
+  app ships, without the framework, which keeps Electron's own
+  signature. Only on arm64: Electron's x64 release is unsigned, and
+  Intel Macs run it so. Electron's own arm64 release fails `codesign
+  --verify --deep --strict` (Squirrel.framework), so the check is the
+  outer bundle's, not deep. Once completed, the bundle no longer matches
+  its seal (the framework is new to it); Apple silicon checks each
+  program's own signature at launch, and every one is intact.
 - **macOS 13.** Electron 44 needs Ventura or later; the Swift app ran
   on 12.
-- **Sizes.** The zip is 2.8 MB. Electron's release is 130 MB, fetched
-  once per version when no sibling has it; an update clones from the app
-  it replaces (under a second), and a second app on the same version
-  costs about 6 MB. Installed, the app is 292 MB by Finder's count.
-- **The page's download button** gets `app/Knuth.app.zip`, now the whole
-  app for Apple silicon (130 MB): a browser download can neither clone
-  nor fetch the framework. Intel Macs use the install line.
+- **Sizes.** The zip is 2.8 MB. Electron's release is 124 MB, fetched
+  once per version when no sibling has it (about 10 s here); an update
+  clones from the app it replaces (under a second), and a second app on
+  the same version costs about 6 MB. Installed, the app is 292 MB by
+  Finder's count.
+- **The app completes itself** (Taylor, 2026-09-29: "the check for
+  electron on install instead of downloading the whole thing at once",
+  and Mac-like: what you download is the app). Every zip, the page's
+  download button's too, is the app without the framework. The bundle's
+  executable is `launcher.sh`; Electron's own is beside it as `Knuth
+  Electron`. A launch that finds no framework runs `complete.sh` (the
+  same script the install line runs) under a progress window
+  (`progress.js`, AppKit from `osascript -l JavaScript`, nothing
+  compiled), then `exec`s Electron, so the process macOS launched
+  becomes Electron and a double-clicked document still arrives. Opened
+  where it was downloaded (App Translocation, read-only), it asks to be
+  moved to Applications first.
+- **One document can be lost.** Any AppKit process the launch starts,
+  window or not, at any delay, makes macOS send the launch's "open
+  document" event to the launcher, which cannot take it. So a document
+  opened with an app's very first launch (Open With → Knuth, after a
+  browser download) opens a blank window; the second time it opens. A
+  separately opened helper app would keep the event but risks a second
+  Gatekeeper prompt. Knuth is never the default for `.py`, so this is
+  rare.
+- **OPEN: the browser-download path under Gatekeeper.** Verified here
+  without quarantine only. Still to try by hand: a real download from
+  the page, "Open Anyway", the translocation prompt when opened from
+  Downloads, completing after moving it, and whether macOS objects to
+  the completed bundle on later launches.
 - **No service worker inside a shell.** It kept the PWA's shell for a
   launch without an engine; in the app it could only serve a stale page,
   and under Playwright's debugger a registered worker wedged navigation.
@@ -417,8 +443,9 @@ one the user could already `open()` — the same boundary as running Python.
   package and the shell — and publishes it beside the site as
   `app/Knuth.app.zip`, a universal binary, ad-hoc signed. (Since the
   Electron shell: `app/Knuth-<arch>.zip` without Electron's framework,
-  which the install line completes, and `app/Knuth.app.zip` whole for the
-  download button; see "What building it found".) The install line
+  which the install line completes, and `app/Knuth.app.zip`, the same
+  arm64 app for the download button, which completes itself; see "What
+  building it found".) The install line
   is `curl -fsSL https://knuth.tayweid.io/install | bash` (`public/install`),
   which unzips it into Applications; running it again updates. A failed
   app build never holds the site: the deploy republishes the live zip.

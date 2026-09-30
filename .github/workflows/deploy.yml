@@ -63,9 +63,10 @@ jobs:
 
   # Knuth.app: the verified site's page and the knuth package inside the
   # Claerbout shell (Electron), packaged on a Mac and published beside the
-  # site: app/Knuth-<arch>.zip without Electron's framework, which
-  # knuth.tayweid.io/install downloads and completes, and app/Knuth.app.zip,
-  # the whole app for the page's download button (APP.md). Nothing is
+  # site as app/Knuth-<arch>.zip, without Electron's framework: the install
+  # line completes it before moving it into place, and the same app from
+  # the page's download button (app/Knuth.app.zip) completes itself on its
+  # first launch (APP.md). Nothing is
   # committed; every deploy is the app's release. A failure here never
   # holds the site back: the deploy then republishes the app that is
   # already live.
@@ -101,6 +102,13 @@ jobs:
         run: |
           node app/smoke.mjs browser "$RUNNER_TEMP/Knuth.app"
           node app/smoke.mjs uv "$RUNNER_TEMP/Knuth.app"
+      # The page's download: the app completing itself on its first launch,
+      # with no sibling to clone from, so Electron's release is fetched.
+      - name: Smoke-test the download completing itself
+        run: |
+          mkdir "$RUNNER_TEMP/download"
+          ditto -x -k published/app/Knuth.app.zip "$RUNNER_TEMP/download"
+          CLAERBOUT_SIBLINGS=/nonexistent node app/smoke.mjs browser "$RUNNER_TEMP/download/Knuth.app"
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: app

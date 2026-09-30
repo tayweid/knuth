@@ -50,10 +50,11 @@ curl -fsSL https://knuth.tayweid.io/install | bash
 ```
 
 It downloads Knuth.app (about 3 MB) and puts it in Applications; it needs
-macOS 13 or later. The window is Electron's, and the first install also
-fetches Electron itself (about 130 MB, once) — unless another Claerbout app
-(Plass, ManimLive) already has the same version, in which case it is
-shared with that app and takes no more disk. Run the same line again to
+macOS 13 or later. The window is Electron's, which the app does not carry:
+it is shared with another Claerbout app (Plass, ManimLive) on the same
+version, taking no more disk, or else downloaded once (about 125 MB). The
+download button on knuth.tayweid.io gives the same app, which does this
+on its first launch. Run the same line again to
 update. Every deploy builds the app on a GitHub Mac from that deploy's site
 and publishes it beside the site, so the app and knuth.tayweid.io are
 always the same version. To build it yourself from a checkout: `npm run
