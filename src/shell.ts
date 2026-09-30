@@ -9,15 +9,10 @@
 // Dialogs answer {path} (null when cancelled); file requests answer like
 // the engine's files.py replies, so one file manager serves both. Events
 // are the shell telling the page something unasked: `setup` ({kind:
-// 'progress' | 'failed', text}) on the first-launch screen, `openFile`
-// ({path}) for a document opened into an existing window.
+// 'progress' | 'failed', text}) on the first-launch screen.
 //
-// Knuth's Swift shell predates this and speaks WebKit's message handler:
-// the page posts to window.webkit.messageHandlers.knuth with an id, and the
-// shell answers through window.knuthShell.reply(id, result). Until the
-// Electron shell has replaced it, the page speaks both, preferring
-// window.claerbout. A plain browser tab has neither: `shell` is null and
-// the page keeps the File System Access flow.
+// A plain browser tab has no shell: `shell` is null and the page keeps the
+// File System Access flow.
 
 export interface ShellMessage {
   type: 'open' | 'saveAs' | 'read' | 'write' | 'stat' | 'rename' | 'remove' | 'choose' | 'status' | 'error';
@@ -29,7 +24,7 @@ export interface ShellMessage {
   message?: string;
 }
 
-export type ShellEvent = 'setup' | 'openFile';
+export type ShellEvent = 'setup';
 
 export interface Shell {
   /** Ask the shell and wait for its answer; null when it has none. */
@@ -45,14 +40,8 @@ export interface ClaerboutBridge {
   on(event: ShellEvent, listener: (detail: unknown) => void): () => void;
 }
 
-interface WebKitHandler {
-  postMessage(message: ShellMessage & { id?: number }): void;
-}
-
 export interface ShellHost {
   claerbout?: ClaerboutBridge;
-  webkit?: { messageHandlers?: { knuth?: WebKitHandler } };
-  knuthShell?: { reply(id: number, result: unknown): void };
 }
 
 function withPath(request: Shell['request']): Shell['pickPath'] {
@@ -65,42 +54,15 @@ function withPath(request: Shell['request']): Shell['pickPath'] {
 /** The shell this page runs in, or null in a plain browser tab. */
 export function connectShell(host: ShellHost): Shell | null {
   const bridge = host.claerbout;
-  if (bridge) {
-    const request = <T>(message: ShellMessage) =>
-      bridge.request(message).then(
-        (reply) => (reply ?? null) as T | null,
-        () => null,
-      );
-    return {
-      request,
-      notify: (message) => void request(message),
-      pickPath: withPath(request),
-    };
-  }
-
-  const handler = host.webkit?.messageHandlers?.knuth;
-  if (!handler) return null;
-  let nextId = 1;
-  const waiters = new Map<number, (result: unknown) => void>();
-  host.knuthShell = {
-    reply: (id, result) => {
-      const resolve = waiters.get(id);
-      waiters.delete(id);
-      resolve?.(result);
-    },
-  };
-  const request = <T>(message: ShellMessage) => {
-    const id = nextId++;
-    return new Promise<T | null>((resolve) => {
-      waiters.set(id, (result) => resolve((result ?? null) as T | null));
-      handler.postMessage({ ...message, id });
-    });
-  };
+  if (!bridge) return null;
+  const request = <T>(message: ShellMessage) =>
+    bridge.request(message).then(
+      (reply) => (reply ?? null) as T | null,
+      () => null,
+    );
   return {
     request,
-    // The Swift shell answers only messages that carry an id, so a notice
-    // goes without one rather than leaving a waiter behind.
-    notify: (message) => handler.postMessage(message),
+    notify: (message) => void request(message),
     pickPath: withPath(request),
   };
 }

@@ -207,7 +207,10 @@ engine as a child, the shell as the file system for Pyodide, `.py` as an
 alternate handler) stands; only the material changes.
 
 DECIDED: **The Swift shell stays until the Electron one has proved
-itself**, on the Mac, in daily use. Then `app/Sources` goes.
+itself**, on the Mac, in daily use. Then `app/Sources` goes. (Retired
+2026-09-30, Taylor: "i just want to clean up and use this one version":
+`app/Sources`, `app/build.sh`, `app/Info.plist` and the page's WebKit
+path are gone; git history has them.)
 
 DECIDED: **The template grows in Knuth** (Taylor, 2026-09-29). The generic
 shell lives in `app/shell/` (windows, the bridge, the `knuth://` scheme,
@@ -228,13 +231,15 @@ now, with Chrome's DevTools.
 DECIDED: **One page-to-shell protocol.** The preload exposes
 `window.claerbout.request({type, …}) → Promise` through `contextBridge`
 (context isolation and the sandbox on), answered by one `ipcMain.handle`
-that checks the sender's origin is the app's engine or `knuth://app`. Its
+that checks the sender's origin is the one the shell loaded into that
+window (the engine's or `knuth://app`). Its
 messages are today's `knuth` handler's: `open`, `saveAs`, `read`, `write`,
 `stat`, `rename`, `remove`, `choose`, `status`, `error`, plus what Plass
 and ManimLive will need (`fullscreen`, `keepAwake`, and an `openFile`
-event). During the trial the page speaks both: one small adapter sends to
-`window.claerbout` when it exists and to `window.webkit.messageHandlers.knuth`
-otherwise, so the Swift and Electron apps run from the same page.
+event; OPEN, none built: each is added when its first user arrives).
+During the trial the page spoke both protocols, the Electron one and the
+Swift shell's WebKit handler; since the Swift shell retired it speaks
+only this one.
 
 The Swift shell's jobs, in Electron: a `BrowserWindow` per document (the
 title follows the page's by default); `protocol.handle` on a privileged
@@ -276,29 +281,30 @@ right first answer on Windows, with uv as the upgrade.
 
 ### Order
 
-Steps 1-3 landed 2026-09-29, the same night as the plan; step 4 is under
-way.
+Steps 1-3 landed 2026-09-29, the same night as the plan; 4 and 6 on
+2026-09-30; 5 is on hold.
 
 1. **DONE — The protocol and the page adapter.** `src/shell.ts`:
-   `window.claerbout` when present, else the WebKit handler, else null;
-   tested against fake hosts. `setup.js` speaks both on its own.
+   `window.claerbout` when present, else null; tested against fake
+   hosts. `setup.js` speaks it on its own.
 2. **DONE — The shell in `app/shell/`**, Knuth's config in
    `app/knuth.json`; `npm run app` runs it from the checkout.
 3. **DONE — Mac packaging and install.** `app/package.mjs` (`npm run
    app:build` installs into Applications); the deploy packages both
    processors, installs through the install line and smoke-tests the
    result (`app/smoke.mjs`) before publishing.
-4. **Mac trial**: the Electron build is the one in Applications from
-   2026-09-30 (the self-completing one since that morning, installed
-   through the page's download); the Swift source stays (`app/build.sh`)
-   until it has proved itself.
-5. **Windows.** The engine's Mac-only corners first: `--parent` checks
+4. **DONE — Mac trial**: the Electron build is the one in Applications
+   from 2026-09-30 (the self-completing one since that morning, installed
+   through the page's download). The basic stability items that followed
+   are in SHELL_STABILITY.md.
+5. **Windows**, on hold (Taylor, 2026-09-30). The engine's Mac-only corners first: `--parent` checks
    liveness with `os.kill(pid, 0)`, which is not a liveness test there;
    interrupt, if it leans on signals; paths. Then `install.ps1` and
    whichever test route the OPEN item settles. The shell already takes
    Windows' shapes (uv's zip, `Scripts\python.exe`, files by argv and
    `second-instance`, the menu in the window), untried.
-6. **Retire the Swift shell**; move `app/shell/` out when Plass joins.
+6. **DONE — Retire the Swift shell** (2026-09-30). Move `app/shell/`
+   out when Plass joins.
 
 ### What building it found (2026-09-29)
 

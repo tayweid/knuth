@@ -42,9 +42,18 @@ else
     app="$HOME/Applications/Knuth.app"
 fi
 mkdir -p "$(dirname "$app")"
+# Replacing the bundle of a running app pulls it out from under the windows
+# it opens next.
+# (macOS may report a path under /private without that prefix.)
+if pgrep -f "^(/private)?${app#/private}/Contents/MacOS/" >/dev/null 2>&1; then
+    die "Knuth is open. Quit it (Knuth menu → Quit Knuth), then run this again."
+fi
 
+# The new app is put together beside the old one, so a sibling is judged on
+# the right volume, and replaces it only once complete.
+incoming="$app.incoming"
 work="$(mktemp -d)"
-trap 'rm -rf "$work"' EXIT
+trap 'rm -rf "$work" "$incoming"' EXIT
 
 echo "Knuth: downloading (about 3 MB)…"
 fetch() { # fetch <url-or-path> <file>
@@ -56,7 +65,9 @@ fetch() { # fetch <url-or-path> <file>
 fetch "$site/app/Knuth-$arch.zip" "$work/Knuth.zip" \
     || die "could not download Knuth — check the connection and run this again."
 ditto -x -k "$work/Knuth.zip" "$work"
-new="$work/Knuth.app"
+rm -rf "$incoming"
+mv "$work/Knuth.app" "$incoming"
+new="$incoming"
 [ -x "$new/Contents/Resources/complete.sh" ] || die "the download was incomplete — run this again."
 # Apple silicon runs only signed code; Electron's x64 release, and so this
 # app on an Intel Mac, is unsigned. The seal is the app as it ships.
@@ -72,5 +83,5 @@ echo "Knuth: getting Electron (shared with another Claerbout app if one has it, 
     || die "could not get Electron — check the connection and run this again."
 
 rm -rf "$app"
-mv "$new" "$app"
+mv "$new" "$app" || die "could not move Knuth into place — run this again."
 echo "Knuth: installed $app — open it from $(dirname "$app")."

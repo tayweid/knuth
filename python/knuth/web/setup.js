@@ -1,14 +1,10 @@
 // The first launch of Knuth.app (APP.md): two ways to run Python, chosen
 // here, installed here. The shell does the installing and reports each
-// step (the Claerbout shell as `setup` events, the Swift shell through
-// window.knuthSetup); this page only asks and shows. A plain script, so
-// it speaks both transports itself rather than through src/shell.ts.
+// step as `setup` events; this page only asks and shows. A plain script,
+// so it speaks the Claerbout protocol itself rather than through
+// src/shell.ts.
 (function () {
-  var bridge = window.claerbout;
-  var handler = window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.knuth;
-  var shell = bridge
-    ? { postMessage: function (message) { bridge.request(message); } }
-    : handler;
+  var shell = window.claerbout;
   var status = document.getElementById('status');
   var buttons = Array.prototype.slice.call(document.querySelectorAll('button[data-python]'));
   var busy = false;
@@ -26,10 +22,10 @@
       button.classList.toggle('chosen', button.dataset.python === python);
     });
     say(python === 'uv' ? 'Getting ready…' : 'Opening…', 'working');
-    shell.postMessage({ type: 'choose', python: python });
+    shell.request({ type: 'choose', python: python });
   }
 
-  window.knuthSetup = {
+  var report = {
     progress: function (text) {
       say(text, 'working');
     },
@@ -42,10 +38,10 @@
       say(text + '\nChoose again to retry.', 'failed');
     },
   };
-  if (bridge) {
-    bridge.on('setup', function (detail) {
-      var report = window.knuthSetup[detail && detail.kind];
-      if (report) report(String(detail.text));
+  if (shell) {
+    shell.on('setup', function (detail) {
+      var show = report[detail && detail.kind];
+      if (show) show(String(detail.text));
     });
   }
 
