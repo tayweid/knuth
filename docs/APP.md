@@ -276,19 +276,64 @@ right first answer on Windows, with uv as the upgrade.
 
 ### Order
 
-1. **The protocol and the page adapter.** Testable without Electron.
-2. **The shell in `app/shell/`**, Knuth's config beside it, run from
-   `node_modules`; parity with the Swift shell's jobs above.
-3. **Mac packaging and install.** The deploy's app job runs the packager
-   and zips each architecture without the framework; `public/install`
-   gains the clone-or-download step.
-4. **Mac trial** beside the Swift app, on a spare port and config folder,
-   through the by-hand checks recorded above.
+Steps 1-3 landed 2026-09-29, the same night as the plan; step 4 is under
+way.
+
+1. **DONE — The protocol and the page adapter.** `src/shell.ts`:
+   `window.claerbout` when present, else the WebKit handler, else null;
+   tested against fake hosts. `setup.js` speaks both on its own.
+2. **DONE — The shell in `app/shell/`**, Knuth's config in
+   `app/knuth.json`; `npm run app` runs it from the checkout.
+3. **DONE — Mac packaging and install.** `app/package.mjs` (`npm run
+   app:build` installs into Applications); the deploy packages both
+   processors, installs through the install line and smoke-tests the
+   result (`app/smoke.mjs`) before publishing.
+4. **Mac trial**: the Electron build is the one in Applications from
+   2026-09-30; the Swift source stays (`app/build.sh`) until it has
+   proved itself.
 5. **Windows.** The engine's Mac-only corners first: `--parent` checks
    liveness with `os.kill(pid, 0)`, which is not a liveness test there;
    interrupt, if it leans on signals; paths. Then `install.ps1` and
-   whichever test route the OPEN item settles.
+   whichever test route the OPEN item settles. The shell already takes
+   Windows' shapes (uv's zip, `Scripts\python.exe`, files by argv and
+   `second-instance`, the menu in the window), untried.
 6. **Retire the Swift shell**; move `app/shell/` out when Plass joins.
+
+### What building it found (2026-09-29)
+
+- **The framework must stay Electron's exact bytes**, or a sibling's
+  cannot be cloned and Electron's release cannot be downloaded in its
+  place. Two things change it. An asar: since Electron 41 the packager
+  writes the asar's integrity digest into the framework binary and
+  re-signs it, so the app ships its code as a plain folder (`asar:
+  false`). Fuses: they are bits in the same binary, so none are flipped.
+  The build records the binary's SHA-256 in Info.plist
+  (`ClaerboutFrameworkSHA256`, beside `ClaerboutElectronVersion`), and
+  the install line clones or downloads only a framework with that hash.
+  This holds for Plass and ManimLive too; it is the suite's rule.
+- **Signing.** The packager renames the helper apps, which invalidates
+  their signatures; they and the outer bundle are signed ad-hoc, the
+  framework left alone. Only on arm64: Electron's x64 release is
+  unsigned, and Intel Macs run it so. Electron's own arm64 release fails
+  `codesign --verify --deep --strict` (Squirrel.framework), so the check
+  is the outer bundle's, not deep.
+- **macOS 13.** Electron 44 needs Ventura or later; the Swift app ran
+  on 12.
+- **Sizes.** The zip is 2.8 MB. Electron's release is 130 MB, fetched
+  once per version when no sibling has it; an update clones from the app
+  it replaces (under a second), and a second app on the same version
+  costs about 6 MB. Installed, the app is 292 MB by Finder's count.
+- **The page's download button** gets `app/Knuth.app.zip`, now the whole
+  app for Apple silicon (130 MB): a browser download can neither clone
+  nor fetch the framework. Intel Macs use the install line.
+- **No service worker inside a shell.** It kept the PWA's shell for a
+  launch without an engine; in the app it could only serve a stale page,
+  and under Playwright's debugger a registered worker wedged navigation.
+- **Chromium's storage** (caches, localStorage) lives in `Chromium/`
+  inside the app's folder, so `KNUTH_CONFIG_DIR` isolates the page's
+  state as well as the engine's. The Swift app's WebKit storage does
+  not carry over; nothing in it outlives a session that matters (the
+  documents are files).
 
 ## What the shell does, exactly
 
@@ -299,11 +344,12 @@ right first answer on Windows, with uv as the upgrade.
 2. Open a window per document at `http://127.0.0.1:5187/?open=<absolute
    path>` (or `knuth://app/?open=…` for the built-in Python). With no file (Dock click, ⌘N), open `/` — the page restores its
    last document, or shows a new one.
-3. Bridge two dialogs. The page posts `{type: "open"}` or `{type: "saveAs",
-   name}` to the `knuth` message handler; the shell shows NSOpenPanel or
-   NSSavePanel and calls back into the page with the chosen absolute path.
-   The page then does the actual open or save over the socket. The shell
-   never reads or writes a document.
+3. Bridge two dialogs. The page asks `{type: "open"}` or `{type: "saveAs",
+   name}` over the shell protocol (src/shell.ts); the shell shows the
+   native open or save panel and answers with the chosen absolute path.
+   The page then does the actual open or save over the socket. With an
+   engine, the shell reads a document only to open it (above) and never
+   writes one.
 4. Mirror the page's `<title>` into the window title. Close (⌘W) closes the
    window; the engine reaps that session after its grace period as it does
    for a closed tab.
@@ -369,7 +415,10 @@ one the user could already `open()` — the same boundary as running Python.
   site and builds the app on a GitHub Mac from that same deploy — the site
   job's verified `dist` is the page, the checkout supplies the knuth
   package and the shell — and publishes it beside the site as
-  `app/Knuth.app.zip`, a universal binary, ad-hoc signed. The install line
+  `app/Knuth.app.zip`, a universal binary, ad-hoc signed. (Since the
+  Electron shell: `app/Knuth-<arch>.zip` without Electron's framework,
+  which the install line completes, and `app/Knuth.app.zip` whole for the
+  download button; see "What building it found".) The install line
   is `curl -fsSL https://knuth.tayweid.io/install | bash` (`public/install`),
   which unzips it into Applications; running it again updates. A failed
   app build never holds the site: the deploy republishes the live zip.

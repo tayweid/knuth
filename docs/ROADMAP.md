@@ -27,9 +27,11 @@ question that still needs one.
   open follow-ups listed there.
 
 - **Knuth.app** — IN PROGRESS 2026-09-25, design and decisions in
-  APP.md: a native macOS window (Swift + WKWebView, not Tauri) around
-  the served page, `.py` files opened in their own folder, file I/O
-  through the engine by path, the PWA retired as the way to a window.
+  APP.md: a native window around the served page, `.py` files opened in
+  their own folder, file I/O through the engine by path, the PWA retired
+  as the way to a window. First Swift + WKWebView; since 2026-09-29 the
+  Claerbout shell (Electron, app/shell/), with Windows for next semester
+  still to do.
 
 - **Floating session panes** — PLANNED 2026-09-27 (Taylor). The side
   panel's three parts (variables, figures, the data viewer; panel.ts)
