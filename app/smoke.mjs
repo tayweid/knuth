@@ -31,7 +31,8 @@ const app = await electron.launch({
   ...(bundle ? { executablePath: path.join(bundle, 'Contents', 'MacOS', 'Knuth'), args: [doc] } : { args: ['app/shell', doc] }),
   env: {
     ...process.env,
-    ...(bundle ? {} : { CLAERBOUT_APP: 'app/knuth.json' }),
+    // Another config (a browser-only app, say) can be named in the environment.
+    ...(bundle ? {} : { CLAERBOUT_APP: process.env.CLAERBOUT_APP ?? 'app/knuth.json' }),
     KNUTH_CONFIG_DIR: path.join(work, 'config'),
     KNUTH_CHOOSE: mode,
     KNUTH_PORT: port,

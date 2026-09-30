@@ -5,6 +5,7 @@
   "package": "knuth",
   "devPython": "../python",
   "port": 5187,
+  "pythons": ["uv", "browser"],
   "scheme": "knuth",
   "setupPage": "setup.html",
   "defaultDocument": "Knuth.py",

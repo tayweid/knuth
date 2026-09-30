@@ -155,11 +155,19 @@ written by `package.mjs` into Resources and checked by the completer.
 
 ### Phase 2 — the template's seams, reopened when Plass joins
 
-- **Which Pythons an app offers is config.** The setup screen, `choose`,
-  `becomeReady`, `Installer` and the remembered preference encode
-  Knuth's two answers. `app.json` gains `"pythons": ["uv", "browser"]`;
-  with one entry the setup page never asks (`["browser"]` for Plass,
-  `["uv"]` for ManimLive), and Choose Python… appears only with two.
+- **DONE 2026-09-30 — Which Pythons an app offers is config.** The setup
+  screen, `choose`, `becomeReady`, `Installer` and the remembered
+  preference encoded Knuth's two answers. `app.json` now carries
+  `"pythons": ["uv", "browser"]` (the default when absent); with one
+  entry nothing is asked: `["browser"]` starts on the bundled page at
+  once (Plass), `["uv"]` shows the setup page as a progress screen and
+  installs (ManimLive). Choose Python… is in the menu only with two, and
+  the failure dialog offers Try Again instead. A config with no package
+  names its page folder as `web`. A remembered choice the app no longer
+  offers is ignored. Reopened by Plass (plass `docs/CLAERBOUT-SHELL.md`,
+  step 2). Tested: the smoke test in browser mode against a
+  `["browser"]` config (`CLAERBOUT_APP` names it) opens the document
+  with no setup page, and against Knuth's own config as before.
 - **The tooling takes a config.** `package.mjs --config`, `smoke.mjs`
   reading the name, prefix and selectors from it, and `public/install`
   generated from a template rather than hard-wired to Knuth's names.

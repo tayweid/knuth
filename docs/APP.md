@@ -219,6 +219,14 @@ config beside it (name, bundle id, icon, port, the engine command, file
 types). It moves to its own repository when Plass is its second user,
 not before: a fourth repository for one app would be ceremony.
 
+DECIDED: **Which Pythons an app offers is its config's `pythons` list**
+(2026-09-30, for Plass). `["uv", "browser"]` is Knuth's, and the choice
+above. One entry is no choice: `["browser"]` starts on the bundled page
+at once, with no setup page and no Choose Python… in the menu (Plass,
+which has no Python); `["uv"]` installs on the first launch with the
+setup page as its progress screen (ManimLive). A config with no Python
+package names its page folder as `web`.
+
 DECIDED: **Packaged with `@electron/packager`** (Taylor, 2026-09-29),
 not by hand in the manner of the Swift `build.sh`. The packager does the
 part that is fiddly by hand: renaming the executable and the four helper
