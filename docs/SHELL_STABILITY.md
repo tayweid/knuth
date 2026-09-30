@@ -189,7 +189,7 @@ written by `package.mjs` into Resources and checked by the completer.
 
   **Knuth switched the same day**, once the repository was pushed and
   tagged `v0.1.0`: `package.json` depends on the tag's tarball,
-  `https://github.com/tayweid/claerbout/archive/refs/tags/v0.1.1.tar.gz`,
+  `https://github.com/tayweid/claerbout/archive/refs/tags/v0.1.2.tar.gz`,
   which brings Electron and the
   packager, so they left the devDependencies); `app`, `app:build`,
   `app:smoke` and `app:install-script` run the package's scripts on

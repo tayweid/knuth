@@ -231,7 +231,7 @@ DECIDED: **The template has moved to its own repository** (2026-09-30,
 Plass being its second user): `~/Projects/claerbout`, whose README is
 the reference for the config keys and the protocol. Knuth depends on it
 as the `claerbout` package, pinned to a tag's tarball
-(`https://github.com/tayweid/claerbout/archive/refs/tags/v0.1.1.tar.gz`;
+(`https://github.com/tayweid/claerbout/archive/refs/tags/v0.1.2.tar.gz`;
 SHELL_STABILITY.md has why not the `github:` shorthand);
 `app/` here holds only `knuth.json`, and `npm run app`, `app:build`,
 `app:smoke` and `app:install-script` run the package's scripts on it. Two additions made
