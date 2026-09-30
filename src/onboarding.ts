@@ -1,4 +1,5 @@
 import type { KernelStatus } from './kernel/kernel.ts';
+import { shell } from './shell.ts';
 
 type Platform = 'macos' | 'windows' | 'linux';
 
@@ -233,7 +234,7 @@ export class Onboarding {
       this.detail.textContent =
         'This window is running from its cache. Start the engine to run cells ' +
         'with your local Python packages.';
-    } else if (window.webkit?.messageHandlers?.knuth) {
+    } else if (shell) {
       // Knuth.app running on the web (Pyodide): the only way to land here is
       // Pyodide failing to load, which on first use means no network.
       this.title.textContent = 'Python could not be loaded';

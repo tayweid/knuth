@@ -63,26 +63,4 @@ interface Window {
   };
 }
 
-// Knuth.app (APP.md): the shell registers a `knuth` message handler. The
-// page posts requests carrying an id, and the shell answers each through
-// `window.knuthShell.reply(id, result)`. Dialogs answer `{path}` (null when
-// cancelled); file requests answer like the engine's files.py replies, so
-// the same file manager hooks work against either.
-interface KnuthShellMessage {
-  type: 'open' | 'saveAs' | 'read' | 'write' | 'stat' | 'rename' | 'remove' | 'status' | 'error';
-  id?: number;
-  path?: string;
-  text?: string;
-  name?: string;
-  state?: string;
-  message?: string;
-}
 
-interface KnuthShellHandler {
-  postMessage(message: KnuthShellMessage): void;
-}
-
-interface Window {
-  webkit?: { messageHandlers?: { knuth?: KnuthShellHandler } };
-  knuthShell?: { reply(id: number, result: unknown): void };
-}
