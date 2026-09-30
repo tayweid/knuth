@@ -8,6 +8,7 @@ const CACHE_NAME = "knuth-app-shell-v1";
 const APP_SHELL = [
   "./",
   "./manifest.webmanifest",
+  "./icons/knuth.svg",
   "./icons/knuth-tiles-192.png",
   "./icons/knuth-tiles-512.png",
 ];
