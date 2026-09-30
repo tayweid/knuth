@@ -219,13 +219,16 @@ for (const arch of archs) {
   // unsigned, and an Intel Mac runs it so.
   if (arch === 'arm64') {
     const frameworks = path.join(contents, 'Frameworks');
-    for (const helper of readdirSync(frameworks).filter((name) => name.endsWith('.app'))) {
-      execFileSync('codesign', ['--force', '--sign', '-', path.join(frameworks, helper)]);
+    // Electron's three small frameworks (Mantle, ReactiveObjC, Squirrel)
+    // ship with signatures that fail a deep check, which a browser
+    // download's Gatekeeper makes: it calls the app "damaged", with no
+    // Open Anyway. They are never shared, so they are signed afresh too.
+    for (const entry of readdirSync(frameworks).filter((name) => name.endsWith('.app') || name.endsWith('.framework'))) {
+      execFileSync('codesign', ['--force', '--sign', '-', path.join(frameworks, entry)]);
     }
     execFileSync('codesign', ['--force', '--sign', '-', bundle]);
-    // Not --deep: Electron's own release fails a deep strict check
-    // (Squirrel.framework), and that is Electron's to fix, not ours.
-    execFileSync('codesign', ['--verify', '--strict', bundle]);
+    // Deep, as Gatekeeper checks a download.
+    execFileSync('codesign', ['--verify', '--deep', '--strict', bundle]);
   }
   console.log(`built ${bundle} (Electron ${electronVersion}, ${arch}, without its framework)`);
 

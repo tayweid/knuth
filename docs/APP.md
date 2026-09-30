@@ -315,9 +315,14 @@ way.
   their signatures; they and the outer bundle are signed ad-hoc as the
   app ships, without the framework, which keeps Electron's own
   signature. Only on arm64: Electron's x64 release is unsigned, and
-  Intel Macs run it so. Electron's own arm64 release fails `codesign
-  --verify --deep --strict` (Squirrel.framework), so the check is the
-  outer bundle's, not deep. Once completed, the bundle no longer matches
+  Intel Macs run it so. Electron's three small frameworks (Mantle,
+  ReactiveObjC, Squirrel) ship with signatures that fail `codesign
+  --verify --deep --strict`, and a browser download's Gatekeeper checks
+  deeply: it called the app "damaged" with no Open Anyway (2026-09-30,
+  Taylor's test through Zen). Re-signed ad-hoc like the helpers, the
+  download gets the ordinary "Not Opened" with Open Anyway, as the Swift
+  app did, and the build now verifies deep. (Electron's big framework
+  fails the same check, but it is never in the download.) Once completed, the bundle no longer matches
   its seal (the framework is new to it); Apple silicon checks each
   program's own signature at launch, and every one is intact.
 - **macOS 13.** Electron 44 needs Ventura or later; the Swift app ran
