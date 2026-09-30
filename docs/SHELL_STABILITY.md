@@ -188,13 +188,27 @@ written by `package.mjs` into Resources and checked by the completer.
   notice, verified by the Plass port.
 
   **Knuth switched the same day**, once the repository was pushed and
-  tagged `v0.1.0`: `package.json` depends on
-  `github:tayweid/claerbout#v0.1.0` (which brings Electron and the
+  tagged `v0.1.0`: `package.json` depends on the tag's tarball,
+  `https://github.com/tayweid/claerbout/archive/refs/tags/v0.1.0.tar.gz`,
+  which brings Electron and the
   packager, so they left the devDependencies); `app`, `app:build`,
   `app:smoke` and `app:install-script` run the package's scripts on
   `app/knuth.json`; `public/install` is regenerated from the template;
   `app/shell/`, `app/package.mjs` and `app/smoke.mjs` are gone; the
-  deploy's app job calls the package. Rule for Electron bumps: one tag,
+  deploy's app job calls the package.
+
+  **The repository was private for its first hours** (2026-09-30), which
+  is why the first deploy on the package failed at `npm ci`: no runner
+  can fetch a private repository without a token. Taylor made it public
+  the same day. Two npm facts learned on the way, for whoever touches the
+  dependency: the `github:tayweid/claerbout#v0.1.0` shorthand is recorded
+  in the lockfile as git over SSH, which a runner cannot use, and `npm
+  install` rewrites an HTTPS git `resolved` back to SSH. The tag's tarball
+  is the durable form: no git, an integrity hash in the lockfile, and
+  stable across `npm install` (checked). Bumping the shell means changing
+  the tag in that URL and running `npm install`.
+
+  Rule for Electron bumps: one tag,
   one pull request per app, the same day, so the window in which a
   second install pays the full download stays short.
 - **The protocol promises.** APP.md lists `fullscreen`, `keepAwake` and
