@@ -849,7 +849,7 @@ function showGetMenu(anchor: HTMLElement) {
     <h2>Knuth for your Mac</h2>
     <p>This page runs Python in the tab. The app runs it on your computer, on your own files, with your own packages.</p>
     <a class="get-download" href="${APP_ZIP}">${icon('download')}<span>Download Knuth.app</span></a>
-    <p class="get-note">Unzip and drag to Applications. The first launch is refused once because the app is not signed with Apple: open System Settings → Privacy &amp; Security and click <b>Open Anyway</b>.</p>
+    <p class="get-note">For Macs with Apple silicon. Unzip and drag to Applications. The first launch is refused once because the app is not signed with Apple: open System Settings → Privacy &amp; Security and click <b>Open Anyway</b>. Then it gets Electron, the window it runs in — shared with Plass or ManimLive if you have one, otherwise a 130 MB download, once.</p>
     <h3>Or from the terminal</h3>
     <p class="get-note">No prompt this way — only browser downloads are quarantined.</p>
   `;

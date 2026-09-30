@@ -289,8 +289,9 @@ way.
    processors, installs through the install line and smoke-tests the
    result (`app/smoke.mjs`) before publishing.
 4. **Mac trial**: the Electron build is the one in Applications from
-   2026-09-30; the Swift source stays (`app/build.sh`) until it has
-   proved itself.
+   2026-09-30 (the self-completing one since that morning, installed
+   through the page's download); the Swift source stays (`app/build.sh`)
+   until it has proved itself.
 5. **Windows.** The engine's Mac-only corners first: `--parent` checks
    liveness with `os.kill(pid, 0)`, which is not a liveness test there;
    interrupt, if it leans on signals; paths. Then `install.ps1` and
@@ -312,20 +313,53 @@ way.
   the install line clones or downloads only a framework with that hash.
   This holds for Plass and ManimLive too; it is the suite's rule.
 - **Signing.** The packager renames the helper apps, which invalidates
-  their signatures; they and the outer bundle are signed ad-hoc, the
-  framework left alone. Only on arm64: Electron's x64 release is
-  unsigned, and Intel Macs run it so. Electron's own arm64 release fails
-  `codesign --verify --deep --strict` (Squirrel.framework), so the check
-  is the outer bundle's, not deep.
+  their signatures; they and the outer bundle are signed ad-hoc as the
+  app ships, without the framework, which keeps Electron's own
+  signature. Only on arm64: Electron's x64 release is unsigned, and
+  Intel Macs run it so. Electron's three small frameworks (Mantle,
+  ReactiveObjC, Squirrel) ship with signatures that fail `codesign
+  --verify --deep --strict`, and a browser download's Gatekeeper checks
+  deeply: it called the app "damaged" with no Open Anyway (2026-09-30,
+  Taylor's test through Zen). Re-signed ad-hoc like the helpers, the
+  download gets the ordinary "Not Opened" with Open Anyway, as the Swift
+  app did, and the build now verifies deep. (Electron's big framework
+  fails the same check, but it is never in the download.) Once completed, the bundle no longer matches
+  its seal (the framework is new to it); Apple silicon checks each
+  program's own signature at launch, and every one is intact.
 - **macOS 13.** Electron 44 needs Ventura or later; the Swift app ran
   on 12.
-- **Sizes.** The zip is 2.8 MB. Electron's release is 130 MB, fetched
-  once per version when no sibling has it; an update clones from the app
-  it replaces (under a second), and a second app on the same version
-  costs about 6 MB. Installed, the app is 292 MB by Finder's count.
-- **The page's download button** gets `app/Knuth.app.zip`, now the whole
-  app for Apple silicon (130 MB): a browser download can neither clone
-  nor fetch the framework. Intel Macs use the install line.
+- **Sizes.** The zip is 2.8 MB. Electron's release is 124 MB, fetched
+  once per version when no sibling has it (about 10 s here); an update
+  clones from the app it replaces (under a second), and a second app on
+  the same version costs about 6 MB. Installed, the app is 292 MB by
+  Finder's count.
+- **The app completes itself** (Taylor, 2026-09-29/30: "the check for
+  electron on install instead of downloading the whole thing at once";
+  Mac-like, what you download is the app; and "the flow should be the
+  same no matter whether its the first start"). Every zip, the page's
+  download button's too, is the app without the framework. Every launch
+  is one flow: the bundle's executable is a small compiled launcher
+  (`app/shell/launcher.swift`, Electron's own executable beside it as
+  `Knuth Electron`) that looks for the framework; there, it `execv`s
+  Electron before touching AppKit; not there, it shows a progress window,
+  runs `complete.sh` (the same script the install line runs), and then
+  `execv`s Electron, handing it the documents the launch was for as
+  arguments (`main.js`, `filesIn`). Opened where it was downloaded (App
+  Translocation, read-only), it asks to be moved to Applications first.
+- **Why compiled.** A script launcher lost the document of a first
+  launch: any AppKit process a launch starts (a progress window from
+  `osascript`, even with no window, at any delay) makes macOS send the
+  launch's "open document" event to the launcher, and a script cannot
+  take it; `exec`ing `osascript` does not either (its program is not in
+  the bundle), and a copy of Apple's `osascript` in the bundle is killed
+  on launch. The launched process must be a program in `Contents/MacOS`
+  that is itself the AppKit app, so it is Swift, built by `swiftc` in
+  `app/package.mjs` (about 100 lines, one per processor).
+- **The browser-download path under Gatekeeper**, verified by hand
+  2026-09-30 (Taylor, through Zen): "Not Opened", Open Anyway, the
+  move-to-Applications prompt when opened from Downloads, the app
+  completing itself by download (6 s) after the move, and later launches
+  with no further prompt although the bundle changed after approval.
 - **No service worker inside a shell.** It kept the PWA's shell for a
   launch without an engine; in the app it could only serve a stale page,
   and under Playwright's debugger a registered worker wedged navigation.
@@ -417,8 +451,9 @@ one the user could already `open()` — the same boundary as running Python.
   package and the shell — and publishes it beside the site as
   `app/Knuth.app.zip`, a universal binary, ad-hoc signed. (Since the
   Electron shell: `app/Knuth-<arch>.zip` without Electron's framework,
-  which the install line completes, and `app/Knuth.app.zip` whole for the
-  download button; see "What building it found".) The install line
+  which the install line completes, and `app/Knuth.app.zip`, the same
+  arm64 app for the download button, which completes itself; see "What
+  building it found".) The install line
   is `curl -fsSL https://knuth.tayweid.io/install | bash` (`public/install`),
   which unzips it into Applications; running it again updates. A failed
   app build never holds the site: the deploy republishes the live zip.

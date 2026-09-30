@@ -8,10 +8,13 @@
 //   node app/package.mjs --web dist ...       # the page from a site build,
 //                                             # not the staged one
 //
-// A download zip leaves Electron's framework out (286 of its 288 MB): the
-// install line (public/install) clones it from an installed Claerbout app
-// on the same Electron version, or downloads Electron's release. So a zip
-// is a few megabytes, one per processor. An installed copy is complete.
+// The app leaves Electron's framework out (286 of its 288 MB), so a zip is
+// a few megabytes, one per processor. Whoever gets it completes it with
+// app/shell/complete.sh, which clones the framework from an installed
+// Claerbout app on the same Electron version or downloads Electron's
+// release: the install line before moving it into place, or the app itself
+// on its first launch (app/shell/launcher.swift), when it came from the
+// page's download button. Needs swiftc (Apple's command-line tools). An installed copy from here is complete.
 
 import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
@@ -124,6 +127,34 @@ const documentTypes = config.documentTypes.map((type) => ({
   ...(type.contentTypes ? { LSItemContentTypes: type.contentTypes } : { CFBundleTypeExtensions: type.extensions }),
 }));
 
+// The command-line tools can ship an SDK newer than their own compiler,
+// which swiftc refuses: take the newest SDK it accepts (as app/build.sh
+// did), else the default one (Xcode's, on the deploy's Mac).
+let chosenSDK = null;
+function sdk() {
+  if (chosenSDK) return chosenSDK;
+  const tools = '/Library/Developer/CommandLineTools/SDKs';
+  const probe = path.join(build, 'probe.swift');
+  writeFileSync(probe, 'import Foundation\n');
+  const candidates = existsSync(tools)
+    ? readdirSync(tools)
+        .filter((entry) => /^MacOSX\d+\.\d+\.sdk$/.test(entry))
+        .sort((a, b) => b.localeCompare(a, undefined, { numeric: true }))
+        .map((entry) => path.join(tools, entry))
+    : [];
+  for (const candidate of candidates) {
+    try {
+      execFileSync('swiftc', ['-sdk', candidate, '-swift-version', '5', '-typecheck', probe], { stdio: 'ignore' });
+      chosenSDK = candidate;
+      break;
+    } catch {
+      // Too new for this compiler.
+    }
+  }
+  chosenSDK ??= execFileSync('xcrun', ['--show-sdk-path'], { encoding: 'utf8' }).trim();
+  return chosenSDK;
+}
+
 const frameworkName = 'Electron Framework.framework';
 for (const arch of archs) {
   const [bundleDir] = await packager({
@@ -162,54 +193,69 @@ for (const arch of archs) {
     `Add :ClaerboutFrameworkSHA256 string ${frameworkHash}`,
     path.join(bundle, 'Contents', 'Info.plist'),
   ]);
+  // The app ships without the framework: take it out, and put the
+  // launcher in front of Electron's own executable. A launch that finds no
+  // framework completes the app first (app/shell/launcher.swift).
+  const contents = path.join(bundle, 'Contents');
+  const frameworkDir = path.join(contents, 'Frameworks', frameworkName);
+  const framework = path.join(build, `framework-${arch}`, frameworkName);
+  rmSync(path.dirname(framework), { recursive: true, force: true });
+  mkdirSync(path.dirname(framework), { recursive: true });
+  renameSync(frameworkDir, framework);
+  renameSync(path.join(contents, 'MacOS', config.name), path.join(contents, 'MacOS', `${config.name} Electron`));
+  execFileSync('swiftc', [
+    '-O',
+    '-swift-version', '5',
+    '-sdk', sdk(),
+    '-target', `${arch === 'arm64' ? 'arm64' : 'x86_64'}-apple-macos13.0`,
+    '-o', path.join(contents, 'MacOS', config.name),
+    path.join(here, 'shell', 'launcher.swift'),
+  ]);
+  cpSync(path.join(here, 'shell', 'complete.sh'), path.join(contents, 'Resources', 'complete.sh'));
   // Ad-hoc signatures for what the packager renamed (the helper apps) and
-  // the outer bundle. Electron's framework keeps Electron's own, so a
-  // framework cloned in later from a sibling or downloaded from Electron's
-  // release (the same bytes) still matches this seal. Only on Apple
+  // the outer bundle, as it ships: without the framework, which keeps
+  // Electron's own signature wherever it comes from. Only on Apple
   // silicon, which refuses unsigned code: Electron's x64 release ships
   // unsigned, and an Intel Mac runs it so.
   if (arch === 'arm64') {
-    const frameworks = path.join(bundle, 'Contents', 'Frameworks');
-    for (const helper of readdirSync(frameworks).filter((name) => name.endsWith('.app'))) {
-      execFileSync('codesign', ['--force', '--sign', '-', path.join(frameworks, helper)]);
+    const frameworks = path.join(contents, 'Frameworks');
+    // Electron's three small frameworks (Mantle, ReactiveObjC, Squirrel)
+    // ship with signatures that fail a deep check, which a browser
+    // download's Gatekeeper makes: it calls the app "damaged", with no
+    // Open Anyway. They are never shared, so they are signed afresh too.
+    for (const entry of readdirSync(frameworks).filter((name) => name.endsWith('.app') || name.endsWith('.framework'))) {
+      execFileSync('codesign', ['--force', '--sign', '-', path.join(frameworks, entry)]);
     }
     execFileSync('codesign', ['--force', '--sign', '-', bundle]);
-    // Not --deep: Electron's own release fails a deep strict check
-    // (Squirrel.framework), and that is Electron's to fix, not ours.
-    execFileSync('codesign', ['--verify', '--strict', bundle]);
+    // Deep, as Gatekeeper checks a download.
+    execFileSync('codesign', ['--verify', '--deep', '--strict', bundle]);
   }
-  console.log(`built ${bundle} (Electron ${electronVersion}, ${arch})`);
+  console.log(`built ${bundle} (Electron ${electronVersion}, ${arch}, without its framework)`);
 
   if (zipTo) {
     mkdirSync(zipTo, { recursive: true });
-    const slim = path.join(build, `slim-${arch}`);
-    rmSync(slim, { recursive: true, force: true });
-    mkdirSync(slim);
-    execFileSync('ditto', [bundle, path.join(slim, `${config.name}.app`)]);
-    rmSync(path.join(slim, `${config.name}.app`, 'Contents', 'Frameworks', frameworkName), { recursive: true });
     const zip = path.resolve(zipTo, `${config.name}-${arch}.zip`);
     rmSync(zip, { force: true });
-    execFileSync('ditto', ['-c', '-k', '--keepParent', path.join(slim, `${config.name}.app`), zip]);
-    rmSync(slim, { recursive: true });
-    console.log(`zipped ${zip} (without Electron's framework)`);
-    // The hosted page's download button: a browser download cannot clone
-    // or fetch the framework, so it gets the whole app, for Apple silicon.
-    // (Intel Macs use the install line.)
+    execFileSync('ditto', ['-c', '-k', '--keepParent', bundle, zip]);
+    console.log(`zipped ${zip}`);
+    // The hosted page's download button: the same app under the name it
+    // has always had, for Apple silicon (Intel Macs use the install line).
     if (arch === 'arm64') {
-      const full = path.resolve(zipTo, `${config.name}.app.zip`);
-      rmSync(full, { force: true });
-      execFileSync('ditto', ['-c', '-k', '--keepParent', bundle, full]);
-      console.log(`zipped ${full} (complete, for the page's download)`);
+      const download = path.resolve(zipTo, `${config.name}.app.zip`);
+      cpSync(zip, download);
+      console.log(`zipped ${download} (the page's download)`);
     }
   }
 
   if (installTo) {
     // Replaced wholesale, through a sibling path so a failed copy never
-    // leaves no app at all.
+    // leaves no app at all. The framework goes in as a clone of the one
+    // this build set aside, as the install line would put it.
     const incoming = `${installTo}.incoming`;
     rmSync(incoming, { recursive: true, force: true });
     mkdirSync(path.dirname(installTo), { recursive: true });
     execFileSync('ditto', [bundle, incoming]);
+    execFileSync('cp', ['-Rc', framework, path.join(incoming, 'Contents', 'Frameworks', frameworkName)]);
     rmSync(installTo, { recursive: true, force: true });
     renameSync(incoming, installTo);
     console.log(`installed ${installTo}`);
