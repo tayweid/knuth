@@ -3,19 +3,19 @@
 #
 #   curl -fsSL https://knuth.tayweid.io/install | bash
 #
-# This file ships with the site (public/install). Every deploy builds the
-# app on a Mac and publishes it beside the site as app/Knuth-<arch>.zip
-# (.github/workflows/deploy.yml), so this always installs the site's current
-# version, and running it again updates. Needs nothing but macOS 13; the app
-# asks about Python on its first launch (docs/APP.md).
+# Generated from the Claerbout shell's install.template by package.mjs
+# (--install-script); edit the template, not this file. Every deploy
+# builds the app on a Mac and publishes it beside the site as
+# app/Knuth-<arch>.zip, so this always installs the site's current
+# version, and running it again updates. Needs nothing but macOS 13.
 #
 # The zip is the app without Electron's framework (Chromium, 286 MB). The
 # app's own complete.sh puts it in: cloned from an installed Claerbout app
-# on the same Electron version — Knuth itself when updating, Plass or
-# ManimLive otherwise — which on APFS costs no disk space; with none,
+# on the same Electron version — Knuth itself when updating, another
+# Claerbout app otherwise — which on APFS costs no disk space; with none,
 # Electron's release is downloaded from GitHub and checked against its
-# published SHA-256 sums (APP.md, "Electron, one shell for Claerbout"). The
-# same zip from the page's download button completes itself on first launch.
+# published SHA-256 sums. The same zip from a page's download button
+# completes itself on first launch.
 #
 # Overrides, for testing: KNUTH_SITE (a URL or a local folder holding
 # app/Knuth-<arch>.zip), KNUTH_APP (the .app to write), KNUTH_SIBLINGS
@@ -43,8 +43,8 @@ else
 fi
 mkdir -p "$(dirname "$app")"
 # Replacing the bundle of a running app pulls it out from under the windows
-# it opens next.
-# (macOS may report a path under /private without that prefix.)
+# it opens next. (macOS may report a path under /private without that
+# prefix.)
 if pgrep -f "^(/private)?${app#/private}/Contents/MacOS/" >/dev/null 2>&1; then
     die "Knuth is open. Quit it (Knuth menu → Quit Knuth), then run this again."
 fi
@@ -55,7 +55,7 @@ incoming="$app.incoming"
 work="$(mktemp -d)"
 trap 'rm -rf "$work" "$incoming"' EXIT
 
-echo "Knuth: downloading (about 3 MB)…"
+echo "Knuth: downloading…"
 fetch() { # fetch <url-or-path> <file>
     case "$1" in
         http*) curl -fsSL -o "$2" "$1" ;;

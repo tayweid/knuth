@@ -4,6 +4,8 @@
   "envPrefix": "KNUTH",
   "package": "knuth",
   "devPython": "../python",
+  "site": "https://knuth.tayweid.io",
+  "elsewhere": "Elsewhere, see https://github.com/tayweid/knuth#readme for pip.",
   "port": 5187,
   "pythons": ["uv", "browser"],
   "scheme": "knuth",
@@ -19,6 +21,15 @@
   "window": { "width": 1100, "height": 760, "minWidth": 520, "minHeight": 360 },
   "icon": "../python/knuth/web/icons/knuth-512.png",
   "copyright": "© 2026 Taylor J Weidman. MIT License.",
+  "smoke": {
+    "document": "smoke.py",
+    "text": "# %%\nanswer = 41 + 1\n",
+    "ready": "#kernel-status",
+    "readyText": { "uv": "uv", "browser": "Pyodide" },
+    "run": "#run-all",
+    "written": "values.json",
+    "json": { "answer": 42 }
+  },
   "documentTypes": [
     { "name": "Python cell document", "role": "Editor", "rank": "Alternate", "contentTypes": ["public.python-script"], "extensions": ["py"] },
     { "name": "Jupyter notebook", "role": "Viewer", "rank": "Alternate", "extensions": ["ipynb"] },

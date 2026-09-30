@@ -62,7 +62,8 @@ jobs:
           retention-days: 1
 
   # Knuth.app: the verified site's page and the knuth package inside the
-  # Claerbout shell (Electron), packaged on a Mac and published beside the
+  # Claerbout shell (the `claerbout` package, github:tayweid/claerbout,
+  # pinned to a tag in package.json), packaged on a Mac and published beside the
   # site as app/Knuth-<arch>.zip, without Electron's framework: the install
   # line completes it before moving it into place, and the same app from
   # the page's download button (app/Knuth.app.zip) completes itself on its
@@ -92,7 +93,7 @@ jobs:
           name: site
           path: dist
       - name: Package Knuth.app from the verified site
-        run: node app/package.mjs --web dist --arch arm64,x64 --zip published/app
+        run: node node_modules/claerbout/package.mjs --config app/knuth.json --web dist --arch arm64,x64 --zip published/app
       # The way a user gets it: the install line against these zips, which
       # fetches Electron's release and checks it. Then the app itself, in
       # both Pythons, on a document.
@@ -100,15 +101,15 @@ jobs:
         run: KNUTH_SITE="$PWD/published" KNUTH_APP="$RUNNER_TEMP/Knuth.app" KNUTH_SIBLINGS="" bash public/install
       - name: Smoke-test the installed app
         run: |
-          node app/smoke.mjs browser "$RUNNER_TEMP/Knuth.app"
-          node app/smoke.mjs uv "$RUNNER_TEMP/Knuth.app"
+          node node_modules/claerbout/smoke.mjs --config app/knuth.json browser "$RUNNER_TEMP/Knuth.app"
+          node node_modules/claerbout/smoke.mjs --config app/knuth.json uv "$RUNNER_TEMP/Knuth.app"
       # The page's download: the app completing itself on its first launch,
       # with no sibling to clone from, so Electron's release is fetched.
       - name: Smoke-test the download completing itself
         run: |
           mkdir "$RUNNER_TEMP/download"
           ditto -x -k published/app/Knuth.app.zip "$RUNNER_TEMP/download"
-          CLAERBOUT_SIBLINGS=/nonexistent node app/smoke.mjs browser "$RUNNER_TEMP/download/Knuth.app"
+          CLAERBOUT_SIBLINGS=/nonexistent node node_modules/claerbout/smoke.mjs --config app/knuth.json browser "$RUNNER_TEMP/download/Knuth.app"
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: app

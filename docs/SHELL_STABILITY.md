@@ -168,14 +168,35 @@ written by `package.mjs` into Resources and checked by the completer.
   step 2). Tested: the smoke test in browser mode against a
   `["browser"]` config (`CLAERBOUT_APP` names it) opens the document
   with no setup page, and against Knuth's own config as before.
-- **The tooling takes a config.** `package.mjs --config`, `smoke.mjs`
-  reading the name, prefix and selectors from it, and `public/install`
-  generated from a template rather than hard-wired to Knuth's names.
-- **The Electron pin lives with the shell.** `app/shell/package.json`
-  declares `electron` and `@electron/packager`; when the shell moves to
-  its own repository each app depends on a tag. Rule for bumps: one tag,
-  three pull requests the same day, so the window in which a second
-  install pays the full download stays short.
+- **DONE 2026-09-30 — The shell has its own repository, and the tooling
+  takes a config.** `~/Projects/claerbout` (initialized, uncommitted:
+  Taylor commits, tags `v0.1.0` and pushes) holds `main.js`, `preload.js`,
+  `complete.sh`, `launcher.swift`, `package.mjs --config <app.json>`
+  (a bundle from a `package` or from a plain `web` folder;
+  `--install-script` renders `install.template` into an app's install
+  line), `smoke.mjs --config` (name, prefix and selectors from the
+  config's `smoke` section), a README with the config-key table, and a
+  fixture app its own `npm test` smokes. Electron 44.5.0 and the packager
+  are pinned in its `package.json`. Verified: the fixture from the
+  checkout and packaged through the launcher; Knuth built by it and
+  smoke-tested in browser mode from the bundle and the checkout, and in
+  uv mode from the checkout; the rendered Knuth install line differs from
+  `public/install` only in the download-size wording. Two shell
+  additions landed with it for Plass: explicit Chromium permission
+  handlers (`permissions` in the config beyond `fileSystem`, `fullscreen`
+  and clipboard writes) and `openBy: "drop"` with the page's `ready`
+  notice, verified by the Plass port.
+
+  **Knuth switched the same day**, once the repository was pushed and
+  tagged `v0.1.0`: `package.json` depends on
+  `github:tayweid/claerbout#v0.1.0` (which brings Electron and the
+  packager, so they left the devDependencies); `app`, `app:build`,
+  `app:smoke` and `app:install-script` run the package's scripts on
+  `app/knuth.json`; `public/install` is regenerated from the template;
+  `app/shell/`, `app/package.mjs` and `app/smoke.mjs` are gone; the
+  deploy's app job calls the package. Rule for Electron bumps: one tag,
+  one pull request per app, the same day, so the window in which a
+  second install pays the full download stays short.
 - **The protocol promises.** APP.md lists `fullscreen`, `keepAwake` and
   an `openFile` event; none exist in `answer()`, and a second instance
   opens a new window rather than emitting `openFile`. Documentation only

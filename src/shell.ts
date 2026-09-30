@@ -5,7 +5,10 @@
 //   window.claerbout.request(message) → Promise<reply>
 //   window.claerbout.on(event, listener) → unsubscribe
 //
-// Every request is answered, notices (status, error, choose) with null.
+// Every request is answered, notices (status, error, choose, ready) with
+// null. `ready` says the page is listening for a dropped document, for an
+// app whose shell opens documents by drop (main.js, dropDocument); Knuth's
+// pages never send it.
 // Dialogs answer {path} (null when cancelled); file requests answer like
 // the engine's files.py replies, so one file manager serves both. Events
 // are the shell telling the page something unasked: `setup` ({kind:
@@ -15,7 +18,7 @@
 // File System Access flow.
 
 export interface ShellMessage {
-  type: 'open' | 'saveAs' | 'read' | 'write' | 'stat' | 'rename' | 'remove' | 'choose' | 'status' | 'error';
+  type: 'open' | 'saveAs' | 'read' | 'write' | 'stat' | 'rename' | 'remove' | 'choose' | 'status' | 'error' | 'ready';
   path?: string;
   text?: string;
   name?: string;

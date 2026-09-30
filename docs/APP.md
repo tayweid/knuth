@@ -227,6 +227,18 @@ which has no Python); `["uv"]` installs on the first launch with the
 setup page as its progress screen (ManimLive). A config with no Python
 package names its page folder as `web`.
 
+DECIDED: **The template has moved to its own repository** (2026-09-30,
+Plass being its second user): `~/Projects/claerbout`, whose README is
+the reference for the config keys and the protocol. Knuth depends on it
+as the `claerbout` package, pinned to a tag (`github:tayweid/claerbout#v0.1.0`);
+`app/` here holds only `knuth.json`, and `npm run app`, `app:build`,
+`app:smoke` and `app:install-script` run the package's scripts on it. Two additions made
+there for Plass: the shell answers Chromium's permission questions
+itself (files by handle, fullscreen and clipboard writes for the app's
+own pages, more by config, everything else refused), and an app whose
+page keeps files by handle can ask for its document by drop (`openBy:
+"drop"`, the page's `ready` notice) beside the `?open=` path.
+
 DECIDED: **Packaged with `@electron/packager`** (Taylor, 2026-09-29),
 not by hand in the manner of the Swift `build.sh`. The packager does the
 part that is fiddly by hand: renaming the executable and the four helper

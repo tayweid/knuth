@@ -30,7 +30,7 @@ question that still needs one.
   APP.md: a native window around the served page, `.py` files opened in
   their own folder, file I/O through the engine by path, the PWA retired
   as the way to a window. First Swift + WKWebView; since 2026-09-29 the
-  Claerbout shell (Electron, app/shell/), with Windows for next semester
+  Claerbout shell (Electron, the `claerbout` package), with Windows for next semester
   still to do.
 
 - **Floating session panes** — PLANNED 2026-09-27 (Taylor). The side
