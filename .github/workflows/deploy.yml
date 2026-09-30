@@ -19,6 +19,9 @@ jobs:
   frontend:
     runs-on: ubuntu-latest
     timeout-minutes: 20
+    env:
+      # Electron is for the app job's Mac; nothing here runs it.
+      ELECTRON_SKIP_BINARY_DOWNLOAD: '1'
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -59,36 +62,49 @@ jobs:
           retention-days: 1
 
   # Knuth.app: the verified site's page and the knuth package inside the
-  # native shell, built on a Mac (Linux cannot compile Swift) and published
-  # beside the site as app/Knuth.app.zip, which knuth.tayweid.io/install
-  # downloads. Nothing is committed; every deploy is the app's release. A
-  # failure here never holds the site back: the deploy then republishes the
-  # app that is already live.
+  # Claerbout shell (Electron), packaged on a Mac and published beside the
+  # site: app/Knuth-<arch>.zip without Electron's framework, which
+  # knuth.tayweid.io/install downloads and completes, and app/Knuth.app.zip,
+  # the whole app for the page's download button (APP.md). Nothing is
+  # committed; every deploy is the app's release. A failure here never
+  # holds the site back: the deploy then republishes the app that is
+  # already live.
   app:
     if: github.event_name != 'pull_request'
     needs: [frontend]
     runs-on: macos-15
-    timeout-minutes: 20
+    timeout-minutes: 30
+    env:
+      # The packager fetches Electron for each architecture itself.
+      ELECTRON_SKIP_BINARY_DOWNLOAD: '1'
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
       - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           name: site
           path: dist
-      # The page comes from the site, so this needs no Node: the checkout
-      # supplies the engine's Python and the Swift shell.
-      - name: Build Knuth.app from the verified site
-        run: KNUTH_WEB=dist app/build.sh "$RUNNER_TEMP/Knuth.app"
-      - name: Zip it the way the installer unpacks it
+      - name: Package Knuth.app from the verified site
+        run: node app/package.mjs --web dist --arch arm64,x64 --zip published/app
+      # The way a user gets it: the install line against these zips, which
+      # fetches Electron's release and checks it. Then the app itself, in
+      # both Pythons, on a document.
+      - name: Install it with the install line
+        run: KNUTH_SITE="$PWD/published" KNUTH_APP="$RUNNER_TEMP/Knuth.app" KNUTH_SIBLINGS="" bash public/install
+      - name: Smoke-test the installed app
         run: |
-          mkdir -p app-download
-          ditto -c -k --keepParent "$RUNNER_TEMP/Knuth.app" app-download/Knuth.app.zip
+          node app/smoke.mjs browser "$RUNNER_TEMP/Knuth.app"
+          node app/smoke.mjs uv "$RUNNER_TEMP/Knuth.app"
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: app
-          path: app-download
+          path: published/app
           retention-days: 1
 
   python:
@@ -170,10 +186,18 @@ jobs:
         if: needs.app.result != 'success'
         run: |
           mkdir -p site/app
-          if curl -fsSL -o site/app/Knuth.app.zip https://knuth.tayweid.io/app/Knuth.app.zip; then
+          kept=0
+          for zip in Knuth-arm64.zip Knuth-x64.zip Knuth.app.zip; do
+            if curl -fsSL -o "site/app/$zip" "https://knuth.tayweid.io/app/$zip"; then
+              kept=$((kept + 1))
+            else
+              rm -f "site/app/$zip"
+            fi
+          done
+          if [ "$kept" -eq 3 ]; then
             echo "::warning::Knuth.app did not build; the site keeps serving the previous app."
           else
-            echo "::warning::Knuth.app did not build and no previous app was found; knuth.tayweid.io/install fails until it does."
+            echo "::warning::Knuth.app did not build and the previous app was not all found; knuth.tayweid.io/install may fail until it does."
           fi
       - uses: actions/configure-pages@983d7736d9b0ae728b81ab479565c72886d7745b # v5
         with:

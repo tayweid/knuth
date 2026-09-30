@@ -1,0 +1,26 @@
+{
+  "name": "Knuth",
+  "id": "io.tayweid.knuth",
+  "envPrefix": "KNUTH",
+  "package": "knuth",
+  "devPython": "../python",
+  "port": 5187,
+  "scheme": "knuth",
+  "setupPage": "setup.html",
+  "defaultDocument": "Knuth.py",
+  "engine": {
+    "args": ["-m", "knuth", "serve"],
+    "marker": "server.py",
+    "probe": "knuth",
+    "python": "3.13",
+    "requirements": ["websockets>=14.0"]
+  },
+  "window": { "width": 1100, "height": 760, "minWidth": 520, "minHeight": 360 },
+  "icon": "../python/knuth/web/icons/knuth-512.png",
+  "copyright": "© 2026 Taylor J Weidman. MIT License.",
+  "documentTypes": [
+    { "name": "Python cell document", "role": "Editor", "rank": "Alternate", "contentTypes": ["public.python-script"], "extensions": ["py"] },
+    { "name": "Jupyter notebook", "role": "Viewer", "rank": "Alternate", "extensions": ["ipynb"] },
+    { "name": "Text file", "role": "Editor", "rank": "None", "contentTypes": ["public.plain-text", "public.comma-separated-values-text"] }
+  ]
+}

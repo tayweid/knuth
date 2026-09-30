@@ -1,4 +1,9 @@
 #!/bin/bash
+# The Swift shell, kept until the Electron one has proved itself (APP.md,
+# "Electron, one shell for Claerbout"). Knuth.app is now built by
+# `npm run app:build` (app/package.mjs), and that is what the deploy
+# publishes; running this replaces it in Applications with the Swift build.
+#
 # Build Knuth.app from app/Sources with the command-line tools alone: no
 # Xcode project, no package manager (APP.md), and install it.
 #
@@ -7,9 +12,6 @@
 #   APP_VERSION=2.0.0 app/build.sh   # stamp the bundle
 #   KNUTH_WEB=dist app/build.sh      # the page from a site build, not the staged one
 #
-# The deploy runs this on a GitHub Mac against the site it verified and
-# publishes the zipped result beside it, where knuth.tayweid.io/install
-# fetches it (.github/workflows/deploy.yml). Nothing is committed.
 set -euo pipefail
 if [ -n "${1:-}" ]; then
     case "$1" in

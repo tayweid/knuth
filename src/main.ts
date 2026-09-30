@@ -27,6 +27,7 @@ import { DEFAULT_DOC_NAME, FileManager, basename, dirname } from './file-manager
 import { SessionPanel } from './panel.ts';
 import { icon } from './icons.ts';
 import { Onboarding } from './onboarding.ts';
+import { shell, type ShellMessage } from './shell.ts';
 
 // Plass's hover flyout: the trigger's group lays its labeled icons OVER
 // the trigger — pure :hover, no gap for the cursor to cross.
@@ -152,41 +153,24 @@ window.addEventListener('beforeinstallprompt', () => {
 });
 
 // Knuth.app (APP.md): the shell opens this page with ?open=<absolute path>
-// and registers a message handler. Every request carries an id and the
-// shell answers through window.knuthShell.reply. Both are feature-detected:
-// a plain browser tab has neither and keeps the File System Access flow.
+// and answers requests over the Claerbout protocol (shell.ts). A plain
+// browser tab has no shell and keeps the File System Access flow.
 const openParam = new URLSearchParams(window.location.search).get('open');
-const shell = window.webkit?.messageHandlers?.knuth ?? null;
-let shellNextId = 1;
-const shellWaiters = new Map<number, (result: unknown) => void>();
-window.knuthShell = {
-  reply: (id, result) => {
-    const resolve = shellWaiters.get(id);
-    shellWaiters.delete(id);
-    resolve?.(result);
-  },
-};
-function askShell<T>(message: Omit<KnuthShellMessage, 'id'>): Promise<T | null> {
-  if (!shell) return Promise.resolve(null);
-  const id = shellNextId++;
-  return new Promise((resolve) => {
-    shellWaiters.set(id, (result) => resolve((result ?? null) as T | null));
-    shell.postMessage({ ...message, id });
-  });
+function askShell<T>(message: ShellMessage): Promise<T | null> {
+  return shell ? shell.request<T>(message) : Promise.resolve(null);
 }
-function askShellPath(message: Omit<KnuthShellMessage, 'id'>): Promise<string | null> {
-  return askShell<{ path?: string | null }>(message).then((reply) =>
-    typeof reply?.path === 'string' && reply.path ? reply.path : null,
-  );
+function askShellPath(message: ShellMessage): Promise<string | null> {
+  return shell ? shell.pickPath(message) : Promise.resolve(null);
 }
 // Page failures reach the shell's log, which is what "Show Log" opens when
 // someone asks why the window is blank.
 if (shell) {
+  const report = shell;
   window.addEventListener('error', (event) => {
-    shell.postMessage({ type: 'error', message: String(event.message) });
+    report.notify({ type: 'error', message: String(event.message) });
   });
   window.addEventListener('unhandledrejection', (event) => {
-    shell.postMessage({ type: 'error', message: String((event as PromiseRejectionEvent).reason) });
+    report.notify({ type: 'error', message: String((event as PromiseRejectionEvent).reason) });
   });
 }
 
@@ -373,7 +357,7 @@ let kernelState: Parameters<typeof onboarding.setState>[0] = 'connecting';
 const kernel = makeKernel((state, resumed) => {
   kernelState = state;
   onboarding.setState(state);
-  shell?.postMessage({ type: 'status', state });
+  shell?.notify({ type: 'status', state });
   if (state === 'ready') {
     if (!environmentSyncing) paintKernelReady();
     if (resumed && !hadSession) {
@@ -1039,7 +1023,10 @@ window.launchQueue?.setConsumer((params) => {
   }
 });
 
-if ('serviceWorker' in navigator) {
+// The service worker keeps the PWA's shell for a launch with no engine.
+// Inside Knuth.app the shell starts the engine and serves the page, so it
+// has no job there, and a cached page could only be a stale one.
+if ('serviceWorker' in navigator && !shell) {
   window.addEventListener('load', () => {
     void navigator.serviceWorker.register('./sw.js', { scope: './' }).catch((error) => {
       console.warn('Knuth service worker registration failed', error);
