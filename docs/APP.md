@@ -327,26 +327,28 @@ way.
   clones from the app it replaces (under a second), and a second app on
   the same version costs about 6 MB. Installed, the app is 292 MB by
   Finder's count.
-- **The app completes itself** (Taylor, 2026-09-29: "the check for
-  electron on install instead of downloading the whole thing at once",
-  and Mac-like: what you download is the app). Every zip, the page's
-  download button's too, is the app without the framework. The bundle's
-  executable is `launcher.sh`; Electron's own is beside it as `Knuth
-  Electron`. A launch that finds no framework runs `complete.sh` (the
-  same script the install line runs) under a progress window
-  (`progress.js`, AppKit from `osascript -l JavaScript`, nothing
-  compiled), then `exec`s Electron, so the process macOS launched
-  becomes Electron and a double-clicked document still arrives. Opened
-  where it was downloaded (App Translocation, read-only), it asks to be
-  moved to Applications first.
-- **One document can be lost.** Any AppKit process the launch starts,
-  window or not, at any delay, makes macOS send the launch's "open
-  document" event to the launcher, which cannot take it. So a document
-  opened with an app's very first launch (Open With → Knuth, after a
-  browser download) opens a blank window; the second time it opens. A
-  separately opened helper app would keep the event but risks a second
-  Gatekeeper prompt. Knuth is never the default for `.py`, so this is
-  rare.
+- **The app completes itself** (Taylor, 2026-09-29/30: "the check for
+  electron on install instead of downloading the whole thing at once";
+  Mac-like, what you download is the app; and "the flow should be the
+  same no matter whether its the first start"). Every zip, the page's
+  download button's too, is the app without the framework. Every launch
+  is one flow: the bundle's executable is a small compiled launcher
+  (`app/shell/launcher.swift`, Electron's own executable beside it as
+  `Knuth Electron`) that looks for the framework; there, it `execv`s
+  Electron before touching AppKit; not there, it shows a progress window,
+  runs `complete.sh` (the same script the install line runs), and then
+  `execv`s Electron, handing it the documents the launch was for as
+  arguments (`main.js`, `filesIn`). Opened where it was downloaded (App
+  Translocation, read-only), it asks to be moved to Applications first.
+- **Why compiled.** A script launcher lost the document of a first
+  launch: any AppKit process a launch starts (a progress window from
+  `osascript`, even with no window, at any delay) makes macOS send the
+  launch's "open document" event to the launcher, and a script cannot
+  take it; `exec`ing `osascript` does not either (its program is not in
+  the bundle), and a copy of Apple's `osascript` in the bundle is killed
+  on launch. The launched process must be a program in `Contents/MacOS`
+  that is itself the AppKit app, so it is Swift, built by `swiftc` in
+  `app/package.mjs` (about 100 lines, one per processor).
 - **OPEN: the browser-download path under Gatekeeper.** Verified here
   without quarantine only. Still to try by hand: a real download from
   the page, "Open Anyway", the translocation prompt when opened from

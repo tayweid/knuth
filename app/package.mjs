@@ -13,8 +13,8 @@
 // app/shell/complete.sh, which clones the framework from an installed
 // Claerbout app on the same Electron version or downloads Electron's
 // release: the install line before moving it into place, or the app itself
-// on its first launch (app/shell/launcher.sh), when it came from the page's
-// download button. An installed copy from here is complete.
+// on its first launch (app/shell/launcher.swift), when it came from the
+// page's download button. Needs swiftc (Apple's command-line tools). An installed copy from here is complete.
 
 import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
@@ -127,6 +127,34 @@ const documentTypes = config.documentTypes.map((type) => ({
   ...(type.contentTypes ? { LSItemContentTypes: type.contentTypes } : { CFBundleTypeExtensions: type.extensions }),
 }));
 
+// The command-line tools can ship an SDK newer than their own compiler,
+// which swiftc refuses: take the newest SDK it accepts (as app/build.sh
+// did), else the default one (Xcode's, on the deploy's Mac).
+let chosenSDK = null;
+function sdk() {
+  if (chosenSDK) return chosenSDK;
+  const tools = '/Library/Developer/CommandLineTools/SDKs';
+  const probe = path.join(build, 'probe.swift');
+  writeFileSync(probe, 'import Foundation\n');
+  const candidates = existsSync(tools)
+    ? readdirSync(tools)
+        .filter((entry) => /^MacOSX\d+\.\d+\.sdk$/.test(entry))
+        .sort((a, b) => b.localeCompare(a, undefined, { numeric: true }))
+        .map((entry) => path.join(tools, entry))
+    : [];
+  for (const candidate of candidates) {
+    try {
+      execFileSync('swiftc', ['-sdk', candidate, '-swift-version', '5', '-typecheck', probe], { stdio: 'ignore' });
+      chosenSDK = candidate;
+      break;
+    } catch {
+      // Too new for this compiler.
+    }
+  }
+  chosenSDK ??= execFileSync('xcrun', ['--show-sdk-path'], { encoding: 'utf8' }).trim();
+  return chosenSDK;
+}
+
 const frameworkName = 'Electron Framework.framework';
 for (const arch of archs) {
   const [bundleDir] = await packager({
@@ -167,7 +195,7 @@ for (const arch of archs) {
   ]);
   // The app ships without the framework: take it out, and put the
   // launcher in front of Electron's own executable. A launch that finds no
-  // framework completes the app first (app/shell/launcher.sh).
+  // framework completes the app first (app/shell/launcher.swift).
   const contents = path.join(bundle, 'Contents');
   const frameworkDir = path.join(contents, 'Frameworks', frameworkName);
   const framework = path.join(build, `framework-${arch}`, frameworkName);
@@ -175,10 +203,15 @@ for (const arch of archs) {
   mkdirSync(path.dirname(framework), { recursive: true });
   renameSync(frameworkDir, framework);
   renameSync(path.join(contents, 'MacOS', config.name), path.join(contents, 'MacOS', `${config.name} Electron`));
-  cpSync(path.join(here, 'shell', 'launcher.sh'), path.join(contents, 'MacOS', config.name));
-  for (const file of ['complete.sh', 'progress.js']) {
-    cpSync(path.join(here, 'shell', file), path.join(contents, 'Resources', file));
-  }
+  execFileSync('swiftc', [
+    '-O',
+    '-swift-version', '5',
+    '-sdk', sdk(),
+    '-target', `${arch === 'arm64' ? 'arm64' : 'x86_64'}-apple-macos13.0`,
+    '-o', path.join(contents, 'MacOS', config.name),
+    path.join(here, 'shell', 'launcher.swift'),
+  ]);
+  cpSync(path.join(here, 'shell', 'complete.sh'), path.join(contents, 'Resources', 'complete.sh'));
   // Ad-hoc signatures for what the packager renamed (the helper apps) and
   // the outer bundle, as it ships: without the framework, which keeps
   // Electron's own signature wherever it comes from. Only on Apple
