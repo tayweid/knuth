@@ -65,14 +65,28 @@ const enginePython = isWindows
   : path.join(engineDir, 'bin', 'python');
 // The app's engine keeps to its own port, apart from one someone runs in
 // a terminal: two engines, two Pythons, never confused.
-const preferredPort = Number(env('PORT')) || config.port;
+const preferredPort = Number(env('PORT')) || config.port || 0;
+// The Pythons this app offers, in the order the setup page lists them:
+// "uv" (the engine, on a Python uv installs) and "browser" (the page from
+// the bundle, its Python in the tab, or none at all). With one, there is
+// no choice to make: the first launch just starts it. Knuth offers both;
+// Plass has no Python and lists only "browser".
+const pythons = Array.isArray(config.pythons) && config.pythons.length > 0 ? config.pythons : ['uv', 'browser'];
+const offers = (python) => pythons.includes(python);
 // The app's package, carried in the bundle: the engine's code and, inside
 // it, the page. The app and its engine are therefore always one version.
 // Unpackaged (development), the checkout's own.
 const bundledPython = app.isPackaged
   ? path.join(process.resourcesPath, 'python')
-  : path.resolve(path.dirname(configPath), config.devPython);
-const webRoot = path.join(bundledPython, config.package, 'web');
+  : path.resolve(path.dirname(configPath), config.devPython ?? '.');
+// The page: inside the package by default; an app with no package (Plass)
+// names its page folder as `web` in its config, relative to the config
+// unpackaged and `Resources/web` in the bundle.
+const webRoot = config.web
+  ? app.isPackaged
+    ? path.join(process.resourcesPath, 'web')
+    : path.resolve(path.dirname(configPath), config.web)
+  : path.join(bundledPython, config.package, 'web');
 const scheme = config.scheme;
 const appOrigin = `${scheme}://app`;
 
@@ -622,7 +636,7 @@ function showSetup(choosing) {
 }
 
 async function choose(value, window) {
-  if ((value !== 'uv' && value !== 'browser') || installing) return;
+  if (!offers(value) || installing) return;
   log(`chosen: ${value} Python`);
   if (value === 'browser') {
     becomeReady('browser', window);
@@ -688,11 +702,11 @@ async function fail(error) {
     type: 'warning',
     message: `${NAME} could not start Python`,
     detail: `${error.message}\n\nLog: ${logPath}`,
-    buttons: ['Choose Python…', 'Quit'],
+    buttons: [pythons.length > 1 ? 'Choose Python…' : 'Try Again', 'Quit'],
     defaultId: 0,
     cancelId: 1,
   });
-  if (response === 0) showSetup(null);
+  if (response === 0) showSetup(pythons.length > 1 ? null : pythons[0]);
   else app.quit();
 }
 
@@ -781,7 +795,8 @@ function choosePython() {
 
 function buildMenu() {
   const appItems = [
-    { label: 'Choose Python…', click: choosePython },
+    // A choice only where there is one.
+    ...(pythons.length > 1 ? [{ label: 'Choose Python…', click: choosePython }] : []),
     { label: 'Show Log', click: () => void shell.openPath(logPath) },
   ];
   const template = [
@@ -867,7 +882,7 @@ if (!app.requestSingleInstanceLock()) {
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length > 0) return;
     if (mode) newWindow();
-    else if (!installing) showSetup(null);
+    else if (!installing) showSetup(pythons.length > 1 ? null : pythons[0]);
   });
 
   // A Mac app stays open with no windows; elsewhere, closing the last
@@ -889,11 +904,15 @@ if (!app.requestSingleInstanceLock()) {
   app.whenReady().then(() => {
     protocol.handle(scheme, servePage);
     buildMenu();
+    // What was chosen before, if the app still offers it; with one
+    // Python on offer there is nothing to choose, and it is simply started.
     const remembered = readPreferences().python;
-    if (remembered === 'browser') becomeReady('browser', null);
-    else if (remembered === 'uv' && Installer.isInstalled) void startEngine(null);
-    // Chosen before, but its pieces are gone: set it up again.
-    else if (remembered === 'uv') showSetup('uv');
-    else showSetup(env('CHOOSE') || null);
+    const python = offers(remembered) ? remembered : pythons.length === 1 ? pythons[0] : null;
+    if (python === 'browser') becomeReady('browser', null);
+    else if (python === 'uv' && Installer.isInstalled) void startEngine(null);
+    // Chosen before, but its pieces are gone: set it up again. With uv the
+    // only Python, the setup page is the progress screen, no question asked.
+    else if (python === 'uv') showSetup('uv');
+    else showSetup(offers(env('CHOOSE')) ? env('CHOOSE') : null);
   });
 }
