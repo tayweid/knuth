@@ -180,10 +180,15 @@ plain "Python" for an engine someone started from a terminal on a Python
 of their own. There is no "built-in Python": the earlier name for the
 Pyodide option suggested a Python shipped in the app, and there is none. The path and the reason are in its tooltip.
 
-Everything else the app installs lives in `~/Library/Application Support/
-Knuth` (`engine/`, `preferences.json`); removing that folder
-returns the app to its first launch. uv's own Pythons and cache are in
-uv's usual places and shared with any other use of uv.
+What the app remembers lives in `~/Library/Application Support/Knuth`
+(`preferences.json`, and the engine's own state). The engine's Python
+environment lives with uv's other Pythons, at
+`~/.local/share/uv/claerbout/knuth` (shell 0.1.6, Taylor 2026-09-30: uv
+owns every Python on the Mac; it was `engine/` in the folder above
+before). Returning the app to its first launch means removing both. uv's
+interpreters and cache are in uv's usual places and shared with any
+other use of uv. The environment follows the app: when an update changes
+what the engine needs, the next launch installs again (shell 0.1.7).
 
 Verified 2026-09-27 on a clean config folder: chose uv on the setup
 screen, uv unpacked, Python 3.13.15 installed by uv, engine up on the
@@ -231,7 +236,7 @@ DECIDED: **The template has moved to its own repository** (2026-09-30,
 Plass being its second user): `~/Projects/claerbout`, whose README is
 the reference for the config keys and the protocol. Knuth depends on it
 as the `claerbout` package, pinned to a tag's tarball
-(`https://github.com/tayweid/claerbout/archive/refs/tags/v0.1.4.tar.gz`;
+(`https://github.com/tayweid/claerbout/archive/refs/tags/v0.1.7.tar.gz`;
 SHELL_STABILITY.md has why not the `github:` shorthand);
 `app/` here holds only `knuth.json`, and `npm run app`, `app:build`,
 `app:smoke` and `app:install-script` run the package's scripts on it. Two additions made
