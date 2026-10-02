@@ -11,6 +11,7 @@
   "scheme": "knuth",
   "setupPage": "setup.html",
   "defaultDocument": "Knuth.py",
+  "autosave": true,
   "engine": {
     "args": ["-m", "knuth", "serve"],
     "marker": "server.py",
@@ -36,7 +37,8 @@
     "readyText": { "uv": "uv", "browser": "Pyodide" },
     "run": "#run-all",
     "written": "values.json",
-    "json": { "answer": 42 }
+    "json": { "answer": 42 },
+    "autosave": ["knuth: session open", "knuth: cell run [1]"]
   },
   "documentTypes": [
     { "name": "Python cell document", "role": "Editor", "rank": "Alternate", "contentTypes": ["public.python-script"], "extensions": ["py"] },

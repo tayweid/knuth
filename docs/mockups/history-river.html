@@ -1,0 +1,1477 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="color-scheme" content="dark" />
+    <title>Claerbout — history, the river</title>
+    <style>
+      /* THE HISTORY WINDOW: THE RIVER. (One of three directions, 2026-10-02.)
+
+         Taylor: "a git history rewind visualizer, with the commits in a path,
+         with branches visualized, and the ability to rewind by clicking on a
+         node in the window."
+
+         The record (claerbout-autosave) is a river running down the room.
+         Time flows down: the oldest at the top, and the window opens at the
+         mouth, now. A cell run is a bold dot with its message; a timer
+         commit is a faint bead between them (Plass's too: it shares the
+         record). Earlier days fold to one reach each. Your own branches
+         are tributaries beside the river: square nodes, your words in serif.
+         In git they share no commit with the record (it is written with
+         commit-tree from its own tip), so the view ties them where they hold
+         the same files.
+
+         Click a node and its card opens beside it, tied by a hairline, the
+         way the session panes' cards sit beside their cells: what that
+         commit changed (the cell's diff, the figure it drew), then what a
+         rewind would change against now, file by file. Rewind is the card's
+         one button. A rewind never resets: the record commits now ("rewind
+         from"), writes the chosen commit's files into the working tree, and
+         commits again ("rewind to"), so the river only grows; the new node
+         at the tip points back up to the moment it reproduces with a dashed
+         arc. Undo is one more rewind.
+
+         The window is the shell's own page (as the setup page is), in the
+         frame the apps now use: #18181a, a 48px rail of 32px tiles, the
+         room rounded inside one 8px edge, the top bar and rail part of that
+         edge. Open by double-click; the card at the bottom left switches the
+         states (mockup chrome, not the shell). Nothing here is timed except
+         the rewind's steps, which the mockup plays so they can be read. */
+      :root {
+        --frame: #18181a;
+        --frame-ink: #d5d3cf;
+        --frame-ink-soft: #85837f;
+        --pill: #232326;
+        --tile: #2e2e32;
+        --tile-hover: #252528;
+        --tip: #0e0e10;
+        --bg: #2b2a2d;
+        --card: #242327;
+        --room-line: rgba(255, 255, 255, 0.07);
+        --room-ink: #d8d6d1;
+        --room-ink-soft: #8f8d88;
+        --room-ink-faint: #6b6965;
+        --blue: #9db8d6;
+        --accent: #305c8a;
+        --amber: #c98a1d;
+        --green: #6ea576;
+        --red: #cd6452;
+        --stream: rgba(157, 184, 214, 0.36);
+        --serif: 'STIX Two Text', 'Charter', 'Georgia', serif;
+        --mono: ui-monospace, 'SF Mono', 'Menlo', 'Consolas', monospace;
+        --sans: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Helvetica Neue', sans-serif;
+        --topbar: 44px;
+        --edge: 8px;
+        --rail: 48px;
+      }
+      * { box-sizing: border-box; }
+      html, body { margin: 0; height: 100%; overflow: hidden; }
+      body { background: var(--frame); font: 14px/1.5 var(--sans); color: var(--frame-ink); }
+      button { font: inherit; color: inherit; }
+
+      /* ---------- the top bar: part of the frame ---------- */
+      #topbar {
+        position: absolute; top: 0; left: 0; right: 0; height: var(--topbar);
+        display: flex; align-items: center; gap: 6px; padding: 0 var(--edge) 0 14px;
+      }
+      svg.i { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; flex: 0 0 auto; }
+      .lights { display: flex; gap: 8px; margin-right: 10px; }
+      .lights i { width: 12px; height: 12px; border-radius: 50%; display: block; background: #46464a; }
+      #title {
+        flex: 1; min-width: 0; height: 30px; border-radius: 8px; background: var(--pill);
+        display: flex; align-items: center; gap: 10px; padding: 0 12px;
+      }
+      #title .ico { color: var(--frame-ink-soft); display: inline-flex; }
+      #title .name { font: 15px/1 var(--serif); letter-spacing: 0.06em; color: var(--frame-ink); white-space: nowrap; }
+      #title .path { color: var(--frame-ink-soft); font: 12px var(--sans); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+      #title .meta { margin-left: auto; color: var(--frame-ink-soft); font: 11.5px var(--mono); white-space: nowrap; padding-left: 10px; }
+      #zoom { display: flex; height: 30px; padding: 3px; gap: 2px; border-radius: 8px; background: var(--pill); flex: 0 0 auto; }
+      #zoom button { border: 0; border-radius: 6px; background: transparent; color: var(--frame-ink-soft); font: 12px var(--sans); padding: 0 10px; cursor: pointer; }
+      #zoom button:hover { color: var(--frame-ink); }
+      #zoom button.on { background: var(--tile); color: var(--frame-ink); }
+      #zoom button:disabled { opacity: 0.35; cursor: default; }
+      button:focus { outline: none; }
+      button:focus-visible { outline: 2px solid var(--blue); outline-offset: 1px; }
+      #here {
+        position: relative; height: 30px; border-radius: 8px; background: var(--pill); flex: 0 0 auto;
+        display: flex; align-items: center; gap: 7px; padding: 0 11px; font: 12px var(--sans); color: var(--frame-ink-soft); white-space: nowrap;
+      }
+      #here .app { width: 17px; height: 17px; border-radius: 5px; display: inline-flex; align-items: center; justify-content: center; font: 600 9.5px var(--sans); color: var(--frame-ink); background: #38383e; }
+      #here .doc { color: var(--frame-ink); font: 11.5px var(--mono); margin-right: 4px; }
+      #here:empty { display: none; }
+      [data-label] { position: relative; }
+      [data-label]::after {
+        content: attr(data-label); position: absolute; background: var(--tip); color: var(--frame-ink); font: 12px/1.3 var(--sans); white-space: nowrap;
+        padding: 5px 9px; border-radius: 7px; border: 1px solid rgba(255, 255, 255, 0.08); opacity: 0; pointer-events: none; transition: opacity 0.12s; z-index: 60;
+      }
+      #topbar [data-label]::after { top: calc(100% + 7px); right: 0; }
+      [data-label]:hover::after { opacity: 1; transition-delay: 0.3s; }
+
+      /* ---------- the rail: part of the frame ---------- */
+      #rail {
+        position: absolute; top: var(--topbar); left: 0; bottom: var(--edge); width: var(--rail);
+        display: flex; flex-direction: column; align-items: center; gap: 2px;
+      }
+      .rb { display: inline-flex; align-items: center; justify-content: center; width: 32px; height: 32px; padding: 0; border: 0; border-radius: 9px; background: transparent; color: rgba(240, 238, 233, 0.64); cursor: pointer; flex: 0 0 auto; }
+      .rb:hover:not(:disabled) { background: var(--tile-hover); color: var(--frame-ink); }
+      .rb.on { background: var(--tile); color: var(--frame-ink); }
+      .rb:disabled { opacity: 0.3; cursor: default; }
+      .rb .i { width: 17px; height: 17px; }
+      #rail .rb[data-label]::after { left: calc(100% + 10px); top: 50%; transform: translateY(-50%); }
+      .rule { width: 18px; height: 1px; background: rgba(255, 255, 255, 0.09); margin: 5px 0; flex: 0 0 auto; }
+      .grow { flex: 1; }
+
+      /* ---------- the room ---------- */
+      #room {
+        position: absolute; top: var(--topbar); left: var(--rail); right: var(--edge); bottom: var(--edge);
+        border-radius: 12px; background: var(--bg); overflow: hidden; color: var(--room-ink);
+        box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.05), 0 1px 2px rgba(0, 0, 0, 0.35), 0 8px 26px rgba(0, 0, 0, 0.42);
+      }
+      #scroll { position: absolute; inset: 0; overflow-y: auto; overflow-x: hidden; scrollbar-width: thin; scrollbar-color: rgba(255, 255, 255, 0.14) transparent; }
+      #scroll.nobar { scrollbar-width: none; }
+      #scroll.nobar::-webkit-scrollbar { display: none; }
+      #river { position: relative; margin: 0 auto; }
+      #lines { position: absolute; left: 0; top: 0; pointer-events: none; overflow: visible; }
+
+      /* the river and what is drawn on it */
+      .riv { stroke: var(--stream); stroke-width: 2.5; stroke-linecap: round; }
+      .riv.dot { stroke: rgba(157, 184, 214, 0.42); stroke-width: 2; stroke-dasharray: 0.5 6; }
+      .reach { fill: rgba(157, 184, 214, 0.4); }
+      .trib { stroke: rgba(216, 214, 209, 0.4); stroke-width: 1.6; stroke-linecap: round; }
+      .trib.fade { stroke: url(#tribfade); }
+      .tribmark { fill: var(--bg); stroke: rgba(216, 214, 209, 0.55); stroke-width: 1.4; }
+      .tie { fill: none; stroke: rgba(216, 214, 209, 0.4); stroke-width: 1.3; }
+      .tie.near { stroke-dasharray: 1 4; stroke-linecap: round; stroke-width: 1.5; }
+      .arc { fill: none; stroke: rgba(157, 184, 214, 0.75); stroke-width: 1.4; stroke-dasharray: 4 4; }
+      .arrow { fill: none; stroke: rgba(157, 184, 214, 0.9); stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round; }
+
+      /* rows: a time, a node on the river (or the tributary), a label */
+      .row { position: absolute; left: 0; }
+      .row.pick { cursor: pointer; }
+      .row::before { content: ''; position: absolute; left: 4px; right: 0; top: 1px; bottom: 1px; border-radius: 7px; transition: background 0.12s; }
+      .row.pick:hover::before { background: rgba(255, 255, 255, 0.025); }
+      .row.sel::before { background: rgba(157, 184, 214, 0.07); }
+      .t-timer.pick:hover::before, .t-timer.sel::before { top: 0; bottom: 0; }
+      .tm { position: absolute; left: 0; width: var(--timer); text-align: right; top: 50%; transform: translateY(-50%); font: 11.5px/1 var(--mono); color: var(--room-ink-soft); white-space: nowrap; }
+      .lb { position: absolute; left: var(--lx); top: 50%; transform: translateY(-50%); white-space: nowrap; font: 12.5px/1.2 var(--mono); color: var(--room-ink); }
+      .lb .ap { color: var(--room-ink-soft); }
+      .lb .hint { color: var(--room-ink-faint); font: 12px var(--sans); margin-left: 6px; }
+      .lb.soft { color: var(--room-ink-soft); }
+      .lb.it { font: italic 12.5px var(--sans); color: var(--room-ink-faint); }
+      .ghost { opacity: 0; transition: opacity 0.12s; pointer-events: none; }
+      .row:hover .ghost, .row.sel .ghost { opacity: 1; }
+      .row.sel .lb { color: #f0eee9; }
+      .lb.user { font: 15px/1.2 var(--serif); color: var(--room-ink); }
+      .lb .br { display: inline-block; font: 11px/1 var(--mono); color: var(--room-ink); border: 1px solid rgba(216, 214, 209, 0.3); border-radius: 999px; padding: 3px 7px 3px; margin-left: 8px; vertical-align: 1px; }
+      .lb .tag { display: inline-block; font: 11px/1 var(--mono); color: var(--blue); border: 1px solid rgba(157, 184, 214, 0.4); border-radius: 999px; padding: 3px 7px; margin-left: 8px; vertical-align: 1px; }
+      .t-rto .lb { color: var(--blue); }
+      .t-dayhead .lb { font: 600 10.5px/1 var(--sans); letter-spacing: 0.09em; text-transform: uppercase; color: var(--room-ink-soft); }
+      .t-dayhead .lb .n { font-weight: 400; letter-spacing: 0.02em; text-transform: none; color: var(--room-ink-faint); font-size: 11.5px; margin-left: 8px; }
+      .t-dayhead .lb .chev { display: inline-block; margin-left: 6px; opacity: 0; transition: opacity 0.12s; letter-spacing: 0; text-transform: none; font-weight: 400; color: var(--room-ink-soft); }
+      .t-dayhead:hover .lb .chev { opacity: 1; }
+      .t-dayhead { cursor: pointer; }
+      .t-dayfold .lb { font: 13px/1.2 var(--sans); color: var(--room-ink); }
+      .t-dayfold .lb b { font-weight: 600; }
+      .t-cluster .lb { font: 12px var(--sans); color: var(--room-ink-faint); }
+      .t-cluster:hover .lb { color: var(--room-ink-soft); }
+
+      .nd { position: absolute; left: var(--rx); top: 50%; transform: translate(-50%, -50%); border-radius: 50%; }
+      .nd.run { width: 11px; height: 11px; background: var(--room-ink); box-shadow: 0 0 0 3px var(--bg); }
+      .nd.bead { width: 5px; height: 5px; background: rgba(216, 214, 209, 0.5); box-shadow: 0 0 0 2px var(--bg); }
+      .row.pick:hover .nd.bead { background: rgba(216, 214, 209, 0.75); }
+      .nd.weir { width: 22px; height: 3px; border-radius: 2px; background: var(--room-ink-soft); box-shadow: 0 0 0 3px var(--bg); }
+      .nd.ring { width: 12px; height: 12px; background: var(--bg); border: 1.7px solid var(--room-ink); }
+      .nd.back { width: 19px; height: 19px; background: var(--blue); color: #1d2733; display: flex; align-items: center; justify-content: center; box-shadow: 0 0 0 3px var(--bg); }
+      .nd.back svg { width: 12px; height: 12px; fill: none; stroke: currentColor; stroke-width: 2.2; stroke-linecap: round; stroke-linejoin: round; }
+      .nd.sq { left: var(--tx); width: 11px; height: 11px; border-radius: 3px; background: var(--bg); border: 1.7px solid var(--room-ink); box-shadow: 0 0 0 3px var(--bg); }
+      .nd.now { width: 13px; height: 13px; background: var(--bg); border: 1.6px dashed rgba(157, 184, 214, 0.8); }
+      .nd.beads { border-radius: 0; display: flex; flex-direction: column; align-items: center; gap: 2px; width: 5px; }
+      .nd.beads b { width: 4px; height: 4px; border-radius: 50%; background: rgba(216, 214, 209, 0.32); display: block; }
+      .row.sel .nd.run { background: var(--blue); box-shadow: 0 0 0 3px var(--bg), 0 0 0 5.5px rgba(157, 184, 214, 0.35); }
+      .row.sel .nd.bead { width: 8px; height: 8px; background: var(--blue); box-shadow: 0 0 0 2px var(--bg), 0 0 0 4.5px rgba(157, 184, 214, 0.35); }
+      .row.sel .nd.weir { background: var(--blue); }
+      .row.sel .nd.ring, .row.sel .nd.sq { border-color: var(--blue); box-shadow: 0 0 0 3px var(--bg), 0 0 0 5.5px rgba(157, 184, 214, 0.3); }
+      .row.sel .nd.back { box-shadow: 0 0 0 3px var(--bg), 0 0 0 5.5px rgba(157, 184, 214, 0.35); }
+      .row.landed .nd { animation: land 1.4s ease-out; }
+      @keyframes land { 0% { box-shadow: 0 0 0 3px var(--bg), 0 0 0 10px rgba(157, 184, 214, 0.5); } 100% { box-shadow: 0 0 0 3px var(--bg), 0 0 0 3px rgba(157, 184, 214, 0); } }
+
+      /* ---------- the card: beside the selected node ---------- */
+      #tie { position: absolute; height: 0; border-top: 1px solid rgba(157, 184, 214, 0.45); pointer-events: none; }
+      #card {
+        position: absolute; z-index: 3; background: var(--card); border: 1px solid rgba(255, 255, 255, 0.08); border-radius: 11px;
+        box-shadow: 0 1px 2px rgba(0, 0, 0, 0.3), 0 12px 32px rgba(0, 0, 0, 0.32); padding: 12px 14px 13px; font: 12.5px/1.45 var(--sans); color: var(--room-ink);
+        overflow-y: auto; overscroll-behavior: contain; scrollbar-width: thin; scrollbar-color: rgba(255, 255, 255, 0.14) transparent;
+      }
+      #card[hidden], #tie[hidden] { display: none; }
+      .ch { display: flex; align-items: flex-start; gap: 10px; }
+      .cg { flex: 0 0 auto; width: 20px; height: 20px; display: flex; align-items: center; justify-content: center; margin-top: 1px; }
+      .cg i { display: block; border-radius: 50%; }
+      .cg .g-run { width: 10px; height: 10px; background: var(--blue); }
+      .cg .g-bead { width: 6px; height: 6px; background: var(--blue); }
+      .cg .g-weir { width: 16px; height: 3px; border-radius: 2px; background: var(--blue); }
+      .cg .g-ring { width: 11px; height: 11px; border: 1.7px solid var(--blue); }
+      .cg .g-sq { width: 11px; height: 11px; border-radius: 3px; border: 1.7px solid var(--blue); }
+      .cg .g-back { width: 18px; height: 18px; background: var(--blue); color: #1d2733; display: flex; align-items: center; justify-content: center; }
+      .cg .g-back svg { width: 11px; height: 11px; fill: none; stroke: currentColor; stroke-width: 2.2; stroke-linecap: round; stroke-linejoin: round; }
+      .ct { flex: 1; min-width: 0; }
+      .cname { font: 14px/1.3 var(--mono); color: #f0eee9; }
+      .cname .ap { color: var(--room-ink-soft); }
+      .cname.user { font: 17px/1.25 var(--serif); }
+      .cmeta { margin-top: 3px; color: var(--room-ink-soft); font-size: 12px; }
+      .cmeta .sha { font: 11.5px var(--mono); }
+      .cx { flex: 0 0 auto; width: 24px; height: 24px; margin: -3px -5px 0 0; border: 0; border-radius: 6px; background: transparent; color: var(--room-ink-soft); cursor: pointer; font-size: 15px; line-height: 1; }
+      .cx:hover { background: rgba(255, 255, 255, 0.06); color: var(--room-ink); }
+      .note { margin: 10px 0 0; padding: 7px 9px; border-radius: 7px; background: rgba(255, 255, 255, 0.03); color: var(--room-ink-soft); font-size: 12px; }
+      .note b { color: var(--room-ink); font-weight: 500; }
+      .note .eq { font: 12px var(--mono); color: var(--room-ink); margin-right: 4px; }
+      .sec { margin-top: 11px; padding-top: 10px; border-top: 1px solid var(--room-line); }
+      .sl { font: 600 10px/1 var(--sans); letter-spacing: 0.09em; text-transform: uppercase; color: var(--room-ink-soft); margin-bottom: 7px; }
+      .sl span { font-weight: 400; letter-spacing: 0.02em; text-transform: none; font-size: 11.5px; color: var(--room-ink-faint); margin-left: 6px; }
+      .fr { display: flex; align-items: baseline; gap: 8px; margin-top: 5px; }
+      .fr:first-of-type { margin-top: 0; }
+      .fp { font: 12px var(--mono); color: var(--room-ink); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+      .fs { margin-left: auto; font: 11.5px var(--mono); white-space: nowrap; }
+      .fs .pl { color: var(--green); font-style: normal; }
+      .fs .mi { color: var(--red); font-style: normal; opacity: 0.85; }
+      .fn { color: var(--room-ink-soft); font-size: 12px; margin: 1px 0 0; }
+      .diff { margin: 5px 0 2px; padding: 6px 8px; border-radius: 6px; background: #282c34; border: 1px solid rgba(255, 255, 255, 0.06); font: 11.5px/1.55 var(--mono); color: #abb2bf; white-space: pre; overflow: hidden; text-overflow: ellipsis; }
+      .diff .cl { color: #5c6370; display: block; }
+      .diff .m { color: #e06c75; }
+      .diff .p { color: #98c379; }
+      .thumbrow { display: flex; align-items: flex-end; gap: 10px; margin: 5px 0 2px; }
+      .thumb { display: block; width: 92px; background: #fff; border-radius: 4px; padding: 3px; box-shadow: 0 1px 3px rgba(0, 0, 0, 0.45); }
+      .thumb svg { display: block; width: 100%; height: auto; }
+      .thumbrow .fn { margin: 0; }
+      .nr { display: flex; align-items: flex-start; gap: 8px; margin-top: 6px; cursor: pointer; }
+      .nr:first-of-type { margin-top: 0; }
+      .nr input { margin: 2px 0 0; accent-color: #7f9cbd; flex: 0 0 auto; }
+      .nr .nb { min-width: 0; }
+      .nr .fp { display: inline; }
+      .nr .win { margin-left: 6px; font-size: 11px; color: var(--room-ink-faint); }
+      .nr .nn { display: block; color: var(--room-ink-soft); font-size: 12px; }
+      .nr.warn .nn::before { content: ''; display: inline-block; width: 6px; height: 6px; border-radius: 50%; background: var(--amber); margin-right: 6px; vertical-align: 1px; }
+      .nr.off .fp, .nr.off .nn { opacity: 0.45; text-decoration: line-through; text-decoration-color: rgba(216, 214, 209, 0.35); }
+      .nr.fixed { cursor: default; padding-left: 21px; }
+      .same { margin-top: 7px; color: var(--room-ink-faint); font-size: 12px; }
+      .act { display: flex; align-items: center; gap: 10px; margin-top: 12px; }
+      .rw {
+        display: inline-flex; align-items: center; gap: 7px; height: 32px; padding: 0 14px 0 11px; border: 0; border-radius: 8px;
+        background: var(--accent); color: #fff; font: 500 13px var(--sans); cursor: pointer; transition: background 0.12s;
+      }
+      .rw:hover { background: #3a6b9d; }
+      .rw svg { width: 14px; height: 14px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+      .rw:disabled { background: rgba(255, 255, 255, 0.06); color: var(--room-ink-soft); cursor: default; }
+      .kbd { color: var(--room-ink-faint); font: 11.5px var(--sans); }
+      .fine { margin: 9px 0 0; color: var(--room-ink-faint); font-size: 11.5px; line-height: 1.5; }
+      .steps { list-style: none; margin: 12px 0 0; padding: 0; font-size: 12px; color: var(--room-ink-faint); }
+      .steps li { position: relative; padding: 3px 0 3px 20px; }
+      .steps li::before { content: ''; position: absolute; left: 3px; top: 8px; width: 7px; height: 7px; border-radius: 50%; border: 1.4px solid var(--room-ink-faint); }
+      .steps li.doing { color: var(--room-ink); }
+      .steps li.doing::before { border-color: var(--blue); border-top-color: transparent; animation: turn 0.7s linear infinite; }
+      .steps li.done { color: var(--room-ink-soft); }
+      .steps li.done::before { border-color: var(--green); background: var(--green); }
+      .steps .sha { font: 11.5px var(--mono); }
+      @keyframes turn { to { transform: rotate(360deg); } }
+
+      /* ---------- the strip at the room's right edge: the whole record ---------- */
+      #mini { position: absolute; right: 7px; top: 12px; bottom: 12px; width: 16px; cursor: pointer; z-index: 4; }
+      #mini[hidden] { display: none; }
+      #mini svg { display: block; }
+      .m-run { fill: rgba(216, 214, 209, 0.42); }
+      .m-tick { fill: rgba(216, 214, 209, 0.16); }
+      .m-reach { fill: rgba(157, 184, 214, 0.38); }
+      .m-day { fill: rgba(255, 255, 255, 0.16); }
+      .m-rw { fill: var(--blue); }
+      .m-user { fill: none; stroke: rgba(216, 214, 209, 0.7); stroke-width: 1; }
+      #mview { fill: rgba(255, 255, 255, 0.05); stroke: rgba(255, 255, 255, 0.16); stroke-width: 1; }
+
+      /* ---------- the note after a rewind ---------- */
+      #toast {
+        position: absolute; left: 50%; bottom: 16px; transform: translateX(-50%); z-index: 6; max-width: min(640px, calc(100% - 48px));
+        display: flex; align-items: center; gap: 12px; padding: 9px 10px 9px 14px; border-radius: 10px;
+        background: rgba(24, 24, 26, 0.95); border: 1px solid rgba(255, 255, 255, 0.1); box-shadow: 0 10px 30px rgba(0, 0, 0, 0.45);
+        font: 12.5px/1.45 var(--sans); color: var(--room-ink-soft);
+      }
+      #toast[hidden] { display: none; }
+      #toast b { color: var(--room-ink); font-weight: 500; }
+      #toast .k { color: var(--blue); font-size: 15px; }
+      #toast button { flex: 0 0 auto; border: 1px solid rgba(255, 255, 255, 0.14); background: transparent; color: var(--room-ink); border-radius: 7px; padding: 4px 11px; cursor: pointer; font: 12.5px var(--sans); }
+      #toast button:hover { background: rgba(255, 255, 255, 0.06); }
+
+      /* ---------- no record yet ---------- */
+      #empty { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; padding: 24px; }
+      #empty[hidden] { display: none; }
+      .em { display: flex; gap: 28px; align-items: flex-start; max-width: 600px; }
+      .em .bed { flex: 0 0 auto; position: relative; width: 70px; }
+      .em h2 { margin: 6px 0 8px; font: 400 23px/1.25 var(--serif); color: #f0eee9; }
+      .em p { margin: 0 0 10px; color: var(--room-ink-soft); font-size: 14px; line-height: 1.55; }
+      .em p b { color: var(--room-ink); font-weight: 500; }
+      .em .foot { margin-top: 16px; font: 11.5px var(--mono); color: var(--room-ink-faint); }
+      .em .br { display: inline-block; font: 11px/1 var(--mono); color: var(--room-ink); border: 1px solid rgba(216, 214, 209, 0.3); border-radius: 999px; padding: 3px 7px; vertical-align: 1px; }
+      .em .ucs { margin: 14px 0 0; padding: 0; list-style: none; }
+      .em .ucs li { display: flex; align-items: baseline; gap: 10px; margin: 0 0 8px; }
+      .em .ucs .t { font: 11.5px var(--mono); color: var(--room-ink-faint); width: 92px; flex: 0 0 auto; }
+      .em .ucs .m { font: 15px var(--serif); color: var(--room-ink); }
+
+      /* ---------- mockup chrome (not the shell): the states card ---------- */
+      #states {
+        position: fixed; left: 56px; bottom: 16px; z-index: 100; width: 276px; max-height: calc(100vh - 80px); display: flex; flex-direction: column;
+        background: rgba(251, 250, 248, 0.96); backdrop-filter: blur(18px) saturate(140%); -webkit-backdrop-filter: blur(18px) saturate(140%);
+        border: 1px solid rgba(0, 0, 0, 0.08); border-radius: 14px; box-shadow: 0 10px 30px rgba(0, 0, 0, 0.38);
+        color: #2c2b29; font: 12px/1.35 var(--sans);
+      }
+      #states header { display: flex; align-items: center; gap: 8px; padding: 9px 12px 7px; cursor: pointer; user-select: none; }
+      #states header b { font-weight: 600; }
+      #states header span { margin-left: auto; color: #8a8883; font-size: 11px; }
+      #states .bd { overflow-y: auto; padding: 0 8px 4px; }
+      #states.min .bd, #states.min .cap { display: none; }
+      #states .grp { padding: 4px 2px 6px; }
+      #states .grp[hidden] { display: none; }
+      #states .lab { display: block; margin: 0 4px 4px; color: #85837e; letter-spacing: 0.06em; text-transform: uppercase; font-size: 10px; }
+      #states .grp button { border: 1px solid rgba(0, 0, 0, 0.1); background: rgba(255, 255, 255, 0.7); color: #2c2b29; border-radius: 999px; padding: 3px 9px; margin: 0 2px 4px 0; cursor: pointer; font: 11.5px var(--sans); }
+      #states .grp button:hover { background: #fff; border-color: rgba(0, 0, 0, 0.22); }
+      #states .grp button.on { background: #2c2b29; border-color: #2c2b29; color: #fff; }
+      #states .cap { padding: 9px 12px 11px; border-top: 1px solid rgba(0, 0, 0, 0.08); color: #4d4b47; font-size: 12px; line-height: 1.5; overflow-y: auto; max-height: 40vh; }
+
+      @media (max-width: 980px) { #here { display: none; } #title .meta { display: none; } }
+      @media (max-width: 720px) { #zoom button { padding: 0 7px; } #states { width: 230px; } }
+    </style>
+  </head>
+  <body>
+    <!-- the suite's figures (as in the session-panes mockups), for the white prints in the card -->
+    <svg width="0" height="0" style="position: absolute" aria-hidden="true">
+      <defs>
+        <symbol id="fig-line" viewBox="0 0 460 300">
+          <rect width="460" height="300" fill="#fff"/>
+          <g font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', 'Helvetica Neue', sans-serif" font-size="11" fill="#000">
+            <rect x="60" y="20" width="380" height="235" fill="none" stroke="#000" stroke-width="0.8"/>
+            <g stroke="#000" stroke-width="0.8">
+              <line x1="60" y1="255" x2="60" y2="259"/><line x1="144.4" y1="255" x2="144.4" y2="259"/><line x1="228.9" y1="255" x2="228.9" y2="259"/><line x1="313.3" y1="255" x2="313.3" y2="259"/><line x1="397.8" y1="255" x2="397.8" y2="259"/>
+              <line x1="56" y1="237" x2="60" y2="237"/><line x1="56" y1="192" x2="60" y2="192"/><line x1="56" y1="146.6" x2="60" y2="146.6"/><line x1="56" y1="101.4" x2="60" y2="101.4"/><line x1="56" y1="56" x2="60" y2="56"/>
+            </g>
+            <g text-anchor="middle"><text x="60" y="272">0.70</text><text x="144.4" y="272">0.80</text><text x="228.9" y="272">0.90</text><text x="313.3" y="272">1.00</text><text x="397.8" y="272">1.10</text></g>
+            <g text-anchor="end"><text x="52" y="241">300</text><text x="52" y="196">350</text><text x="52" y="150.6">400</text><text x="52" y="105.4">450</text><text x="52" y="60">500</text></g>
+            <text x="250" y="292" text-anchor="middle" font-size="12">price</text>
+            <text transform="translate(16 137.5) rotate(-90)" text-anchor="middle" font-size="12">median quantity</text>
+            <polyline points="102,38 229,137.5 398,237" fill="none" stroke="#1f77b4" stroke-width="1.6"/>
+            <circle cx="102" cy="38" r="3.6" fill="#1f77b4"/><circle cx="229" cy="137.5" r="3.6" fill="#1f77b4"/><circle cx="398" cy="237" r="3.6" fill="#1f77b4"/>
+          </g>
+        </symbol>
+        <symbol id="fig-multi" viewBox="0 0 460 132">
+          <rect width="460" height="132" fill="#fff"/>
+          <g font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', 'Helvetica Neue', sans-serif" font-size="8" fill="#000">
+            <g fill="none" stroke="#000" stroke-width="0.7">
+              <rect x="40" y="18" width="96" height="82"/><rect x="144" y="18" width="96" height="82"/><rect x="248" y="18" width="96" height="82"/><rect x="352" y="18" width="96" height="82"/>
+              <line x1="36" y1="94.1" x2="40" y2="94.1"/><line x1="36" y1="64.9" x2="40" y2="64.9"/><line x1="36" y1="35.6" x2="40" y2="35.6"/>
+            </g>
+            <g text-anchor="end"><text x="33" y="97">300</text><text x="33" y="67.8">400</text><text x="33" y="38.5">500</text></g>
+            <g text-anchor="middle" font-size="9.5"><text x="88" y="13">east</text><text x="192" y="13">north</text><text x="296" y="13">south</text><text x="400" y="13">west</text></g>
+            <g fill="none" stroke="#1f77b4" stroke-width="1.3">
+              <polyline points="50,36.2 81,64.3 122,96.8"/><polyline points="154,21.8 185,55.8 226,88.9"/><polyline points="258,32.9 289,65.4 330,95.3"/><polyline points="362,26.5 393,60.5 434,92.7"/>
+            </g>
+            <g fill="#1f77b4">
+              <circle cx="50" cy="36.2" r="2.4"/><circle cx="81" cy="64.3" r="2.4"/><circle cx="122" cy="96.8" r="2.4"/>
+              <circle cx="154" cy="21.8" r="2.4"/><circle cx="185" cy="55.8" r="2.4"/><circle cx="226" cy="88.9" r="2.4"/>
+              <circle cx="258" cy="32.9" r="2.4"/><circle cx="289" cy="65.4" r="2.4"/><circle cx="330" cy="95.3" r="2.4"/>
+              <circle cx="362" cy="26.5" r="2.4"/><circle cx="393" cy="60.5" r="2.4"/><circle cx="434" cy="92.7" r="2.4"/>
+            </g>
+          </g>
+        </symbol>
+        <symbol id="fig-bar" viewBox="0 0 460 300">
+          <rect width="460" height="300" fill="#fff"/>
+          <g font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', 'Helvetica Neue', sans-serif" font-size="11" fill="#000">
+            <rect x="60" y="20" width="380" height="235" fill="none" stroke="#000" stroke-width="0.8"/>
+            <g text-anchor="middle"><text x="123" y="272">east</text><text x="250" y="272">north</text><text x="377" y="272">south</text></g>
+            <g text-anchor="end"><text x="52" y="24">0.0</text><text x="52" y="91.1">−0.4</text><text x="52" y="158.3">−0.8</text><text x="52" y="225.4">−1.2</text></g>
+            <text x="250" y="292" text-anchor="middle" font-size="12">region</text>
+            <rect x="81" y="20" width="84" height="146" fill="#305c8a"/>
+            <rect x="208" y="20" width="84" height="178" fill="#305c8a"/>
+            <rect x="335" y="20" width="84" height="203" fill="#305c8a"/>
+            <line x1="60" y1="20" x2="440" y2="20" stroke="#000" stroke-width="0.8"/>
+          </g>
+        </symbol>
+        <symbol id="g-back" viewBox="0 0 24 24"><polyline points="3 4 3 10 9 10"/><path d="M3.8 15a8.5 8.5 0 1 0 1.9-8.8L3 10"/></symbol>
+      </defs>
+    </svg>
+
+    <div id="app">
+      <div id="topbar">
+        <div class="lights"><i></i><i></i><i></i></div>
+        <div id="title">
+          <span class="ico"><svg class="i" viewBox="0 0 24 24"><use href="#g-back"/><polyline points="12 7.5 12 12 15 14"/></svg></span>
+          <span class="name">History</span>
+          <span class="path" id="t-path"></span>
+          <span class="meta" id="t-meta"></span>
+        </div>
+        <div id="zoom" role="group" aria-label="Zoom">
+          <button data-z="days">Days</button><button data-z="runs">Runs</button><button data-z="all">Every commit</button>
+        </div>
+        <div id="here" data-label="Open on this project: a rewind reloads them"></div>
+      </div>
+
+      <nav id="rail" aria-label="Toolbar">
+        <button class="rb on" id="rb-proj" data-label="This project"><svg class="i" viewBox="0 0 24 24"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg></button>
+        <div class="rule"></div>
+        <button class="rb" id="rb-branch" data-label="Your branches"><svg class="i" viewBox="0 0 24 24"><circle cx="6" cy="5" r="2.2"/><circle cx="6" cy="19" r="2.2"/><circle cx="18" cy="8" r="2.2"/><line x1="6" y1="7.2" x2="6" y2="16.8"/><path d="M18 10.2c0 4.5-6 4-11.2 7"/></svg></button>
+        <button class="rb" id="rb-now" data-label="Go to now (End)"><svg class="i" viewBox="0 0 24 24"><line x1="12" y1="4" x2="12" y2="16"/><polyline points="7 11 12 16 17 11"/><line x1="5" y1="20" x2="19" y2="20"/></svg></button>
+        <button class="rb" id="rb-start" data-label="Go to the start (Home)"><svg class="i" viewBox="0 0 24 24"><line x1="12" y1="20" x2="12" y2="8"/><polyline points="7 13 12 8 17 13"/><line x1="5" y1="4" x2="19" y2="4"/></svg></button>
+        <div class="grow"></div>
+        <button class="rb" id="rb-about" data-label="Kept on this Mac, on the branch claerbout-autosave"><svg class="i" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><line x1="12" y1="11" x2="12" y2="16.5"/><line x1="12" y1="7.6" x2="12" y2="7.7"/></svg></button>
+      </nav>
+
+      <main id="room">
+        <div id="scroll">
+          <div id="river">
+            <svg id="lines"></svg>
+            <div id="rows"></div>
+            <div id="tie" hidden></div>
+            <div id="card" hidden></div>
+          </div>
+        </div>
+        <div id="mini" hidden></div>
+        <div id="toast" hidden></div>
+        <div id="empty" hidden></div>
+      </main>
+    </div>
+
+    <div id="states" aria-label="Mockup states">
+      <header><b>History · the river</b><span>states</span></header>
+      <div class="bd">
+        <div class="grp"><span class="lab">A morning in week-3</span>
+          <button data-st="rest">At rest</button><button data-st="selected">A node selected</button><button data-st="rewinding">Rewinding</button><button data-st="after">After a rewind</button>
+        </div>
+        <div class="grp"><span class="lab">Other projects</span>
+          <button data-st="branch">With your branch</button><button data-st="long">Long history</button><button data-st="empty">No record yet</button>
+        </div>
+        <div class="grp" id="grp-empty" hidden><span class="lab">No record: why</span>
+          <button data-ev="new">New folder</button><button data-ev="repo">Repository, no record</button><button data-ev="off">Record off</button><button data-ev="refused">No project here</button>
+        </div>
+      </div>
+      <div class="cap" id="cap"></div>
+    </div>
+
+    <script>
+      (function () {
+        'use strict';
+        const $ = (s, r) => (r || document).querySelector(s);
+        const $$ = (s, r) => Array.from((r || document).querySelectorAll(s));
+        const esc = (t) => String(t).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+
+        /* ================= geometry ================= */
+        // x positions inside the river column; the card takes the column's right end
+        const G = { top: 26, timeR: 56, rx: 122, tx: 152, lx: 142, lxb: 174, cardW: 356, w: 940, bottom: 140, gap: 12 * 60 };
+        const HT = { dayhead: 46, dayfold: 50, open: 32, close: 32, run: 30, timer: 11, cluster: 26, user: 36, rfrom: 30, rto: 34, gap: 34, now: 48 };
+        const PICK = new Set(['open', 'close', 'run', 'timer', 'rfrom', 'rto', 'user']);
+        const MANIFEST = '.claerbout/untracked.json';
+        const BACK = '<svg viewBox="0 0 24 24"><use href="#g-back"/></svg>';
+
+        /* ================= small helpers ================= */
+        function rng(seed) {
+          let s = seed >>> 0;
+          return () => {
+            s = (s + 0x6d2b79f5) >>> 0;
+            let t = s;
+            t = Math.imul(t ^ (t >>> 15), t | 1);
+            t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+            return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+          };
+        }
+        function shaGen(seed) {
+          const r = rng(seed);
+          return () => { let h = ''; for (let i = 0; i < 7; i++) h += '0123456789abcdef'[Math.floor(r() * 16)]; return h; };
+        }
+        function hash(str) { let h = 2166136261; for (let i = 0; i < str.length; i++) h = Math.imul(h ^ str.charCodeAt(i), 16777619); return h >>> 0; }
+        const pad = (n) => String(n).padStart(2, '0');
+        const hm = (s) => `${pad(Math.floor(s / 3600))}:${pad(Math.floor(s / 60) % 60)}`;
+        const hms = (s) => `${hm(s)}:${pad(Math.floor(s) % 60)}`;
+        const parseT = (t) => { const [h, m, s = 0] = t.split(':').map(Number); return h * 3600 + m * 60 + s; };
+        const plural = (n, one, many) => `${n.toLocaleString('en-US')} ${n === 1 ? one : many || one + 's'}`;
+        const WD = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+        const MO = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
+        function dayInfo(key) {
+          const [y, m, d] = key.split('-').map(Number);
+          const w = new Date(Date.UTC(y, m - 1, d)).getUTCDay();
+          return { short: `${WD[w].slice(0, 3)} ${d} ${MO[m - 1].slice(0, 3)}`, long: `${WD[w]} ${d} ${MO[m - 1]}` };
+        }
+        const TODAY = '2026-10-02';
+        function when(c) { return c.day === TODAY ? hm(c.s) : `${dayInfo(c.day).short}, ${hm(c.s)}`; }
+        function listCells(cells) {
+          const a = cells.slice().sort((x, y) => x - y);
+          if (a.length === 1) return `cell ${a[0]}`;
+          return `cells ${a.slice(0, -1).join(', ')} and ${a[a.length - 1]}`;
+        }
+
+        /* ================= the commits ================= */
+        // A record commit: {sha, day, s (seconds into the day), kind, app, cell?, edit?, words?, from?, target?}
+        // kind: open | close | run | timer | rfrom | rto. A commit on your branch: kind 'user', with tie
+        // (the record commit holding its files, found by tree) and near (what differs, when not exact).
+        function message(c) {
+          switch (c.kind) {
+            case 'run': return `${c.app}: cell run [${c.cell}]`;
+            case 'timer': return `${c.app}: timer`;
+            case 'open': return `${c.app}: session open`;
+            case 'close': return `${c.app}: session close`;
+            case 'rfrom': return `rewind from ${c.from}`;
+            case 'rto': return `rewind to ${c.target}`;
+            default: return c.msg;
+          }
+        }
+        function labelHTML(c) {
+          const m = message(c);
+          const i = m.indexOf(': ');
+          if (i > 0 && c.kind !== 'user') return `<span class="ap">${esc(m.slice(0, i + 1))}</span> ${esc(m.slice(i + 2))}`;
+          return esc(m);
+        }
+
+        // One sitting at the desk: a cell run in some minutes, a timer commit in every minute something
+        // changed (each app's shell keeps its own one-minute timer, so with Plass open there are two).
+        function simulate(R, sha, day, start, end, o) {
+          const out = [];
+          let focus = o.focus;
+          const phaseK = 40 + Math.floor(R() * 18), phaseP = 5 + Math.floor(R() * 18);
+          if (o.open) out.push({ kind: 'open', app: 'knuth', s: start + 2 + Math.floor(R() * 20) });
+          for (let m = start + 60; m < end; m += 60) {
+            if (R() < o.runRate) {
+              const s = m + 3 + Math.floor(R() * 34);
+              out.push({ kind: 'run', app: 'knuth', cell: focus, s });
+              if (R() < 0.22) out.push({ kind: 'run', app: 'knuth', cell: focus, s: s + 4 + Math.floor(R() * 5) });
+            }
+            const writing = R() < o.plass;
+            if (R() < o.timerRate) out.push({ kind: 'timer', app: 'knuth', s: m + phaseK, edit: writing ? 'paper' : 'doc' });
+            if (o.plassOpen && R() < o.timerRate * (writing ? 1 : 0.4)) out.push({ kind: 'timer', app: 'plass', s: m + phaseP, edit: writing ? 'paper' : 'doc' });
+            if (R() < 0.09) focus = Math.max(o.cells[0], Math.min(o.cells[1], focus + (R() < 0.72 ? 1 : -1)));
+            if (R() < 0.03) m += 60 * (2 + Math.floor(R() * 6));
+          }
+          out.sort((a, b) => a.s - b.s);
+          out.forEach((c) => { c.day = day; c.sha = sha(); });
+          return out;
+        }
+        function insertRewind(R, sha, list) {
+          const n = list.length;
+          if (n < 40) return;
+          const k = Math.floor(n * (0.55 + R() * 0.3));
+          const runs = list.slice(Math.max(0, k - 40), k - 8).filter((c) => c.kind === 'run');
+          if (!runs.length) return;
+          const target = runs[Math.floor(R() * runs.length)];
+          const prev = list[k - 1];
+          if (list[k].s - prev.s < 6) return;
+          const add = [];
+          let s = prev.s + 2, from = prev;
+          if (R() < 0.7) { const rf = { kind: 'rfrom', day: prev.day, s, from: prev.sha, sha: sha(), changes: [{ path: null, note: 'edits not yet recorded' }] }; add.push(rf); from = rf; s += 1; }
+          add.push({ kind: 'rto', day: prev.day, s, target: target.sha, from: from.sha, sha: sha() });
+          list.splice(k, 0, ...add);
+        }
+        function finish(D) {
+          D.days.forEach((d) => d.commits.sort((a, b) => a.s - b.s));
+          D.flat = D.days.flatMap((d) => d.commits);
+          D.index = new Map(D.flat.map((c, i) => [c.sha, i]));
+          let next = null;
+          for (let i = D.flat.length - 1; i >= 0; i--) {
+            const c = D.flat[i];
+            if (c.kind === 'run') next = c.cell;
+            else if (c.kind === 'timer' && c.edit === 'doc' && c.cell == null) c.cell = next || 1;
+            if (c.kind === 'timer' && c.edit === 'paper' && !c.words) c.words = 14 + (hash(c.sha) % 41);
+            if (c.kind === 'rfrom' && c.changes && c.changes[0] && c.changes[0].path === null) c.changes = [{ path: D.doc, cells: [next || 1], note: 'edits not yet recorded when you rewound' }];
+          }
+        }
+        function byTime(D, t, day) { const s = parseT(t); return D.flat.find((c) => c.s === s && (!day || c.day === day)); }
+
+        /* ---------- week-3: Thursday morning, scripted ---------- */
+        // time  kind  app  cell (runs) | what was being edited (timers: doc = analysis.py, paper = paper.typ)
+        const THU = `
+          09:12:04 open knuth
+          09:12:31 run knuth 1
+          09:12:48 run knuth 2
+          09:13:52 timer knuth doc
+          09:14:22 run knuth 3
+          09:15:52 timer knuth doc
+          09:16:52 timer knuth doc
+          09:17:12 run knuth 4
+          09:18:52 timer knuth doc
+          09:19:52 timer knuth doc
+          09:19:58 run knuth 4
+          09:21:05 run knuth 5
+          09:22:52 timer knuth doc
+          09:23:52 timer knuth doc
+          09:24:41 run knuth 5
+          09:25:30 run knuth 6
+          09:26:52 timer knuth doc
+          09:27:02 run knuth 6
+          09:41:11 timer plass paper
+          09:41:52 timer knuth paper
+          09:42:11 timer plass paper
+          09:43:11 timer plass paper
+          09:43:52 timer knuth paper
+          09:44:52 timer knuth paper
+          09:45:11 timer plass paper
+          09:46:11 timer plass paper
+          09:46:52 timer knuth paper
+          09:47:52 timer knuth paper
+          09:48:11 timer plass paper
+          09:49:11 timer plass paper
+          09:50:52 timer knuth paper
+          09:51:11 timer plass paper
+          09:52:11 timer plass paper
+          09:53:11 timer plass paper
+          09:54:36 run knuth 7
+          09:55:52 timer knuth doc
+          09:56:20 run knuth 7
+          09:58:52 timer knuth doc
+          09:59:12 run knuth 8
+          10:00:52 timer knuth doc
+          10:01:11 timer plass paper
+          10:02:11 timer plass paper
+          10:03:52 timer knuth doc
+          10:04:45 run knuth 8
+          10:06:52 timer knuth doc
+          10:07:11 timer plass doc
+          10:08:52 timer knuth doc
+          10:11:11 timer plass doc
+          10:12:52 timer knuth doc
+          10:14:07 run knuth 8
+          10:15:11 timer plass paper
+          10:15:52 timer knuth paper
+          10:16:11 timer plass paper
+          10:17:11 timer plass paper
+          10:18:52 timer knuth paper
+          10:19:11 timer plass paper
+          10:20:11 timer plass paper
+          10:21:52 timer knuth paper
+          10:22:11 timer plass paper
+          10:23:52 timer knuth paper
+          10:24:11 timer plass paper
+          10:25:11 timer plass paper
+          10:26:52 timer knuth paper
+          10:27:30 run knuth 7
+          10:28:05 run knuth 8
+          10:29:52 timer knuth doc
+          10:30:15 run knuth 9
+          10:31:52 timer knuth doc
+          10:32:11 timer plass doc
+          10:33:02 run knuth 9
+          10:34:11 timer plass paper
+          10:35:11 timer plass paper
+          10:36:44 run knuth 9
+          10:37:52 timer knuth doc
+          10:38:11 timer plass paper
+          10:39:52 timer knuth doc
+          10:40:22 run knuth 9`;
+
+        function makeMorning(withMain) {
+          const sha = shaGen(20261002);
+          const D = {
+            name: 'week-3', path: '~/Projects/ECON_0150/week-3', doc: 'analysis.py', sha,
+            windows: [['K', 'Knuth', 'analysis.py'], ['P', 'Plass', 'paper.typ']],
+            files: ['analysis.py', 'paper.typ', 'refs.bib', 'values.json', 'figs/demand.svg', 'figs/by_region.svg', 'figs/elasticity.svg', '.gitignore', MANIFEST],
+            figs: { 4: 'demand', 6: 'by_region', 8: 'elasticity' },
+            thumbs: { demand: 'line', by_region: 'multi', elasticity: 'bar' },
+            vals: { 3: 'n_obs', 7: 'elasticity', 8: 'elasticity_by_region' },
+            code: {
+              1: 'sales = pd.read_parquet("untracked/sales_oct.parquet")',
+              2: 'sales = sales.dropna(subset=["price", "quantity"])',
+              3: 'n_obs = len(sales)',
+              4: 'demand = by_price.plot(marker="o")',
+              5: 'regions = sorted(sales.region.unique())',
+              6: 'by_region = facet(sales, "region", x="price", y="quantity")',
+              7: 'elasticity = loglog_slope(used.price, used.quantity)',
+              8: 'est = used.groupby("region").apply(loglog_slope_df)',
+              9: 'summary = est.to_frame("elasticity").round(2)',
+            },
+            days: [], branch: null,
+            now: { s: parseT('10:41:05'), changed: ['analysis.py'], cells: [9] },
+          };
+          const R = rng(1001);
+          D.days.push({ key: '2026-10-01', fold: true, commits: simulate(R, sha, '2026-10-01', parseT('14:02:00'), parseT('15:10:00'), { open: true, cells: [1, 6], focus: 1, runRate: 0.2, timerRate: 0.55, plass: 0, plassOpen: false }) });
+          const thu = THU.trim().split('\n').map((line) => {
+            const [t, kind, app, x] = line.trim().split(/\s+/);
+            const c = { day: TODAY, s: parseT(t), kind, app, sha: sha() };
+            if (kind === 'run') c.cell = +x;
+            if (kind === 'timer') c.edit = x;
+            return c;
+          });
+          D.days.push({ key: TODAY, fold: false, commits: thu });
+          finish(D);
+          const at = (t) => byTime(D, t, TODAY);
+          at('09:12:04').changes = [{ path: MANIFEST, plus: 6, minus: 0, note: 'untracked/sales_oct.parquet appeared while the app was closed: 48.2 MB, kept in the record by its SHA-256' }];
+          at('10:14:07').changes = [
+            { path: 'analysis.py', plus: 2, minus: 1, cell: 8, note: 'cell 8, and its saved output', diff: [['m', 'ax.bar(est.index, est.values)'], ['p', 'ax.bar(est.index, est.values, color="#305c8a")'], ['p', 'ax.axhline(0, color="black", lw=0.8)']] },
+            { path: 'figs/elasticity.svg', fig: 'elasticity', note: 'redrawn' },
+          ];
+          at('10:27:30').changes = [
+            { path: 'analysis.py', plus: 1, minus: 1, cell: 7, note: 'cell 7, and its saved output', diff: [['m', 'used = sales'], ['p', 'used = sales[sales.region != "west"]']] },
+            { path: 'values.json', names: ['elasticity'], note: 'elasticity −0.87 → −0.91' },
+          ];
+          at('10:40:22').changes = [
+            { path: 'analysis.py', plus: 3, minus: 0, cell: 9, note: 'cell 9, and its saved output', diff: [['p', 'summary = est.to_frame("elasticity")'], ['p', 'summary["n"] = used.groupby("region").size()'], ['p', 'summary.round(2)']] },
+          ];
+          if (withMain) {
+            D.branch = {
+              name: 'main', earlier: 0, author: 'Taylor J Weidman',
+              commits: [
+                { kind: 'user', day: '2026-10-01', s: parseT('13:58:20'), msg: 'Week 3 starter files', sha: sha(), tie: null,
+                  changes: [{ path: 'analysis.py', plus: 38, minus: 0, note: 'new: cells 1 to 6, no outputs yet' }, { path: 'paper.typ', plus: 22, minus: 0, note: 'new: the outline' }, { path: 'refs.bib', plus: 14, minus: 0 }, { path: '.gitignore', plus: 3, minus: 0 }] },
+                { kind: 'user', day: TODAY, s: parseT('09:31:15'), msg: 'Demand curve and regional facets', sha: sha(), tie: at('09:27:02').sha,
+                  changes: [{ path: 'analysis.py', plus: 41, minus: 6, note: 'cells 1 to 6, with their saved outputs' }, { path: 'values.json', note: 'n_obs' }, { path: 'figs/demand.svg', fig: 'demand', note: 'new' }, { path: 'figs/by_region.svg', fig: 'by_region', note: 'new' }, { path: MANIFEST, note: 'pins untracked/sales_oct.parquet by hash' }] },
+                { kind: 'user', day: TODAY, s: parseT('10:16:40'), msg: 'Elasticity by region', sha: sha(), tie: at('10:16:11').sha,
+                  near: { paths: ['paper.typ'], text: 'leaves out paper.typ, which the record has as you were writing it in Plass' },
+                  changes: [{ path: 'analysis.py', plus: 19, minus: 2, note: 'cells 7 and 8, with their saved outputs' }, { path: 'values.json', note: 'elasticity, elasticity_by_region' }, { path: 'figs/elasticity.svg', fig: 'elasticity', note: 'new' }] },
+              ],
+            };
+          }
+          return D;
+        }
+
+        /* ---------- a long history: three weeks of a research project ---------- */
+        function makeLong() {
+          const sha = shaGen(915), R = rng(4242);
+          const D = {
+            name: 'Urban_Spatial_Sorting', path: '~/Projects/Urban_Spatial_Sorting', doc: 'sorting.py', sha,
+            windows: [['K', 'Knuth', 'sorting.py'], ['P', 'Plass', 'paper.typ']],
+            files: ['sorting.py', 'paper.typ', 'refs.bib', 'values.json', 'figs/sorting_index.svg', 'figs/tract_map.svg', 'figs/event_study.svg', 'figs/robustness.svg', '.gitignore', MANIFEST],
+            figs: { 5: 'sorting_index', 7: 'tract_map', 10: 'event_study', 12: 'robustness' },
+            thumbs: { sorting_index: 'line', tract_map: 'multi', event_study: 'line', robustness: 'bar' },
+            vals: { 5: 'dissimilarity', 9: 'es_coef', 11: 'es_coef_robust' },
+            code: {
+              1: 'tracts = gpd.read_file("untracked/tracts_2020.gpkg")',
+              2: 'acs = pd.read_csv("untracked/acs_2022.csv")',
+              3: 'xwalk = load_crosswalk(2010, 2020)',
+              4: 'panel = tracts.merge(acs, on="GEOID")',
+              5: 'dissimilarity = dissim(panel, "white", "black")',
+              6: 'quint = pd.qcut(panel.index_val, 5, labels=False)',
+              7: 'tract_map = choropleth(panel, quint)',
+              8: 'rezoned = panel.GEOID.isin(rezonings.GEOID)',
+              9: 'es = event_study(panel, "index_val", rezoned, window=(-4, 6))',
+              10: 'event_study = es.plot(ci=True)',
+              11: 'robust = es_drop_small(panel, min_pop=500)',
+              12: 'robustness = compare(es, robust)',
+            },
+            days: [], branch: null,
+            now: { s: parseT('10:41:05'), changed: [], cells: [] },
+          };
+          const keys = ['2026-09-15', '2026-09-16', '2026-09-17', '2026-09-18', '2026-09-22', '2026-09-23', '2026-09-24', '2026-09-25', '2026-09-29', '2026-09-30', '2026-10-01', TODAY];
+          const msgs = ['Load tracts and ACS', 'Crosswalk 2010 to 2020 tracts', 'Dissimilarity index by tract', 'Map of the index, quintiles', 'Rezonings as treatment', 'Event study around rezoning', 'Fix crosswalk weights', 'Robustness: drop tracts under 500 people', 'Bootstrap the standard errors', 'Results section, first figures', 'Placebo years', 'Tidy the event-study plot', 'Draft of section 4', 'Clean ACS income bins'];
+          const ucs = [];
+          keys.forEach((key, k) => {
+            const today = key === TODAY;
+            const sittings = today ? [['07:55', '08:31'], ['08:52', '10:40']] : R() < 0.4 ? [['09:10', '11:00'], ['14:00', '15:30']] : [['10:05', '12:00']];
+            let commits = [];
+            sittings.forEach(([a, b], si) => {
+              const jit = () => (today ? 0 : Math.floor(R() * 900) - 450);
+              const start = parseT(a) + jit(), end = parseT(b) + jit();
+              const writing = !today && R() < 0.3;
+              const list = simulate(R, sha, key, start, end, { open: (k === 0 && si === 0) || R() < 0.55, cells: [1, 12], focus: 1 + Math.floor(R() * 10), runRate: writing ? 0.1 : 0.26, timerRate: 0.5, plass: writing ? 0.8 : 0.1, plassOpen: writing || R() < 0.45 });
+              if ((today && si === 1) || (!today && R() < 0.3)) insertRewind(R, sha, list);
+              commits = commits.concat(list);
+              if ((today && si === 0) || (!today && R() < 0.5)) {
+                ucs.push({ kind: 'user', day: key, s: list[list.length - 1].s + 40 + Math.floor(R() * 200), msg: msgs[ucs.length % msgs.length], sha: sha(), near: R() < 0.3 ? { paths: ['paper.typ'], text: 'leaves out paper.typ, which the record has as you were writing it' } : null });
+              }
+            });
+            D.days.push({ key, commits, fold: !today });
+          });
+          finish(D);
+          ucs.forEach((u) => {
+            const d = D.days.find((x) => x.key === u.day);
+            const before = d.commits.filter((c) => c.s <= u.s);
+            u.tie = before.length ? before[before.length - 1].sha : null;
+            u.changes = [{ path: D.doc, plus: 8 + (hash(u.sha) % 40), minus: hash(u.sha) % 9, note: 'with its saved outputs' }, { path: 'values.json', note: 'rewritten' }];
+          });
+          D.branch = { name: 'main', earlier: 6, author: 'Taylor J Weidman', commits: ucs };
+          return D;
+        }
+
+        /* ================= what changed, and what a rewind would change ================= */
+        function changesOf(c) {
+          const D = S.data;
+          if (c.changes) return c.changes;
+          const out = [];
+          const k = hash(c.sha);
+          if (c.kind === 'run') {
+            out.push({ path: D.doc, plus: 1 + (k % 3), minus: k % 2, cell: c.cell, note: `cell ${c.cell}, and its saved output` });
+            if (D.figs[c.cell]) out.push({ path: `figs/${D.figs[c.cell]}.svg`, fig: D.figs[c.cell], note: 'redrawn' });
+            if (D.vals[c.cell]) out.push({ path: 'values.json', names: [D.vals[c.cell]], note: `${D.vals[c.cell]} rewritten` });
+          } else if (c.kind === 'timer') {
+            if (c.edit === 'paper') out.push({ path: 'paper.typ', plus: 1 + (k % 4), minus: k % 2, words: c.words, note: `about ${c.words} words, typed in Plass` });
+            else out.push({ path: D.doc, plus: 1 + (k % 3), minus: k % 2, cell: c.cell, note: `typing in cell ${c.cell}` });
+          } else if (c.kind === 'open') {
+            out.push({ path: MANIFEST, plus: 1, minus: 1, note: 'untracked/ changed while the app was closed' });
+          } else if (c.kind === 'rto') {
+            const ti = D.index.get(c.target), ri = D.index.get(c.sha);
+            if (ti != null && ri != null) {
+              collect(D.flat.slice(ti + 1, ri)).forEach((e, path) => out.push({ path, cells: [...e.cells], names: [...e.names], words: e.words, note: 'back as it was' }));
+            }
+          }
+          c.changes = out;
+          return out;
+        }
+        function collect(list) {
+          const m = new Map();
+          for (const c of list) for (const ch of changesOf(c)) {
+            if (!m.has(ch.path)) m.set(ch.path, { cells: new Set(), names: new Set(), words: 0 });
+            const e = m.get(ch.path);
+            if (ch.cell) e.cells.add(ch.cell);
+            (ch.cells || []).forEach((x) => e.cells.add(x));
+            (ch.names || []).forEach((x) => e.names.add(x));
+            if (ch.words) e.words += ch.words;
+          }
+          return m;
+        }
+        // Against now (the working tree): the files whose content differs from this commit's.
+        function fromNow(c) {
+          const D = S.data;
+          const anchor = c.kind === 'user' ? c.tie : c.sha;
+          const i = anchor ? D.index.get(anchor) : -1;
+          const m = collect(D.flat.slice(i + 1));
+          D.now.changed.forEach((p) => {
+            if (!m.has(p)) m.set(p, { cells: new Set(), names: new Set(), words: 0 });
+            if (p === D.doc) D.now.cells.forEach((x) => m.get(p).cells.add(x));
+          });
+          if (c.kind === 'user' && c.near) c.near.paths.forEach((p) => { if (!m.has(p)) m.set(p, { cells: new Set(), names: new Set(), words: 0 }); m.get(p).near = true; });
+          if (c.kind === 'user' && !c.tie) D.files.forEach((p) => { if (!m.has(p) && p !== '.gitignore') m.set(p, { cells: new Set(), names: new Set(), words: 0 }); });
+          const order = (p) => (p === D.doc ? 0 : p === 'values.json' ? 1 : p.startsWith('figs/') ? 2 : p === 'paper.typ' ? 3 : p === MANIFEST ? 9 : 5);
+          return [...m.entries()].filter(([p]) => p).sort((a, b) => order(a[0]) - order(b[0]) || a[0].localeCompare(b[0]));
+        }
+        function goBack(path, e, t) {
+          const D = S.data;
+          if (path === D.doc) return e.cells.size ? `${listCells([...e.cells])} go${e.cells.size === 1 ? 'es' : ''} back` : 'goes back';
+          if (path === 'values.json') return e.names.size ? `${[...e.names].join(', ')} go${e.names.size === 1 ? 'es' : ''} back` : 'goes back';
+          if (path.startsWith('figs/')) return `the figure as it was at ${t}`;
+          if (path === 'paper.typ') return e.words ? `about ${Math.max(10, Math.round(e.words / 10) * 10)} words written since ${t} leave the page; they stay in the record` : `goes back to ${t}`;
+          if (path === MANIFEST) return '';
+          return 'goes back';
+        }
+
+        /* ================= state ================= */
+        const S = { state: 'rest', data: null, zoom: 'all', sel: null, dayFold: new Map(), openClusters: new Set(), showBranch: false, busy: false, rows: [], rmap: new Map(), landed: null, cardX: 580 };
+
+        /* ================= rows: the river laid out down the page ================= */
+        function itemsOf(d) {
+          const D = S.data;
+          const list = d.commits.slice();
+          if (D.branch && S.showBranch) D.branch.commits.forEach((u) => { if (u.day === d.key) list.push(u); });
+          return list.sort((a, b) => a.s - b.s);
+        }
+        function dayFolded(d) {
+          if (S.dayFold.has(d.key)) return S.dayFold.get(d.key);
+          if (S.zoom === 'days') return true;
+          return !!d.fold;
+        }
+        function build() {
+          const D = S.data, rows = [];
+          let y = G.top;
+          const push = (r) => { r.h = HT[r.type]; r.y = y; r.cy = y + r.h / 2; y += r.h; rows.push(r); return r; };
+          D.days.forEach((d) => {
+            if (dayFolded(d)) { push({ type: 'dayfold', day: d, items: itemsOf(d) }); return; }
+            push({ type: 'dayhead', day: d });
+            const items = itemsOf(d);
+            let last = null;
+            for (let i = 0; i < items.length; i++) {
+              const c = items[i];
+              if (c.kind !== 'user') {
+                if (last !== null && c.s - last > G.gap) push({ type: 'gap', span: c.s - last });
+                last = c.s;
+              }
+              if (c.kind === 'timer' && S.zoom !== 'all' && !S.openClusters.has(c.sha)) {
+                let j = i;
+                while (j + 1 < items.length && items[j + 1].kind === 'timer' && items[j + 1].s - items[j].s <= G.gap) j++;
+                if (j - i + 1 >= 3) { push({ type: 'cluster', items: items.slice(i, j + 1), key: c.sha }); last = items[j].s; i = j; continue; }
+              }
+              push({ type: c.kind, item: c });
+            }
+          });
+          push({ type: 'now' });
+          return { rows, height: y + G.bottom };
+        }
+
+        function rowHTML(r, i) {
+          const D = S.data;
+          const c = r.item;
+          let tm = '', nd = '', lb = '', pick = false;
+          const tags = c ? (D.rewoundTo.get(c.sha) || []).map((x) => `<span class="tag">↺ ${hm(x.s)}</span>`).join('') : '';
+          switch (r.type) {
+            case 'dayhead': {
+              const n = r.day.commits.length;
+              lb = `<span class="lb">${dayInfo(r.day.key).long}<span class="n">${plural(n, 'commit')}</span><span class="chev">fold ▴</span></span>`;
+              break;
+            }
+            case 'dayfold': {
+              const cs = r.day.commits, info = dayInfo(r.day.key);
+              const runs = cs.filter((x) => x.kind === 'run').length, timers = cs.filter((x) => x.kind === 'timer').length, rws = cs.filter((x) => x.kind === 'rto').length;
+              const us = r.items.filter((x) => x.kind === 'user').length;
+              const first = D.flat[0] && D.flat[0].day === r.day.key ? ' · the record begins' : '';
+              lb = `<span class="lb"><b>${info.short}</b><span class="hint">${hm(cs[0].s)}–${hm(cs[cs.length - 1].s)} · ${plural(runs, 'run')} · ${plural(timers, 'timer commit')}${rws ? ' · ' + plural(rws, 'rewind') : ''}${us ? ' · ' + us + ' on ' + D.branch.name : ''}${first}</span></span>`;
+              pick = true;
+              break;
+            }
+            case 'gap': {
+              const m = Math.round(r.span / 60);
+              lb = `<span class="lb it">${m >= 60 ? Math.floor(m / 60) + ' h ' + (m % 60) + ' min' : m + ' min'} with nothing recorded</span>`;
+              break;
+            }
+            case 'cluster': {
+              const a = r.items[0], b = r.items[r.items.length - 1];
+              const apps = [...new Set(r.items.map((x) => x.app))].join(' and ');
+              tm = `<span class="tm" style="color:var(--room-ink-faint)">${hm(a.s)}</span>`;
+              nd = '<i class="nd beads"><b></b><b></b><b></b></i>';
+              lb = `<span class="lb">${r.items.length} timer commits, ${apps} · to ${hm(b.s)}</span>`;
+              pick = true;
+              break;
+            }
+            case 'now': {
+              const ch = D.now.changed;
+              tm = `<span class="tm">${hm(D.now.s)}</span>`;
+              nd = '<i class="nd now"></i>';
+              lb = `<span class="lb soft"><span style="color:var(--room-ink)">now</span><span class="hint">${ch.length ? `${ch.join(', ')} changed since the last commit; recorded within the minute` : 'the files are the last commit’s'}</span></span>`;
+              break;
+            }
+            case 'run': {
+              tm = `<span class="tm">${hm(c.s)}</span>`;
+              nd = '<i class="nd run"></i>';
+              const figs = changesOf(c).filter((x) => x.fig).map((x) => x.path.replace('figs/', ''));
+              lb = `<span class="lb">${labelHTML(c)}${figs.length ? `<span class="hint">· ${figs.join(', ')}</span>` : ''}${first(c)}${tags}</span>`;
+              pick = true;
+              break;
+            }
+            case 'timer': {
+              tm = `<span class="tm ghost">${hm(c.s)}</span>`;
+              nd = '<i class="nd bead"></i>';
+              lb = `<span class="lb${tags ? '' : ' ghost'}">${labelHTML(c)}<span class="hint">· ${c.edit === 'paper' ? 'paper.typ' : D.doc}</span>${tags}</span>`;
+              if (tags) tm = `<span class="tm">${hm(c.s)}</span>`;
+              pick = true;
+              break;
+            }
+            case 'open': case 'close': {
+              tm = `<span class="tm">${hm(c.s)}</span>`;
+              nd = '<i class="nd weir"></i>';
+              lb = `<span class="lb soft">${labelHTML(c)}${first(c)}${tags}</span>`;
+              pick = true;
+              break;
+            }
+            case 'rfrom': {
+              tm = `<span class="tm">${hm(c.s)}</span>`;
+              nd = '<i class="nd ring"></i>';
+              lb = `<span class="lb">${labelHTML(c)}<span class="hint">· the files as they were, kept</span>${tags}</span>`;
+              pick = true;
+              break;
+            }
+            case 'rto': {
+              const t = D.flat[D.index.get(c.target)];
+              tm = `<span class="tm">${hm(c.s)}</span>`;
+              nd = `<i class="nd back">${BACK}</i>`;
+              lb = `<span class="lb">${labelHTML(c)}<span class="hint">· back to ${t ? when(t) + ', ' + esc(shortMsg(t)) : ''}</span>${tags}</span>`;
+              pick = true;
+              break;
+            }
+            case 'user': {
+              const B = D.branch;
+              const isTip = B.commits[B.commits.length - 1] === c;
+              tm = `<span class="tm">${hm(c.s)}</span>`;
+              nd = '<i class="nd sq"></i>';
+              lb = `<span class="lb user">${esc(c.msg)}${isTip ? `<span class="br">${B.name}</span>` : ''}</span>`;
+              pick = true;
+              break;
+            }
+          }
+          const sel = c && S.sel === c.sha ? ' sel' : '';
+          const landed = c && S.landed && S.landed.has(c.sha) ? ' landed' : '';
+          return `<div class="row t-${r.type}${pick ? ' pick' : ''}${sel}${landed}" data-i="${i}" style="top:${r.y}px;height:${r.h}px;width:${S.cardX - 18}px">${tm}${nd}${lb}</div>`;
+        }
+        function first(c) { return S.data.flat[0] === c ? '<span class="hint">· the record begins</span>' : ''; }
+        function shortMsg(c) { const m = message(c); return c.kind === 'run' ? m.slice(m.indexOf(': ') + 2) : m; }
+
+        /* ---------- the drawing: river, reaches, tributary, ties, arcs ---------- */
+        function linesSVG(rows, height) {
+          const D = S.data, rx = G.rx, tx = G.tx, P = [];
+          const pts = rows.filter((r) => r.type !== 'user');
+          for (let k = 1; k < pts.length; k++) {
+            const a = pts[k - 1], b = pts[k];
+            if (k === 1 && a.type === 'dayhead') continue;
+            const y1 = a.type === 'dayfold' ? a.y + a.h - 9 : a.cy;
+            const y2 = b.type === 'dayfold' ? b.y + 9 : b.cy;
+            const dotted = a.type === 'gap' || b.type === 'gap' || a.type === 'dayhead' || b.type === 'dayhead' || (a.type === 'dayfold' && b.type === 'dayfold') || (b.type === 'now' && D.now.changed.length > 0);
+            P.push(`<line class="riv${dotted ? ' dot' : ''}" x1="${rx}" y1="${y1}" x2="${rx}" y2="${y2}"/>`);
+          }
+          rows.forEach((r) => { if (r.type === 'dayfold') P.push(`<rect class="reach" x="${rx - 3.5}" y="${r.y + 9}" width="7" height="${r.h - 18}" rx="3.5"/>`); });
+          if (D.branch && S.showBranch) {
+            const urows = [];
+            D.branch.commits.forEach((u) => { const r = S.rmap.get(u.sha); if (r && urows[urows.length - 1] !== r) urows.push(r); });
+            if (urows.length) {
+              if (D.branch.earlier) P.push(`<line class="trib fade" x1="${tx}" y1="0" x2="${tx}" y2="${urows[0].cy}"/>`);
+              P.push(`<line class="trib" x1="${tx}" y1="${urows[0].cy}" x2="${tx}" y2="${urows[urows.length - 1].cy}"/>`);
+              urows.forEach((r) => { if (r.type === 'dayfold') P.push(`<rect class="tribmark" x="${tx - 4}" y="${r.cy - 4}" width="8" height="8" rx="2.2"/>`); });
+            }
+            D.branch.commits.forEach((u) => {
+              const ur = S.rmap.get(u.sha), tr = u.tie && S.rmap.get(u.tie);
+              if (!ur || ur.type !== 'user' || !tr || tr === ur) return;
+              const y1 = tr.cy, y2 = ur.cy;
+              const mx = (rx + tx) / 2;
+              P.push(`<path class="tie${u.near ? ' near' : ''}" d="M${rx + 6},${y1} C${mx + 4},${y1} ${mx - 4},${y2} ${tx - 8},${y2}"/>`);
+            });
+          }
+          const lanes = [];
+          rows.filter((r) => r.type === 'rto').forEach((r) => {
+            const tr = S.rmap.get(r.item.target);
+            if (!tr || tr === r) return;
+            const y1 = tr.cy, y2 = r.cy;
+            let lane = 0;
+            while (lanes.some((l) => l.lane === lane && !(l.y2 < y1 - 4 || l.y1 > y2 + 4))) lane++;
+            lanes.push({ lane, y1, y2 });
+            const ax = rx - 24 - lane * 10;
+            P.push(`<path class="arc" d="M${rx - 10},${y2} H${ax + 7} Q${ax},${y2} ${ax},${y2 - 7} V${y1 + 7} Q${ax},${y1} ${ax + 7},${y1} H${rx - 10}"/>`);
+            P.push(`<path class="arrow" d="M${rx - 15},${y1 - 3.5} L${rx - 10},${y1} L${rx - 15},${y1 + 3.5}"/>`);
+          });
+          const defs = '<defs><linearGradient id="tribfade" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="rgba(216,214,209,0)"/><stop offset="1" stop-color="rgba(216,214,209,0.4)"/></linearGradient></defs>';
+          return { html: defs + P.join(''), height };
+        }
+
+        /* ================= render ================= */
+        const scroll = $('#scroll'), river = $('#river'), lines = $('#lines'), rowsEl = $('#rows'), card = $('#card'), tie = $('#tie'), mini = $('#mini');
+        function render() {
+          const D = S.data;
+          const w = Math.min(G.w, Math.max(560, scroll.clientWidth - 36));
+          S.cardX = w - G.cardW;
+          river.style.width = w + 'px';
+          D.rewoundTo = new Map();
+          D.flat.forEach((c) => { if (c.kind === 'rto') { const a = D.rewoundTo.get(c.target) || []; a.push(c); D.rewoundTo.set(c.target, a); } });
+          const { rows, height } = build();
+          S.rows = rows;
+          S.rmap = new Map();
+          rows.forEach((r) => { if (r.item) S.rmap.set(r.item.sha, r); if (r.items) r.items.forEach((c) => S.rmap.set(c.sha, r)); });
+          const branch = D.branch && S.showBranch;
+          river.style.setProperty('--rx', G.rx + 'px');
+          river.style.setProperty('--tx', G.tx + 'px');
+          river.style.setProperty('--lx', (branch ? G.lxb : G.lx) + 'px');
+          river.style.setProperty('--timer', G.timeR + 'px');
+          river.style.height = height + 'px';
+          const L = linesSVG(rows, height);
+          lines.setAttribute('width', w);
+          lines.setAttribute('height', height);
+          lines.innerHTML = L.html;
+          rowsEl.innerHTML = rows.map(rowHTML).join('');
+          paintChrome();
+          placeCard();
+          drawMini();
+        }
+        function paintChrome() {
+          const D = S.data;
+          $('#t-path').textContent = D.path;
+          const today = D.days.find((d) => d.key === TODAY);
+          $('#t-meta').textContent = `${plural(D.flat.length, 'commit')}${today && D.days.length > 2 ? '' : ` · ${today ? today.commits.length : 0} today`} · claerbout-autosave`;
+          $('#here').innerHTML = D.windows.map(([k, app, doc]) => `<span class="app" title="${app}">${k}</span><span class="doc">${doc}</span>`).join('');
+          $$('#zoom button').forEach((b) => { b.disabled = false; b.classList.toggle('on', b.dataset.z === S.zoom); });
+          const rb = $('#rb-branch');
+          rb.disabled = !D.branch;
+          rb.classList.toggle('on', !!(D.branch && S.showBranch));
+          rb.dataset.label = D.branch ? (S.showBranch ? `Hide ${D.branch.name}` : `Show ${D.branch.name}`) : 'No branches of your own in this project';
+          $('#rb-proj').dataset.label = D.name;
+        }
+
+        /* ---------- the card ---------- */
+        function itemBySha(sha) {
+          const D = S.data;
+          if (D.index.has(sha)) return D.flat[D.index.get(sha)];
+          return D.branch ? D.branch.commits.find((u) => u.sha === sha) : null;
+        }
+        function placeCard() {
+          const c = S.sel && itemBySha(S.sel);
+          const r = c && S.rmap.get(c.sha);
+          if (!c || !r || !r.item) { card.hidden = true; tie.hidden = true; return; }
+          card.hidden = false;
+          card.style.left = S.cardX + 'px';
+          card.style.width = G.cardW + 'px';
+          if (!S.busy) card.innerHTML = cardHTML(c);
+          const need = r.cy + card.offsetHeight + 60;
+          if (need > river.offsetHeight) river.style.height = need + 'px';
+          fitCard();
+          const rowEl = rowsEl.children[S.rows.indexOf(r)];
+          const lb = rowEl && rowEl.querySelector('.lb');
+          const x1 = lb ? lb.offsetLeft + lb.scrollWidth + 12 : G.rx + 16;
+          if (x1 < S.cardX - 14) {
+            tie.hidden = false;
+            tie.style.left = x1 + 'px';
+            tie.style.top = r.cy + 'px';
+            tie.style.width = S.cardX - x1 + 'px';
+          } else tie.hidden = true;
+        }
+        // The card's head sits on the node's line; when that would run the card off the bottom
+        // of the room it lifts, as far as keeping the node's line inside the card allows.
+        function fitCard() {
+          if (card.hidden || !S.sel) return;
+          const r = S.rmap.get(S.sel);
+          if (!r) return;
+          card.style.maxHeight = scroll.clientHeight - 22 + 'px';
+          const h = card.offsetHeight;
+          const vt = scroll.scrollTop + 10, vb = scroll.scrollTop + scroll.clientHeight - 12;
+          let top = r.cy - 22;
+          if (top + h > vb) top = vb - h;
+          if (top < vt) top = vt;
+          top = Math.min(top, r.cy - 22);
+          top = Math.max(top, r.cy - h + 22);
+          card.style.top = Math.max(8, top) + 'px';
+        }
+        scroll.addEventListener('scroll', fitCard, { passive: true });
+        function prevRecord(c) {
+          const D = S.data;
+          if (c.kind === 'user') {
+            const B = D.branch.commits, i = B.indexOf(c);
+            return i > 0 ? B[i - 1] : null;
+          }
+          const i = D.index.get(c.sha);
+          return i > 0 ? D.flat[i - 1] : null;
+        }
+        function glyph(c) {
+          return { run: '<i class="g-run"></i>', timer: '<i class="g-bead"></i>', open: '<i class="g-weir"></i>', close: '<i class="g-weir"></i>', rfrom: '<i class="g-ring"></i>', rto: `<i class="g-back">${BACK}</i>`, user: '<i class="g-sq"></i>' }[c.kind];
+        }
+        function changeHTML(ch) {
+          const D = S.data;
+          const stat = ch.plus != null ? `<span class="fs"><i class="pl">+${ch.plus}</i> <i class="mi">−${ch.minus || 0}</i></span>` : '';
+          let h = `<div class="fr"><span class="fp">${esc(ch.path)}</span>${stat}</div>`;
+          if (ch.fig) {
+            h += `<div class="thumbrow"><span class="thumb"><svg viewBox="0 0 460 ${D.thumbs[ch.fig] === 'multi' ? 132 : 300}"><use href="#fig-${D.thumbs[ch.fig]}"/></svg></span><span class="fn">${esc(ch.note || 'redrawn')}</span></div>`;
+          } else if (ch.note) h += `<div class="fn">${esc(ch.note)}</div>`;
+          let diff = ch.diff;
+          if (!diff && ch.cell && ch.path === D.doc && D.code[ch.cell]) diff = [['p', D.code[ch.cell]]];
+          if (diff) h += `<div class="diff"><span class="cl"># %% cell ${ch.cell}</span>${diff.map(([k, t]) => `<span class="${k}">${k === 'm' ? '−' : '+'}</span> ${esc(t)}`).join('\n')}</div>`;
+          return h;
+        }
+        function cardHTML(c) {
+          const D = S.data;
+          const isUser = c.kind === 'user';
+          const day = dayInfo(c.day).long;
+          const title = isUser ? `<div class="cname user">${esc(c.msg)}</div>` : `<div class="cname">${labelHTML(c)}</div>`;
+          const meta = isUser
+            ? `${D.branch.name} · ${D.branch.author} · ${day}, ${hms(c.s)} · <span class="sha">${c.sha}</span>`
+            : `${day}, ${hms(c.s)} · <span class="sha">${c.sha}</span>`;
+          let note = '';
+          if (isUser) {
+            const t = c.tie && itemBySha(c.tie);
+            if (!c.tie) note = `<div class="note">Made before the record began, so no record commit holds these files.</div>`;
+            else if (c.near) note = `<div class="note"><span class="eq">≈</span>Nearly the record at <b>${when(t)}</b> (${esc(message(t))}): this commit ${esc(c.near.text)}.</div>`;
+            else note = `<div class="note"><span class="eq">=</span>The same files as the record at <b>${when(t)}</b> (${esc(message(t))}).</div>`;
+          } else if (c.kind === 'rto') {
+            const t = itemBySha(c.target), f = itemBySha(c.from);
+            note = `<div class="note">The files of <b>${t ? when(t) : c.target}</b>${t ? ` (${esc(shortMsg(t))})` : ''}, written back${f ? ` from <span class="eq" style="margin:0">${f.sha}</span> just above` : ''}. Nothing between them was removed.</div>`;
+          } else if (c.kind === 'rfrom') {
+            note = `<div class="note">Your files at the moment you rewound: <span class="eq" style="margin:0">${c.from}</span> plus what had not been recorded yet. Rewinding here undoes that rewind.</div>`;
+          }
+          const prev = prevRecord(c);
+          const vs = isUser ? (prev ? `since “${esc(prev.msg)}”` : 'the first on ' + D.branch.name) : prev ? `since ${when(prev)}, ${esc(message(prev))}` : 'the first commit';
+          const chs = changesOf(c);
+          const thisSec = `<div class="sec"><div class="sl">This commit<span>${vs}</span></div>${chs.length ? chs.map(changeHTML).join('') : '<div class="fn">No file changes.</div>'}</div>`;
+
+          const diffs = fromNow(c);
+          const t = when(c);
+          const after = (() => { const i = D.index.get(isUser ? c.tie : c.sha); return i == null ? null : D.flat.length - 1 - i; })();
+          const back = c.day === TODAY ? `${Math.max(1, Math.round((D.now.s - c.s) / 60))} min back` : `${dayInfo(c.day).short}`;
+          const winOf = (p) => { const w = D.windows.find((x) => x[2] === p); return w ? `<span class="win">open in ${w[1]}</span>` : ''; };
+          let rwSec;
+          const choose = diffs.filter(([p]) => p !== MANIFEST);
+          if (!choose.length && !diffs.length) {
+            rwSec = `<div class="sec"><div class="sl">Rewinding here</div><div class="fn">This is where you are: the files now are this commit’s.</div></div>
+              <div class="act"><button class="rw" disabled>${BACK} You are here</button></div>`;
+          } else {
+            const rowsH = choose.map(([p, e]) => {
+              const warn = p === 'paper.typ' && e.words ? ' warn' : '';
+              const n = e.near ? `not in this commit, so it goes back to ${D.branch.name}’s copy; what you wrote since stays in the record` : goBack(p, e, t);
+              return `<label class="nr${warn}"><input type="checkbox" checked data-path="${esc(p)}"><span class="nb"><span class="fp">${esc(p)}</span>${winOf(p)}<span class="nn">${esc(n)}</span></span></label>`;
+            }).join('');
+            const man = diffs.some(([p]) => p === MANIFEST) ? `<div class="nr fixed"><span class="nb"><span class="fp">untracked/</span><span class="nn">stays as it is: the record keeps only names and hashes there</span></span></div>` : '';
+            const same = D.files.length - choose.length - (man ? 1 : 0);
+            rwSec = `<div class="sec"><div class="sl">Rewinding here<span>${back}${after ? ' · ' + plural(after, 'commit') + ' since' : ''}</span></div>${rowsH}${man}
+              <div class="same">${same > 0 ? plural(same, 'other file is', 'other files are') + ' the same at both moments.' : ''}</div></div>
+              <div class="act"><button class="rw" data-act="rewind">${BACK}<span class="rwl">Rewind to ${t}</span></button><span class="kbd">⌘↩</span></div>
+              <p class="fine">${D.windows.map((w) => w[2]).join(' and ')} reload in their windows. Now is recorded first, so this can be undone; ${isUser ? D.branch.name + ' stays where it is, and' : ''} your branch, HEAD and index are not touched. Python’s memory is not rewound: the cells come back stale.</p>`;
+          }
+          return `<div class="ch"><span class="cg">${glyph(c)}</span><div class="ct">${title}<div class="cmeta">${meta}</div></div><button class="cx" data-act="close" aria-label="Close">×</button></div>${note}${thisSec}${rwSec}`;
+        }
+
+        /* ---------- rewind ---------- */
+        function chosenPaths() {
+          const boxes = $$('#card input[data-path]');
+          const on = boxes.filter((b) => b.checked).map((b) => b.dataset.path);
+          return on.length === boxes.length ? null : on;
+        }
+        function applyRewind(target, paths) {
+          const D = S.data;
+          const today = D.days.find((d) => d.key === TODAY);
+          const tip = D.flat[D.flat.length - 1];
+          let s = Math.max(D.now.s + 70, tip.s + 30);
+          let from = tip, rf = null;
+          if (D.now.changed.length) {
+            rf = { kind: 'rfrom', day: TODAY, s, from: tip.sha, sha: D.sha(), changes: D.now.changed.map((p) => ({ path: p, cells: p === D.doc ? D.now.cells.slice() : [], note: p === D.doc ? `typing in ${listCells(D.now.cells)}, not yet recorded when you rewound` : 'not yet recorded when you rewound' })) };
+            today.commits.push(rf);
+            from = rf;
+            s += 1;
+          }
+          const rt = { kind: 'rto', day: TODAY, s, target: target.kind === 'user' ? target.tie || target.sha : target.sha, from: from.sha, sha: D.sha(), paths };
+          if (target.kind === 'user') rt.userTarget = target.sha;
+          today.commits.push(rt);
+          finish(D);
+          D.now = { s: s + 25, changed: [], cells: [] };
+          D.last = { from, rt, target };
+          S.landed = new Set([rt.sha].concat(rf ? [rf.sha] : []));
+          return { from, rt, rf };
+        }
+        function steps(c, paths) {
+          const D = S.data;
+          const tip = D.flat[D.flat.length - 1];
+          const n = paths ? paths.length : fromNow(c).filter(([p]) => p !== MANIFEST).length;
+          const out = [];
+          out.push(`Save the open documents (${D.windows.map((w) => w[1]).join(', ')})`);
+          out.push(D.now.changed.length ? `Record now: <span class="sha">rewind from ${tip.sha}</span>` : `Now is the tip, <span class="sha">${tip.sha}</span>: nothing to record`);
+          out.push(`Write ${plural(n, 'file')} from <span class="sha">${c.sha}</span> into the folder`);
+          out.push(`Record <span class="sha">rewind to ${c.kind === 'user' ? c.tie || c.sha : c.sha}</span>`);
+          out.push(`Reload ${D.windows.map((w) => w[2]).join(' and ')}`);
+          return out;
+        }
+        function startRewind(c) {
+          if (S.busy) return;
+          const paths = chosenPaths();
+          if (paths && !paths.length) return;
+          S.busy = true;
+          const list = steps(c, paths);
+          const act = card.querySelector('.act'), fine = card.querySelector('.fine');
+          if (fine) fine.remove();
+          card.querySelectorAll('.nr input').forEach((b) => (b.disabled = true));
+          const ol = document.createElement('ol');
+          ol.className = 'steps';
+          ol.innerHTML = list.map((t) => `<li>${t}</li>`).join('');
+          act.replaceWith(ol);
+          fitCard();
+          const lis = $$('li', ol);
+          let k = 0;
+          const tick = () => {
+            if (k > 0) { lis[k - 1].classList.remove('doing'); lis[k - 1].classList.add('done'); }
+            if (k < lis.length) { lis[k].classList.add('doing'); k++; setTimeout(tick, 420); return; }
+            setTimeout(() => finishRewind(c, paths), 260);
+          };
+          tick();
+        }
+        function finishRewind(c, paths) {
+          S.busy = false;
+          const res = applyRewind(c, paths);
+          S.sel = null;
+          render();
+          scroll.scrollTop = scroll.scrollHeight;
+          toastRewound(c, res);
+        }
+        function toastRewound(c, res) {
+          const D = S.data;
+          const what = c.kind === 'rfrom' ? `back where you were at ${hm(c.s)}, before the rewind` : `Rewound to <b>${when(c)}</b>, ${esc(c.kind === 'user' ? '“' + c.msg + '”' : shortMsg(c))}`;
+          showToast(`<span class="k">↺</span><span>${what.charAt(0).toUpperCase() + what.slice(1)}. ${D.windows.map((w) => w[2]).join(' and ')} reloaded; the cells are stale, since Python’s memory was not rewound.</span><button data-act="undo">Undo</button>`);
+        }
+        function undo() {
+          const D = S.data;
+          if (!D.last) return;
+          const back = D.last.from;
+          const res = applyRewind(back, null);
+          render();
+          scroll.scrollTop = scroll.scrollHeight;
+          toastRewound(back, res);
+        }
+
+        /* ---------- the note ---------- */
+        const toast = $('#toast');
+        function showToast(h) { toast.innerHTML = h; toast.hidden = false; }
+        function hideToast() { toast.hidden = true; }
+        toast.addEventListener('click', (e) => { if (e.target.closest('[data-act="undo"]')) { hideToast(); undo(); } });
+
+        /* ---------- the strip: the whole record at the room's edge ---------- */
+        function drawMini() {
+          const H = river.offsetHeight;
+          const show = H > scroll.clientHeight * 1.15;
+          mini.hidden = !show;
+          scroll.classList.toggle('nobar', show);
+          if (!show) return;
+          const mh = mini.clientHeight, k = mh / H, P = [];
+          S.rows.forEach((r) => {
+            const y = (r.cy * k).toFixed(1);
+            if (r.type === 'run') P.push(`<rect class="m-run" x="4" y="${y}" width="8" height="1"/>`);
+            else if (r.type === 'timer') P.push(`<rect class="m-tick" x="6.5" y="${y}" width="3" height="1"/>`);
+            else if (r.type === 'cluster') P.push(`<rect class="m-tick" x="6.5" y="${(r.y * k).toFixed(1)}" width="3" height="${Math.max(1, r.h * k).toFixed(1)}"/>`);
+            else if (r.type === 'dayfold') P.push(`<rect class="m-reach" x="5.5" y="${((r.y + 9) * k).toFixed(1)}" width="5" height="${Math.max(2, (r.h - 18) * k).toFixed(1)}" rx="1.5"><title>${dayInfo(r.day.key).short}</title></rect>`);
+            else if (r.type === 'dayhead') P.push(`<rect class="m-day" x="1" y="${y}" width="14" height="1"><title>${dayInfo(r.day.key).short}</title></rect>`);
+            else if (r.type === 'rto') P.push(`<rect class="m-rw" x="1.5" y="${y - 1}" width="13" height="2" rx="1"/>`);
+            else if (r.type === 'user') P.push(`<rect class="m-user" x="11.5" y="${y - 1.5}" width="3" height="3"/>`);
+          });
+          mini.innerHTML = `<svg width="16" height="${mh}">${P.join('')}<rect id="mview" x="0.5" y="0" width="15" height="10" rx="3"/></svg>`;
+          miniView();
+        }
+        function miniView() {
+          const v = $('#mview');
+          if (!v || mini.hidden) return;
+          const H = river.offsetHeight, mh = mini.clientHeight;
+          v.setAttribute('y', Math.max(0.5, (scroll.scrollTop / H) * mh));
+          v.setAttribute('height', Math.max(8, Math.min(mh - 1, (scroll.clientHeight / H) * mh)));
+        }
+        scroll.addEventListener('scroll', miniView, { passive: true });
+        let dragging = false;
+        const miniGo = (e) => {
+          const r = mini.getBoundingClientRect();
+          const f = (e.clientY - r.top) / r.height;
+          scroll.scrollTop = f * river.offsetHeight - scroll.clientHeight / 2;
+        };
+        mini.addEventListener('pointerdown', (e) => { dragging = true; mini.setPointerCapture(e.pointerId); miniGo(e); });
+        mini.addEventListener('pointermove', (e) => { if (dragging) miniGo(e); });
+        mini.addEventListener('pointerup', () => { dragging = false; });
+
+        /* ================= interactions ================= */
+        function select(sha, opts) {
+          S.sel = sha;
+          S.landed = null;
+          render();
+          if (opts && opts.center) center(sha);
+          else if (sha) keepInView(sha);
+        }
+        function center(sha) { const r = S.rmap.get(sha); if (r) scroll.scrollTop = r.cy - scroll.clientHeight * 0.32; }
+        function keepInView(sha) {
+          const r = S.rmap.get(sha);
+          if (!r) return;
+          if (r.cy < scroll.scrollTop + 40) scroll.scrollTop = r.cy - 60;
+          else if (r.cy > scroll.scrollTop + scroll.clientHeight - 60) scroll.scrollTop = r.cy - scroll.clientHeight + 120;
+        }
+        rowsEl.addEventListener('click', (e) => {
+          const el = e.target.closest('.row');
+          if (!el || S.busy) return;
+          const r = S.rows[+el.dataset.i];
+          hideToast();
+          if (r.type === 'dayfold') { S.dayFold.set(r.day.key, false); keepAnchor(() => render(), r); return; }
+          if (r.type === 'dayhead') { S.dayFold.set(r.day.key, true); if (S.sel && itemBySha(S.sel) && itemBySha(S.sel).day === r.day.key) S.sel = null; keepAnchor(() => render(), r); return; }
+          if (r.type === 'cluster') { r.items.forEach((c) => S.openClusters.add(c.sha)); keepAnchor(() => render(), r); return; }
+          if (r.item && PICK.has(r.type)) select(S.sel === r.item.sha ? null : r.item.sha);
+          e.stopPropagation();
+        });
+        // a fold or unfold keeps the row under the pointer where it was
+        function keepAnchor(fn, r) {
+          const before = r.y - scroll.scrollTop;
+          const key = r.day ? r.day.key : null;
+          fn();
+          const again = S.rows.find((x) => (key ? x.day && x.day.key === key : x.item && r.items && x.item === r.items[0]));
+          if (again) scroll.scrollTop = again.y - before;
+        }
+        card.addEventListener('click', (e) => {
+          const b = e.target.closest('[data-act]');
+          if (!b) return;
+          if (b.dataset.act === 'close') select(null);
+          if (b.dataset.act === 'rewind') startRewind(itemBySha(S.sel));
+          e.stopPropagation();
+        });
+        card.addEventListener('change', (e) => {
+          const box = e.target.closest('input[data-path]');
+          if (!box) return;
+          box.closest('.nr').classList.toggle('off', !box.checked);
+          const all = $$('#card input[data-path]'), on = all.filter((b) => b.checked).length;
+          const c = itemBySha(S.sel);
+          const btn = card.querySelector('.rw');
+          btn.disabled = on === 0;
+          card.querySelector('.rwl').textContent = on === all.length ? `Rewind to ${when(c)}` : on === 0 ? 'Choose a file to rewind' : `Rewind ${plural(on, 'file')} to ${when(c)}`;
+        });
+        scroll.addEventListener('click', (e) => {
+          if (S.busy || e.target.closest('.row') || e.target.closest('#card')) return;
+          if (S.sel) select(null);
+          hideToast();
+        });
+        document.addEventListener('keydown', (e) => {
+          if (!S.data || S.busy || e.target.closest('#states')) return;
+          const picks = S.rows.filter((r) => r.item && PICK.has(r.type));
+          const i = picks.findIndex((r) => r.item.sha === S.sel);
+          if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+            e.preventDefault();
+            let j = i < 0 ? picks.length - 1 : i + (e.key === 'ArrowDown' ? 1 : -1);
+            j = Math.max(0, Math.min(picks.length - 1, j));
+            if (picks[j]) select(picks[j].item.sha);
+          } else if (e.key === 'Escape') { select(null); hideToast(); }
+          else if (e.key === 'Enter' && (e.metaKey || e.ctrlKey) && S.sel) { const b = card.querySelector('[data-act="rewind"]'); if (b && !b.disabled) startRewind(itemBySha(S.sel)); }
+          else if (e.key === 'End') { e.preventDefault(); scroll.scrollTop = scroll.scrollHeight; }
+          else if (e.key === 'Home') { e.preventDefault(); scroll.scrollTop = 0; }
+        });
+        $$('#zoom button').forEach((b) => b.addEventListener('click', () => {
+          if (!S.data) return;
+          const anchor = S.sel || null;
+          S.zoom = b.dataset.z;
+          S.dayFold = new Map();
+          S.openClusters = new Set();
+          render();
+          if (anchor && S.rmap.get(anchor) && S.rmap.get(anchor).item) center(anchor);
+          else scroll.scrollTop = scroll.scrollHeight;
+        }));
+        $('#rb-branch').addEventListener('click', () => { if (!S.data || !S.data.branch) return; S.showBranch = !S.showBranch; if (!S.showBranch && S.sel && itemBySha(S.sel) && itemBySha(S.sel).kind === 'user') S.sel = null; render(); });
+        $('#rb-now').addEventListener('click', () => { scroll.scrollTop = scroll.scrollHeight; });
+        $('#rb-start').addEventListener('click', () => { scroll.scrollTop = 0; });
+        let rz;
+        window.addEventListener('resize', () => { clearTimeout(rz); rz = setTimeout(() => { if (S.data) render(); else drawMini(); }, 60); });
+
+        /* ================= no record yet ================= */
+        function emptyHTML(v) {
+          const bed = (main) => `<svg width="70" height="${main ? 210 : 170}" viewBox="0 0 70 ${main ? 210 : 170}">
+              <line class="riv dot" x1="22" y1="12" x2="22" y2="${main ? 192 : 152}"/>
+              <circle cx="22" cy="12" r="4.5" fill="none" stroke="rgba(157,184,214,0.55)" stroke-width="1.5"/>
+              <circle cx="22" cy="${main ? 196 : 156}" r="6.5" fill="#2b2a2d" stroke="rgba(157,184,214,0.8)" stroke-width="1.5" stroke-dasharray="2.6 2.2"/>
+              ${main ? `<line class="trib" x1="50" y1="40" x2="50" y2="150"/>${[40, 95, 150].map((y) => `<rect x="44.5" y="${y - 5.5}" width="11" height="11" rx="3" fill="#2b2a2d" stroke="#d8d6d1" stroke-width="1.6"/>`).join('')}` : ''}
+            </svg>`;
+          const V = {
+            new: { main: false, title: 'No record yet', body: `<p><b>week-3</b> has no history yet. The record begins at your next cell run, or a minute after a file in the folder changes, and keeps every step from then on.</p><p>Each step will be a point on this line, and you can go back to any of them.</p>`, foot: 'on this Mac · branch claerbout-autosave · your branches untouched' },
+            repo: { main: true, title: 'No record yet, beside main', body: `<p><b>Paper_Draft</b> is a repository with three commits on <span class="br">main</span>. The record starts beside them at your next cell run, and joins them where they hold the same files.</p>
+                <ul class="ucs"><li><span class="t">${dayInfo('2026-09-29').short}</span><span class="m">Outline and data sources</span></li><li><span class="t">${dayInfo('2026-09-30').short}</span><span class="m">Clean the survey export</span></li><li><span class="t">${dayInfo('2026-10-01').short}</span><span class="m">First figures</span></li></ul>`, foot: 'main: 3 commits · claerbout-autosave: none yet' },
+            off: { main: false, title: 'The record is off', body: `<p>Autosave is off in this app’s config, so nothing is being recorded for <b>week-3</b>. With it on, the record starts at the next cell run.</p>`, foot: '"autosave": true in the config turns it on' },
+            refused: { main: false, title: 'No record here', body: `<p><b>analysis.py</b> is in ~/Documents itself, where the record does not start a repository. In a folder of its own, like ~/Documents/week-3, the record starts at the next cell run.</p>`, foot: 'never in the home folder, its standard folders, a cloud-synced root or a temporary folder' },
+          }[v];
+          return `<div class="em"><div class="bed">${bed(V.main)}</div><div><h2>${V.title}</h2>${V.body}<div class="foot">${V.foot}</div></div></div>`;
+        }
+        function showEmpty(v) {
+          S.data = null;
+          scroll.hidden = true;
+          mini.hidden = true;
+          card.hidden = true;
+          const e = $('#empty');
+          e.hidden = false;
+          e.innerHTML = emptyHTML(v);
+          $('#t-path').textContent = v === 'repo' ? '~/Projects/Paper_Draft' : v === 'refused' ? '~/Documents' : '~/Projects/ECON_0150/week-3';
+          $('#t-meta').textContent = v === 'off' ? 'record off' : 'no commits yet · claerbout-autosave';
+          $('#here').innerHTML = `<span class="app">K</span><span class="doc">analysis.py</span>`;
+          $$('#zoom button').forEach((b) => { b.disabled = true; b.classList.remove('on'); });
+          const rb = $('#rb-branch');
+          rb.disabled = v !== 'repo';
+          rb.classList.toggle('on', v === 'repo');
+          $$('#grp-empty [data-ev]').forEach((b) => b.classList.toggle('on', b.dataset.ev === v));
+        }
+
+        /* ================= the states (mockup chrome) ================= */
+        const CAP = {
+          rest: 'At rest, at 10:41. <b>week-3</b> is a folder the shell made a repository of, so the record is the only line. Time runs down and the window opens at the mouth, now. Bold dots are cell runs, faint beads timer commits (two timers once Plass opens, since each app’s shell keeps one). Yesterday is folded at the top; the 14-minute pause is a dotted stretch. The dotted end says analysis.py changed since the last commit. Hover a bead for its message; click any node.',
+          selected: 'A node selected: <b>10:14, cell run [8]</b>. Its card sits beside it, tied by a hairline: what the commit changed (cell 8’s diff, the figure it redrew), then what a rewind would change against now, file by file, the paper too, since Plass shares the folder. Untick a file to leave it as it is. ↑ ↓ walk the river; Esc closes.',
+          rewinding: 'Press <b>Rewind to 10:14</b>. The card says each step as the shell takes it: the windows save, now is recorded (<b>rewind from</b>), the 10:14 files are written into the folder, the record commits again (<b>rewind to</b>), the documents reload. Then the river grows at the tip.',
+          after: 'After the rewind. Two new nodes at the tip: the ring keeps the files as they were at the click, and the blue node holds the 10:14 files again, with a dashed arc back up to the moment it reproduces (which now wears a ↺ 10:42 tag). Nothing above moved. <b>Undo</b> is one more rewind, to the ring: try it.',
+          branch: 'The same morning in a repository where you commit too. Your branch <b>main</b> is a tributary: square nodes, your own words in serif. In git the record and main share no commit, so the view ties them where they hold the same files: a curve from the record commit your commit matches, dotted when it nearly does (10:16 left paper.typ out). Rewinding to a commit on main writes its files and leaves main where it is.',
+          long: 'Three weeks of a research project. Each earlier day folds to one reach with its counts (click to open it, click its heading to fold it again). In <b>Runs</b>, three or more timer commits in a row fold to a count between the runs (click to open). <b>Days · Runs · Every commit</b> in the top bar zooms the whole river. The strip at the right edge is the whole record: days, runs, your commits (squares), rewinds (blue); drag it to travel.',
+          empty: 'No record yet. A dry bed: the source, a dotted line, and now. Below, the other reasons the river can be empty, each said in words.',
+        };
+        function go(name, v) {
+          $$('#states [data-st]').forEach((b) => b.classList.toggle('on', b.dataset.st === name));
+          $('#grp-empty').hidden = name !== 'empty';
+          $('#cap').innerHTML = CAP[name];
+          hideToast();
+          S.state = name; S.sel = null; S.busy = false; S.landed = null;
+          S.dayFold = new Map(); S.openClusters = new Set();
+          if (name === 'empty') { showEmpty(v || 'new'); return; }
+          $('#empty').hidden = true;
+          scroll.hidden = false;
+          S.data = name === 'long' ? makeLong() : makeMorning(name === 'branch');
+          S.zoom = name === 'long' ? 'runs' : 'all';
+          S.showBranch = !!S.data.branch;
+          const t1014 = byTime(S.data, '10:14:07', TODAY);
+          if (name === 'after') { const res = applyRewind(t1014, null); render(); scroll.scrollTop = scroll.scrollHeight; toastRewound(t1014, res); return; }
+          if (name === 'selected' || name === 'rewinding') { S.sel = t1014.sha; render(); center(S.sel); if (name === 'rewinding') setTimeout(() => startRewind(t1014), 700); return; }
+          if (name === 'branch') { S.sel = S.data.branch.commits[2].sha; render(); center(S.sel); return; }
+          render();
+          if (name === 'long') { const h = S.rows.find((r) => r.type === 'dayhead'); scroll.scrollTop = h ? h.y - scroll.clientHeight * 0.55 : scroll.scrollHeight; }
+          else scroll.scrollTop = scroll.scrollHeight;
+        }
+        $$('#states [data-st]').forEach((b) => b.addEventListener('click', () => go(b.dataset.st)));
+        $$('#states [data-ev]').forEach((b) => b.addEventListener('click', () => go('empty', b.dataset.ev)));
+        $('#states header').addEventListener('click', () => $('#states').classList.toggle('min'));
+        go('rest');
+      })();
+    </script>
+  </body>
+</html>

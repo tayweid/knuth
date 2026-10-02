@@ -28,7 +28,7 @@ import { SessionPanel } from './panel.ts';
 import { menus } from './menu.ts';
 import { icon } from './icons.ts';
 import { Onboarding } from './onboarding.ts';
-import { shell, type ShellMessage } from './shell.ts';
+import { reportCellRun, shell, type ShellMessage } from './shell.ts';
 
 function labeled(id: string, glyph: string, label: string, title: string, className = 'tb-btn'): string {
   return `<button type="button" class="${className}" id="${id}" title="${title}">${glyph}<span class="lbl">${label}</span></button>`;
@@ -708,12 +708,29 @@ async function persistContract(): Promise<PersistedResult | null> {
 // is the moment the folder actually matters.
 let artifactsTimer = 0;
 let folderOfferAt = 0;
+/** Resolves once the write the debounce is holding has landed; a write
+ *  scheduled again before then is the same promise. What the autosave
+ *  report of a run waits for (below). */
+let artifactsSettled: Promise<void> = Promise.resolve();
+let artifactsLanded: (() => void) | null = null;
+function scheduleArtifacts(write: () => Promise<unknown>) {
+  clearTimeout(artifactsTimer);
+  if (!artifactsLanded) {
+    artifactsSettled = new Promise((resolve) => {
+      artifactsLanded = resolve;
+    });
+  }
+  artifactsTimer = window.setTimeout(() => {
+    const landed = artifactsLanded;
+    artifactsLanded = null;
+    void write().finally(() => landed?.());
+  }, 300);
+}
 function syncArtifacts() {
   if (fileManager?.path || (fileManager?.root && fileManager.inShell)) {
     // By path, the contract goes into the document's folder: written by
     // the kernel, or by the page through the shell.
-    clearTimeout(artifactsTimer);
-    artifactsTimer = window.setTimeout(() => void fileManager.persist(), 300);
+    scheduleArtifacts(() => fileManager.persist());
     return;
   }
   if (fileManager?.inShell) {
@@ -738,11 +755,10 @@ function syncArtifacts() {
     }
     return;
   }
-  clearTimeout(artifactsTimer);
-  artifactsTimer = window.setTimeout(async () => {
+  scheduleArtifacts(async () => {
     const artifacts = await kernel.artifacts();
     if (artifacts) await fileManager.writeArtifacts(artifacts.values, artifacts.figures);
-  }, 300);
+  });
 }
 
 function attachProjectFolder() {
@@ -812,6 +828,28 @@ const MISSING = /ModuleNotFoundError: No module named '([A-Za-z_][A-Za-z0-9_]*)/
 // Modules already added without asking: if one still will not import
 // (its package is named differently), ask rather than loop.
 const addedQuietly = new Set<string>();
+// Every completed run is a point on the project's autosave record
+// (docs/AUTOSAVE.md): the shell commits `knuth: cell run [n]` if anything
+// in the project changed. Told once the run's writes have landed — the
+// document (noteChange's autosave, 1.2 s) and the project contract
+// (syncArtifacts' persist, 300 ms) — so the commit holds what the run
+// produced; runs completing while those settle (a run-all) are reported
+// together, `cell run [1, 2, 3]`. Nothing in a browser tab.
+const ranCells: number[] = [];
+let runReport: Promise<void> | null = null;
+docView.onRunDone = (cell) => {
+  if (!shell) return;
+  ranCells.push(cell);
+  if (runReport) return;
+  runReport = (async () => {
+    try {
+      await Promise.all([fileManager.settled(), artifactsSettled]);
+    } finally {
+      runReport = null;
+      reportCellRun(shell, ranCells.splice(0));
+    }
+  })();
+};
 docView.onRunFailed = (traceback, rerun, working) => {
   const install = kernel.install?.bind(kernel);
   const module = MISSING.exec(traceback)?.[1];

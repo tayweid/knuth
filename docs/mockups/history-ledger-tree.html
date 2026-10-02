@@ -1,0 +1,1724 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>History — the ledger tree</title>
+    <style>
+      /* THE HISTORY WINDOW: THE LEDGER TREE. (Design session of 2026-10-02;
+         one of three directions for the autosave record's history view.)
+
+         Taylor: "a git history rewind visualizer, with the commits in a
+         path, with branches visualized, and the ability to rewind by
+         clicking on a node in the window."
+
+         The direction: the record as git log --graph, typeset. A compact
+         column of rows, one per commit, sits on the frame where Zen keeps
+         its vertical tabs; the lanes are thin rails with rounded elbows, not
+         slashes; each row holds the node, the message (a run names its cell
+         as a chip), the app in small caps and the time in tabular figures.
+         The column works like Zen's tabs: the selected row is the page shown
+         in the room, and the room shows the document at that moment, as a
+         diff (the step, or against now). The rewind is in the row's menu.
+
+         What the drawing means:
+         - The left rail is the path: the record (claerbout-autosave), drawn
+           by content, the way an undo tree is. A rewind is a step forward
+           that reproduces an older state, so after one the stretch that was
+           rewound away slides off the path into a lane of its own (git's
+           real chain still joins it at the new tip), and a dashed rail runs
+           from the new tip back to the moment it reproduces.
+         - The user's branches (main) are blue lanes to the right. git never
+           joins them to the record (the record's first commit is a root),
+           so where they touch is drawn as a dotted tie: at this moment the
+           record held the same files as the user's commit.
+         - Timer commits between runs fold into one row ("4 timer saves");
+           the zoom goes Sittings / Runs / Every commit; a gap of more than
+           half an hour breaks the rails and says how long nothing happened.
+
+         The frame is the suite's (Plass notes, session panes round two):
+         a dark grey surround, a 44px rail of 32px tiles, the room rounded at
+         all four corners on one 8px edge. Open by double-click; the card at
+         the bottom right switches the states (it is mockup chrome). */
+      :root {
+        --frame: #18181a;
+        --frame-ink: #d5d3cf;
+        --frame-ink-soft: #85837f;
+        --frame-ink-faint: #5f5d5a;
+        --tile: #2c2c31;
+        --tile-hover: #212124;
+        --pill: #232326;
+        --tip: #0e0e10;
+        --bg: #2b2a2d;
+        --room-pane: #232226;
+        --room-line: rgba(255, 255, 255, 0.07);
+        --room-ink: #d8d6d1;
+        --room-ink-soft: #8f8d88;
+        --blue: #9db8d6;
+        --green: #6ea576;
+        --amber: #c98a1d;
+        --red: #cd6452;
+        --serif: 'STIX Two Text', 'Charter', 'Georgia', serif;
+        --prose: 'CMU Serif', 'Computer Modern Serif', 'Georgia', serif;
+        --mono: ui-monospace, 'SF Mono', 'Menlo', 'Consolas', monospace;
+        --sans: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Helvetica Neue', sans-serif;
+        --topbar: 44px;
+        --rail: 44px;
+        --edge: 8px;
+        --col: 322px;
+      }
+      * { box-sizing: border-box; }
+      html, body { margin: 0; height: 100%; overflow: hidden; }
+      body { background: var(--frame); font: 15px/1.55 var(--sans); }
+      button { font: inherit; }
+
+      /* ---------- the window ---------- */
+      #app { position: fixed; inset: 0; background: var(--frame); overflow: hidden; color: var(--frame-ink); }
+      body.sized { background: radial-gradient(ellipse at 50% 28%, #5a5960, #34333a 62%, #29282d); }
+      body.sized #app {
+        inset: auto; left: var(--cx, 50%); top: calc(50% - 14px); width: var(--w); height: var(--h);
+        transform: translate(-50%, -50%) scale(var(--s, 1)); border-radius: 12px;
+        box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.55), inset 0 0 0 1px rgba(255, 255, 255, 0.07), 0 30px 90px rgba(0, 0, 0, 0.5);
+      }
+      #sizelabel { position: fixed; left: var(--cx, 50%); bottom: 10px; transform: translateX(-50%); font: 12px var(--sans); color: rgba(255, 255, 255, 0.7); display: none; white-space: nowrap; }
+      body.sized #sizelabel { display: block; }
+
+      /* ---------- the top bar: part of the frame ---------- */
+      #topbar { position: absolute; top: 0; left: 0; right: 0; height: var(--topbar); display: flex; align-items: center; gap: 2px; padding: 0 var(--edge) 0 14px; }
+      #topbar svg, #rail svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; }
+      .lights { display: flex; gap: 8px; margin-right: 14px; }
+      .lights i { width: 12px; height: 12px; border-radius: 50%; display: block; background: #46464a; }
+      /* the bar's left zone sits over the rail and the column; the project pill starts where the room does */
+      .tl { flex: 0 0 auto; width: calc(var(--rail) + var(--col) - 14px); display: flex; align-items: center; padding-right: 10px; }
+      .tl #recpill { margin-left: auto; }
+      #projpill { flex: 1; min-width: 0; height: 30px; margin: 0; border-radius: 8px; background: var(--pill); display: flex; align-items: center; gap: 10px; padding: 0 12px; }
+      #projpill .ico { color: var(--frame-ink-soft); display: inline-flex; }
+      #projpill .name { font: 15px/1 var(--serif); letter-spacing: 0.06em; color: var(--frame-ink); white-space: nowrap; }
+      #projpill .path { color: var(--frame-ink-soft); font: 12px var(--sans); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+      #projpill .head { margin-left: auto; flex: 0 0 auto; display: inline-flex; align-items: center; gap: 6px; font: 11.5px var(--sans); color: var(--frame-ink-soft); white-space: nowrap; }
+      #projpill .head b { font: 500 11.5px var(--mono); color: var(--blue); }
+      #projpill .head svg { width: 13px; height: 13px; color: var(--blue); }
+      #recpill { position: relative; flex: 0 0 auto; height: 30px; display: flex; align-items: center; gap: 8px; padding: 0 11px; border: 0; border-radius: 8px; background: var(--pill); color: var(--frame-ink-soft); font: 11.5px var(--sans); white-space: nowrap; cursor: default; }
+      #recpill i { width: 7px; height: 7px; border-radius: 50%; background: #4caf7d; display: block; flex: 0 0 auto; }
+      #recpill.paused i { background: var(--amber); }
+      #recpill.none i { background: transparent; box-shadow: inset 0 0 0 1.3px var(--frame-ink-soft); }
+      #recpill .sep { width: 1px; height: 14px; background: rgba(255, 255, 255, 0.11); }
+      #recpill .st { color: var(--frame-ink); }
+      #recpill.paused .st { color: #e2b765; }
+      #recpill.got { animation: got 1.1s ease-out; }
+      @keyframes got { 0% { box-shadow: 0 0 0 2px rgba(157, 184, 214, 0.6); } 100% { box-shadow: 0 0 0 2px rgba(157, 184, 214, 0); } }
+
+      /* ---------- the rail: projects the shell has windows on ---------- */
+      #rail { position: absolute; top: var(--topbar); left: 0; bottom: var(--edge); width: var(--rail); display: flex; flex-direction: column; align-items: center; gap: 2px; padding: 0 0 2px; }
+      .rb { position: relative; display: inline-flex; align-items: center; justify-content: center; width: 32px; height: 32px; padding: 0; border: 0; border-radius: 8px; background: transparent; color: var(--frame-ink); cursor: pointer; flex: 0 0 auto; }
+      .rb:hover { background: var(--tile-hover); }
+      .rb.on { background: var(--tile); }
+      .rb.dim { color: var(--frame-ink-soft); }
+      .rb .badge { position: absolute; right: 3px; bottom: 3px; font: 600 8.5px/1 var(--sans); color: var(--frame-ink-soft); }
+      .rb[data-label]::after {
+        content: attr(data-label); position: absolute; left: calc(100% + 10px); top: 50%; transform: translateY(-50%); background: var(--tip); color: var(--frame-ink); font: 12px/1.3 var(--sans); white-space: nowrap;
+        padding: 5px 9px; border-radius: 7px; border: 1px solid rgba(255, 255, 255, 0.08); opacity: 0; pointer-events: none; transition: opacity 0.12s; z-index: 60;
+      }
+      .rb:hover::after { opacity: 1; }
+      .rule { width: 18px; height: 1px; background: rgba(255, 255, 255, 0.09); margin: 5px 0; flex: 0 0 auto; }
+      .grow { flex: 1; }
+
+      /* ---------- the column: the tree, on the frame like Zen's tabs ---------- */
+      #col { position: absolute; top: var(--topbar); left: var(--rail); width: var(--col); bottom: var(--edge); display: flex; flex-direction: column; }
+      #colhead { flex: 0 0 auto; padding: 0 10px 6px 2px; }
+      .zoom { display: flex; background: var(--pill); border-radius: 8px; padding: 2px; }
+      .zoom button { flex: 1; border: 0; background: transparent; color: var(--frame-ink-soft); font: 12px var(--sans); padding: 4px 0; border-radius: 6px; cursor: pointer; white-space: nowrap; }
+      .zoom button:hover { color: var(--frame-ink); }
+      .zoom button.on { background: var(--tile); color: var(--frame-ink); box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.05); }
+      .legend { display: flex; gap: 12px; align-items: center; margin: 9px 2px 0 8px; font: 11.5px var(--sans); color: var(--frame-ink-soft); white-space: nowrap; }
+      .legend span.lg { display: inline-flex; align-items: center; gap: 6px; cursor: default; }
+      .legend span.lg:hover { color: var(--frame-ink); }
+      .legend i { width: 14px; height: 0; border-top: 1.5px solid #77756f; display: block; }
+      .legend .lm i { border-color: rgba(157, 184, 214, 0.75); }
+      .legend .ls i { border-color: #4f4e4b; }
+      .legend .lt i { border-top: 1.5px dotted rgba(157, 184, 214, 0.7); }
+      .legend .cnt { margin-left: auto; font-variant-numeric: tabular-nums; }
+      #rows { position: relative; flex: 1 1 auto; overflow-y: auto; overflow-x: hidden; padding: 0 8px 36px 2px; outline: none; scrollbar-width: thin; scrollbar-color: rgba(255, 255, 255, 0.12) transparent; }
+      #colfoot { flex: 0 0 auto; padding: 7px 10px 6px 10px; font: 11px/1.4 var(--sans); color: var(--frame-ink-faint); border-top: 1px solid rgba(255, 255, 255, 0.05); }
+      #colfoot b { font-weight: 400; color: var(--frame-ink-soft); }
+      #colfoot .mono { font-family: var(--mono); font-size: 10.5px; }
+
+      /* rows: one per commit, the graph drawn per row (git log --graph, typeset) */
+      .row { --rowbg: var(--frame); position: relative; display: flex; align-items: center; height: 26px; border-radius: 7px; cursor: pointer; padding-right: 8px; font: 12.5px/1 var(--sans); color: var(--frame-ink); user-select: none; }
+      .row:hover { --rowbg: var(--tile-hover); background: var(--rowbg); }
+      .row.sel { --rowbg: var(--tile); background: var(--rowbg); box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.045); }
+      .row svg.g { flex: 0 0 auto; display: block; overflow: visible; align-self: flex-start; }
+      .row .msg { flex: 1 1 auto; min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; padding-left: 3px; }
+      .row .sub { color: var(--frame-ink-soft); margin-left: 6px; font-size: 11.5px; }
+      .row .chip { display: inline-block; font: 11px/1 var(--mono); color: #a6d0ad; background: rgba(110, 165, 118, 0.14); border-radius: 4px; padding: 2px 4px; margin-left: 5px; vertical-align: 0.5px; }
+      .row .app { flex: 0 0 auto; width: 42px; text-align: right; font: italic 12px var(--serif); color: var(--frame-ink-faint); }
+      .row .app.mb { color: rgba(157, 184, 214, 0.8); font-style: normal; font: 11px var(--mono); }
+      .row .t { flex: 0 0 auto; width: 46px; text-align: right; font: 11.5px var(--sans); font-variant-numeric: tabular-nums; color: var(--frame-ink-soft); white-space: nowrap; }
+      .row .t.rng { font-size: 10.5px; letter-spacing: -0.01em; }
+      .row .more { position: absolute; right: 54px; top: 3px; width: 42px; height: 20px; display: none; align-items: center; justify-content: center; padding: 0; border: 0; border-radius: 5px; background: var(--rowbg); color: var(--frame-ink-soft); cursor: pointer; font: 600 13px/1 var(--sans); letter-spacing: 1px; }
+      .row .more:hover, .row.menu .more { color: var(--frame-ink); background: #38383d; }
+      .row:hover .more, .row.sel .more, .row.menu .more { display: inline-flex; }
+      .row.r-commit.timer .msg, .row.r-fold .msg { color: #a3a19c; }
+      .row.off .msg, .row.off.timer .msg { color: #7a7874; }
+      .row.off .sub { color: #66645f; }
+      .row.off .chip { color: #7f9b84; background: rgba(110, 165, 118, 0.07); }
+      .row.off.sel .msg { color: #b9b7b2; }
+      .row .tag { display: inline-block; font: 10px/1 var(--sans); border: 1px solid rgba(157, 184, 214, 0.45); color: var(--blue); border-radius: 999px; padding: 2px 6px 2px; margin-left: 6px; vertical-align: 1px; }
+      .row .tag.now { border-color: rgba(255, 255, 255, 0.16); color: var(--frame-ink-soft); }
+      .row .tag.first { border-color: rgba(255, 255, 255, 0.12); color: var(--frame-ink-soft); }
+      .row .jump { color: var(--blue); margin-left: 6px; font-size: 11.5px; }
+      .row .jump:hover { text-decoration: underline; text-underline-offset: 2px; }
+      .row.ext .sub { color: #c9a35e; }
+      .row .caret { display: inline-block; width: 13px; margin-left: -2px; color: var(--frame-ink-faint); font-size: 10px; }
+      .row.r-fold:hover .caret, .row.r-sit:hover .caret, .row .caret:hover { color: var(--frame-ink); }
+      .row.r-sit .msg { color: var(--frame-ink); }
+      .row.r-sit .rug { flex: 0 0 auto; width: 50px; height: 12px; margin: 0 4px 0 6px; display: block; }
+      .row.r-sit .more { right: 54px; width: 30px; }
+      .row.r-day, .row.r-gap { cursor: default; }
+      .row.r-day:hover, .row.r-gap:hover { background: transparent; --rowbg: var(--frame); }
+      .row.r-day { height: 34px; align-items: flex-end; }
+      .row.r-day .dl { padding: 0 0 7px 3px; font: 10px var(--sans); letter-spacing: 0.12em; text-transform: uppercase; color: var(--frame-ink-soft); white-space: nowrap; }
+      .row.r-day .dl b { font-weight: 500; color: var(--frame-ink); letter-spacing: 0.12em; }
+      .row.r-day .gl, .row.r-gap .gl { margin-left: auto; padding-bottom: 7px; font: italic 11.5px var(--serif); color: var(--frame-ink-faint); white-space: nowrap; }
+      .row.r-gap { height: 22px; }
+      .row.r-gap .gl { padding: 0 0 0 4px; margin-left: 0; }
+      .row.r-empty { height: 30px; cursor: default; }
+      .row.r-empty:hover { background: transparent; }
+      .row.enter { animation: row-in 0.34s ease-out both; }
+      @keyframes row-in { from { height: 0; opacity: 0; } to { height: 26px; opacity: 1; } }
+      .row.flash { animation: flash 1.4s ease-out; }
+      @keyframes flash { 0%, 30% { background: rgba(157, 184, 214, 0.22); } 100% { background: var(--rowbg); } }
+
+      /* the graph's marks */
+      .g path { fill: none; stroke-width: 1.3; }
+      .g .e-rec { stroke: #6f6d69; }
+      .g .e-side { stroke: #4b4a48; }
+      .g .e-main { stroke: rgba(157, 184, 214, 0.62); }
+      .g .e-dash { stroke-dasharray: 2.6 2.6; }
+      .g .e-gap { stroke-dasharray: 1 3.2; }
+      .g .e-fade { stroke-dasharray: 1 3.2; opacity: 0.6; }
+      .g .tie { stroke: rgba(157, 184, 214, 0.6); stroke-dasharray: 1 2.4; stroke-width: 1.2; }
+      .g .halo { fill: none; stroke: rgba(255, 255, 255, 0.32); stroke-width: 1; }
+      #rows.hl-main .g :is(.e-rec, .e-side, .n-rec, .n-side) { opacity: 0.25; }
+      #rows.hl-rec .g :is(.e-main, .n-main, .tie) { opacity: 0.25; }
+      #rows.hl-side .g :is(.e-rec, .e-main, .n-rec, .n-main, .tie) { opacity: 0.25; }
+      #rows.hl-tie .g :is(.e-rec, .e-side, .e-main, .n-rec, .n-side, .n-main) { opacity: 0.35; }
+
+      /* ---------- the room: the document at the selected moment ---------- */
+      #room {
+        position: absolute; top: var(--topbar); left: calc(var(--rail) + var(--col)); right: var(--edge); bottom: var(--edge);
+        border-radius: 10px; background: var(--bg); overflow: hidden; color: var(--room-ink);
+        box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.045), 0 1px 2px rgba(0, 0, 0, 0.35), 0 8px 26px rgba(0, 0, 0, 0.42);
+      }
+      #pv { position: absolute; inset: 0; overflow-y: auto; overflow-x: hidden; scrollbar-width: thin; scrollbar-color: rgba(255, 255, 255, 0.14) transparent; }
+      #pv.swap { animation: swap 0.16s ease-out; }
+      @keyframes swap { from { opacity: 0.35; } to { opacity: 1; } }
+      .wrap { max-width: 54rem; margin: 0 auto; padding: 0 30px 0 64px; }
+      .ph { position: sticky; top: 0; z-index: 5; background: color-mix(in srgb, var(--bg) 93%, transparent); backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px); border-bottom: 1px solid var(--room-line); padding: 18px 0 11px; }
+      .ph1 { display: flex; align-items: flex-end; gap: 18px; }
+      .eyebrow { display: block; font: 12px var(--sans); font-variant-caps: all-small-caps; letter-spacing: 0.08em; color: var(--room-ink-soft); }
+      .eyebrow .mainb { color: var(--blue); }
+      .ph h1 { margin: 1px 0 0; font: 400 24px/1.2 var(--serif); color: #f0eee9; }
+      .ph h1 .chip { font: 15px/1 var(--mono); color: #a6d0ad; background: rgba(110, 165, 118, 0.14); border-radius: 5px; padding: 3px 6px; margin-left: 8px; vertical-align: 3px; }
+      .ph h1 .ttag { font: 11px/1 var(--sans); border: 1px solid rgba(255, 255, 255, 0.16); color: var(--room-ink-soft); border-radius: 999px; padding: 3px 7px; margin-left: 10px; vertical-align: 4px; }
+      .when { margin-left: auto; text-align: right; flex: 0 0 auto; }
+      .when b { display: block; font: 400 20px/1.15 var(--serif); font-variant-numeric: tabular-nums lining-nums; color: var(--room-ink); }
+      .when span { font: 11.5px var(--sans); color: var(--room-ink-soft); }
+      .ph2 { display: flex; align-items: center; gap: 10px; margin-top: 9px; font: 12px var(--sans); color: var(--room-ink-soft); min-height: 26px; }
+      .ph2 .sha { font: 11.5px var(--mono); color: var(--room-ink-soft); }
+      .ph2 .dotsep { opacity: 0.6; }
+      .ph2 a, .alist a, .tie a, .banner a { color: var(--blue); text-decoration: none; cursor: pointer; }
+      .ph2 a:hover, .alist a:hover, .tie a:hover, .banner a:hover { text-decoration: underline; text-underline-offset: 2px; }
+      .seg { margin-left: auto; display: inline-flex; background: rgba(255, 255, 255, 0.05); border-radius: 8px; padding: 2px; flex: 0 0 auto; }
+      .seg button { border: 0; background: transparent; color: var(--room-ink-soft); font: 12px var(--sans); padding: 3px 11px; border-radius: 6px; cursor: pointer; }
+      .seg button:hover { color: var(--room-ink); }
+      .seg button.on { background: rgba(255, 255, 255, 0.1); color: var(--room-ink); }
+      .files { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
+      .fchip { font: 11.5px/1 var(--mono); border: 1px solid var(--room-line); border-radius: 999px; padding: 4px 9px; color: var(--room-ink); background: transparent; cursor: pointer; white-space: nowrap; }
+      .fchip:hover { border-color: rgba(255, 255, 255, 0.16); background: rgba(255, 255, 255, 0.03); }
+      .fchip .st { color: var(--room-ink-soft); margin-left: 6px; font-family: var(--sans); font-size: 11px; }
+      .fchip .a { color: var(--green); margin-left: 6px; }
+      .fchip .d { color: var(--red); margin-left: 4px; }
+      .fchip.plumb { color: var(--room-ink-soft); border-style: dashed; }
+      .pb { padding-top: 18px; padding-bottom: 30vh; }
+      .fsec { margin: 0 0 30px; scroll-margin-top: 150px; }
+      .fsec > h3 { display: flex; align-items: baseline; gap: 10px; margin: 0 0 10px; font: 400 15px/1.3 var(--serif); letter-spacing: 0.05em; color: var(--room-ink); }
+      .fsec > h3 .fs { font: 11.5px var(--mono); letter-spacing: 0; color: var(--room-ink-soft); }
+      .fsec > h3 .note { font: 12px var(--sans); letter-spacing: 0; color: var(--room-ink-soft); margin-left: auto; }
+
+      /* the document map: every cell as a box, the changed ones lit */
+      .dmap { display: flex; flex-wrap: wrap; gap: 3px; margin: 0 0 16px; }
+      .dmap i { width: 21px; height: 16px; border-radius: 3px; font: 9.5px/16px var(--mono); text-align: center; font-style: normal; color: var(--room-ink-soft); background: rgba(255, 255, 255, 0.035); box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.06); cursor: pointer; }
+      .dmap i.tx { border-radius: 8px; }
+      .dmap i.chg { background: rgba(110, 165, 118, 0.2); color: #cfe6d3; box-shadow: inset 0 0 0 1px rgba(110, 165, 118, 0.55); }
+      .dmap i.new { background: rgba(110, 165, 118, 0.34); color: #e6f3e8; box-shadow: inset 0 0 0 1px rgba(110, 165, 118, 0.7); }
+      .dmap i.back { background: rgba(201, 138, 29, 0.17); color: #efd5a4; box-shadow: inset 0 0 0 1px rgba(201, 138, 29, 0.5); }
+      .dmap i.out { background: transparent; color: rgba(222, 130, 112, 0.95); box-shadow: inset 0 0 0 1px rgba(205, 100, 82, 0.5); text-decoration: line-through; }
+      .dmap i.come, .dmap i.rest { background: rgba(157, 184, 214, 0.16); color: #dbe6f2; box-shadow: inset 0 0 0 1px rgba(157, 184, 214, 0.55); }
+      .dkey { display: flex; gap: 14px; margin: -8px 0 16px; font: 11px var(--sans); color: var(--room-ink-soft); }
+      .dkey span { display: inline-flex; align-items: center; gap: 5px; }
+      .dkey i { width: 10px; height: 8px; border-radius: 2px; display: block; }
+
+      /* cells, as Knuth draws them, with the diff's marks */
+      .dcell { position: relative; margin: 0 0 14px; scroll-margin-top: 160px; }
+      .dcell .cn { position: absolute; right: calc(100% + 12px); top: 21px; font: 11.5px var(--mono); color: var(--room-ink-soft); white-space: nowrap; }
+      .dcell .what { font: 12px var(--sans); font-variant-caps: all-small-caps; letter-spacing: 0.08em; color: var(--room-ink-soft); margin: 0 0 3px 2px; height: 16px; }
+      .dcell.same .what { visibility: hidden; }
+      .dcell.same { display: none; }
+      .pb.all .dcell.same { display: block; opacity: 0.6; }
+      .pb.all .dfold { display: none; }
+      .dcell.gone .cm { opacity: 0.5; border-style: dashed; }
+      .dcell.rest .cm { box-shadow: inset 3px 0 0 rgba(157, 184, 214, 0.7); }
+      .dfold { display: block; width: 100%; margin: 0 0 14px; padding: 5px 12px; border: 1px dashed rgba(255, 255, 255, 0.1); border-radius: 8px; background: transparent; color: var(--room-ink-soft); font: 12px var(--sans); text-align: left; cursor: pointer; }
+      .dfold:hover { color: var(--room-ink); border-color: rgba(255, 255, 255, 0.2); }
+      .cm { display: flex; background: #282c34; color: #abb2bf; border: 1px solid rgba(255, 255, 255, 0.07); border-radius: 8px; overflow: hidden; font: 13px/18.5px var(--mono); }
+      .cm.scratch { border-style: dashed; background: transparent; }
+      .cm .gut { flex: 0 0 auto; padding: 6px 0; background: rgba(255, 255, 255, 0.022); border-right: 1px solid rgba(255, 255, 255, 0.06); color: rgba(240, 238, 233, 0.28); text-align: right; }
+      .cm.scratch .gut { background: transparent; }
+      .cm .gut span { display: block; height: 18.5px; padding: 0 8px 0 10px; min-width: 2.3rem; }
+      .cm .code { flex: 1; min-width: 0; padding: 6px 0; }
+      .cm .line { position: relative; padding: 0 12px 0 16px; white-space: pre-wrap; min-height: 18.5px; }
+      .cm .line.add, .cm .gut .add { background: rgba(110, 165, 118, 0.14); }
+      .cm .line.add::before { content: '+'; position: absolute; left: 4px; color: var(--green); }
+      .cm .line.del, .cm .gut .del { background: rgba(205, 100, 82, 0.11); }
+      .cm .line.del { color: rgba(171, 178, 191, 0.55); text-decoration: line-through; text-decoration-color: rgba(205, 100, 82, 0.55); }
+      .cm .line.del::before { content: '−'; position: absolute; left: 4px; color: var(--red); text-decoration: none; }
+      .k { color: #c678dd; } .p { color: #e06c75; } .s { color: #98c379; } .n { color: #d19a66; } .c { color: #5c6370; } .o { color: #56b6c2; }
+      .dout { margin: 5px 0 0; border-left: 3px solid rgba(255, 255, 255, 0.14); font: 12.5px/1.5 var(--mono); color: #b5b3ae; }
+      .dout div { position: relative; padding: 0 10px 0 16px; white-space: pre; overflow: hidden; text-overflow: ellipsis; }
+      .dout .add { background: rgba(110, 165, 118, 0.11); }
+      .dout .add::before { content: '+'; position: absolute; left: 4px; color: var(--green); }
+      .dout .del { color: rgba(181, 179, 174, 0.5); text-decoration: line-through; text-decoration-color: rgba(205, 100, 82, 0.5); background: rgba(205, 100, 82, 0.07); }
+      .dout .del::before { content: '−'; position: absolute; left: 4px; color: var(--red); }
+      .dout .err { color: #e7a39a; }
+      .figpair { display: flex; align-items: center; gap: 14px; margin-top: 8px; flex-wrap: wrap; }
+      .figpair figure { margin: 0; }
+      .figpair .print { background: #fff; border-radius: 5px; padding: 4px; box-shadow: 0 1px 3px rgba(0, 0, 0, 0.4); width: 232px; }
+      .figpair .print.wide { width: 330px; }
+      .figpair .print svg { display: block; width: 100%; height: auto; }
+      .figpair figure.before .print { opacity: 0.78; }
+      .figpair figcaption { font: 11px var(--sans); color: var(--room-ink-soft); margin-top: 5px; }
+      .figpair figcaption b { font-weight: 500; color: var(--room-ink); }
+      .figpair .arr { color: var(--room-ink-soft); font-size: 15px; }
+      .dprose { font: 17px/1.55 var(--prose); color: var(--room-ink); padding: 2px 14px; border-left: 2px solid transparent; border-radius: 2px; }
+      .dprose h2 { font-size: 1.3em; font-weight: 400; color: #f0eee9; margin: 0.35em 0 0.3em; }
+      .dprose p { margin: 0.4em 0; }
+      .dprose.add { border-left-color: rgba(110, 165, 118, 0.6); background: rgba(110, 165, 118, 0.05); }
+      .dprose ins, .typ ins { text-decoration: none; background: rgba(110, 165, 118, 0.2); border-radius: 2px; box-shadow: 0 1px 0 rgba(110, 165, 118, 0.6); }
+      .dprose del, .typ del { color: var(--room-ink-soft); text-decoration-color: rgba(205, 100, 82, 0.75); }
+
+      /* the other files */
+      .typ { font: 16.5px/1.6 var(--prose); color: var(--room-ink); padding: 4px 0 4px 14px; border-left: 2px solid rgba(255, 255, 255, 0.06); }
+      .typ .th { font-size: 1.35em; color: #f0eee9; margin: 0.1em 0 0.35em; }
+      .typ .th::before { content: '= '; color: var(--room-ink-soft); font-family: var(--mono); font-size: 0.6em; vertical-align: 0.25em; }
+      .typ p { margin: 0.45em 0; }
+      .typ .tf { font: 12.5px/1.5 var(--mono); color: #b5b3ae; margin: 0.5em 0; }
+      .typ .pa { border-left: 2px solid rgba(110, 165, 118, 0.6); margin-left: -16px; padding-left: 14px; }
+      .csv { border-collapse: collapse; font: 12px/1.55 var(--mono); color: var(--room-ink); }
+      .csv td { padding: 1px 12px 1px 10px; text-align: right; }
+      .csv td.ln { color: var(--room-ink-soft); text-align: right; padding-left: 4px; }
+      .csv thead td { color: var(--room-ink-soft); }
+      .csv tr.add td { background: rgba(110, 165, 118, 0.11); }
+      .csv tr.del td { color: rgba(216, 214, 209, 0.5); text-decoration: line-through; text-decoration-color: rgba(205, 100, 82, 0.6); background: rgba(205, 100, 82, 0.07); }
+      .csv tr.more td { color: var(--room-ink-soft); font: 11.5px var(--sans); text-align: left; padding-top: 3px; }
+      .csv td.hi { color: #f0eee9; }
+      .man { font: 12px/1.7 var(--mono); color: var(--room-ink); }
+      .man div { display: flex; gap: 16px; padding: 0 8px; }
+      .man div.add { background: rgba(110, 165, 118, 0.1); }
+      .man .nm { flex: 1 1 auto; min-width: 0; }
+      .man .sz, .man .h { color: var(--room-ink-soft); white-space: nowrap; }
+      .fnote { margin: 8px 0 0; font: 12px/1.5 var(--sans); color: var(--room-ink-soft); max-width: 58ch; }
+      .plain { font: 12.5px/1.6 var(--mono); color: var(--room-ink); }
+      .plain div { padding: 0 8px; }
+      .plain .add { background: rgba(110, 165, 118, 0.11); }
+      .plain .del { background: rgba(205, 100, 82, 0.08); color: rgba(216, 214, 209, 0.5); text-decoration: line-through; }
+
+      /* against now: what a rewind would change */
+      .lede { font: 19px/1.45 var(--serif); color: #e9e7e2; margin: 0 0 14px; }
+      .alist { display: grid; grid-template-columns: max-content 1fr; gap: 8px 22px; margin: 4px 0 20px; font: 13.5px/1.5 var(--sans); }
+      .alist dt { font: 12.5px/1.6 var(--mono); color: var(--room-ink); }
+      .alist dd { margin: 0; color: #c3c1bc; }
+      .alist dd .soft { color: var(--room-ink-soft); }
+      .assure { font: 12.5px/1.6 var(--sans); color: var(--room-ink-soft); border-top: 1px solid var(--room-line); padding-top: 12px; margin: 0; max-width: 64ch; }
+      .assure + .assure { border-top: 0; padding-top: 4px; }
+      .tie { font: 13px/1.5 var(--sans); color: #c3c1bc; margin: 0 0 18px; display: flex; align-items: center; gap: 9px; }
+      .tie svg { flex: 0 0 auto; }
+      .banner { display: flex; align-items: center; gap: 12px; padding: 9px 10px 9px 12px; margin: 0 0 14px; border-radius: 9px; background: rgba(157, 184, 214, 0.08); box-shadow: inset 0 0 0 1px rgba(157, 184, 214, 0.26); font: 12.5px/1.45 var(--sans); color: var(--room-ink); }
+      .banner svg { flex: 0 0 auto; width: 16px; height: 16px; fill: none; stroke: var(--blue); stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; }
+      .banner .bt { flex: 1 1 auto; min-width: 0; }
+      .banner .soft { color: var(--room-ink-soft); }
+      .pillbtn { flex: 0 0 auto; font: 12px/1 var(--sans); border: 1px solid rgba(255, 255, 255, 0.16); border-radius: 999px; background: transparent; color: var(--room-ink); padding: 6px 11px; cursor: pointer; white-space: nowrap; }
+      .pillbtn:hover { background: rgba(255, 255, 255, 0.07); }
+      .banner.anim { animation: banner-in 0.4s ease-out; }
+      @keyframes banner-in { from { opacity: 0; transform: translateY(-4px); } to { opacity: 1; transform: none; } }
+
+      /* the empty project */
+      .empty { max-width: 34rem; margin: 18vh auto 0; padding: 0 30px; }
+      .empty .glyph { width: 74px; height: 74px; display: block; margin: 0 0 16px -4px; }
+      .empty h2 { margin: 0 0 8px; font: 400 25px/1.25 var(--serif); color: #f0eee9; }
+      .empty p { margin: 0 0 10px; font: 14px/1.6 var(--sans); color: #c3c1bc; }
+      .empty p.soft { font-size: 12.5px; color: var(--room-ink-soft); }
+      .empty code { font: 12.5px var(--mono); color: var(--room-ink); background: rgba(255, 255, 255, 0.06); border-radius: 4px; padding: 1px 5px; }
+      .colempty { padding: 8px 12px 0 14px; font: 12px/1.55 var(--sans); color: var(--frame-ink-soft); }
+      .colempty b { font-weight: 500; color: var(--frame-ink); }
+
+      /* ---------- the row's menu: the frame's material over the room ---------- */
+      #menu { position: absolute; z-index: 50; width: 300px; padding: 5px; background: #222225; border: 1px solid rgba(255, 255, 255, 0.1); border-radius: 11px; box-shadow: 0 16px 44px rgba(0, 0, 0, 0.55); font: 13px var(--sans); color: var(--frame-ink); animation: menu-in 0.13s ease-out; }
+      #menu[hidden] { display: none; }
+      @keyframes menu-in { from { opacity: 0; transform: translateY(-3px); } to { opacity: 1; transform: none; } }
+      .mi { display: flex; align-items: baseline; gap: 10px; width: 100%; text-align: left; border: 0; background: transparent; color: inherit; padding: 7px 10px; border-radius: 7px; cursor: pointer; font: inherit; }
+      .mi:hover:not([disabled]) { background: rgba(255, 255, 255, 0.075); }
+      .mi .k { margin-left: auto; color: var(--frame-ink-soft); font: 11.5px var(--mono); }
+      .mi svg { width: 14px; height: 14px; fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; flex: 0 0 auto; align-self: center; color: var(--frame-ink-soft); }
+      .mi.rw { flex-wrap: wrap; padding: 9px 10px 9px; }
+      .mi.rw svg { color: var(--blue); }
+      .mi.rw b { font-weight: 500; }
+      .mi.rw .sum { flex-basis: 100%; margin: 5px 0 0 24px; font: 12px/1.5 var(--sans); color: var(--frame-ink-soft); }
+      .mi.rw .sum div::before { content: '·'; margin: 0 6px 0 -9px; opacity: 0.7; }
+      .mi.rw .sum .kept { margin-top: 5px; color: #a7a5a0; }
+      .mi.rw .sum .kept::before { content: none; }
+      .mi[disabled] { cursor: default; }
+      .mi[disabled] b, .mi[disabled] svg { opacity: 0.5; }
+      .mi.copied .k { color: var(--green); }
+      .msep { height: 1px; background: rgba(255, 255, 255, 0.08); margin: 4px 6px; }
+
+      /* ---------- mockup chrome (not the app): the states card ---------- */
+      #states {
+        position: fixed; right: 16px; bottom: 16px; z-index: 100; width: 272px; max-height: calc(100vh - 80px); display: flex; flex-direction: column;
+        background: rgba(251, 250, 248, 0.96); backdrop-filter: blur(18px) saturate(140%); -webkit-backdrop-filter: blur(18px) saturate(140%);
+        border: 1px solid rgba(0, 0, 0, 0.08); border-radius: 14px; box-shadow: 0 10px 30px rgba(0, 0, 0, 0.38);
+        color: #2c2b29; font: 12px/1.35 var(--sans);
+      }
+      #states header { display: flex; align-items: center; gap: 8px; padding: 9px 12px 7px; cursor: pointer; user-select: none; }
+      #states header b { font-weight: 600; }
+      #states header span { margin-left: auto; color: #8a8883; font-size: 11px; }
+      #states .bd { overflow-y: auto; padding: 0 8px 4px; }
+      #states.min .bd, #states.min .cap { display: none; }
+      #states .grp { padding: 4px 2px 6px; }
+      #states .lab { display: block; margin: 0 4px 4px; color: #85837e; letter-spacing: 0.06em; text-transform: uppercase; font-size: 10px; }
+      #states .grp button { border: 1px solid rgba(0, 0, 0, 0.1); background: rgba(255, 255, 255, 0.7); color: #2c2b29; border-radius: 999px; padding: 3px 9px; margin: 0 2px 4px 0; cursor: pointer; font: 11.5px var(--sans); }
+      #states .grp button:hover { background: #fff; border-color: rgba(0, 0, 0, 0.22); }
+      #states .grp button.on { background: #2c2b29; border-color: #2c2b29; color: #fff; }
+      #states .cap { padding: 9px 12px 11px; border-top: 1px solid rgba(0, 0, 0, 0.08); color: #4d4b47; font-size: 12px; line-height: 1.5; }
+    </style>
+  </head>
+  <body>
+    <div id="app">
+      <div id="topbar">
+        <div class="tl">
+          <div class="lights"><i></i><i></i><i></i></div>
+          <div id="recpill"><i></i><span class="st">recording</span><span class="sep"></span><span class="ct"></span></div>
+        </div>
+        <div id="projpill">
+          <span class="ico"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><polyline points="12 7 12 12 15.5 14"/></svg></span>
+          <span class="name" id="pname">week-3</span>
+          <span class="path" id="ppath">~/Projects/ECON_0150/week-3</span>
+          <span class="head" id="phead"><svg viewBox="0 0 24 24"><circle cx="6" cy="6" r="2.4"/><circle cx="6" cy="18" r="2.4"/><circle cx="18" cy="8" r="2.4"/><path d="M6 8.4v7.2"/><path d="M18 10.4c0 4-6 3.5-10.6 6.3"/></svg>on <b>main</b></span>
+        </div>
+      </div>
+
+      <nav id="rail" aria-label="Projects">
+        <button class="rb on" data-proj="week-3" data-label="week-3 · ~/Projects/ECON_0150/week-3 · Knuth, Plass"><svg viewBox="0 0 24 24"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg><span class="badge">3</span></button>
+        <button class="rb dim" data-proj="week-4" data-label="week-4 · ~/Projects/ECON_0150/week-4 · Knuth"><svg viewBox="0 0 24 24"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg><span class="badge">4</span></button>
+        <div class="rule"></div>
+        <div class="grow"></div>
+        <button class="rb dim" data-label="The record: a commit on every cell run and every minute something changed, on a branch beside yours"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><line x1="12" y1="11" x2="12" y2="16.5"/><line x1="12" y1="7.6" x2="12" y2="7.7"/></svg></button>
+      </nav>
+
+      <aside id="col" aria-label="History">
+        <div id="colhead">
+          <div class="zoom" role="tablist">
+            <button data-zoom="sittings">Sittings</button><button data-zoom="runs" class="on">Runs</button><button data-zoom="all">Every commit</button>
+          </div>
+          <div class="legend" id="legend"></div>
+        </div>
+        <div id="rows" tabindex="0"></div>
+        <div id="colfoot"></div>
+      </aside>
+
+      <main id="room"><div id="pv"></div></main>
+      <div id="menu" hidden></div>
+    </div>
+    <div id="sizelabel"></div>
+
+    <div id="states" aria-label="Mockup states">
+      <header><b>History · the ledger tree</b><span>states</span></header>
+      <div class="bd">
+        <div class="grp"><span class="lab">A morning in week-3</span>
+          <button data-st="rest">At rest</button><button data-st="step">A step selected</button><button data-st="menu">The row's menu</button><button data-st="against">Against now</button><button data-st="after">After a rewind</button><button data-st="branch">A user branch</button>
+        </div>
+        <div class="grp"><span class="lab">A long history</span>
+          <button data-st="week">The week, by sitting</button><button data-st="every">Every commit</button><button data-st="opened">A sitting opened</button>
+        </div>
+        <div class="grp"><span class="lab">Other projects</span>
+          <button data-st="empty">No record yet</button><button data-st="paused">Record paused</button>
+        </div>
+        <div class="grp"><span class="lab">Window</span>
+          <button data-win="fill" class="on">Fill</button><button data-win="1440">1440</button><button data-win="1100">1100</button>
+        </div>
+      </div>
+      <div class="cap" id="cap"></div>
+    </div>
+
+    <script>
+      /* THE SHELL PROTOCOL THIS VIEW NEEDS (the page is one the shell serves itself,
+         trusted like an app page; the same door: window.claerbout.request / .on).
+
+         Requests
+         - {type:'showHistory'}  from a Knuth or Plass page (a History… menu item):
+             open or bring forward the History window on that window's project.
+             -> {shown:true, root} | {shown:false, reason:'no project'}
+         - {type:'projects'}  -> {current, projects:[{root, name, apps:['knuth','plass'],
+             state:'recording'|'paused'|'off'|'none', reason?}]}  (the rail)
+         - {type:'historyLog', root, before?:sha, limit?:1000}
+             -> {root, name, state, reason?, tip, now:'same'|'changed',
+                 head:{branch:'main', sha}|{detached:sha}|null,
+                 branches:[{name:'main', tip, head:true}],
+                 commits:[{sha, parents:[sha], tree, time, tz, ref:'record'|'main',
+                           app:'knuth'|'plass'|null, trigger:'cell run'|'timer'|'session open'|
+                           'session close'|'external edit'|'rewind from'|'rewind to'|null,
+                           cell?:4, target?:sha, subject, author, paths:[…],
+                           touched?:{'analysis.py':[cells]}}],
+                 more:true|false}
+             Newest first, the record and the local branches in one date-ordered log.
+             The shell parses "<app>: <trigger>" into app/trigger/cell/target; tree lets
+             the page draw ties (same tree) and a rewind's link; touched is cached by sha.
+             Lanes, folding, sittings and zoom are the page's work.
+         - {type:'historyDiff', root, from:sha|null, to:sha|'now'}
+             -> {files:[{path, status:'A'|'M'|'D', kind:'percent'|'typst'|'csv'|'manifest'|
+                         'svg'|'text'|'binary', add, del, before?, after?, size?}]}
+             Whole blobs up to 1 MB; the page splits a percent file on its # %% markers
+             and #-> outputs and diffs the lines itself, and shows an SVG in an <img>.
+         - {type:'rewind', root, to:sha, tip:sha}
+             -> {state:'done', from:sha|null, commit:sha, wrote:[…], removed:[…], kept:[…]}
+              | {state:'refused', reason:'paused: a rebase is in progress'|'moved'|
+                 'unsaved: memo.typ'|'same'}
+             In order: autosave's guards; a save event to every window on the project
+             (each answers {type:'saved', path}, 3 s at most); commit "<app>: rewind from
+             <tip>" if the tree differs; read-tree the target into the record's temporary
+             index, checkout-index into the working tree, remove what the tip had and the
+             target lacks (never ignored files, never untracked/, never through a link);
+             commit "<app>: rewind to <target>"; reload events; a history event.
+             HEAD, the user's branches and index are never touched. tip is a
+             compare-and-swap: a record that moved since the page drew it refuses.
+
+         Events
+         - history {root, tip, added:[commit…], branches} after a record commit, a
+           rewind, or a move of the user's refs (watched; debounced), or
+           {root, reload:true} when a branch was rewritten.
+         - historyState {root, state, reason}  (the pill in the top bar)
+         - historyFocus {root}  (an app asked for a project while the window is open)
+         - save {reason:'rewind'}  to document pages: write the document if dirty.
+         - reload {path, reason:'rewind', to:sha, removed?:true}  to document pages:
+           read the file again, or show it as removed. */
+      (function () {
+        'use strict';
+        const $ = (s, r) => (r || document).querySelector(s);
+        const $$ = (s, r) => Array.from((r || document).querySelectorAll(s));
+        const esc = (s) => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+        const strip = (h) => h.replace(/<[^>]+>/g, '').replace(/&gt;/g, '>').replace(/&lt;/g, '<').replace(/&amp;/g, '&');
+        const wait = (ms) => new Promise((r) => setTimeout(r, ms));
+        function rng(seed) {
+          return function () {
+            seed |= 0; seed = (seed + 0x6d2b79f5) | 0;
+            let t = Math.imul(seed ^ (seed >>> 15), 1 | seed);
+            t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+            return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+          };
+        }
+        const shaR = rng(20261002), used = new Set();
+        function newSha() { let s; do { s = Math.floor(shaR() * 0xfffffff).toString(16).padStart(7, '0'); } while (used.has(s)); used.add(s); return s; }
+
+        /* ================= time ================= */
+        const DAY = 86400;
+        const DAYNAME = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'];
+        const DAYDATE = ['28 September', '29 September', '30 September', '1 October', '2 October'];
+        const DAYSHORT = ['Mon 28 Sep', 'Tue 29 Sep', 'Wed 30 Sep', 'Thu 1 Oct', 'Fri 2 Oct'];
+        const hms = (s) => { const [h, m, x] = s.split(':').map(Number); return h * 3600 + m * 60 + (x || 0); };
+        const at = (d, s) => d * DAY + hms(s);
+        const two = (n) => String(n).padStart(2, '0');
+        const dayOf = (t) => Math.floor(t / DAY);
+        const fHM = (t) => { const s = t % DAY; return Math.floor(s / 3600) + ':' + two(Math.floor((s % 3600) / 60)); };
+        const fHMS = (t) => fHM(t) + ':' + two(t % 60);
+        const fWhen = (t) => (dayOf(t) === 4 ? fHM(t) : DAYSHORT[dayOf(t)].slice(0, 3) + ' ' + fHM(t));
+        function dur(sec) { const m = Math.max(1, Math.round(sec / 60)); if (m < 60) return m + ' min'; const h = Math.floor(m / 60), r = m % 60; return r ? h + ' h ' + r + ' min' : h + ' h'; }
+        let NOW = at(4, '10:05:50');
+        function ago(t) {
+          const d = NOW - t;
+          if (d < 50) return 'just now';
+          if (dayOf(t) === dayOf(NOW)) return dur(d) + ' ago';
+          if (dayOf(NOW) - dayOf(t) === 1) return 'yesterday';
+          return dayOf(NOW) - dayOf(t) + ' days ago';
+        }
+        function range(ns) {
+          const a = [...new Set(ns)].sort((x, y) => x - y), out = [];
+          for (let i = 0; i < a.length; i++) {
+            let j = i; while (j + 1 < a.length && a[j + 1] === a[j] + 1) j++;
+            out.push(j > i + 1 ? a[i] + '–' + a[j] : j === i + 1 ? a[i] + ', ' + a[j] : String(a[i]));
+            i = j;
+          }
+          return out.join(', ');
+        }
+        const cellsWord = (ns) => (new Set(ns).size === 1 ? 'cell ' : 'cells ') + range(ns);
+
+        /* ================= the document: analysis.py, twenty cells ================= */
+        const K = (s) => '<span class="k">' + s + '</span>', P = (s) => '<span class="p">' + s + '</span>', S_ = (s) => '<span class="s">' + s + '</span>';
+        const N = (s) => '<span class="n">' + s + '</span>', O = (s) => '<span class="o">' + s + '</span>', C = (s) => '<span class="c">' + s + '</span>';
+        const CELLS = [
+          { kind: 'program', code: [K('import') + ' pandas ' + K('as') + ' pd', K('import') + ' numpy ' + K('as') + ' np', K('import') + ' matplotlib.pyplot ' + K('as') + ' plt'] },
+          { kind: 'program', code: ['prices ' + O('=') + ' pd.' + P('read_csv') + '(' + S_("'prices.csv'") + ')', 'prices.' + P('head') + '()'],
+            out: '   price  quantity region\n0   0.75       583  north\n1   0.90       402  south\n2   1.10       297   east\n3   0.75       511   west\n4   0.90       455  north',
+            prev: '   price  quantity region\n0   0.75       571  north\n1   0.90       398  south\n2   1.10       301   east\n3   0.75       509   west\n4   0.90       449  north' },
+          { kind: 'text', html: '<h2>Demand at three prices</h2><p>Each row is one buyer’s answer at the price they were shown, in one of four regions.</p><p>The curve below joins the median quantity at each price; the slope between neighbouring medians is the elasticity we report at the end.</p>' },
+          { kind: 'program', code: ['n ' + O('=') + ' ' + P('len') + '(prices)', 'regions ' + O('=') + ' ' + P('sorted') + '(prices.region.' + P('unique') + '())', 'n, regions'],
+            out: "(1200, ['east', 'north', 'south', 'west'])", prev: "(1150, ['east', 'north', 'south', 'west'])" },
+          { kind: 'program', code: ['demand ' + O('=') + ' prices.' + P('groupby') + '(' + S_("'price'") + ').quantity.' + P('median') + '()', 'ax ' + O('=') + ' demand.' + P('plot') + '(marker' + O('=') + S_("'o'") + ')', 'ax.' + P('set_ylabel') + '(' + S_("'median quantity'") + ')'],
+            out: "Text(0, 0.5, 'median quantity')" },
+          { kind: 'program', code: ['prices ' + O('=') + ' prices[prices.quantity ' + O('&gt;') + ' ' + N('0') + ']   ' + C('# drop the no-sale rows'), 'prices.' + P('to_parquet') + '(' + S_("'untracked/prices_clean.parquet'") + ')', 'n ' + O('=') + ' ' + P('len') + '(prices)', 'n'], out: '1187' },
+          { kind: 'scratch', code: ['tmp ' + O('=') + ' demand.' + P('pct_change') + '()', 'tmp'], out: 'price\n0.75         NaN\n0.90   -0.211538\n1.10   -0.268293\nName: quantity, dtype: float64' },
+          { kind: 'text', html: '<h2>Elasticity</h2><p>Between neighbouring prices, the elasticity is the percentage change in quantity over the percentage change in price.</p><p>The arc version measures both changes from the midpoint, so it does not depend on which way you move.</p>' },
+          { kind: 'program', code: ['dp ' + O('=') + ' demand.index.' + P('to_series') + '().' + P('pct_change') + '()', 'elasticity ' + O('=') + ' (demand.' + P('pct_change') + '() ' + O('/') + ' dp).' + P('dropna') + '()', 'elasticity.' + P('round') + '(' + N('2') + ')'],
+            out: 'price\n0.90   -1.06\n1.10   -1.21\nName: quantity, dtype: float64', old0: 'dp = demand.index.pct_change()',
+            err: "Traceback (most recent call last):\n  Cell 9, line 1\nAttributeError: 'Index' object has no attribute 'pct_change'" },
+          { kind: 'program', code: [K('def') + ' ' + P('arc') + '(q0, q1, p0, p1):', '    ' + S_('"""Arc elasticity between two points."""'), '    ' + K('return') + ' ((q1 ' + O('-') + ' q0) ' + O('/') + ' (q1 ' + O('+') + ' q0)) ' + O('/') + ' ((p1 ' + O('-') + ' p0) ' + O('/') + ' (p1 ' + O('+') + ' p0))'] },
+          { kind: 'program', code: ['pairs ' + O('=') + ' ' + P('list') + '(' + P('zip') + '(demand.index[:' + O('-') + N('1') + '], demand.index[' + N('1') + ':]))', 'arcs ' + O('=') + ' pd.' + P('Series') + '([' + P('arc') + '(demand[a], demand[b], a, b) ' + K('for') + ' a, b ' + K('in') + ' pairs])', 'arcs.' + P('round') + '(' + N('2') + ')'],
+            out: '0.75–0.9   -1.30\n0.9–1.1    -1.55\ndtype: float64' },
+          { kind: 'text', html: '<h2>By region</h2><p>The four regions face the same three prices. If their curves have the same shape, one elasticity with a region intercept is a fair summary; the regression below checks that.</p>' },
+          { kind: 'program', code: ['by_region ' + O('=') + ' (prices', '    .' + P('groupby') + '([' + S_("'region'") + ', ' + S_("'price'") + ']).quantity.' + P('median') + '()', '    .' + P('unstack') + '(' + S_("'price'") + '))', 'by_region'],
+            out: 'price    0.75   0.90   1.10\nregion\neast    498.0  402.0  291.0\nnorth   547.0  431.0  318.0\nsouth   509.0  398.0  296.0\nwest    531.0  415.0  305.0' },
+          { kind: 'program', code: ['fig, axes ' + O('=') + ' plt.' + P('subplots') + '(' + N('1') + ', ' + N('4') + ', figsize' + O('=') + '(' + N('10') + ', ' + N('2.6') + '), sharey' + O('=') + K('True') + ')', K('for') + ' ax, (region, row) ' + K('in') + ' ' + P('zip') + '(axes, by_region.' + P('iterrows') + '()):', '    row.' + P('plot') + '(ax' + O('=') + 'ax, marker' + O('=') + S_("'o'") + ', title' + O('=') + 'region)', 'fig.' + P('tight_layout') + '()'] },
+          { kind: 'scratch', code: ['by_region.loc[' + S_("'north'") + '] ' + O('-') + ' by_region.loc[' + S_("'south'") + ']'], out: 'price\n0.75    38.0\n0.90    33.0\n1.10    22.0\ndtype: float64' },
+          { kind: 'program', code: [K('import') + ' statsmodels.formula.api ' + K('as') + ' smf', 'prices[' + S_("'log_q'") + '] ' + O('=') + ' np.' + P('log') + '(prices.quantity)', 'prices[' + S_("'log_p'") + '] ' + O('=') + ' np.' + P('log') + '(prices.price)', 'model ' + O('=') + ' smf.' + P('ols') + '(' + S_("'log_q ~ log_p + C(region)'") + ', data' + O('=') + 'prices).' + P('fit') + '()', 'model.' + P('save') + '(' + S_("'untracked/model.pkl'") + ')', 'model.params.' + P('round') + '(' + N('3') + ')'],
+            out: 'Intercept             5.851\nC(region)[T.north]    0.082\nC(region)[T.south]    0.011\nC(region)[T.west]     0.051\nlog_p                -1.183\ndtype: float64',
+            first: 'Intercept    5.902\nlog_p       -1.201\ndtype: float64' },
+          { kind: 'program', code: ['beta, se, r2 ' + O('=') + ' model.params[' + S_("'log_p'") + '], model.bse[' + S_("'log_p'") + '], model.rsquared', 'beta, se, r2'], out: '(-1.183, 0.041, 0.412)' },
+          { kind: 'program', code: ['summary ' + O('=') + ' pd.' + P('DataFrame') + '({' + S_("'demand'") + ': demand, ' + S_("'elasticity'") + ': elasticity})', 'summary[' + S_("'revenue'") + '] ' + O('=') + ' summary.index ' + O('*') + ' summary.demand', 'ax2 ' + O('=') + ' summary.elasticity.' + P('plot') + '.' + P('bar') + '(color' + O('=') + S_("'#305c8a'") + ')', 'summary'],
+            out: '       demand  elasticity  revenue\nprice\n0.75    520.0         NaN    390.0\n0.90    410.0   -1.057692    369.0\n1.10    300.0   -1.207317    330.0',
+            prev: '       demand  elasticity\nprice\n0.75    520.0         NaN\n0.90    410.0   -1.057692\n1.10    300.0   -1.207317' },
+          { kind: 'text', html: '<p>Both elasticities are above one in magnitude: at these prices demand is <em>elastic</em>, and the revenue column agrees, 390 at 0.75 falling to 330 at 1.10.</p><p>The regression’s −1.18, with an intercept for each region, says the same with all 1,187 answers.</p>' },
+          { kind: 'program', code: ['summary.' + P('to_csv') + '(' + S_("'summary.csv'") + ')', P('print') + '(' + S_("'wrote'") + ', ' + P('len') + '(summary), ' + S_("'rows'") + ')'], out: 'wrote 3 rows' },
+        ];
+        const CELL_FIG = { 5: 'figs/ax.svg', 14: 'figs/fig.svg', 18: 'figs/ax2.svg' };
+
+        /* memo.typ (Plass): paragraphs; old is the text before an edit */
+        const MEMO = [
+          { k: 'h', t: 'Demand in the week-3 survey', old: 'Demand' },
+          { k: 'p', t: 'Buyers answered at one of three prices, in four regions; 1,187 of the answers had a sale.' },
+          { k: 'p', t: 'At these prices demand is elastic. The arc elasticity is −1.30 between 0.75 and 0.90, and −1.55 between 0.90 and 1.10.', old: 'At these prices demand is elastic.' },
+          { k: 'f', t: '#figure(image("figs/fig.svg"), caption: [Median quantity by price, one panel per region.])' },
+          { k: 'p', t: 'A regression of log quantity on log price, with an intercept for each region, gives −1.18 (s.e. 0.04).', old: 'A regression of log quantity on log price gives' },
+          { k: 'p', t: 'Revenue falls as the price rises, from 390 at 0.75 to 330 at 1.10.', old: 'Revenue falls as the price rises.' },
+        ];
+        const NOTES = [
+          { k: 'h', t: 'Reading notes, week 3' },
+          { k: 'p', t: 'Varian, chapter 15: along a straight demand curve the elasticity changes with the price; at the midpoint it is −1.' },
+          { k: 'p', t: 'The arc formula measures both changes from the midpoint, so it does not depend on the direction of the move.' },
+        ];
+        const UNT = {
+          prices_clean: { name: 'untracked/prices_clean.parquet', size: '1.8 MB', sha: '3f9c41d0…e21a' },
+          model: { name: 'untracked/model.pkl', size: '412 KB', sha: 'a07de352…91c4' },
+        };
+
+        /* ================= figures (white prints, as Knuth saves them) ================= */
+        function lineFig(pts, o) {
+          o = o || {};
+          const W = 300, H = 196, x0 = 46, x1 = 288, y0 = 12, y1 = 158;
+          const xs = pts.map((p) => p[0]), xmin = Math.min(...xs), xmax = Math.max(...xs), pad = (xmax - xmin) * 0.08;
+          const lo = xmin - pad, hi = xmax + pad, ylo = 270, yhi = 560;
+          const X = (v) => x0 + ((v - lo) / (hi - lo)) * (x1 - x0), Y = (v) => y1 - ((v - ylo) / (yhi - ylo)) * (y1 - y0);
+          const step = hi - lo > 3 ? 2 : 0.1;
+          let ticks = '';
+          for (let v = Math.ceil(lo / step) * step; v <= hi + 1e-9; v += step) ticks += `<line x1="${X(v)}" y1="${y1}" x2="${X(v)}" y2="${y1 + 3}"/><text x="${X(v)}" y="${y1 + 13}" text-anchor="middle" stroke="none">${v.toFixed(step < 1 ? 2 : 0)}</text>`;
+          for (const v of [300, 400, 500]) ticks += `<line x1="${x0 - 3}" y1="${Y(v)}" x2="${x0}" y2="${Y(v)}"/><text x="${x0 - 5}" y="${Y(v) + 3}" text-anchor="end" stroke="none">${v}</text>`;
+          const line = pts.map((p) => X(p[0]).toFixed(1) + ',' + Y(p[1]).toFixed(1)).join(' ');
+          return `<svg viewBox="0 0 ${W} ${H}"><rect width="${W}" height="${H}" fill="#fff"/><g font-family="-apple-system, Helvetica, sans-serif" font-size="8.5" fill="#000" stroke="#000" stroke-width="0.7"><rect x="${x0}" y="${y0}" width="${x1 - x0}" height="${y1 - y0}" fill="none"/>${ticks}<text x="${(x0 + x1) / 2}" y="${H - 6}" text-anchor="middle" stroke="none" font-size="9.5">price</text><text transform="translate(12 ${(y0 + y1) / 2}) rotate(-90)" text-anchor="middle" stroke="none" font-size="9.5">median quantity</text></g><polyline points="${line}" fill="none" stroke="#1f77b4" stroke-width="1.5"/>${pts.map((p) => `<circle cx="${X(p[0]).toFixed(1)}" cy="${Y(p[1]).toFixed(1)}" r="3" fill="#1f77b4"/>`).join('')}</svg>`;
+        }
+        function multiFig(v) {
+          const W = 420, H = 120, rows = [[498, 402, 291], [547, 431, 318], [509, 398, 296], [531, 415, 305]], names = ['east', 'north', 'south', 'west'];
+          let g = '';
+          rows.forEach((r, i) => {
+            const x0 = 30 + i * 98, x1 = x0 + 86, y0 = 16, y1 = 96;
+            const lo = v === 'm1' ? Math.min(...r) - 20 : 270, hi = v === 'm1' ? Math.max(...r) + 20 : 570;
+            const Y = (q) => y1 - ((q - lo) / (hi - lo)) * (y1 - y0), X = (k) => x0 + 10 + k * 33;
+            g += `<rect x="${x0}" y="${y0}" width="86" height="80" fill="none" stroke="#000" stroke-width="0.6"/>`;
+            if (i === 0 || v === 'm1') g += `<text x="${x0 - 3}" y="${Y(lo + (hi - lo) * 0.85) + 3}" text-anchor="end" font-size="6.5">${Math.round(lo + (hi - lo) * 0.85)}</text><text x="${x0 - 3}" y="${Y(lo + (hi - lo) * 0.15) + 3}" text-anchor="end" font-size="6.5">${Math.round(lo + (hi - lo) * 0.15)}</text>`;
+            g += `<polyline points="${r.map((q, k) => X(k) + ',' + Y(q).toFixed(1)).join(' ')}" fill="none" stroke="#1f77b4" stroke-width="1.2"/>` + r.map((q, k) => `<circle cx="${X(k)}" cy="${Y(q).toFixed(1)}" r="2.2" fill="#1f77b4"/>`).join('');
+            g += `<text x="${x0 + 43}" y="108" text-anchor="middle" font-size="7">price</text>`;
+            if (v === 'm3') g += `<text x="${x0 + 43}" y="11" text-anchor="middle" font-size="8">${names[i]}</text>`;
+          });
+          return `<svg viewBox="0 0 ${W} ${H}"><rect width="${W}" height="${H}" fill="#fff"/><g font-family="-apple-system, Helvetica, sans-serif" fill="#000">${g}</g></svg>`;
+        }
+        function barFig() {
+          return `<svg viewBox="0 0 300 196"><rect width="300" height="196" fill="#fff"/><g font-family="-apple-system, Helvetica, sans-serif" font-size="8.5" fill="#000"><rect x="46" y="12" width="242" height="146" fill="none" stroke="#000" stroke-width="0.7"/><text x="126" y="171" text-anchor="middle">0.90</text><text x="208" y="171" text-anchor="middle">1.10</text><text x="41" y="15" text-anchor="end">0.0</text><text x="41" y="86" text-anchor="end">−0.6</text><text x="41" y="158" text-anchor="end">−1.2</text><text x="167" y="190" text-anchor="middle" font-size="9.5">price</text></g><rect x="100" y="12" width="52" height="125" fill="#305c8a"/><rect x="182" y="12" width="52" height="143" fill="#305c8a"/></svg>`;
+        }
+        const FIGS = {
+          f0: lineFig([[0.75, 515], [0.9, 404], [1.1, 296]]),
+          f1: lineFig([[0.75, 520], [0.9, 410], [1.1, 300], [9.0, 402]]),
+          f2: lineFig([[0.75, 531], [0.9, 415], [1.1, 305], [9.0, 402]]),
+          f3: lineFig([[0.75, 531], [0.9, 416], [1.1, 305]]),
+          m1: multiFig('m1'), m2: multiFig('m2'), m3: multiFig('m3'), b1: barFig(),
+        };
+
+        /* ================= the record ================= */
+        /* Every commit: { sha, t, ref: 'record'|'main', app, trig, cell, cells:[{c,k,...}], files:[], opt, parent, lane, snap }.
+           cells are analysis.py's changes in that step: new (a cell typed), src, edit1, out, err, fix, fig.
+           snap is what the files were after it: max cell, the commit that last changed each cell and file,
+           untracked/ as the manifest listed it, memo.typ's paragraphs. */
+        let REC = [], MAINC = [], BY = {};
+
+        function addRecord(k) {
+          k.ref = 'record';
+          k.sha = k.sha || newSha();
+          const prev = REC[REC.length - 1];
+          k.parent = prev ? prev.sha : null;
+          k.snap = snapAfter(prev ? prev.snap : null, k);
+          REC.push(k); BY[k.sha] = k;
+          return k;
+        }
+        function snapAfter(p, k) {
+          const s = p ? { max: p.max, cells: { ...p.cells }, files: { ...p.files }, unt: { ...p.unt }, memo: { ...p.memo }, notes: p.notes } : { max: 0, cells: {}, files: {}, unt: {}, memo: {}, notes: 0 };
+          if (k.trig === 'rewind to') {
+            const T = BY[k.target].snap;
+            const n = { max: T.max, cells: { ...T.cells }, files: { ...T.files }, unt: { ...s.unt }, memo: { ...T.memo }, notes: T.notes };
+            if (JSON.stringify(n.unt) !== JSON.stringify(T.unt)) n.files['.claerbout/untracked.json'] = k.sha;
+            return n;
+          }
+          for (const ch of k.cells || []) {
+            s.cells[ch.c] = k.sha; s.max = Math.max(s.max, ch.c); s.files['analysis.py'] = k.sha;
+            if (ch.k === 'fig') { s.files[CELL_FIG[ch.c]] = k.sha; if (!ch.from) s.files['.knuth-artifacts.json'] = k.sha; }
+          }
+          for (const f of k.files || []) s.files[f] = k.sha;
+          const o = k.opt || {};
+          if (o.unt) { s.unt[o.unt] = k.sha; s.files['.claerbout/untracked.json'] = k.sha; }
+          if (o.memo) { for (const i of o.memo.add || []) s.memo[i] = MEMO[i].old ? 0 : 1; for (const i of o.memo.edit || []) s.memo[i] = 1; s.files['memo.typ'] = k.sha; }
+          if (o.notes) { s.notes = Math.min(NOTES.length, s.notes + 1); s.files['reading-notes.typ'] = k.sha; }
+          return s;
+        }
+
+        /* the week before today, generated: six sittings, a few hundred commits */
+        const PAST = [
+          { d: 0, s: '13:02:10', e: '14:20:30', app: 'knuth', newc: [1, 2], first: true },
+          { d: 0, s: '15:30:05', e: '16:05:40', app: 'knuth', newc: [3] },
+          { d: 1, s: '10:10:22', e: '11:45:10', app: 'knuth', newc: [4, 5] },
+          { d: 2, s: '9:00:40', e: '9:40:15', app: 'plass', doc: 'reading-notes.typ' },
+          { d: 2, s: '13:15:02', e: '15:02:48', app: 'knuth', newc: [] },
+          { d: 3, s: '14:02:31', e: '16:40:05', app: 'knuth', newc: [] },
+        ];
+        function genPast() {
+          let max = 0;
+          for (const p of PAST) {
+            const r = rng(p.d * 1000 + hms(p.s)), t0 = at(p.d, p.s), t1 = at(p.d, p.e);
+            const doc = p.doc || 'analysis.py';
+            const open = { t: t0, app: p.app, trig: 'session open', cells: [], files: [], opt: { doc } };
+            if (p.first) { open.cells = [{ c: 1, k: 'new' }]; open.files = ['prices.csv', '.gitignore', '.claerbout/untracked.json']; open.opt.first = true; max = 1; }
+            if (p.app === 'plass') { open.files = [doc]; open.opt.notes = true; }
+            addRecord(open);
+            const minutes = Math.floor((t1 - t0) / 60) - 1;
+            const marks = (p.newc || []).slice(p.first ? 1 : 0).map((c, i, a) => [Math.floor(((i + 1) * minutes) / (a.length + 1)), c]);
+            let figDone = false;
+            for (let m = 1; m <= minutes; m++) {
+              const tt = t0 + m * 60 + Math.floor(r() * 50);
+              const mk = marks.find((x) => x[0] === m);
+              if (p.app === 'plass') { if (r() < 0.7) addRecord({ t: tt, app: 'plass', trig: 'timer', cells: [], files: [doc], opt: { notes: true } }); continue; }
+              if (mk) { max = Math.max(max, mk[1]); addRecord({ t: tt, app: 'knuth', trig: 'timer', cells: [{ c: mk[1], k: 'new' }] }); continue; }
+              const x = r();
+              if (x < 0.27 && max >= 2) {
+                const runnable = [2, 4, 5].filter((n) => n <= max); /* cell 1 has no output, cell 3 is text */
+                const c = runnable[runnable.length - 1 - Math.floor(r() * r() * runnable.length)];
+                const chs = c === 5 && !figDone ? [{ c: 5, k: 'fig', to: 'f0' }] : [{ c, k: 'out' }];
+                if (c === 5) figDone = true;
+                addRecord({ t: tt, app: 'knuth', trig: 'cell run', cell: c, cells: chs });
+              } else if (x < 0.8 && max >= 1) {
+                const c = r() < 0.6 ? max : 1 + Math.floor(r() * max);
+                addRecord({ t: tt, app: 'knuth', trig: 'timer', cells: [{ c, k: 'src' }] });
+              }
+            }
+            addRecord({ t: t1, app: p.app, trig: 'session close', cells: p.app === 'knuth' ? [{ c: max, k: 'src' }] : [], files: p.app === 'plass' ? [doc] : [], opt: { doc, notes: p.app === 'plass' } });
+          }
+        }
+
+        /* today: a morning in week-3 (hand-written) */
+        const TODAY = [
+          ['8:51:12', 'knuth', 'session open', null, [], ['prices.csv'], { doc: 'analysis.py', csv: 'closed' }],
+          ['8:52:13', 'knuth', 'timer', null, [{ c: 2, k: 'src' }]],
+          ['8:53:05', 'knuth', 'cell run', 2, [{ c: 2, k: 'out', prev: true }]],
+          ['8:54:06', 'knuth', 'timer', null, [{ c: 4, k: 'src' }]],
+          ['8:54:30', 'knuth', 'cell run', 4, [{ c: 4, k: 'out', prev: true }]],
+          ['8:55:31', 'knuth', 'timer', null, [{ c: 3, k: 'src' }]],
+          ['8:56:31', 'knuth', 'timer', null, [{ c: 3, k: 'src' }]],
+          ['8:57:02', 'knuth', 'cell run', 5, [{ c: 5, k: 'fig', from: 'f0', to: 'f1' }]],
+          ['8:58:03', 'knuth', 'timer', null, [{ c: 6, k: 'new' }]],
+          ['8:59:20', 'knuth', 'cell run', 6, [{ c: 6, k: 'out' }], [], { unt: 'prices_clean' }],
+          ['9:00:21', 'knuth', 'timer', null, [{ c: 5, k: 'src' }]],
+          ['9:01:05', 'knuth', 'cell run', 5, [{ c: 5, k: 'fig', from: 'f1', to: 'f2' }]],
+          ['9:02:06', 'knuth', 'timer', null, [{ c: 7, k: 'new' }]],
+          ['9:02:30', 'knuth', 'cell run', 7, [{ c: 7, k: 'out' }]],
+          ['9:03:31', 'knuth', 'timer', null, [{ c: 8, k: 'new' }]],
+          ['9:04:31', 'knuth', 'timer', null, [{ c: 8, k: 'src' }]],
+          ['9:05:31', 'knuth', 'timer', null, [{ c: 8, k: 'src' }]],
+          ['9:06:10', 'knuth', 'timer', null, [{ c: 9, k: 'new' }]],
+          ['9:06:44', 'knuth', 'cell run', 9, [{ c: 9, k: 'err' }]],
+          ['9:07:45', 'knuth', 'timer', null, [{ c: 9, k: 'edit1' }]],
+          ['9:08:02', 'knuth', 'cell run', 9, [{ c: 9, k: 'fix' }]],
+          ['9:09:03', 'knuth', 'timer', null, [{ c: 10, k: 'new' }]],
+          ['9:09:40', 'knuth', 'cell run', 10, [{ c: 10, k: 'src' }]],
+          ['9:10:41', 'knuth', 'timer', null, [{ c: 11, k: 'new' }]],
+          ['9:11:20', 'knuth', 'cell run', 11, [{ c: 11, k: 'out' }]],
+          ['9:12:21', 'knuth', 'timer', null, [{ c: 11, k: 'src' }]],
+          ['9:15:50', 'knuth', 'timer', null, [{ c: 12, k: 'new' }]],
+          ['9:16:51', 'knuth', 'timer', null, [{ c: 12, k: 'src' }]],
+          ['9:17:51', 'knuth', 'timer', null, [{ c: 13, k: 'new' }]],
+          ['9:18:30', 'knuth', 'cell run', 13, [{ c: 13, k: 'out' }]],
+          ['9:19:31', 'knuth', 'timer', null, [{ c: 14, k: 'new' }]],
+          ['9:20:15', 'knuth', 'cell run', 14, [{ c: 14, k: 'fig', to: 'm1' }]],
+          ['9:21:16', 'knuth', 'timer', null, [{ c: 14, k: 'src' }]],
+          ['9:21:40', 'knuth', 'cell run', 14, [{ c: 14, k: 'fig', from: 'm1', to: 'm2' }]],
+          ['9:22:41', 'knuth', 'timer', null, [{ c: 15, k: 'new' }]],
+          ['9:23:02', 'knuth', 'cell run', 15, [{ c: 15, k: 'out' }]],
+          ['9:24:30', 'knuth', 'cell run', 14, [{ c: 14, k: 'fig', from: 'm2', to: 'm3' }]],
+          ['9:25:31', 'knuth', 'timer', null, [{ c: 16, k: 'new' }]],
+          ['9:26:31', 'knuth', 'timer', null, [{ c: 16, k: 'src' }]],
+          ['9:27:02', null, 'external edit', null, [], ['prices.csv'], { csv: 'fix' }],
+          ['9:28:10', 'knuth', 'cell run', 5, [{ c: 5, k: 'fig', from: 'f2', to: 'f3' }]],
+          ['9:29:40', 'knuth', 'cell run', 16, [{ c: 16, k: 'out', first: true }], [], { unt: 'model' }],
+          ['9:30:41', 'knuth', 'timer', null, [{ c: 17, k: 'new' }]],
+          ['9:31:10', 'knuth', 'cell run', 17, [{ c: 17, k: 'out' }]],
+          ['9:32:11', 'knuth', 'timer', null, [{ c: 18, k: 'new' }]],
+          ['9:33:11', 'knuth', 'timer', null, [{ c: 18, k: 'src' }]],
+          ['9:34:11', 'knuth', 'timer', null, [{ c: 18, k: 'src' }]],
+          ['9:34:50', 'knuth', 'cell run', 18, [{ c: 18, k: 'out', prevOnly: true }, { c: 18, k: 'fig', to: 'b1' }]],
+          ['9:35:51', 'knuth', 'timer', null, [{ c: 19, k: 'new' }]],
+          ['9:36:51', 'knuth', 'timer', null, [{ c: 19, k: 'src' }]],
+          ['9:37:52', 'knuth', 'timer', null, [{ c: 19, k: 'src' }]],
+          ['9:38:52', 'knuth', 'timer', null, [{ c: 19, k: 'src' }]],
+          ['9:40:22', 'plass', 'session open', null, [], ['memo.typ'], { doc: 'memo.typ', memo: { add: [0, 1] } }],
+          ['9:41:23', 'plass', 'timer', null, [], [], { memo: { add: [2] } }],
+          ['9:42:23', 'plass', 'timer', null, [], [], { memo: { add: [3] } }],
+          ['9:43:23', 'plass', 'timer', null, [], [], { memo: { edit: [2] } }],
+          ['9:44:23', 'plass', 'timer', null, [], [], { memo: { add: [4] } }],
+          ['9:45:30', 'knuth', 'cell run', 20, [{ c: 20, k: 'new' }, { c: 20, k: 'out' }], ['summary.csv']],
+          ['9:46:31', 'plass', 'timer', null, [], [], { memo: { edit: [4] } }],
+          ['9:47:32', 'plass', 'timer', null, [], [], { memo: { edit: [0] } }],
+          ['9:49:12', 'plass', 'timer', null, [], [], { memo: { add: [5] } }],
+          ['9:52:40', 'plass', 'session close', null, [], [], { doc: 'memo.typ', memo: { edit: [5] } }],
+          ['9:53:41', 'knuth', 'timer', null, [{ c: 19, k: 'src' }]],
+          ['9:55:02', 'knuth', 'cell run', 18, [{ c: 18, k: 'out', prev: true }]],
+          ['9:56:03', 'knuth', 'timer', null, [{ c: 16, k: 'src' }]],
+          ['9:57:03', 'knuth', 'timer', null, [{ c: 16, k: 'src' }]],
+          ['9:58:40', 'knuth', 'cell run', 16, [{ c: 16, k: 'out', prevFirst: true }]],
+          ['9:59:41', 'knuth', 'timer', null, [{ c: 16, k: 'src' }]],
+          ['10:00:41', 'knuth', 'timer', null, [{ c: 17, k: 'src' }]],
+          ['10:01:42', 'knuth', 'timer', null, [{ c: 17, k: 'src' }]],
+          ['10:03:42', 'knuth', 'timer', null, [{ c: 16, k: 'src' }]],
+          ['10:05:20', 'knuth', 'cell run', 17, [{ c: 17, k: 'out' }]],
+        ];
+        const MAINDEF = [
+          { d: 0, t: '12:41:00', msg: 'Week 3: the assignment and the data', special: true },
+          { d: 0, t: '14:18:40', msg: 'Start week 3: read the prices' },
+          { d: 1, t: '11:40:05', msg: 'Plot demand at three prices' },
+          { d: 3, t: '16:35:12', msg: 'Tidy the demand plot' },
+          { d: 4, t: '9:14:30', msg: 'Clean the price data; demand and elasticity' },
+          { d: 4, t: '9:48:10', msg: 'Elasticity by region and the summary table', differs: ['memo.typ'] },
+        ];
+
+        function build() {
+          REC = []; MAINC = []; BY = {}; used.clear();
+          genPast();
+          for (const [t, app, trig, cell, cells, files, opt] of TODAY) addRecord({ t: at(4, t), app, trig, cell, cells, files: files || [], opt: opt || {} });
+          let prev = null;
+          for (const m of MAINDEF) {
+            const k = { sha: newSha(), t: at(m.d, m.t), ref: 'main', msg: m.msg, parent: prev ? prev.sha : null, differs: m.differs || null, special: !!m.special };
+            const r = recAt(k.t);
+            k.recAt = r ? r.sha : null;
+            k.same = !!r && !k.special && !k.differs;
+            MAINC.push(k); BY[k.sha] = k; prev = k;
+          }
+          NOW = at(4, '10:05:50');
+        }
+        function recAt(t) { let best = null; for (const k of REC) if (k.t <= t) best = k; return best; }
+        const tip = () => REC[REC.length - 1];
+        const mainTip = () => MAINC[MAINC.length - 1];
+
+        /* ================= state ================= */
+        const S = { project: 'week-3', zoom: 'runs', sel: null, view: 'step', open: new Set(), openSit: new Set(), menu: null, paused: false, showAll: false, enter: new Set(), dirty: true, lastRewind: null, hl: '' };
+
+        /* ================= lanes: the path is the record, drawn by content ================= */
+        let MAINLANE = 1, SIDE = false;
+        function lanes() {
+          const trunk = new Set();
+          let c = tip();
+          while (c) {
+            trunk.add(c.sha);
+            c = c.trig === 'rewind to' && BY[c.target] && BY[c.target].ref === 'record' ? BY[c.target] : BY[c.parent];
+          }
+          SIDE = false;
+          for (const k of REC) { k.lane = trunk.has(k.sha) ? 0 : 1; if (k.lane) SIDE = true; }
+          MAINLANE = SIDE ? 2 : 1;
+          for (const m of MAINC) m.lane = MAINLANE;
+        }
+
+        /* sittings: runs of commits with no gap over half an hour */
+        let SITS = [];
+        function sittings() {
+          SITS = [];
+          let cur = null;
+          for (const k of REC) {
+            if (!cur || k.t - cur.end > 1800 || dayOf(k.t) !== dayOf(cur.end)) { cur = { i: SITS.length, start: k.t, end: k.t, rec: [], main: [] }; SITS.push(cur); }
+            cur.rec.push(k); cur.end = k.t; k.sit = cur.i;
+          }
+          for (const m of MAINC) { m.sit = null; for (const s of SITS) if (m.t >= s.start && m.t <= s.end) { m.sit = s.i; s.main.push(m); } }
+        }
+
+        /* ================= rows ================= */
+        let ROWS = [], ROWOF = {}, EDGES = [];
+        function nodeKind(k) {
+          if (k.ref === 'main') return 'main';
+          return { 'cell run': 'run', timer: 'timer', 'session open': 'sess', 'session close': 'sess', 'external edit': 'ext', 'rewind to': 'rwto', 'rewind from': 'rwfrom' }[k.trig] || 'timer';
+        }
+        function buildRows() {
+          ROWS = []; ROWOF = {};
+          const blocks = SITS.map((s) => ({ sit: s, start: s.start, end: s.end }));
+          for (const m of MAINC) if (m.sit == null) blocks.push({ orphan: m, start: m.t, end: m.t });
+          blocks.sort((a, b) => b.end - a.end);
+          let prev = null;
+          for (const b of blocks) {
+            const day = dayOf(b.end);
+            if (!prev) ROWS.push({ type: 'day', h: 34, day, first: true });
+            else {
+              const gap = prev.start - b.end;
+              if (day !== dayOf(prev.start)) ROWS.push({ type: 'day', h: 34, day, gap });
+              else if (gap > 1800) ROWS.push({ type: 'gap', h: 22, gap });
+            }
+            if (b.orphan) pushCommit(b.orphan);
+            else emitSitting(b.sit);
+            prev = b;
+          }
+        }
+        function pushCommit(k) {
+          ROWOF[k.sha] = ROWS.length;
+          ROWS.push({ type: 'commit', h: 26, key: k.sha, k, nodes: [{ lane: k.lane, kind: nodeKind(k), ref: k.ref }] });
+        }
+        function emitSitting(s) {
+          const collapsed = S.zoom === 'sittings' && !S.openSit.has(s.i);
+          if (collapsed) {
+            const i = ROWS.length, lanesIn = [...new Set(s.rec.map((k) => k.lane))].sort();
+            const nodes = lanesIn.map((l) => ({ lane: l, kind: 'sit', ref: 'record' }));
+            if (s.main.length) nodes.push({ lane: MAINLANE, kind: 'mainc', ref: 'main', n: s.main.length });
+            for (const k of s.rec) ROWOF[k.sha] = i;
+            for (const m of s.main) ROWOF[m.sha] = i;
+            ROWS.push({ type: 'sit', h: 26, key: 'sit:' + s.i, sit: s, nodes });
+            return;
+          }
+          const items = [...s.rec, ...s.main].sort((a, b) => b.t - a.t);
+          for (let j = 0; j < items.length; j++) {
+            const k = items[j];
+            if (S.zoom !== 'all' && k.ref === 'record' && k.trig === 'timer') {
+              let e = j;
+              while (e + 1 < items.length && items[e + 1].ref === 'record' && items[e + 1].trig === 'timer' && items[e + 1].app === k.app && items[e + 1].lane === k.lane) e++;
+              if (e > j) {
+                const members = items.slice(j, e + 1), key = 'fold:' + members[members.length - 1].sha;
+                if (!S.open.has(key)) {
+                  const i = ROWS.length;
+                  for (const m of members) ROWOF[m.sha] = i;
+                  ROWS.push({ type: 'fold', h: 26, key, members, nodes: [{ lane: k.lane, kind: 'fold', ref: 'record' }] });
+                  j = e; continue;
+                }
+                for (let x = j; x <= e; x++) { pushCommit(items[x]); ROWS[ROWS.length - 1].grp = key; ROWS[ROWS.length - 1].grpTop = x === j; }
+                j = e; continue;
+              }
+            }
+            pushCommit(k);
+          }
+        }
+
+        /* edges between visible rows: git's parents (solid), and a rewind's link to the moment it reproduces (dashed) */
+        function buildEdges() {
+          const E = [], seen = new Set();
+          const add = (older, newer, style, kind) => {
+            const a = older ? ROWOF[older.sha] : Infinity, b = ROWOF[newer.sha];
+            if (a === b || b == null || a == null) return;
+            const la = older ? older.lane : newer.lane, lb = newer.lane, lt = Math.max(la, lb);
+            const id = a + ':' + b + ':' + la + ':' + lb + ':' + style;
+            if (seen.has(id)) return; seen.add(id);
+            E.push({ a, b, la, lb, lt, style, kind });
+          };
+          for (const k of [...REC, ...MAINC]) {
+            if (k.parent) add(BY[k.parent], k, 'solid', k.ref);
+            if (k.trig === 'rewind to' && k.target !== k.parent) add(BY[k.target], k, 'dash', 'record');
+          }
+          EDGES = E;
+        }
+        const LX = (l) => 9 + l * 13;
+        const graphW = () => LX(MAINLANE) + 10;
+
+        function rowSVG(i, r, W) {
+          const h = r.h, cy = h / 2, isGap = r.type === 'day' && !r.first ? true : r.type === 'gap';
+          let rails = '', nodes = '', ties = '';
+          const cls = (e) => (e.kind === 'main' ? 'e-main n-main' : e.lt === 0 ? 'e-rec' : 'e-side') + (e.style === 'dash' ? ' e-dash' : '') + (e.kind !== 'main' && e.lt > 0 ? ' n-side' : e.kind !== 'main' ? ' n-rec' : '');
+          for (const e of EDGES) {
+            const x = LX(e.lt);
+            if (e.b < i && i < e.a) {
+              rails += `<path class="${cls(e)}${isGap ? ' e-gap' : ''}" d="M${x} 0V${h}"/>`;
+            } else if (e.a === i) {
+              const xn = LX(e.la);
+              rails += `<path class="${cls(e)}" d="${xn === x ? `M${x} ${cy}V0` : elbowUp(xn, cy, x)}"/>`;
+            } else if (e.b === i) {
+              const xn = LX(e.lb);
+              rails += `<path class="${cls(e)}" d="${xn === x ? `M${x} ${h}V${cy}` : elbowDown(xn, cy, x, h)}"/>`;
+            }
+          }
+          /* the tie: a user commit that holds the same files as the record at that moment */
+          if (r.type === 'commit' && r.k.ref === 'main' && (r.k.same || r.k.differs) && r.k.recAt) {
+            const rl = BY[r.k.recAt].lane, xr = LX(rl), xm = LX(r.k.lane);
+            ties = `<path class="tie" d="M${xm - 4} ${cy}H${xr + 3}"${r.k.differs ? ' stroke-dasharray="1 4.5"' : ''}/><circle cx="${xr}" cy="${cy}" r="2.6" style="fill:var(--rowbg)" stroke="rgba(157,184,214,0.75)" stroke-width="1.1"/>`;
+          }
+          for (const n of r.nodes || []) nodes += nodeSVG(n, cy, r);
+          return `<svg class="g" width="${W}" height="${h}" viewBox="0 0 ${W} ${h}">${rails}${ties}${nodes}</svg>`;
+        }
+        function elbowUp(xn, cy, x) { const d = Math.sign(x - xn), rr = Math.min(5.5, cy, Math.abs(x - xn)); return `M${xn} ${cy}H${x - d * rr}Q${x} ${cy} ${x} ${cy - rr}V0`; }
+        function elbowDown(xn, cy, x, h) { const d = Math.sign(x - xn), rr = Math.min(5.5, h - cy, Math.abs(x - xn)); return `M${x} ${h}V${cy + rr}Q${x} ${cy} ${x - d * rr} ${cy}H${xn}`; }
+        function nodeSVG(n, cy, r) {
+          const x = LX(n.lane), side = n.ref === 'record' && n.lane > 0, sel = S.sel === r.key;
+          const ink = side ? '#7c7a76' : '#dddbd6', soft = side ? '#5f5e5b' : '#8f8d88';
+          const grp = n.ref === 'main' ? 'n-main' : side ? 'n-side' : 'n-rec';
+          let s = '', R = 3.5;
+          switch (n.kind) {
+            case 'run': s = `<circle cx="${x}" cy="${cy}" r="3.6" fill="${ink}"/>`; R = 3.6; break;
+            case 'timer': s = `<circle cx="${x}" cy="${cy}" r="2.1" fill="${soft}"/>`; R = 2.4; break;
+            case 'fold': s = `<rect x="${x - 3.2}" y="${cy - 6.5}" width="6.4" height="13" rx="3.2" style="fill:var(--rowbg)" stroke="${soft}" stroke-width="1.2"/><circle cx="${x}" cy="${cy - 2.4}" r="0.9" fill="${soft}"/><circle cx="${x}" cy="${cy + 2.4}" r="0.9" fill="${soft}"/>`; R = 6.5; break;
+            case 'sess': s = `<rect x="${x - 5}" y="${cy - 1.4}" width="10" height="2.8" rx="1.4" fill="${side ? soft : '#b9b7b2'}"/>`; R = 5; break;
+            case 'ext': s = `<circle cx="${x}" cy="${cy}" r="3.3" style="fill:var(--rowbg)" stroke="${side ? '#8a6a35' : '#d29a3a'}" stroke-width="1.5"/>`; R = 3.3; break;
+            case 'rwto': s = `<circle cx="${x}" cy="${cy}" r="4.6" style="fill:var(--rowbg)" stroke="${ink}" stroke-width="1.5"/><circle cx="${x}" cy="${cy}" r="1.6" fill="${ink}"/>`; R = 4.6; break;
+            case 'rwfrom': s = `<circle cx="${x}" cy="${cy}" r="3.2" style="fill:var(--rowbg)" stroke="${side ? '#8a8884' : ink}" stroke-width="1.3"/>`; R = 3.2; break;
+            case 'main': s = `<circle cx="${x}" cy="${cy}" r="3.8" fill="#9db8d6"/>`; R = 3.8; break;
+            case 'mainc': s = `<circle cx="${x}" cy="${cy}" r="3.4" fill="#9db8d6"/><circle cx="${x}" cy="${cy}" r="5.6" fill="none" stroke="rgba(157,184,214,0.45)" stroke-width="1"/>`; R = 5.6; break;
+            case 'sit': s = `<rect x="${x - 2.7}" y="${cy - 7}" width="5.4" height="14" rx="2.7" fill="${side ? soft : '#b9b7b2'}"/>`; R = 7; break;
+          }
+          if (sel && n === r.nodes[0]) s += n.kind === 'fold' || n.kind === 'sit' ? `<rect class="halo" x="${x - 6}" y="${cy - (R + 2.6)}" width="12" height="${2 * R + 5.2}" rx="6"/>` : `<circle class="halo" cx="${x}" cy="${cy}" r="${R + 3}"/>`;
+          return `<g class="${grp}">${s}</g>`;
+        }
+
+        /* the words in a row */
+        function rowText(r) {
+          if (r.type === 'day') {
+            const lab = r.day === 4 ? '<b>Today</b> · Friday 2 October' : '<b>' + DAYNAME[r.day] + '</b> · ' + DAYDATE[r.day];
+            return `<span class="dl">${lab}</span>${r.gap ? `<span class="gl">closed ${dur(r.gap)}</span>` : ''}`;
+          }
+          if (r.type === 'gap') return `<span class="gl">closed ${dur(r.gap)}</span>`;
+          if (r.type === 'fold') {
+            const m = r.members, newest = m[0], oldest = m[m.length - 1];
+            return `<span class="msg"><span class="caret">▸</span>${m.length} timer saves<span class="sub">${foldWhere(m)}</span></span><span class="app">${newest.app}</span><span class="t">${fHM(newest.t)}</span>`;
+          }
+          if (r.type === 'sit') {
+            const s = r.sit, runs = s.rec.filter((k) => k.trig === 'cell run').length, apps = [...new Set(s.rec.map((k) => k.app).filter(Boolean))];
+            void runs; void apps;
+            return `<span class="msg"><span class="caret">▸</span>${dur(s.end - s.start)}<span class="sub">${s.rec.length} commits</span></span>${rug(s)}<span class="t">${fHM(s.start)}</span>`;
+          }
+          const k = r.k;
+          const caret = r.grpTop ? '<span class="caret">▾</span>' : r.grp ? '<span class="caret"></span>' : '';
+          if (k.ref === 'main') {
+                        return `<span class="msg">${esc(k.msg)}</span><span class="app mb">${k === mainTip() ? 'main' : ''}</span><span class="t">${fHM(k.t)}</span>`;
+          }
+          let m = '';
+          const sub = (s) => `<span class="sub">${s}</span>`;
+          switch (k.trig) {
+            case 'cell run': m = `cell run<span class="chip">[${k.cell}]</span>`; break;
+            case 'timer': m = 'timer' + sub(whereOf(k)); break;
+            case 'session open': case 'session close': m = k.trig + sub(esc(k.opt.doc || '')); break;
+            case 'external edit': m = 'external edit' + sub((k.files || []).join(', ')); break;
+            case 'rewind to': { const T = BY[k.target]; m = `rewind to<span class="jump" data-jump="${T.sha}">${fWhen(T.t)} ${T.trig === 'cell run' ? '[' + T.cell + ']' : ''} ↓</span>`; break; }
+            case 'rewind from': m = 'rewind from' + sub('the work kept'); break;
+          }
+          if (k.opt && k.opt.first) m += '<span class="tag first">first commit</span>';
+          if (k === tip()) m += '<span class="tag now">now</span>';
+          return `<span class="msg">${caret}${m}</span><span class="app">${k.app || ''}</span><span class="t">${fHM(k.t)}</span>`;
+        }
+        function whereOf(k) {
+          if (k.cells && k.cells.length) return cellsWord(k.cells.map((c) => c.c));
+          if (k.opt && k.opt.memo) return 'memo.typ';
+          if (k.opt && k.opt.notes) return 'reading-notes.typ';
+          return (k.files || []).join(', ');
+        }
+        function foldWhere(ms) {
+          const cs = ms.flatMap((k) => (k.cells || []).map((c) => c.c));
+          if (cs.length) return cellsWord(cs);
+          return whereOf(ms[0]);
+        }
+        function rug(s) {
+          const W = 50, span = Math.max(1, s.end - s.start);
+          let ticks = '';
+          for (const k of s.rec) { const x = 1 + ((k.t - s.start) / span) * (W - 2); ticks += `<line x1="${x.toFixed(1)}" y1="${k.trig === 'cell run' ? 1 : 4}" x2="${x.toFixed(1)}" y2="11" stroke="${k.trig === 'cell run' ? 'rgba(213,211,207,0.7)' : 'rgba(213,211,207,0.25)'}" stroke-width="0.8"/>`; }
+          return `<svg class="rug" viewBox="0 0 ${W} 12">${ticks}</svg>`;
+        }
+        function rowTitle(r) {
+          if (r.type === 'commit') {
+            const k = r.k;
+            if (k.ref === 'main') return `main · ${k.msg} · ${fHMS(k.t)} · ${k.sha}`;
+            return `${k.app ? k.app + ': ' : ''}${k.trig}${k.cell ? ' [' + k.cell + ']' : ''}${k.trig === 'rewind to' ? ' ' + k.target : ''} · ${fHMS(k.t)} · ${k.sha}`;
+          }
+          if (r.type === 'fold') return `${r.members.length} timer saves, ${fHMS(r.members[r.members.length - 1].t)} to ${fHMS(r.members[0].t)} · click ▸ to unfold`;
+          if (r.type === 'sit') return `${DAYNAME[dayOf(r.sit.start)]} ${fHM(r.sit.start)}–${fHM(r.sit.end)} · ${r.sit.rec.length} commits` + (r.sit.main.length ? ` · ${r.sit.main.length} on main` : '');
+          return '';
+        }
+
+        function renderRows(keepScroll) {
+          const box = $('#rows'), top = box.scrollTop;
+          if (S.project === 'week-4') {
+            box.innerHTML = `<div class="row r-day" style="height:34px"><svg class="g" width="30" height="34"></svg><span class="dl"><b>Today</b> · Friday 2 October</span></div>
+              <div class="row r-empty"><svg class="g" width="30" height="30"><path d="M9 0V9" stroke="#4b4a48" stroke-dasharray="1 3" fill="none"/><circle cx="9" cy="15" r="4" fill="none" stroke="#6f6d69" stroke-width="1.3" stroke-dasharray="2 2"/></svg><span class="msg" style="color:var(--frame-ink-soft)">now<span class="sub">not recorded yet</span></span></div>
+              <div class="colempty">The first commit lands when <b>Knuth</b> or <b>Plass</b> opens a document here, and the path grows from it.</div>`;
+            return;
+          }
+          const W = graphW();
+          box.innerHTML = ROWS.map((r, i) => {
+            const cl = ['row', 'r-' + r.type];
+            if (r.type === 'commit') { if (r.k.trig === 'timer') cl.push('timer'); if (r.k.ref === 'record' && r.k.lane > 0) cl.push('off'); if (r.k.trig === 'external edit') cl.push('ext'); if (S.enter.has(r.key)) cl.push('enter'); }
+            if (r.type === 'fold' && r.nodes[0].lane > 0) cl.push('off');
+            if (r.key && r.key === S.sel) cl.push('sel');
+            if (r.key && r.key === S.menu) cl.push('menu');
+            const sel = r.type === 'commit' || r.type === 'fold' || r.type === 'sit';
+            return `<div class="${cl.join(' ')}" data-i="${i}"${r.key ? ` data-key="${r.key}"` : ''} title="${esc(rowTitle(r))}" style="height:${r.h}px">${rowSVG(i, r, W)}${rowText(r)}${sel ? '<button class="more" aria-label="Menu" tabindex="-1">···</button>' : ''}</div>`;
+          }).join('');
+          S.enter.clear();
+          if (keepScroll) box.scrollTop = top;
+        }
+
+        function renderLegend() {
+          const today = REC.filter((k) => dayOf(k.t) === 4).length;
+          const lg = $('#legend');
+          if (S.project === 'week-4') { lg.innerHTML = '<span class="lg"><i></i>record</span><span class="cnt">no commits</span>'; return; }
+          lg.innerHTML = `<span class="lg" data-hl="rec" title="claerbout-autosave: the record, drawn as the path"><i></i>record</span>` +
+            (SIDE ? `<span class="lg ls" data-hl="side" title="a stretch a rewind stepped away from (still in the record)"><i></i>rewound</span>` : '') +
+            `<span class="lg lm" data-hl="main" title="main: your branch (HEAD)"><i></i>main</span>` +
+            `<span class="lg lt" data-hl="tie" title="dotted: the record held the same files as your commit at that moment"><i></i>same files</span>` +
+''; void today;
+        }
+        function renderFoot() {
+          const f = $('#colfoot');
+          if (S.project === 'week-4') { f.innerHTML = '<span class="mono">claerbout-autosave</span> · not made yet'; return; }
+          f.innerHTML = `<span class="mono">claerbout-autosave</span> · <b>${REC.length} commits</b> since Mon 28 Sep 13:02 · on this Mac, not pushed`;
+        }
+        function renderTop() {
+          const pill = $('#recpill');
+          pill.classList.toggle('paused', S.paused && S.project === 'week-3');
+          pill.classList.toggle('none', S.project === 'week-4');
+          if (S.project === 'week-4') {
+            $('#pname').textContent = 'week-4'; $('#ppath').textContent = '~/Projects/ECON_0150/week-4';
+            $('#phead').innerHTML = $('#phead').innerHTML.replace(/<b>.*<\/b>/, '<b>main</b>');
+            pill.querySelector('.st').textContent = 'no record yet'; pill.querySelector('.ct').textContent = 'starts with a document';
+            return;
+          }
+          $('#pname').textContent = 'week-3'; $('#ppath').textContent = '~/Projects/ECON_0150/week-3';
+          const today = REC.filter((k) => dayOf(k.t) === 4).length;
+          if (S.paused) { pill.querySelector('.st').textContent = 'paused'; pill.querySelector('.ct').textContent = 'a rebase is in progress on main'; }
+          else { pill.querySelector('.st').textContent = 'recording'; pill.querySelector('.ct').textContent = `${today} today · last ${fHMS(tip().t)}`; }
+        }
+
+        /* ================= the room: the document at that moment ================= */
+        function rowByKey(key) { return ROWS.find((r) => r.key === key); }
+        function snapBefore(k) { return k.parent && BY[k.parent] && BY[k.parent].ref === 'record' ? BY[k.parent].snap : { max: 0, cells: {}, files: {}, unt: {}, memo: {}, notes: 0 }; }
+
+        function kindsOf(changes, single) {
+          const m = new Map();
+          for (const ch of changes) {
+            const o = m.get(ch.c) || {};
+            switch (ch.k) {
+              case 'new': o.newc = true; break;
+              case 'src': if (!o.src) o.src = true; break;
+              case 'edit1': o.src = 'edit1'; break;
+              case 'out': o.out = { prev: o.out ? o.out.prev : ch.prev ? 'prev' : ch.prevFirst ? 'first' : null, lines: ch.first ? 'first' : 'out' }; o.err = false; break;
+              case 'err': o.err = true; o.out = null; break;
+              case 'fix': if (o.err) { o.err = false; o.out = { lines: 'out' }; } else o.fix = true; break;
+              case 'fig': o.fig = { from: o.fig ? o.fig.from : ch.from, to: ch.to }; break;
+            }
+            m.set(ch.c, o);
+          }
+          if (!single) for (const o of m.values()) if (o.newc) { if (o.out) o.out.prev = null; if (o.fig) o.fig.from = null; }
+          return m;
+        }
+        const linesOf = (txt) => (txt ? txt.split('\n') : []);
+        function cellHTML(c, o, opt) {
+          opt = opt || {};
+          const cell = CELLS[c - 1];
+          const what = [];
+          if (o) { if (o.newc) what.push('new cell'); else if (o.src) what.push('source'); if (o.err) what.push('an error'); if (o.fix) what.push('output, the error gone'); else if (o.out) what.push('output'); if (o.fig) what.push(o.fig.from ? 'figure' : 'new figure'); }
+          if (opt.rest) what.push('back to ' + opt.rest);
+          if (opt.gone) what.push('taken out');
+          const cls = 'dcell' + (o || opt.rest || opt.gone ? '' : ' same') + (opt.rest ? ' rest' : '') + (opt.gone ? ' gone' : '');
+          let body = '';
+          if (cell.kind === 'text') {
+            const blocks = cell.html.match(/<(h2|p)>[\s\S]*?<\/\1>/g) || [];
+            let html;
+            if (o && o.newc) html = blocks.join('');
+            else if (o && o.src) html = blocks.slice(0, -1).join('') + blocks[blocks.length - 1].replace(/^<(\w+)>([\s\S]*)<\/\1>$/, (_, tg, inner) => { const cut = inner.lastIndexOf('. ', inner.length - 3); return `<${tg}>${cut > 0 ? inner.slice(0, cut + 2) + '<ins>' + inner.slice(cut + 2) + '</ins>' : '<ins>' + inner + '</ins>'}</${tg}>`; });
+            else html = blocks.join('');
+            body = `<div class="dprose${o && o.newc ? ' add' : ''}">${html}</div>`;
+          } else {
+            const rows = [];
+            const L = cell.code;
+            if (o && o.newc) L.forEach((h) => rows.push(['+', h]));
+            else if (o && o.src === 'edit1' && cell.old0) { rows.push(['-', esc(cell.old0)]); rows.push(['+', L[0]]); L.slice(1).forEach((h) => rows.push([' ', h])); }
+            else if (o && o.src) {
+              const last = L.length - 1;
+              L.slice(0, last).forEach((h) => rows.push([' ', h]));
+              if (opt.alt) { const t = strip(L[last]); rows.push(['-', esc(t.slice(0, Math.max(3, Math.floor(t.length * 0.55))))]); }
+              rows.push(['+', L[last]]);
+            } else L.forEach((h) => rows.push([' ', h]));
+            let n = 0;
+            const gut = rows.map((r) => `<span class="${r[0] === '+' ? 'add' : r[0] === '-' ? 'del' : ''}">${r[0] === '-' ? '' : ++n}</span>`).join('');
+            const code = rows.map((r) => `<div class="line${r[0] === '+' ? ' add' : r[0] === '-' ? ' del' : ''}">${r[1] || ' '}</div>`).join('');
+            body = `<div class="cm${cell.kind === 'scratch' ? ' scratch' : ''}"><div class="gut">${gut}</div><div class="code">${code}</div></div>`;
+            let out = [];
+            const fin = linesOf(cell.out);
+            if (o && o.err) out = linesOf(cell.err).map((l) => ['+', l, 'err']);
+            else if (o && o.fix) out = [...linesOf(cell.err).map((l) => ['-', l]), ...fin.map((l) => ['+', l])];
+            else if (o && o.out) {
+              const now = o.out.lines === 'first' ? linesOf(cell.first) : fin;
+              const was = o.out.prev === 'prev' ? linesOf(cell.prev) : o.out.prev === 'first' ? linesOf(cell.first) : [];
+              out = [...was.map((l) => ['-', l]), ...now.map((l) => ['+', l])];
+            } else if (!o && fin.length && !opt.gone) out = fin.map((l) => [' ', l]);
+            if (out.length) body += `<div class="dout">${out.map((l) => `<div class="${l[0] === '+' ? 'add' : l[0] === '-' ? 'del' : ''}${l[2] ? ' ' + l[2] : ''}">${esc(l[1]) || ' '}</div>`).join('')}</div>`;
+            if (o && o.fig) {
+              const wide = o.fig.to[0] === 'm' ? ' wide' : '';
+              const name = CELL_FIG[c];
+              body += `<div class="figpair">${o.fig.from ? `<figure class="before"><div class="print${wide}">${FIGS[o.fig.from]}</div><figcaption>before</figcaption></figure><span class="arr">→</span>` : ''}<figure><div class="print${wide}">${FIGS[o.fig.to]}</div><figcaption><b>${name}</b>${o.fig.from ? ' · after' : ' · new'}</figcaption></figure></div>`;
+            }
+          }
+          return `<div class="${cls}" id="cell-${c}"><div class="cn">[${c}]</div><div class="what">${what.join(' · ')}</div>${body}</div>`;
+        }
+        function dmapHTML(max, states, extraMax) {
+          let s = '';
+          for (let c = 1; c <= Math.max(max, extraMax || 0); c++) s += `<i class="${CELLS[c - 1].kind === 'text' ? 'tx ' : ''}${states[c] || ''}" data-cell="${c}" title="cell ${c}">${c}</i>`;
+          return `<div class="dmap">${s}</div>`;
+        }
+        function docHTML(kinds, max, opt) {
+          opt = opt || {};
+          const states = {};
+          for (const [c, o] of kinds) states[c] = o.newc ? 'new' : 'chg';
+          let html = dmapHTML(max, states), run = [];
+          const flush = () => { if (run.length) { html += `<button class="dfold">${run.length === 1 ? 'cell ' + run[0] : 'cells ' + run[0] + '–' + run[run.length - 1]} unchanged</button>`; run = []; } };
+          for (let c = 1; c <= max; c++) {
+            const o = kinds.get(c);
+            if (!o) { run.push(c); html += cellHTML(c, null); continue; }
+            flush();
+            html += cellHTML(c, o, { alt: opt.alt });
+          }
+          flush();
+          return html;
+        }
+        function chip(path, st, plumb) { return `<button class="fchip${plumb ? ' plumb' : ''}" data-file="${esc(path)}">${esc(path)}${st}</button>`; }
+        function sectionHTML(path, inner, stat, note) {
+          return `<section class="fsec" id="file-${path.replace(/[^\w]/g, '_')}"><h3><span>${esc(path)}</span>${stat ? `<span class="fs">${stat}</span>` : ''}${note ? `<span class="note">${note}</span>` : ''}</h3>${inner}</section>`;
+        }
+        function countLines(kinds) {
+          let a = 0, d = 0;
+          for (const [c, o] of kinds) {
+            const cell = CELLS[c - 1], L = cell.code ? cell.code.length : 2;
+            if (o.newc) a += L; else if (o.src) { a += 1; d += o.src === 'edit1' ? 1 : 0; }
+            if (o.err) a += linesOf(cell.err).length;
+            if (o.fix) { a += linesOf(cell.out).length; d += linesOf(cell.err).length; }
+            if (o.out) { a += linesOf(o.out.lines === 'first' ? cell.first : cell.out).length; d += o.out.prev === 'prev' ? linesOf(cell.prev).length : o.out.prev === 'first' ? linesOf(cell.first).length : 0; }
+            if (o.fig) a += 1;
+          }
+          return [a, d];
+        }
+
+        /* the body of a step (one commit or a group of them): analysis.py, then the other files */
+        function stepBody(before, after, kinds, ctx) {
+          const changed = Object.keys(after.files).filter((p) => after.files[p] !== before.files[p] && !(ctx.exclude || []).includes(p));
+          const order = ['analysis.py', 'memo.typ', 'prices.csv', 'summary.csv', 'reading-notes.typ', 'figs/ax.svg', 'figs/fig.svg', 'figs/ax2.svg', '.knuth-artifacts.json', '.claerbout/untracked.json', '.gitignore'];
+          changed.sort((a, b) => order.indexOf(a) - order.indexOf(b));
+          const chips = [], secs = [];
+          for (const p of changed) {
+            const isNew = !(p in before.files);
+            if (p === 'analysis.py') {
+              const [a, d] = countLines(kinds);
+              chips.push(chip(p, `<span class="a">+${a}</span>${d ? `<span class="d">−${d}</span>` : ''}`));
+              secs.push(sectionHTML(p, docHTML(kinds, after.max, ctx), `+${a}${d ? ' −' + d : ''}`, kinds.size ? cellsWord([...kinds.keys()]) : ''));
+            } else if (p.startsWith('figs/')) chips.push(chip(p, `<span class="st">${isNew ? 'new' : 'changed'}</span>`, false));
+            else if (p === 'memo.typ') { chips.push(chip(p, `<span class="st">${isNew ? 'new' : 'text'}</span>`)); secs.push(sectionHTML(p, memoHTML(before.memo, after.memo), isNew ? 'new' : '', 'Plass')); }
+            else if (p === 'prices.csv') { const c = csvHTML(ctx.csv || []); chips.push(chip(p, `<span class="st">${c.st}</span>`)); secs.push(sectionHTML(p, c.html, c.st, c.note)); }
+            else if (p === 'summary.csv') { chips.push(chip(p, '<span class="st">new</span>')); secs.push(sectionHTML(p, summaryHTML(), 'new · 4 lines', 'written by cell 20')); }
+            else if (p === 'reading-notes.typ') { chips.push(chip(p, `<span class="st">${isNew ? 'new' : 'text'}</span>`)); secs.push(sectionHTML(p, notesHTML(before.notes, after.notes), '', 'Plass')); }
+            else if (p === '.claerbout/untracked.json') { const added = Object.keys(after.unt).filter((u) => !(u in before.unt)); chips.push(chip(p, `<span class="st">${added.length ? added.length + ' file' : 'rewritten'}</span>`, true)); secs.push(sectionHTML(p, manHTML(added, after.unt), '', 'the manifest of untracked/')); }
+            else if (p === '.knuth-artifacts.json') chips.push(chip(p, '<span class="st">+1</span>', true));
+            else if (p === '.gitignore') { chips.push(chip(p, '<span class="st">new</span>', true)); secs.push(sectionHTML(p, '<div class="plain"><div class="add">untracked/</div></div>', 'new', 'written by the record, once')); }
+            else chips.push(chip(p, '', false));
+          }
+          return { chips: chips.join(''), body: secs.join('') || `<p class="fnote">Nothing in the files changed in this step.</p>`, n: changed.length };
+        }
+        function memoHTML(b, a) {
+          const ps = [];
+          MEMO.forEach((p, i) => {
+            if (!(i in a)) return;
+            const was = i in b ? b[i] : null, nowv = a[i];
+            const txt = (v) => (v === 0 && p.old ? p.old : p.t);
+            let inner;
+            if (was === null) inner = `<ins>${esc(txt(nowv))}</ins>`;
+            else if (was !== nowv) { const o = txt(was), n = txt(nowv); inner = n.startsWith(o) ? esc(o) + `<ins>${esc(n.slice(o.length))}</ins>` : `<del>${esc(o)}</del> <ins>${esc(n)}</ins>`; }
+            else inner = esc(txt(nowv));
+            const changed = was === null || was !== nowv;
+            ps.push(p.k === 'h' ? `<div class="th${changed ? ' pa' : ''}">${inner}</div>` : p.k === 'f' ? `<div class="tf${changed ? ' pa' : ''}">${inner}</div>` : `<p${changed ? ' class="pa"' : ''}>${inner}</p>`);
+          });
+          return `<div class="typ">${ps.join('')}</div>`;
+        }
+        function notesHTML(b, a) {
+          return `<div class="typ">${NOTES.slice(0, Math.max(1, a)).map((p, i) => { const inner = i >= b ? `<ins>${esc(p.t)}</ins>` : esc(p.t); return p.k === 'h' ? `<div class="th${i >= b ? ' pa' : ''}">${inner}</div>` : `<p${i >= b ? ' class="pa"' : ''}>${inner}</p>`; }).join('')}</div>`;
+        }
+        function csvHTML(kinds) {
+          if (kinds.includes('fix')) return {
+            st: '1 row', note: 'edited outside the apps',
+            html: `<table class="csv"><thead><tr><td class="ln"></td><td>price</td><td>quantity</td><td>region</td></tr></thead><tbody><tr><td class="ln">417</td><td>1.10</td><td>288</td><td>west</td></tr><tr class="del"><td class="ln">418</td><td>9.00</td><td>402</td><td>south</td></tr><tr class="add"><td class="ln">418</td><td class="hi">0.90</td><td>402</td><td>south</td></tr><tr><td class="ln">419</td><td>0.75</td><td>512</td><td>east</td></tr></tbody></table><p class="fnote">No app wrote this file: the record saw it change on disk and tagged the commit <i>external edit</i>.</p>`,
+          };
+          if (kinds.includes('closed')) return {
+            st: '50 rows', note: 'changed while no window was open',
+            html: `<table class="csv"><thead><tr><td class="ln"></td><td>price</td><td>quantity</td><td>region</td></tr></thead><tbody><tr><td class="ln">1150</td><td>0.75</td><td>509</td><td>west</td></tr><tr class="add"><td class="ln">1151</td><td>0.90</td><td>431</td><td>north</td></tr><tr class="add"><td class="ln">1152</td><td>1.10</td><td>288</td><td>west</td></tr><tr class="add"><td class="ln">1153</td><td>0.75</td><td>0</td><td>south</td></tr><tr class="more"><td></td><td colspan="3">… 47 more rows added, to 1200</td></tr></tbody></table><p class="fnote">The file changed after the last commit (Thursday 16:40); this session's first commit took it in.</p>`,
+          };
+          return { st: 'changed', note: '', html: '<p class="fnote">The file changed.</p>' };
+        }
+        function summaryHTML() {
+          return `<table class="csv"><tbody><tr class="add"><td class="ln">1</td><td>price</td><td>demand</td><td>elasticity</td><td>revenue</td></tr><tr class="add"><td class="ln">2</td><td>0.75</td><td>520.0</td><td></td><td>390.0</td></tr><tr class="add"><td class="ln">3</td><td>0.9</td><td>410.0</td><td>-1.057692</td><td>369.0</td></tr><tr class="add"><td class="ln">4</td><td>1.1</td><td>300.0</td><td>-1.207317</td><td>330.0</td></tr></tbody></table>`;
+        }
+        function manHTML(added, unt) {
+          const names = Object.keys(unt);
+          if (!names.length) return '<p class="fnote">untracked/ is empty. Large data, caches and scratch files go there; the record keeps each file’s size and hash, not the file.</p>';
+          return `<div class="man">${names.map((u) => `<div class="${added.includes(u) ? 'add' : ''}"><span class="nm">${UNT[u].name}</span><span class="sz">${UNT[u].size}</span><span class="h">sha256 ${UNT[u].sha}</span></div>`).join('')}</div><p class="fnote">untracked/ stays out of git; the manifest keeps each file’s size, time and SHA-256 inside the record.</p>`;
+        }
+
+        /* against now: compare the files then with the files now */
+        function compare(X, Nn) {
+          const out = [], back = [], come = [];
+          for (let c = 1; c <= Math.max(X.max, Nn.max); c++) {
+            const inX = c <= X.max, inN = c <= Nn.max;
+            if (inN && !inX) out.push(c); else if (inX && !inN) come.push(c); else if (inX && X.cells[c] !== Nn.cells[c]) back.push(c);
+          }
+          const files = [];
+          for (const p of new Set([...Object.keys(X.files), ...Object.keys(Nn.files)])) {
+            if (p === 'analysis.py' || p === '.claerbout/untracked.json' || p === '.knuth-artifacts.json') continue;
+            const inX = p in X.files, inN = p in Nn.files;
+            if (inX && inN && X.files[p] === Nn.files[p]) continue;
+            files.push({ p, st: !inX ? 'gone' : !inN ? 'come' : 'back', by: Nn.files[p] });
+          }
+          const untStay = Object.keys(Nn.unt).filter((u) => !(u in X.unt)), untLost = Object.keys(X.unt).filter((u) => !(u in Nn.unt));
+          return { out, back, come, files, untStay, untLost, empty: !out.length && !back.length && !come.length && !files.length };
+        }
+        function compareRows(cmp, X, Nn, past) {
+          const w = past ? { come: 'came', go: 'went', is: 'was', are: 'were' } : { come: 'come', go: 'go', is: 'is', are: 'are' };
+          const tx = fWhen(X.t || 0);
+          const rows = [];
+          const parts = [];
+          if (cmp.out.length) parts.push(`${cellsWord(cmp.out)} ${cmp.out.length === 1 ? (past ? 'came out' : 'comes out') : w.come + ' out'} <span class="soft">(${cmp.out.length === 1 ? 'it was' : 'they were'} written after ${tx})</span>`);
+          if (cmp.back.length) parts.push(`${cellsWord(cmp.back)} ${cmp.back.length === 1 ? (past ? 'went back' : 'goes back') : w.go + ' back'} to how ${cmp.back.length === 1 ? 'it was' : 'they were'} at ${tx}`);
+          if (cmp.come.length) parts.push(`${cellsWord(cmp.come)} ${cmp.come.length === 1 ? (past ? 'came back' : 'comes back') : w.come + ' back'}`);
+          if (parts.length) rows.push(['analysis.py', parts.join('; ') + (past ? '. Knuth reloaded it.' : '. Knuth reloads it.')]);
+          for (const f of cmp.files.sort((a, b) => (a.p > b.p ? 1 : -1))) {
+            let s;
+            if (f.st === 'gone') s = `was not there at ${tx}: ${past ? 'taken' : 'it is taken'} out of the folder` + (f.p === 'memo.typ' ? (past ? '; Plass shows it as removed' : ', and Plass shows it as removed') : '');
+            else if (f.st === 'come') s = past ? 'came back' : 'comes back';
+            else {
+              const by = BY[f.by];
+              if (f.p === 'prices.csv' && by && by.trig === 'external edit') s = `the external edit at ${fHM(by.t)} ${past ? 'was' : 'is'} undone: row 418 ${past ? 'went' : 'goes'} back to <i>9.00, 402, south</i>`;
+              else if (f.p.startsWith('figs/')) s = `${past ? 'went' : 'goes'} back to the figure of ${tx}`;
+              else s = `${past ? 'went' : 'goes'} back to how it was at ${tx}`;
+            }
+            rows.push([f.p, s]);
+          }
+          if (cmp.untStay.length) rows.push(['untracked/', cmp.untStay.map((u) => UNT[u].name.slice(10)).join(', ') + ` ${past ? 'stayed' : 'stays'} where ${cmp.untStay.length === 1 ? 'it is' : 'they are'}: the record keeps only ${cmp.untStay.length === 1 ? 'its' : 'their'} hash <span class="soft">(the manifest lists ${cmp.untStay.length === 1 ? 'it' : 'them'} still)</span>`]);
+          if (cmp.untLost.length) rows.push(['untracked/', cmp.untLost.map((u) => UNT[u].name.slice(10)).join(', ') + ` cannot come back from the record, which has only its hash <span class="soft">(sha256 ${UNT[cmp.untLost[0]].sha})</span>`]);
+          return rows;
+        }
+        function cmpMap(cmp, Xmax, Nmax, past) {
+          const st = {};
+          cmp.out.forEach((c) => (st[c] = 'out')); cmp.back.forEach((c) => (st[c] = past ? 'rest' : 'back')); cmp.come.forEach((c) => (st[c] = 'come'));
+          const key = `<div class="dkey">${cmp.out.length ? '<span><i style="box-shadow:inset 0 0 0 1px rgba(205,100,82,.6)"></i>' + (past ? 'taken out' : 'comes out') + '</span>' : ''}${cmp.back.length ? `<span><i style="background:${past ? 'rgba(157,184,214,.4)' : 'rgba(201,138,29,.45)'}"></i>${past ? 'restored' : 'goes back'}</span>` : ''}${cmp.come.length ? '<span><i style="background:rgba(157,184,214,.4)"></i>comes back</span>' : ''}<span><i style="background:rgba(255,255,255,.08)"></i>the same</span></div>`;
+          return dmapHTML(Math.max(Xmax, Nmax), st) + key;
+        }
+
+        function headerHTML(o) {
+          return `<header class="ph"><div class="wrap">${o.banner || ''}<div class="ph1"><div class="ttl"><span class="eyebrow">${o.eyebrow}</span><h1>${o.title}</h1></div><div class="when"><b>${o.time}</b><span>${o.date}</span></div></div><div class="ph2">${o.meta}${o.seg === false ? '' : `<div class="seg"><button data-view="step" class="${S.view === 'step' ? 'on' : ''}">${o.stepLabel || 'This step'}</button><button data-view="now" class="${S.view === 'now' ? 'on' : ''}">Against now</button></div>`}</div>${o.chips ? `<div class="files">${o.chips}</div>` : ''}</div></header>`;
+        }
+        function titleOf(k) {
+          switch (k.trig) {
+            case 'cell run': return `cell run<span class="chip">[${k.cell}]</span>`;
+            case 'rewind to': return `rewind to ${fWhen(BY[k.target].t)}`;
+            default: return k.trig;
+          }
+        }
+        function prevNote(k) {
+          const p = BY[k.parent];
+          if (!p) return 'the first commit of the record';
+          return `one step after <a data-goto="${p.sha}">${fHMS(p.t)}</a> <span class="dotsep">(${p.trig === 'cell run' ? 'cell run [' + p.cell + ']' : p.trig})</span>`;
+        }
+
+        function renderRoom(anim) {
+          const pv = $('#pv');
+          if (S.project === 'week-4') { pv.innerHTML = emptyHTML(); return; }
+          const r = rowByKey(S.sel) || ROWS.find((x) => x.type === 'commit');
+          if (!r) return;
+          let html = '';
+          if (S.view === 'now') html = againstHTML(r);
+          else if (r.type === 'commit') {
+            const k = r.k;
+            html = k.ref === 'main' ? mainHTML(k) : k.trig === 'rewind to' ? rewoundHTML(k) : stepHTML(k);
+          } else if (r.type === 'fold') html = groupHTML(r.members.slice().reverse(), { eyebrow: `${r.members[0].app} · timer`, title: `${r.members.length} timer saves`, label: 'These steps' });
+          else if (r.type === 'sit') html = groupHTML(r.sit.rec, { eyebrow: 'a sitting', title: `${DAYNAME[dayOf(r.sit.start)]}, ${fHM(r.sit.start)} to ${fHM(r.sit.end)}`, label: 'The sitting', sit: r.sit });
+          pv.innerHTML = html;
+          pv.scrollTop = 0;
+          if (S.showAll) { const pb = $('.pb', pv); if (pb) pb.classList.add('all'); }
+          if (anim) { pv.classList.remove('swap'); void pv.offsetWidth; pv.classList.add('swap'); }
+        }
+        function stepHTML(k) {
+          const before = snapBefore(k), kinds = kindsOf(k.cells || [], true);
+          const csv = k.opt && k.opt.csv ? [k.opt.csv] : [];
+          const b = stepBody(before, k.snap, kinds, { csv, alt: parseInt(k.sha, 16) % 2 === 1 });
+          const eyebrow = k.app ? k.app : 'no app: seen on disk';
+          return headerHTML({
+            eyebrow, title: titleOf(k) + (k === tip() ? '<span class="ttag">now</span>' : ''), time: fHMS(k.t), date: `${DAYNAME[dayOf(k.t)]} ${DAYDATE[dayOf(k.t)]} · ${ago(k.t)}`,
+            meta: `<span class="sha">${k.sha}</span><span class="dotsep">·</span><span>${prevNote(k)}</span><span class="dotsep">·</span><span>${b.n} ${b.n === 1 ? 'file' : 'files'}</span>`,
+            chips: b.chips,
+          }) + `<div class="pb wrap">${b.body}</div>`;
+        }
+        function groupHTML(members, o) {
+          const first = members[0], last = members[members.length - 1];
+          const before = snapBefore(first), after = last.snap;
+          const kinds = kindsOf(members.flatMap((k) => k.cells || []), false);
+          const csv = members.map((k) => k.opt && k.opt.csv).filter(Boolean);
+          const b = stepBody(before, after, kinds, { csv });
+          const runs = members.filter((k) => k.trig === 'cell run').length;
+          return headerHTML({
+            eyebrow: o.eyebrow, title: o.title, time: `${fHM(first.t)}–${fHM(last.t)}`, date: `${DAYNAME[dayOf(last.t)]} ${DAYDATE[dayOf(last.t)]} · ${ago(last.t)}`,
+            meta: `<span>${members.length} commits${runs ? ' · ' + runs + ' runs' : ''}</span><span class="dotsep">·</span><span>${b.n} ${b.n === 1 ? 'file' : 'files'} changed across them</span>`,
+            chips: b.chips, stepLabel: o.label,
+          }) + `<div class="pb wrap">${b.body}</div>`;
+        }
+        function mainHTML(k) {
+          const prev = BY[k.parent];
+          if (k.special) {
+            return headerHTML({ eyebrow: '<span class="mainb">main</span> · Taylor', title: esc(k.msg), time: fHMS(k.t), date: `${DAYNAME[dayOf(k.t)]} ${DAYDATE[dayOf(k.t)]} · ${ago(k.t)}`, meta: `<span class="sha">${k.sha}</span><span class="dotsep">·</span><span>main’s first commit, before the record began</span>`, chips: chip('assignment.pdf', '<span class="st">new</span>') + chip('prices.csv', '<span class="st">new</span>'), seg: false }) +
+              `<div class="pb wrap">${sectionHTML('assignment.pdf', '<p class="fnote">A PDF, 2 pages, 84 KB.</p>', 'new', '')}${sectionHTML('prices.csv', '<p class="fnote">1,150 rows: price, quantity, region.</p>', 'new', '')}</div>`;
+          }
+          const r0 = prev ? recAt(prev.t) : null, r1 = BY[k.recAt];
+          const before = r0 ? r0.snap : { max: 0, cells: {}, files: {}, unt: {}, memo: {}, notes: 0 };
+          const members = REC.filter((x) => x.t > (prev ? prev.t : 0) && x.t <= k.t);
+          const kinds = kindsOf(members.flatMap((x) => x.cells || []), false);
+          const csv = members.map((x) => x.opt && x.opt.csv).filter(Boolean);
+          const b = stepBody(before, r1.snap, kinds, { csv, exclude: k.differs || [] });
+          const tie = k.differs
+            ? `<p class="tie">${tieGlyph(true)}<span>Differs from the record at <a data-goto="${r1.sha}">${fHMS(r1.t)}</a> in one file: <b style="font-weight:500">${k.differs.join(', ')}</b> was not in this commit. The record has it.</span></p>`
+            : `<p class="tie">${tieGlyph(false)}<span>The same files as the record at <a data-goto="${r1.sha}">${fHMS(r1.t)}</a> (${r1.trig === 'cell run' ? 'cell run [' + r1.cell + ']' : r1.trig}).</span></p>`;
+          return headerHTML({
+            eyebrow: '<span class="mainb">main</span> · Taylor', title: esc(k.msg) + (k === mainTip() ? '<span class="ttag">HEAD</span>' : ''), time: fHMS(k.t), date: `${DAYNAME[dayOf(k.t)]} ${DAYDATE[dayOf(k.t)]} · ${ago(k.t)}`,
+            meta: `<span class="sha">${k.sha}</span><span class="dotsep">·</span><span>after <a data-goto="${prev.sha}">${esc(prev.msg)}</a> <span class="dotsep">(${fWhen(prev.t)})</span></span>`,
+            chips: b.chips, stepLabel: 'Since main’s last',
+          }) + `<div class="pb wrap">${tie}${b.body}</div>`;
+        }
+        function tieGlyph(differs) { return `<svg width="34" height="12" viewBox="0 0 34 12"><path d="M5 6H29" stroke="rgba(157,184,214,0.7)" stroke-dasharray="${differs ? '1 4.5' : '1 2.4'}" fill="none"/><circle cx="5" cy="6" r="2.6" fill="none" stroke="rgba(157,184,214,0.8)"/><circle cx="29" cy="6" r="3.6" fill="#9db8d6"/></svg>`; }
+
+        function targetOfRow(r) { return r.type === 'commit' ? r.k : r.type === 'fold' ? r.members[0] : r.type === 'sit' ? r.sit.rec[r.sit.rec.length - 1] : null; }
+        function snapOf(k) { return k.ref === 'main' ? (k.special ? null : BY[k.recAt].snap) : k.snap; }
+        function againstHTML(r) {
+          const k = targetOfRow(r);
+          const X = snapOf(k) || { max: 0, cells: {}, files: {}, unt: {}, memo: {}, notes: 0 };
+          const cmp = compare(X, tip().snap);
+          const Xs = { ...X, t: k.t };
+          const head = headerHTML({
+            eyebrow: k.ref === 'main' ? '<span class="mainb">main</span> · Taylor' : r.type === 'fold' ? 'the last of these steps' : r.type === 'sit' ? 'the end of the sitting' : k.app || 'no app',
+            title: k.ref === 'main' ? esc(k.msg) : titleOf(k), time: fHMS(k.t), date: `${DAYNAME[dayOf(k.t)]} ${DAYDATE[dayOf(k.t)]} · ${ago(k.t)}`,
+            meta: `<span class="sha">${k.sha}</span><span class="dotsep">·</span><span>against now, ${fHMS(tip().t)}</span>`, stepLabel: r.type === 'commit' ? (k.ref === 'main' ? 'Since main’s last' : 'This step') : r.type === 'fold' ? 'These steps' : 'The sitting',
+          });
+          if (cmp.empty) return head + `<div class="pb wrap"><p class="lede">These are the files as they are now.</p><p class="assure">Nothing differs between ${fHMS(k.t)} and now, so there is nothing to rewind to here.</p></div>`;
+          const rows = compareRows(cmp, Xs, tip().snap, false);
+          const nfiles = rows.length;
+          return head + `<div class="pb wrap"><p class="lede">A rewind to ${fHMS(k.t)} would change ${nfiles} ${nfiles === 1 ? 'thing' : 'things'} in week-3.</p>${cmpMap(cmp, X.max, tip().snap.max, false)}<dl class="alist">${rows.map((x) => `<dt>${x[0]}</dt><dd>${x[1]}</dd>`).join('')}</dl><p class="assure">What is here now is committed first, as a step of its own, so a rewind can itself be rewound. ${S.paused ? 'While the record is paused, rewinding waits too.' : 'The rewind is in the row’s menu: <b style="font-weight:500;color:var(--room-ink)">···</b> beside the row, or a right-click.'}</p><p class="assure">main stays at ${mainTip().sha}; until you commit or rewind back, <span style="font-family:var(--mono);font-size:11.5px">git status</span> lists these files as changed.</p></div>`;
+        }
+        function rewoundHTML(k) {
+          const T = BY[k.target], from = BY[k.parent];
+          /* what the rewind did, from the files before it (from) to the files after it (the target's) */
+          const before = from.snap, cmp = compare({ ...k.snap, unt: T.snap.unt }, before);
+          const rows = compareRows(cmp, { ...T.snap, t: T.t }, before, true);
+          const fresh = S.lastRewind === k.sha;
+          const banner = `<div class="banner${fresh ? ' anim' : ''}"><svg viewBox="0 0 24 24"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"/></svg><span class="bt">Rewound to <a data-goto="${T.sha}">${fHMS(T.t)}</a>. <span class="soft">Everything up to ${fHMS(from.t)} is kept in the record; this is a new step at the tip, not a reset.</span></span><button class="pillbtn" data-rewind="${from.sha}">Rewind back to ${fHMS(from.t)}</button></div>`;
+          const restored = new Set([...cmp.back, ...cmp.come]), gone = new Set(cmp.out);
+          let cells = '', run = [];
+          const flush = () => { if (run.length) { cells += `<button class="dfold">${run.length === 1 ? 'cell ' + run[0] : 'cells ' + run[0] + '–' + run[run.length - 1]} as they were</button>`; run = []; } };
+          for (let c = 1; c <= Math.max(before.max, k.snap.max); c++) {
+            if (gone.has(c)) { flush(); cells += cellHTML(c, null, { gone: true }); }
+            else if (restored.has(c)) { flush(); cells += cellHTML(c, null, { rest: fHM(T.t) }); }
+            else { run.push(c); cells += cellHTML(c, null); }
+          }
+          flush();
+          return headerHTML({
+            banner, eyebrow: k.app, title: `rewind to ${fHMS(T.t)}`, time: fHMS(k.t), date: `${DAYNAME[dayOf(k.t)]} ${DAYDATE[dayOf(k.t)]} · ${ago(k.t)}`,
+            meta: `<span class="sha">${k.sha}</span><span class="dotsep">·</span><span>the files of <a data-goto="${T.sha}">${T.sha}</a> ${T.trig === 'cell run' ? '(cell run [' + T.cell + '])' : ''}, written back</span>`, stepLabel: 'What it wrote',
+          }) + `<div class="pb wrap"><dl class="alist">${rows.map((x) => `<dt>${x[0]}</dt><dd>${x[1]}</dd>`).join('')}</dl>${sectionHTML('analysis.py', cmpMap(cmp, k.snap.max, before.max, true) + cells, 'now', 'as Knuth shows it')}</div>`;
+        }
+        function emptyHTML() {
+          return `<div class="empty"><svg class="glyph" viewBox="0 0 74 74" fill="none"><path d="M24 8V30" stroke="#4b4a48" stroke-width="1.4" stroke-dasharray="1.5 4"/><circle cx="24" cy="38" r="6.5" stroke="#8f8d88" stroke-width="1.4" stroke-dasharray="3 3"/><path d="M24 46V66" stroke="#4b4a48" stroke-width="1.4" stroke-dasharray="1.5 4"/><path d="M36 38H62" stroke="#4b4a48" stroke-width="1.4" stroke-dasharray="1.5 4"/></svg>
+            <h2>No record yet</h2>
+            <p>week-4 is a project with a git repository of its own, but nothing has been recorded in it. The record starts the first time Knuth or Plass has a document open here: a commit when the session opens, after each cell run, and each minute something changed.</p>
+            <p>It is kept on a branch of its own, <code>claerbout-autosave</code>, beside yours. Your HEAD, branch and index are never touched.</p>
+            <p class="soft">If a document is open here and nothing appears, autosave is off for this app (<code>"autosave": true</code> in its config turns it on), or the document sits where a project cannot be: the home folder, Desktop or Downloads themselves, a cloud-synced root.</p></div>`;
+        }
+
+        /* ================= the row's menu ================= */
+        function openMenu(i) {
+          const r = ROWS[i];
+          if (!r || !r.key) return;
+          S.menu = r.key; S.sel = r.key;
+          renderRows(true); renderRoom();
+          const k = targetOfRow(r), X = snapOf(k);
+          const cmp = X ? compare(X, tip().snap) : null;
+          const sameNow = cmp && cmp.empty;
+          let sum = '';
+          if (cmp && !cmp.empty) {
+            const lines = [];
+            if (cmp.out.length) lines.push(`analysis.py: ${cellsWord(cmp.out)} come${cmp.out.length === 1 ? 's' : ''} out`);
+            if (cmp.back.length) lines.push(`analysis.py: ${cellsWord(cmp.back)} go${cmp.back.length === 1 ? 'es' : ''} back`);
+            const gone = cmp.files.filter((f) => f.st === 'gone' && !f.p.startsWith('figs/')).map((f) => f.p), back = cmp.files.filter((f) => f.st === 'back' && !f.p.startsWith('figs/')).map((f) => f.p);
+            if (gone.length) lines.push(`${gone.join(', ')} taken out`);
+            if (back.length) lines.push(`${back.join(', ')} go${back.length === 1 ? 'es' : ''} back`);
+            sum = lines.map((l) => `<div>${l}</div>`).join('') + `<div class="kept">What is here now is kept first, as its own step.</div>`;
+          }
+          const label = r.type === 'fold' ? `Rewind to ${fHMS(k.t)}, the last of these` : r.type === 'sit' ? `Rewind to the sitting’s end, ${fHM(k.t)}` : `Rewind to ${fHMS(k.t)}`;
+          const disabled = S.paused || sameNow || !X;
+          const why = S.paused ? '<div>Waits until the rebase on main ends: the record writes nothing while git is at work.</div>' : sameNow ? '<div>These are the files as they are now.</div>' : '';
+          const m = $('#menu');
+          m.innerHTML = `<button class="mi rw" data-act="rewind"${disabled ? ' disabled' : ''}><svg viewBox="0 0 24 24"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"/></svg><b>${label}</b><span class="sum">${disabled ? why : sum}</span></button><div class="msep"></div>
+            <button class="mi" data-act="compare"><svg viewBox="0 0 24 24"><rect x="3" y="4" width="7" height="16" rx="1.5"/><rect x="14" y="4" width="7" height="16" rx="1.5"/></svg>Compare with now</button>
+            ${r.type !== 'commit' ? `<button class="mi" data-act="unfold"><svg viewBox="0 0 24 24"><polyline points="7 9 12 4 17 9"/><polyline points="7 15 12 20 17 15"/></svg>Unfold<span class="k">→</span></button>` : ''}
+            <button class="mi" data-act="copy"><svg viewBox="0 0 24 24"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V6a2 2 0 0 1 2-2h8"/></svg>Copy commit id<span class="k">${k.sha}</span></button>`;
+          m.hidden = false;
+          const rowEl = $(`#rows .row[data-i="${i}"]`), app = $('#app').getBoundingClientRect(), rr = rowEl.getBoundingClientRect();
+          const sc = app.width / $('#app').offsetWidth || 1;
+          let top = (rr.top - app.top) / sc - 4;
+          const left = (rr.right - app.left) / sc + 6;
+          const mh = m.offsetHeight;
+          if (top + mh > $('#app').offsetHeight - 12) top = $('#app').offsetHeight - 12 - mh;
+          m.style.top = top + 'px'; m.style.left = left + 'px';
+          m.dataset.i = i;
+        }
+        function closeMenu() { if (!S.menu) return; S.menu = null; $('#menu').hidden = true; $$('#rows .row.menu').forEach((e) => e.classList.remove('menu')); }
+
+        /* ================= the rewind: a step forward that reproduces an older state ================= */
+        async function rewind(targetSha) {
+          closeMenu();
+          const T = BY[targetSha];
+          const t0 = Math.max(NOW, tip().t + 20);
+          let from = null;
+          if (S.dirty) {
+            from = addRecord({ t: t0, app: 'knuth', trig: 'rewind from', cells: [{ c: Math.min(17, tip().snap.max), k: 'src' }], files: [], opt: {} });
+            S.dirty = false;
+            refresh(); S.enter.add(from.sha);
+            renderRows(true);
+            $('#rows').scrollTop = 0;
+            await wait(420);
+          }
+          const to = addRecord({ t: t0 + 1, app: 'knuth', trig: 'rewind to', target: T.sha, cells: [], files: [], opt: {} });
+          NOW = t0 + 4;
+          S.sel = to.sha; S.view = 'step'; S.lastRewind = to.sha;
+          refresh(); S.enter.add(to.sha);
+          renderAll(true);
+          $('#rows').scrollTop = 0;
+          const pill = $('#recpill'); pill.classList.remove('got'); void pill.offsetWidth; pill.classList.add('got');
+          pill.querySelector('.st').textContent = 'rewound'; pill.querySelector('.ct').textContent = `to ${fHMS(T.t)} · ${fHMS(to.t)}`;
+          setTimeout(() => { if (!S.paused && S.project === 'week-3') renderTop(); }, 2600);
+        }
+
+        /* ================= wiring ================= */
+        function refresh() { lanes(); sittings(); buildRows(); buildEdges(); }
+        function renderAll(anim) { renderTop(); renderLegend(); renderFoot(); renderRows(); renderRoom(anim); }
+        function select(key, anim) {
+          if (!key) return;
+          S.sel = key; S.showAll = false;
+          $$('#rows .row.sel').forEach((e) => e.classList.remove('sel'));
+          renderRows(true);
+          renderRoom(anim !== false);
+        }
+        function scrollToSel(center) {
+          const el = $(`#rows .row[data-key="${CSS.escape(S.sel)}"]`);
+          if (!el) return;
+          const box = $('#rows'), top = el.offsetTop - box.offsetTop;
+          if (center) box.scrollTop = Math.max(0, top - box.clientHeight / 2 + 13);
+          else if (top < box.scrollTop || top > box.scrollTop + box.clientHeight - 30) box.scrollTop = Math.max(0, top - 60);
+        }
+        function goto(sha) {
+          const i = ROWOF[sha];
+          if (i == null) return;
+          const r = ROWS[i];
+          if (r.type === 'fold') { S.open.add(r.key); refresh(); }
+          if (r.type === 'sit') { S.openSit.add(r.sit.i); refresh(); }
+          S.view = 'step';
+          select(sha in BY && ROWS[ROWOF[sha]].key === sha ? sha : ROWS[ROWOF[sha]].key);
+          scrollToSel(true);
+          const el = $(`#rows .row[data-key="${CSS.escape(S.sel)}"]`);
+          if (el) { el.classList.remove('flash'); void el.offsetWidth; el.classList.add('flash'); }
+        }
+        function toggleRow(r) {
+          if (r.type === 'fold') { S.open.add(r.key); refresh(); S.sel = r.members[0].sha; renderAll(); return true; }
+          if (r.type === 'sit') { S.openSit.add(r.sit.i); refresh(); S.sel = r.sit.rec[r.sit.rec.length - 1].sha; const rr = rowByKey(S.sel); if (!rr) S.sel = ROWS[ROWOF[r.sit.rec[r.sit.rec.length - 1].sha]].key; renderAll(); scrollToSel(false); return true; }
+          if (r.grp) { S.open.delete(r.grp); refresh(); S.sel = r.grp; renderAll(); return true; }
+          if (r.type === 'commit' && S.zoom === 'sittings' && r.k.sit != null && S.openSit.has(r.k.sit)) { S.openSit.delete(r.k.sit); refresh(); S.sel = 'sit:' + r.k.sit; renderAll(); scrollToSel(false); return true; }
+          return false;
+        }
+
+        $('#rows').addEventListener('click', (e) => {
+          const row = e.target.closest('.row');
+          if (!row || !row.dataset.key) return;
+          const i = +row.dataset.i, r = ROWS[i];
+          if (e.target.closest('.more')) { e.stopPropagation(); if (S.menu === r.key) closeMenu(); else openMenu(i); return; }
+          const j = e.target.closest('.jump');
+          if (j) { goto(j.dataset.jump); return; }
+          if (e.target.closest('.caret') && toggleRow(r)) return;
+          closeMenu();
+          if (S.sel === r.key) return;
+          select(r.key);
+        });
+        $('#rows').addEventListener('dblclick', (e) => { const row = e.target.closest('.row'); if (row && row.dataset.key) toggleRow(ROWS[+row.dataset.i]); });
+        $('#rows').addEventListener('contextmenu', (e) => { const row = e.target.closest('.row'); if (!row || !row.dataset.key) return; e.preventDefault(); openMenu(+row.dataset.i); });
+        $('#rows').addEventListener('keydown', (e) => {
+          if (S.project === 'week-4') return;
+          const idx = ROWS.findIndex((r) => r.key === S.sel);
+          const move = (d) => { let j = idx + d; while (ROWS[j] && !ROWS[j].key) j += d; if (ROWS[j]) { closeMenu(); select(ROWS[j].key, false); scrollToSel(false); } };
+          if (e.key === 'ArrowDown') { e.preventDefault(); move(1); }
+          else if (e.key === 'ArrowUp') { e.preventDefault(); move(-1); }
+          else if (e.key === 'ArrowRight' || e.key === 'ArrowLeft') { e.preventDefault(); if (ROWS[idx]) toggleRow(ROWS[idx]); }
+          else if (e.key === 'Enter') { e.preventDefault(); if (S.menu) closeMenu(); else openMenu(idx); }
+          else if (e.key === 'Escape') closeMenu();
+        });
+        $('#rows').addEventListener('scroll', closeMenu);
+        $('#legend').addEventListener('mouseover', (e) => { const l = e.target.closest('[data-hl]'); $('#rows').className = l ? 'hl-' + l.dataset.hl : ''; });
+        $('#legend').addEventListener('mouseleave', () => ($('#rows').className = ''));
+        $('#menu').addEventListener('click', (e) => {
+          const b = e.target.closest('.mi');
+          if (!b || b.disabled) return;
+          const r = ROWS[+$('#menu').dataset.i], k = targetOfRow(r);
+          if (b.dataset.act === 'rewind') rewind(k.sha);
+          else if (b.dataset.act === 'compare') { closeMenu(); S.view = 'now'; renderRoom(true); }
+          else if (b.dataset.act === 'unfold') { closeMenu(); toggleRow(r); }
+          else if (b.dataset.act === 'copy') { b.classList.add('copied'); b.querySelector('.k').textContent = 'copied'; setTimeout(closeMenu, 650); }
+        });
+        document.addEventListener('mousedown', (e) => { if (S.menu && !e.target.closest('#menu') && !e.target.closest('.more')) closeMenu(); });
+        document.addEventListener('keydown', (e) => { if (e.key === 'Escape') closeMenu(); });
+        $('#pv').addEventListener('click', (e) => {
+          const v = e.target.closest('[data-view]');
+          if (v) { S.view = v.dataset.view; renderRoom(true); return; }
+          const g = e.target.closest('[data-goto]');
+          if (g) { goto(g.dataset.goto); return; }
+          const rw = e.target.closest('[data-rewind]');
+          if (rw) { rewind(rw.dataset.rewind); return; }
+          const f = e.target.closest('.fchip');
+          if (f) {
+            const p = f.dataset.file, id = p.startsWith('figs/') ? 'cell-' + Object.keys(CELL_FIG).find((c) => CELL_FIG[c] === p) : 'file-' + p.replace(/[^\w]/g, '_');
+            const el = document.getElementById(id) || document.getElementById('file-analysis_py');
+            if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+            return;
+          }
+          const d = e.target.closest('.dmap i');
+          if (d) {
+            let el = document.getElementById('cell-' + d.dataset.cell);
+            if (el && el.classList.contains('same')) { S.showAll = true; $('.pb').classList.add('all'); }
+            if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+            return;
+          }
+          if (e.target.closest('.dfold')) { S.showAll = true; e.target.closest('.pb').classList.add('all'); }
+        });
+        $$('.zoom button').forEach((b) => b.addEventListener('click', () => setZoom(b.dataset.zoom)));
+        function setZoom(z) {
+          const keep = S.sel && BY[S.sel] ? S.sel : S.sel && S.sel.startsWith('fold:') ? rowByKey(S.sel).members[0].sha : S.sel && S.sel.startsWith('sit:') ? (rowByKey(S.sel) || { sit: SITS[+S.sel.slice(4)] }).sit.rec.slice(-1)[0].sha : null;
+          S.zoom = z; S.open.clear(); S.openSit.clear();
+          $$('.zoom button').forEach((x) => x.classList.toggle('on', x.dataset.zoom === z));
+          closeMenu(); refresh();
+          if (keep != null && ROWOF[keep] != null) S.sel = ROWS[ROWOF[keep]].key;
+          if (!rowByKey(S.sel)) S.sel = ROWS.find((r) => r.key).key;
+          renderAll(); scrollToSel(true);
+        }
+        $$('#rail [data-proj]').forEach((b) => b.addEventListener('click', () => setProject(b.dataset.proj)));
+        function setProject(p) {
+          S.project = p; closeMenu();
+          $$('#rail [data-proj]').forEach((x) => { x.classList.toggle('on', x.dataset.proj === p); x.classList.toggle('dim', x.dataset.proj !== p); });
+          $('.zoom').style.visibility = p === 'week-4' ? 'hidden' : '';
+          renderAll();
+        }
+
+        /* ================= the states (mockup chrome) ================= */
+        const CAPS = {
+          rest: 'The morning at rest, zoomed to Runs: each cell run its own row, the timer commits between runs folded into one ("4 timer saves"). The tip is selected, so the room shows the last step. main is the blue lane; its two commits this morning are tied to the record where the files were the same. Click any row to see that moment; ↑↓ walk the path.',
+          step: 'A step selected: cell run [5] at 9:28:10, the run after prices.csv was fixed outside the apps (the external edit just below it). The room shows the document as Knuth draws it: cell 5’s figure before and after (the 9.00 price that squashed the axis is gone), the other cells folded. The boxes at the top are every cell, the changed one lit; the chips are the files the commit touched. Click the 9:27:02 link to step back one.',
+          menu: 'The row’s menu (··· on hover, or a right-click, or Return): the rewind says what it would do before it does it (cells 16–20 come out, prices.csv goes back, memo.typ is taken out) and that what is here now is kept first. Choose it to play the rewind.',
+          against: 'Against now: the same moment, compared with the files as they are. This is the rewind’s full preview: which cells come out or go back, which files leave the folder (Plass shows memo.typ as removed), what untracked/ cannot do (the record has only hashes), and that main is not touched.',
+          after: 'After a rewind to 9:24:30. The record committed the work first (rewind from), then wrote 9:24:30’s files and committed again (rewind to): a step forward, never a reset. The path now runs from 9:24 straight to the new tip (dashed: the same files); the stretch rewound away slides into its own lane and still joins at the tip, because git’s chain is unbroken. Rewind back is the same request.',
+          branch: 'A user branch beside the record: main’s commit at 9:48 selected. Its diff is since main’s last commit, built from the record between them. The tie is looser here: memo.typ was not in the commit, so the room says it differs from the record in that one file.',
+          week: 'A long history: the week by sitting. Six sittings and today, a few hundred commits; each sitting is one row with its length, its commits and runs, and a rug of when they landed (tall ticks are runs). A blue ring on the main lane counts that sitting’s commits on main. Gaps say how long nothing happened. Click ▸ or → to open one.',
+          every: 'Every commit, unfolded: a few hundred rows. It stays legible because each row is one line, the times are tabular and timer rows are quieter than runs; the day headers and gaps keep your place.',
+          opened: 'The week by sitting with Thursday’s opened: inside, timers fold between runs as in the Runs zoom, and ← folds it back.',
+          empty: 'week-4, a project with no record yet (the rail’s second folder). The column shows a dashed node where the path will start; the room explains what starts the record, and why it might not have.',
+          paused: 'The record paused: git is rebasing main, so the record writes nothing (the same guards as autosave.js). The pill says so in the top bar, and the menu’s rewind waits with a reason instead of failing.',
+        };
+        function setState(st) {
+          $$('#states [data-st]').forEach((b) => b.classList.toggle('on', b.dataset.st === st));
+          $('#cap').textContent = CAPS[st] || '';
+          build();
+          Object.assign(S, { project: 'week-3', zoom: 'runs', view: 'step', menu: null, paused: false, showAll: false, dirty: true, lastRewind: null });
+          S.open = new Set(); S.openSit = new Set(); S.enter = new Set();
+          $('#menu').hidden = true;
+          $$('.zoom button').forEach((x) => x.classList.toggle('on', x.dataset.zoom === 'runs'));
+          refresh();
+          S.sel = tip().sha;
+          setProject('week-3');
+          const find = (time, d) => REC.find((k) => k.t === at(d == null ? 4 : d, time));
+          S.sel = tip().sha;
+          if (st === 'step') S.sel = find('9:28:10').sha;
+          if (st === 'menu' || st === 'against') { S.sel = find('9:24:30').sha; if (st === 'against') S.view = 'now'; }
+          if (st === 'branch') S.sel = mainTip().sha;
+          if (st === 'after') {
+            const T = find('9:24:30');
+            const from = addRecord({ t: at(4, '10:06:11'), app: 'knuth', trig: 'rewind from', cells: [{ c: 17, k: 'src' }], files: [], opt: {} });
+            const to = addRecord({ t: at(4, '10:06:12'), app: 'knuth', trig: 'rewind to', target: T.sha, cells: [], files: [], opt: {} });
+            NOW = at(4, '10:06:30'); S.dirty = false; S.sel = to.sha; refresh();
+            void from;
+          }
+          if (st === 'week' || st === 'opened') {
+            S.zoom = 'sittings'; $$('.zoom button').forEach((x) => x.classList.toggle('on', x.dataset.zoom === 'sittings'));
+            if (st === 'opened') S.openSit.add(SITS.findIndex((s) => dayOf(s.start) === 3));
+            refresh();
+            S.sel = st === 'opened' ? ROWS[ROWOF[REC.find((k) => dayOf(k.t) === 3 && k.trig === 'cell run' && k.t > at(3, '16:00:00')).sha]].key : 'sit:' + (SITS.length - 1);
+          }
+          if (st === 'every') { S.zoom = 'all'; $$('.zoom button').forEach((x) => x.classList.toggle('on', x.dataset.zoom === 'all')); refresh(); S.sel = tip().sha; }
+          if (st === 'paused') { S.paused = true; S.sel = find('9:24:30').sha; }
+          if (st === 'empty') { setProject('week-4'); return; }
+          renderAll();
+          if (st === 'opened') scrollToSel(true); else if (st === 'week' || st === 'every' || st === 'rest' || st === 'after') $('#rows').scrollTop = 0; else scrollToSel(true);
+          if (st === 'menu' || st === 'paused') { const i = ROWS.findIndex((r) => r.key === S.sel); requestAnimationFrame(() => openMenu(i)); }
+          $('#rows').focus({ preventScroll: true });
+        }
+        $$('#states [data-st]').forEach((b) => b.addEventListener('click', () => setState(b.dataset.st)));
+        $('#states header').addEventListener('click', () => { $('#states').classList.toggle('min'); scaleApp(); });
+
+        /* ================= the window ================= */
+        const WIN = { fill: null, 1440: [1440, 900, '1440 × 900 · a laptop, full screen'], 1100: [1100, 760, '1100 × 760 · a window beside Knuth'] };
+        let win = 'fill';
+        const app = $('#app'), body = document.body;
+        function setWin(k) {
+          win = k; closeMenu();
+          $$('#states [data-win]').forEach((b) => b.classList.toggle('on', b.dataset.win === k));
+          if (!WIN[k]) { body.classList.remove('sized'); app.style.removeProperty('--w'); app.style.removeProperty('--h'); }
+          else { body.classList.add('sized'); app.style.setProperty('--w', WIN[k][0] + 'px'); app.style.setProperty('--h', WIN[k][1] + 'px'); $('#sizelabel').textContent = WIN[k][2]; }
+          scaleApp();
+        }
+        function scaleApp() {
+          if (!WIN[win]) return;
+          const panel = $('#states').classList.contains('min') ? 0 : 300;
+          const availW = innerWidth - panel;
+          const s = Math.min(1, (availW - 24) / WIN[win][0], (innerHeight - 60) / WIN[win][1]);
+          app.style.setProperty('--s', s.toFixed(4));
+          app.style.setProperty('--cx', availW / 2 + 'px');
+          $('#sizelabel').style.setProperty('--cx', availW / 2 + 'px');
+        }
+        $$('#states [data-win]').forEach((b) => b.addEventListener('click', () => setWin(b.dataset.win)));
+        addEventListener('resize', () => { scaleApp(); closeMenu(); });
+
+        setState('rest');
+      })();
+    </script>
+  </body>
+</html>

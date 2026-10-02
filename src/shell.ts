@@ -19,11 +19,18 @@
 // 'failed', …}; with action 'install', the install, followed by events
 // 'downloading' … 'ready', or 'failed').
 //
+// `autosave` ({trigger}) is a notice: something happened in the page
+// worth a commit on the project's autosave record (docs/AUTOSAVE.md),
+// which the shell keeps — it has the filesystem and knows the window's
+// document; the page only says when. Knuth sends it when a cell's run
+// completes (`reportCellRun`). A shell without the record logs it as
+// unknown and answers null, which is nothing to the page.
+//
 // A plain browser tab has no shell: `shell` is null and the page keeps the
 // File System Access flow.
 
 export interface ShellMessage {
-  type: 'open' | 'saveAs' | 'read' | 'write' | 'stat' | 'rename' | 'remove' | 'choose' | 'status' | 'error' | 'ready' | 'update';
+  type: 'open' | 'saveAs' | 'read' | 'write' | 'stat' | 'rename' | 'remove' | 'choose' | 'status' | 'error' | 'ready' | 'update' | 'autosave';
   action?: 'install';
   path?: string;
   text?: string;
@@ -31,6 +38,8 @@ export interface ShellMessage {
   python?: string;
   state?: string;
   message?: string;
+  /** What happened, for the autosave record's commit message: `cell run [4]`. */
+  trigger?: string;
 }
 
 export type ShellEvent = 'setup' | 'update';
@@ -86,6 +95,16 @@ export function connectShell(host: ShellHost): Shell | null {
     pickPath: withPath(request),
     on: (event, listener) => bridge.on(event, listener),
   };
+}
+
+/** Cells' runs completed (cleanly or not: either way their outputs are
+ *  new) and their writes landed: the shell's autosave record gets
+ *  `cell run [4]`, the cell's number in the document, or `cell run [1, 2,
+ *  3]` for runs reported together. Nothing without a shell, or with no
+ *  cells. */
+export function reportCellRun(host: Shell | null, cells: readonly number[]): void {
+  if (!host || cells.length === 0) return;
+  host.notify({ type: 'autosave', trigger: `cell run [${cells.join(', ')}]` });
 }
 
 export const shell: Shell | null =

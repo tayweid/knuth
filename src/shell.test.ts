@@ -1,7 +1,7 @@
 // connectShell against fake hosts: the Claerbout bridge, and a plain tab
 // without one.
 import assert from 'node:assert/strict';
-import { connectShell, type ShellHost, type ShellMessage } from './shell.ts';
+import { connectShell, reportCellRun, type ShellHost, type ShellMessage } from './shell.ts';
 
 // A plain tab: no shell.
 assert.equal(connectShell({}), null);
@@ -40,10 +40,19 @@ assert.equal(connectShell({}), null);
   assert.equal(await shell.pickPath({ type: 'saveAs', name: 'b.py' }), null);
   assert.equal(await shell.request({ type: 'stat', path: '/p/a.py' }), null);
   shell.notify({ type: 'status', state: 'ready' });
+  // Cells' runs completed: the autosave notice, with the cells' numbers.
+  reportCellRun(shell, [4]);
+  reportCellRun(shell, [1, 2, 3]);
+  reportCellRun(shell, []);
   assert.deepEqual(
     sent.map((message) => message.type),
-    ['update', 'open', 'saveAs', 'stat', 'status'],
+    ['update', 'open', 'saveAs', 'stat', 'status', 'autosave', 'autosave'],
   );
+  assert.deepEqual(sent.at(-2), { type: 'autosave', trigger: 'cell run [4]' });
+  assert.deepEqual(sent.at(-1), { type: 'autosave', trigger: 'cell run [1, 2, 3]' });
 }
+
+// Without a shell the notice goes nowhere, and nothing throws.
+reportCellRun(null, [1]);
 
 console.log('shell: ok');
