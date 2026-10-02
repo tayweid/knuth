@@ -10,7 +10,7 @@
     "build": "tsc --noEmit && vite build",
     "build:engine": "npm run build && node scripts/stage-web.mjs",
     "preview": "vite preview",
-    "app": "CLAERBOUT_APP=app/knuth.json electron node_modules/claerbout",
+    "app": "KNUTH_CONFIG_DIR=\"${KNUTH_CONFIG_DIR:-$HOME/Library/Application Support/Knuth (checkout)}\" KNUTH_PORT=${KNUTH_PORT:-5177} CLAERBOUT_APP=app/knuth.json electron node_modules/claerbout",
     "app:build": "node node_modules/claerbout/package.mjs --config app/knuth.json",
     "app:smoke": "node node_modules/claerbout/smoke.mjs --config app/knuth.json browser && node node_modules/claerbout/smoke.mjs --config app/knuth.json uv",
     "check:web": "node scripts/check-web-fresh.mjs",
