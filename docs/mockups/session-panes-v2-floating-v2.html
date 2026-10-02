@@ -1,0 +1,1136 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Knuth session panes — floating edge, round two</title>
+    <style>
+      /* ROUND TWO, floating edge refined (design session of 2026-10-02; see
+         session-panes.md for round one).
+
+         The frame is the new one Taylor gave for Plass the same morning: a
+         dark grey surround, not black, so the room's soft shadow reads;
+         a 44px rail of 32px tiles like Zen's; and the room (Knuth's bench)
+         a rounded panel at all four corners with one thin 8px margin of
+         frame round it, the top bar and the rail being part of that frame.
+         Everything inside the room is the live app's: One Dark code
+         cards, the run chip, CMU prose, white figure prints, amber for
+         stale, the panes' blue for what can be opened.
+
+         The direction. The session's three boxes (Session, Figures, Data)
+         belong to the FRAME, not to the room. Tucked, each is a tab of the
+         frame's own grey standing 30px into the room off its right edge, at
+         a fixed height, so the right edge reads as a short mirror of the
+         rail. Round one's two faults are answered by one rule: a box lives
+         only in the LANE, the strip of room between the column's right edge
+         and the tabs, and the column never moves.
+         - A nudge is a few pixels: a tab that has news eases 9px out,
+           settles to stand 5px proud of its neighbours, and turns blue with
+           a +n until it is looked at. No box opens, no tab reflows.
+         - Pulled, a box comes out from under the tabs into the lane. It
+           never crosses the column's edge (the lane is 232px on a 1440
+           laptop), so it can stay while you click and type in the cells.
+         - Wide, the lane holds a 320px box with bench to spare, and the
+           boxes rest open in it at fixed slots (their heights set by which
+           boxes rest, never by content, so a run never moves them). Data
+           rests only once a table has been picked; an empty box stays a tab.
+
+         The window is drawn at a fixed virtual size (1440x900 laptop,
+         1920x1080 display, 1280x800 projector) and scaled to fit, so every
+         viewer sees the same margins. Open by double-click; the pill at the
+         bottom is mockup chrome and switches the states. */
+      :root {
+        --desk: #0c0c0d;
+        /* the frame: dark grey, Zen's shape */
+        --frame: #1e1e21;
+        --frame-ink: #d5d3cf;
+        --frame-ink-soft: #7f7d79;
+        --frame-line: rgba(255, 255, 255, 0.075);
+        --tile-on: #2c2c31;
+        --tile-hover: #26262a;
+        --pill: #28282c;
+        /* the room (src/styles.css) */
+        --bg: #2b2a2d;
+        --room-line: rgba(255, 255, 255, 0.07);
+        --room-ink: #d8d6d1;
+        --room-ink-soft: #8f8d88;
+        --amber: #c98a1d;
+        --blue: #9db8d6;
+        --green: #6ea576;
+        --serif: 'STIX Two Text', 'Charter', 'Georgia', serif;
+        --prose: 'CMU Serif', 'Computer Modern Serif', 'Georgia', serif;
+        --mono: ui-monospace, 'SF Mono', 'Menlo', 'Consolas', monospace;
+        --sans: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Helvetica Neue', sans-serif;
+        /* geometry (the script reads the same numbers) */
+        --topbar: 40px;
+        --rail: 44px;
+        --edge: 8px;
+        --tabw: 30px;   /* how far a tab stands into the room */
+        --tabh: 32px;
+        --tabgap: 6px;
+      }
+      * { box-sizing: border-box; }
+      html, body { margin: 0; height: 100%; overflow: hidden; background: var(--desk); }
+      body { color: var(--frame-ink); font: 15px/1.55 var(--sans); } /* on body: rems stay 16px, the sheet's 52rem is 832px */
+      button { font: inherit; }
+      .ico { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; display: block; }
+      .ico.solid { fill: currentColor; stroke: none; }
+
+      /* ---------- the app window, on the desk ---------- */
+      #window {
+        position: absolute; top: 20px; left: 50%; transform-origin: top center;
+        /* clip, not hidden: the tabs run on past the right edge, and a
+           hidden box can still be scrolled sideways by a focus */
+        width: 1440px; height: 900px; background: var(--frame); border-radius: 12px; overflow: clip;
+        box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.08), 0 36px 90px rgba(0, 0, 0, 0.7);
+      }
+
+      /* ---------- the top bar: part of the frame ---------- */
+      #topbar {
+        position: absolute; top: 0; left: 0; right: 0; height: var(--topbar);
+        display: flex; align-items: center; gap: 4px; padding: 0 var(--edge) 0 14px;
+      }
+      .lights { display: flex; gap: 8px; margin-right: 16px; }
+      .lights i { width: 12px; height: 12px; border-radius: 50%; display: block; background: #3b3b3f; }
+      .ctl {
+        position: relative; display: inline-flex; align-items: center; justify-content: center;
+        width: 28px; height: 28px; border: 0; border-radius: 8px; background: transparent; color: var(--frame-ink-soft); cursor: pointer;
+      }
+      .ctl:hover { background: var(--tile-hover); color: var(--frame-ink); }
+      .ctl.on { color: var(--frame-ink); }
+      #docpill {
+        flex: 1; min-width: 0; height: 28px; margin: 0 6px; border-radius: 8px; background: var(--pill);
+        display: flex; align-items: center; gap: 10px; padding: 0 12px;
+      }
+      #docpill .file { color: var(--frame-ink-soft); display: inline-flex; }
+      #docpill .name { font: 14px/1 var(--serif); letter-spacing: 0.06em; color: var(--frame-ink); white-space: nowrap; cursor: text; }
+      #docpill .dirty { color: var(--amber); font-size: 8px; margin-left: -5px; }
+      #docpill .path { font: 12px var(--sans); color: var(--frame-ink-soft); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+      #docpill .spacer { flex: 1; }
+      #docpill .python { display: inline-flex; align-items: center; gap: 7px; font: 11.5px var(--sans); color: var(--frame-ink-soft); white-space: nowrap; }
+      #docpill .python i { width: 7px; height: 7px; border-radius: 50%; background: #4caf7d; display: block; }
+
+      /* ---------- the rail: 44px, 32px tiles ---------- */
+      #rail {
+        position: absolute; top: var(--topbar); bottom: var(--edge); left: 0; width: var(--rail);
+        display: flex; flex-direction: column; align-items: center; gap: 4px; padding: 0 0 4px;
+      }
+      .rb {
+        position: relative; display: inline-flex; align-items: center; justify-content: center;
+        width: 32px; height: 32px; border: 0; border-radius: 8px; background: transparent; color: var(--frame-ink); cursor: pointer; flex: 0 0 auto;
+      }
+      .rb:hover { background: var(--tile-hover); }
+      .rb.on { background: var(--tile-on); }
+      .rb.dim { color: var(--frame-ink-soft); }
+      .rule { width: 18px; height: 1px; background: rgba(255, 255, 255, 0.1); margin: 5px 0; flex: 0 0 auto; }
+      .grow { flex: 1; }
+      .rb[data-label]::after, .ctl[data-label]::after {
+        content: attr(data-label); position: absolute; left: calc(100% + 10px); top: 50%; transform: translateY(-50%);
+        background: #111113; color: var(--frame-ink); font: 12px var(--sans); white-space: nowrap;
+        padding: 4px 9px; border-radius: 7px; border: 1px solid rgba(255, 255, 255, 0.09);
+        opacity: 0; pointer-events: none; transition: opacity 0.12s; z-index: 30;
+      }
+      .ctl[data-label]::after { left: auto; right: 0; top: calc(100% + 6px); transform: none; }
+      .rb:hover::after, .ctl:hover::after { opacity: 1; }
+
+      /* ---------- the room: rounded at all four corners, 8px of frame round it ---------- */
+      #room {
+        position: absolute; top: var(--topbar); left: var(--rail); right: var(--edge); bottom: var(--edge);
+        border-radius: 10px; background: var(--bg); overflow: hidden; color: var(--room-ink);
+        /* the shadow the grey frame lets you see */
+        box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.045), 0 1px 3px rgba(0, 0, 0, 0.45), 0 8px 26px rgba(0, 0, 0, 0.45);
+      }
+      #doc {
+        position: absolute; inset: 0; overflow-y: auto; overflow-x: hidden;
+        padding: 22px 24px 360px 16px;
+      }
+      /* The room's scrollbar starts below the tabs, so its thumb is never
+         under them (Chromium: Electron and the PWA). */
+      #doc::-webkit-scrollbar { width: 10px; }
+      #doc::-webkit-scrollbar-track { background: transparent; margin: 136px 0 10px; }
+      #doc::-webkit-scrollbar-thumb { background: rgba(255, 255, 255, 0.13); border-radius: 5px; border: 2px solid transparent; background-clip: content-box; }
+      #doc::-webkit-scrollbar-thumb:hover { background-color: rgba(255, 255, 255, 0.22); }
+      #sheet { max-width: 52rem; margin: 0 auto; }
+
+      /* cell zero: the packages fold */
+      .pkg {
+        display: flex; align-items: center; gap: 8px; width: 100%; margin: 0 0 6px; padding: 6px 12px;
+        border: 1px dashed rgba(255, 255, 255, 0.12); border-radius: 10px; background: transparent;
+        color: var(--room-ink-soft); font: 12px var(--sans); cursor: pointer; text-align: left;
+      }
+      .pkg .list { font: 11.5px var(--mono); }
+
+      /* ---------- cells: the column that stays as it is ---------- */
+      .cell-wrap { position: relative; }
+      .insert-zone { height: 22px; }
+      .cell { display: flex; padding: 0.2rem 0; position: relative; }
+      .cell .body { flex: 1; min-width: 0; }
+      .cm {
+        display: flex; background: #282c34; color: #abb2bf;
+        border: 1px solid rgba(255, 255, 255, 0.07); border-radius: 8px; overflow: hidden;
+        font: 13.5px/18.9px var(--mono); transition: border-color 0.15s, box-shadow 0.15s;
+      }
+      .cm:hover { border-color: rgba(255, 255, 255, 0.12); }
+      .cell-wrap.linked .cm { border-color: rgba(157, 184, 214, 0.55); box-shadow: 0 0 0 3px rgba(157, 184, 214, 0.1); }
+      .gut {
+        position: relative; display: flex; flex: 0 0 auto; padding: 0.5rem 0;
+        background: rgba(255, 255, 255, 0.022); border-right: 1px solid rgba(255, 255, 255, 0.06); color: rgba(240, 238, 233, 0.28);
+      }
+      .cell.stale .gut { border-right-color: var(--amber); }
+      .ln { display: flex; flex-direction: column; min-width: 2.25rem; text-align: right; padding: 0 0.35rem 0 0.3rem; }
+      .ln span { height: 18.9px; }
+      .ln span:first-child { visibility: hidden; }
+      .fold { width: 12px; }
+      .run {
+        position: absolute; left: 0; right: 0; top: 0; height: min(calc(0.5rem + 37.8px), 100%);
+        border: 0; padding: 0; background: #2b2f37; color: var(--green); cursor: pointer;
+        border-top-left-radius: 7px; border-bottom-left-radius: 7px; font-size: 13px; z-index: 3; transition: color 0.12s;
+      }
+      .run::before {
+        content: '▶'; position: absolute; left: 0; right: 0; top: 0; height: calc(1rem + 18.9px);
+        display: flex; align-items: center; justify-content: center;
+        border-bottom: 1px solid rgba(255, 255, 255, 0.08); transition: background 0.12s;
+      }
+      .run:hover { color: #8fc79a; }
+      .run:hover::before { background: rgba(255, 255, 255, 0.045); }
+      .cell.running .run::before { content: ''; }
+      .cell.running .run::after {
+        content: ''; position: absolute; left: 50%; top: calc((1rem + 18.9px) / 2); width: 11px; height: 11px; margin: -6px 0 0 -6px;
+        border: 1.6px solid rgba(110, 165, 118, 0.3); border-top-color: var(--green); border-radius: 50%; animation: turn 0.8s linear infinite;
+      }
+      @keyframes turn { to { transform: rotate(360deg); } }
+      .code { flex: 1; min-width: 0; padding: 0.5rem 0; margin-left: 0.15rem; }
+      .line { padding: 0 0.75rem; white-space: pre-wrap; }
+      .k { color: #c678dd; } .p { color: #e06c75; } .s { color: #98c379; } .n { color: #d19a66; } .c { color: #5c6370; } .o { color: #56b6c2; }
+      .cell.kind-scratch .cm { border-style: dashed; background: transparent; }
+      .cell.kind-scratch .gut { background: transparent; }
+      .cell.kind-scratch .run { background: var(--bg); }
+      .scratch-label { font-size: 10px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--room-ink-soft); margin-bottom: 0.15rem; }
+      .prose { position: relative; font: 18px/1.55 var(--prose); color: var(--room-ink); padding: 4px 0.75rem; }
+      .prose h2 { font-size: 1.35em; font-weight: 400; color: #f0eee9; margin: 0.4em 0 0.35em; }
+      .prose p { margin: 0.6em 0; }
+      .prose em { font-style: italic; }
+      .cell-figures { display: flex; flex-direction: column; gap: 0.5rem; margin: 0.45rem 0 0; }
+      .figure { background: #fff; border-radius: 6px; padding: 0.5rem; align-self: flex-start; max-width: 100%; overflow: hidden; box-shadow: 0 1px 3px rgba(0, 0, 0, 0.4); }
+      .figure svg { display: block; width: 460px; max-width: 100%; height: auto; }
+      .output { margin: 0.35rem 0 0; padding: 0.45rem 0.75rem; background: transparent; border-left: 3px solid rgba(255, 255, 255, 0.14); font: 12.5px/1.5 var(--mono); white-space: pre-wrap; color: #b5b3ae; }
+
+      /* ---------- the edge: tabs of the frame, standing into the room ----------
+         Each tab spans the frame's 8px margin and 30px of the room, in the
+         frame's own grey, so it reads as the frame's edge stepping in. The
+         outline (::before) wraps only the part over the room, continuing
+         the room's own hairline round it. Fixed heights: a nudge moves a tab
+         sideways a few pixels and never moves its neighbours. */
+      .tab {
+        --ease: 0px;
+        /* 12px more runs on past the window's edge, so a tab eased a few
+           pixels out still covers the frame's margin behind it */
+        position: absolute; right: -12px; z-index: 9;
+        top: calc(var(--topbar) + 12px + var(--i) * (var(--tabh) + var(--tabgap)));
+        width: calc(var(--edge) + var(--tabw) + 12px); height: var(--tabh);
+        padding: 0 calc(var(--edge) + 12px) 0 0; border: 0; border-radius: 9px 0 0 9px;
+        display: flex; align-items: center; justify-content: center;
+        background: var(--frame); color: var(--frame-ink-soft); cursor: pointer;
+        box-shadow: -4px 3px 12px rgba(0, 0, 0, 0.3);
+        transform: translateX(var(--ease));
+        transition: transform 0.55s cubic-bezier(0.2, 0.8, 0.2, 1), color 0.2s;
+      }
+      .tab::before {
+        content: ''; position: absolute; top: 0; bottom: 0; left: 0; right: calc(var(--edge) + 12px);
+        border: 1px solid var(--frame-line); border-right: 0; border-radius: 9px 0 0 9px;
+        transition: background 0.15s; pointer-events: none;
+      }
+      .tab .ico { position: relative; z-index: 1; width: 16px; height: 16px; stroke-width: 1.7; }
+      .tab .b {
+        position: absolute; z-index: 2; top: 3px; left: 17px; padding: 1px 2px; border-radius: 4px;
+        font: 600 9.5px/1 var(--mono); color: var(--frame-ink-soft); background: var(--frame); transition: color 0.2s;
+      }
+      .tab .b:empty { display: none; }
+      .tab:hover { color: var(--frame-ink); }
+      .tab:hover::before { background: rgba(255, 255, 255, 0.04); }
+      .tab.on { color: var(--frame-ink); }
+      .tab.on::before { background: rgba(255, 255, 255, 0.075); border-color: rgba(255, 255, 255, 0.11); }
+      /* the nudge: out 9px, settle to stand 5px proud, blue until looked at */
+      .tab.unseen { --ease: -5px; color: var(--blue); }
+      .tab.unseen .b { color: var(--blue); }
+      .tab.kick { --ease: -9px; transition: transform 0.24s cubic-bezier(0.2, 0.9, 0.3, 1), color 0.2s; }
+      #window.noedge .tab, #window.noedge .drawer { display: none; }
+      #window.boot .tab, #window.boot .drawer { transition: none !important; }
+
+      /* ---------- the boxes: frame material, in the lane only ----------
+         They come out from under the tabs (a lower layer), so the motion
+         reads as a drawer leaving the frame. The script sets top, width
+         and max-height from the lane; the right edge is fixed 6px inside
+         the tabs. */
+      .drawer {
+        position: absolute; z-index: 8; right: calc(var(--edge) + var(--tabw) + 6px); top: calc(var(--topbar) + 12px);
+        width: 232px; max-height: 600px; display: flex; flex-direction: column;
+        background: var(--frame); border: 1px solid rgba(255, 255, 255, 0.085); border-radius: 10px; color: var(--room-ink);
+        box-shadow: 0 16px 40px rgba(0, 0, 0, 0.42), 0 2px 6px rgba(0, 0, 0, 0.3);
+        opacity: 0; transform: translateX(26px); pointer-events: none; visibility: hidden;
+        transition: transform 0.3s cubic-bezier(0.2, 0.8, 0.2, 1), opacity 0.18s, visibility 0s linear 0.3s, top 0.3s ease, max-height 0.3s ease;
+      }
+      .drawer.out { opacity: 1; transform: none; pointer-events: auto; visibility: visible; transition: transform 0.3s cubic-bezier(0.2, 0.8, 0.2, 1), opacity 0.18s, visibility 0s, top 0.3s ease, max-height 0.3s ease; }
+      /* resting in the margin on a wide window: no lift, the bench shows round it */
+      #window.rest .drawer.out:not(.peek) { box-shadow: 0 6px 20px rgba(0, 0, 0, 0.26); }
+      /* news arrived while the box was open: a blue rule until the pointer finds it */
+      .drawer.unseen { box-shadow: inset 2px 0 0 rgba(157, 184, 214, 0.75), 0 16px 40px rgba(0, 0, 0, 0.42); }
+      #window.rest .drawer.unseen { box-shadow: inset 2px 0 0 rgba(157, 184, 214, 0.75), 0 6px 20px rgba(0, 0, 0, 0.26); }
+
+      .dhead { display: flex; align-items: center; gap: 8px; height: 34px; flex: 0 0 auto; min-width: 0; padding: 0 4px 0 12px; border-bottom: 1px solid var(--frame-line); }
+      /* a projector's narrow lane: the head and the group lines shed their extras */
+      .drawer.narrow .dc, .drawer.narrow .sgroup .t { display: none; }
+      .drawer.narrow .dhead { gap: 2px; }
+      .dt { font: 10.5px var(--sans); letter-spacing: 0.14em; text-transform: uppercase; color: var(--room-ink-soft); }
+      .dc { font: 11px var(--mono); color: var(--room-ink-soft); opacity: 0.8; white-space: nowrap; }
+      .sp { flex: 1; }
+      .dbtn { border: 0; background: transparent; color: var(--room-ink-soft); width: 26px; height: 26px; border-radius: 6px; display: inline-flex; align-items: center; justify-content: center; cursor: pointer; padding: 0; flex: 0 0 auto; }
+      .dbtn:hover { color: var(--room-ink); background: rgba(255, 255, 255, 0.06); }
+      .dbtn .ico { width: 14px; height: 14px; }
+      .dscroll { flex: 1 1 auto; min-height: 0; overflow: auto; }
+      .dscroll::-webkit-scrollbar { width: 8px; height: 8px; }
+      .dscroll::-webkit-scrollbar-thumb { background: rgba(255, 255, 255, 0.12); border-radius: 4px; border: 2px solid transparent; background-clip: content-box; }
+      .go { cursor: pointer; color: inherit; text-decoration: none; }
+      .go:hover { color: var(--blue); }
+
+      /* Session: the last run's receipt on top, the rest sorted. Two-line
+         rows (name and cell; type and preview), so the box works from a
+         320px lane down to a projector's 152px. */
+      .sgroup { display: flex; justify-content: space-between; gap: 8px; padding: 9px 12px 3px 20px; font: 10px var(--sans); letter-spacing: 0.12em; text-transform: uppercase; color: var(--room-ink-soft); white-space: nowrap; }
+      .sgroup .go { letter-spacing: 0.12em; }
+      .sgroup .t { letter-spacing: 0.02em; text-transform: none; font: 10.5px var(--mono); }
+      .srow { position: relative; display: grid; grid-template-columns: 12px minmax(0, 1fr) auto; column-gap: 4px; padding: 4px 10px 4px 6px; margin: 0 4px; border-radius: 6px; }
+      .srow:last-child { margin-bottom: 6px; }
+      .srow .m { font: 600 11.5px/1.45 var(--mono); color: var(--room-ink-soft); text-align: center; font-style: normal; }
+      .srow .m.new { color: var(--green); }
+      .srow .nm { font: 600 12.5px/1.45 var(--mono); color: var(--room-ink); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+      .srow .cl { font: 11px/1.6 var(--sans); color: var(--room-ink-soft); white-space: nowrap; cursor: pointer; }
+      .srow .cl:hover { color: var(--blue); }
+      .srow .cl.stale { color: var(--amber); }
+      .srow .ty { grid-column: 2 / 4; font: 11.5px/1.4 var(--mono); color: var(--room-ink-soft); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+      .srow .ty em { font-style: normal; opacity: 0.75; }
+      .srow.viewable { cursor: pointer; }
+      .srow.viewable:hover { background: rgba(255, 255, 255, 0.05); }
+      .srow.viewable .nm { color: var(--blue); }
+      .srow.scratch .nm { font-weight: 400; font-style: italic; }
+      .srow::before { content: ''; position: absolute; left: -2px; top: 11px; width: 5px; height: 5px; border-radius: 50%; background: transparent; transition: background 0.6s 0.9s; }
+      .srow.unseen::before { background: var(--blue); }
+      .drawer.acked .srow.unseen::before { background: transparent; }
+      @keyframes fresh { 0%, 40% { background: rgba(157, 184, 214, 0.15); } 100% { background: transparent; } }
+      .srow.fresh { animation: fresh 2.6s ease-out; }
+
+      /* Figures: prints newest first, captioned by name and cell */
+      .flist { padding: 6px 12px 12px; display: flex; flex-direction: column; gap: 12px; }
+      .fcap { display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 8px; margin: 0 2px 5px; font: 11px var(--sans); color: var(--room-ink-soft); }
+      .fcap b { font: 600 12.5px var(--mono); color: var(--room-ink); }
+      .fitem.unseen .fcap b::before { content: ''; display: inline-block; width: 5px; height: 5px; border-radius: 50%; background: var(--blue); margin: 0 6px 2px 0; vertical-align: middle; transition: background 0.6s 0.9s; }
+      .drawer.acked .fitem.unseen .fcap b::before { background: transparent; }
+      .print { background: #fff; border-radius: 5px; padding: 4px; box-shadow: 0 1px 3px rgba(0, 0, 0, 0.45); cursor: zoom-in; transition: transform 0.12s; }
+      .print:hover { transform: translateY(-1px); }
+      .print svg { display: block; width: 100%; height: auto; }
+      @keyframes freshprint { 0%, 40% { box-shadow: 0 0 0 2px rgba(157, 184, 214, 0.6), 0 1px 3px rgba(0, 0, 0, 0.45); } 100% { box-shadow: 0 1px 3px rgba(0, 0, 0, 0.45); } }
+      .fitem.fresh .print { animation: freshprint 2.6s ease-out; }
+
+      /* Data: a chip per table in the session, the window of rows, More */
+      .pick { display: flex; flex-wrap: wrap; gap: 5px; padding: 8px 10px 6px; flex: 0 0 auto; }
+      .pick button { font: 11.5px var(--mono); border: 1px solid var(--frame-line); border-radius: 999px; background: transparent; color: var(--room-ink-soft); padding: 2px 8px; cursor: pointer; }
+      .pick button:hover { color: var(--room-ink); }
+      .pick button.on { color: var(--room-ink); background: rgba(255, 255, 255, 0.08); border-color: transparent; }
+      .dsub { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; padding: 4px 12px 7px; border-bottom: 1px solid var(--frame-line); font: 11.5px var(--mono); color: var(--room-ink-soft); flex: 0 0 auto; }
+      .dsub b { font: 600 12.5px var(--mono); color: var(--room-ink); }
+      .dsub .go { margin-left: auto; font: 11px var(--sans); white-space: nowrap; }
+      .data-table { border-collapse: collapse; font: 12px/1.45 var(--mono); color: var(--room-ink); }
+      .data-table th, .data-table td { padding: 0.16rem 0.55rem; border-bottom: 1px solid rgba(255, 255, 255, 0.045); white-space: nowrap; text-align: right; }
+      .data-table thead th { position: sticky; top: 0; background: var(--frame); color: var(--room-ink-soft); font-weight: 600; z-index: 1; }
+      .data-table thead th:first-child { text-align: left; font-weight: 400; }
+      .data-table tbody th { color: var(--room-ink-soft); font-weight: 400; text-align: left; }
+      .data-table td:first-of-type { padding-left: 0.8rem; }
+      .dfoot { flex: 0 0 auto; padding: 6px 10px; border-top: 1px solid var(--frame-line); font-size: 12px; color: var(--room-ink-soft); }
+      .dfoot button { font: 12px/1 var(--sans); border: 1px solid var(--frame-line); border-radius: 999px; background: transparent; color: var(--room-ink); padding: 4px 10px; cursor: pointer; }
+      .dfoot button:hover { background: rgba(255, 255, 255, 0.07); }
+      .dempty { padding: 14px 12px; font: 12.5px var(--sans); color: var(--room-ink-soft); }
+
+      /* ---------- large: the one view that covers the column, on request ---------- */
+      #large {
+        position: absolute; z-index: 20; top: var(--topbar); left: var(--rail); right: var(--edge); bottom: var(--edge);
+        border-radius: 10px; background: rgba(18, 18, 20, 0.6); backdrop-filter: blur(5px);
+        display: flex; align-items: center; justify-content: center; padding: 32px;
+      }
+      #large[hidden] { display: none; }
+      @keyframes pop { from { opacity: 0; transform: translateY(8px) scale(0.985); } to { opacity: 1; transform: none; } }
+      .lb {
+        width: min(880px, 100%); max-height: 100%; display: flex; flex-direction: column;
+        background: var(--frame); border: 1px solid rgba(255, 255, 255, 0.1); border-radius: 12px; overflow: hidden;
+        box-shadow: 0 30px 80px rgba(0, 0, 0, 0.6); animation: pop 0.18s ease-out; color: var(--room-ink);
+      }
+      .lb .dhead { height: 40px; }
+      .lb .lt { font: 600 13px var(--mono); }
+      .lb .ls { font: 12px var(--mono); color: var(--room-ink-soft); }
+      .lb .figure { margin: 18px auto; align-self: center; }
+      .lb .figure svg { width: 720px; }
+      .lb.data { width: auto; min-width: 420px; max-width: min(880px, 100%); }
+      .lb.data .data-table { font-size: 14px; }
+      .lb.data .data-table th, .lb.data .data-table td { padding: 0.2rem 1rem; }
+
+      /* ---------- the lane, drawn (mockup chrome) ---------- */
+      #guides { position: absolute; top: var(--topbar); bottom: var(--edge); left: 0; right: 0; pointer-events: none; z-index: 10; display: none; }
+      #window.guides #guides { display: block; }
+      .g-col { position: absolute; top: 0; bottom: 0; border-left: 1px dashed rgba(255, 255, 255, 0.22); border-right: 1px dashed rgba(255, 255, 255, 0.22); }
+      .g-lane { position: absolute; top: 0; bottom: 0; background: rgba(157, 184, 214, 0.07); border-left: 1px dashed rgba(157, 184, 214, 0.6); }
+      .g-col span, .g-lane span {
+        position: absolute; bottom: 14px; left: 8px; font: 11px var(--sans); white-space: nowrap; color: #e9e7e2;
+        background: rgba(20, 20, 22, 0.85); border: 1px solid rgba(255, 255, 255, 0.1); padding: 3px 8px; border-radius: 6px;
+      }
+      .g-lane span { color: var(--blue); bottom: 64px; }
+
+      /* ---------- mockup chrome: the states (not part of Knuth) ---------- */
+      #states {
+        position: fixed; bottom: 14px; left: 50%; transform: translateX(-50%); z-index: 40;
+        display: flex; align-items: center; gap: 2px; padding: 4px 6px 4px 12px; max-width: calc(100vw - 20px);
+        background: rgba(251, 250, 248, 0.94); backdrop-filter: blur(18px) saturate(140%); border: 1px solid rgba(0, 0, 0, 0.08); border-radius: 999px;
+        box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5); color: #2c2b29; font: 12px var(--sans); white-space: nowrap;
+      }
+      #states .lab { color: #6b6b6b; margin-right: 6px; letter-spacing: 0.04em; text-transform: uppercase; font-size: 10.5px; }
+      #states .sep { width: 1px; height: 16px; background: rgba(0, 0, 0, 0.12); margin: 0 6px; flex: 0 0 auto; }
+      #states button { border: 0; background: transparent; color: #2c2b29; border-radius: 999px; padding: 4px 10px; cursor: pointer; }
+      #states button:hover { background: rgba(0, 0, 0, 0.06); }
+      #states button.on { background: #2c2b29; color: #fff; }
+      #note {
+        position: fixed; left: 50%; transform: translateX(-50%); bottom: 54px; z-index: 39; width: min(860px, calc(100vw - 32px));
+        font: 12.5px/1.5 var(--sans); color: #cfcdc8; text-align: center; text-shadow: 0 1px 2px rgba(0, 0, 0, 0.8);
+      }
+      #note b { color: #fff; font-weight: 500; }
+    </style>
+  </head>
+  <body>
+    <!-- figures and glyphs, drawn once; the cells, the Figures box and the large view all use them -->
+    <svg width="0" height="0" style="position: absolute" aria-hidden="true">
+      <defs>
+        <symbol id="fig-line" viewBox="0 0 460 300">
+          <rect width="460" height="300" fill="#fff"/>
+          <g font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', 'Helvetica Neue', sans-serif" font-size="11" fill="#000">
+            <rect x="60" y="20" width="380" height="235" fill="none" stroke="#000" stroke-width="0.8"/>
+            <g stroke="#000" stroke-width="0.8">
+              <line x1="60" y1="255" x2="60" y2="259"/><line x1="144.4" y1="255" x2="144.4" y2="259"/><line x1="228.9" y1="255" x2="228.9" y2="259"/><line x1="313.3" y1="255" x2="313.3" y2="259"/><line x1="397.8" y1="255" x2="397.8" y2="259"/>
+              <line x1="56" y1="237" x2="60" y2="237"/><line x1="56" y1="192" x2="60" y2="192"/><line x1="56" y1="146.6" x2="60" y2="146.6"/><line x1="56" y1="101.4" x2="60" y2="101.4"/><line x1="56" y1="56" x2="60" y2="56"/>
+            </g>
+            <g text-anchor="middle"><text x="60" y="272">0.70</text><text x="144.4" y="272">0.80</text><text x="228.9" y="272">0.90</text><text x="313.3" y="272">1.00</text><text x="397.8" y="272">1.10</text></g>
+            <g text-anchor="end"><text x="52" y="241">300</text><text x="52" y="196">350</text><text x="52" y="150.6">400</text><text x="52" y="105.4">450</text><text x="52" y="60">500</text></g>
+            <text x="250" y="292" text-anchor="middle" font-size="12">price</text>
+            <text transform="translate(16 137.5) rotate(-90)" text-anchor="middle" font-size="12">median quantity</text>
+            <polyline points="102,38 229,137.5 398,237" fill="none" stroke="#1f77b4" stroke-width="1.6"/>
+            <circle cx="102" cy="38" r="3.6" fill="#1f77b4"/><circle cx="229" cy="137.5" r="3.6" fill="#1f77b4"/><circle cx="398" cy="237" r="3.6" fill="#1f77b4"/>
+          </g>
+        </symbol>
+        <symbol id="fig-bar" viewBox="0 0 460 300">
+          <rect width="460" height="300" fill="#fff"/>
+          <g font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', 'Helvetica Neue', sans-serif" font-size="11" fill="#000">
+            <rect x="60" y="20" width="380" height="235" fill="none" stroke="#000" stroke-width="0.8"/>
+            <g stroke="#000" stroke-width="0.8">
+              <line x1="155" y1="255" x2="155" y2="259"/><line x1="345" y1="255" x2="345" y2="259"/>
+              <line x1="56" y1="20" x2="60" y2="20"/><line x1="56" y1="53.6" x2="60" y2="53.6"/><line x1="56" y1="87.1" x2="60" y2="87.1"/><line x1="56" y1="120.7" x2="60" y2="120.7"/><line x1="56" y1="154.3" x2="60" y2="154.3"/><line x1="56" y1="187.9" x2="60" y2="187.9"/><line x1="56" y1="221.4" x2="60" y2="221.4"/><line x1="56" y1="255" x2="60" y2="255"/>
+            </g>
+            <g text-anchor="middle"><text x="155" y="272">0.9</text><text x="345" y="272">1.1</text></g>
+            <g text-anchor="end"><text x="52" y="24">0.0</text><text x="52" y="57.6">−0.2</text><text x="52" y="91.1">−0.4</text><text x="52" y="124.7">−0.6</text><text x="52" y="158.3">−0.8</text><text x="52" y="191.9">−1.0</text><text x="52" y="225.4">−1.2</text><text x="52" y="259">−1.4</text></g>
+            <text x="250" y="292" text-anchor="middle" font-size="12">price</text>
+            <rect x="113" y="20" width="84" height="178" fill="#305c8a"/>
+            <rect x="303" y="20" width="84" height="203" fill="#305c8a"/>
+            <line x1="60" y1="20" x2="440" y2="20" stroke="#000" stroke-width="0.8"/>
+          </g>
+        </symbol>
+        <!-- the three boxes' glyphs: braces (the session), axes (figures), a table (data) -->
+        <symbol id="g-session" viewBox="0 0 24 24"><path d="M8.5 3H7.5a2 2 0 0 0-2 2v4.5a2 2 0 0 1-2 2.5 2 2 0 0 1 2 2.5V19a2 2 0 0 0 2 2h1"/><path d="M15.5 3h1a2 2 0 0 1 2 2v4.5a2 2 0 0 0 2 2.5 2 2 0 0 0-2 2.5V19a2 2 0 0 1-2 2h-1"/></symbol>
+        <symbol id="g-figs" viewBox="0 0 24 24"><path d="M4 4v16h16"/><polyline points="7.5 14.5 11.5 9.5 15 12.5 20 6.5"/></symbol>
+        <symbol id="g-data" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2"/><line x1="3" y1="10" x2="21" y2="10"/><line x1="3" y1="15" x2="21" y2="15"/><line x1="9" y1="10" x2="9" y2="20"/></symbol>
+        <symbol id="g-tuck" viewBox="0 0 24 24"><polyline points="9 6 15 12 9 18"/></symbol>
+        <symbol id="g-large" viewBox="0 0 24 24"><polyline points="15 3 21 3 21 9"/><polyline points="9 21 3 21 3 15"/><line x1="21" y1="3" x2="14" y2="10"/><line x1="3" y1="21" x2="10" y2="14"/></symbol>
+        <symbol id="g-small" viewBox="0 0 24 24"><polyline points="4 14 10 14 10 20"/><polyline points="20 10 14 10 14 4"/><line x1="14" y1="10" x2="21" y2="3"/><line x1="3" y1="21" x2="10" y2="14"/></symbol>
+        <symbol id="g-x" viewBox="0 0 24 24"><line x1="6" y1="6" x2="18" y2="18"/><line x1="18" y1="6" x2="6" y2="18"/></symbol>
+      </defs>
+    </svg>
+
+    <div id="window" class="boot">
+      <!-- the frame: the top bar -->
+      <div id="topbar">
+        <div class="lights"><i></i><i></i><i></i></div>
+        <button class="ctl" data-label="Open…"><svg class="ico" viewBox="0 0 24 24"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg></button>
+        <div id="docpill">
+          <span class="file"><svg class="ico" viewBox="0 0 24 24" style="width:14px;height:14px"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg></span>
+          <span class="name" title="Click to rename">analysis.py</span><span class="dirty" title="Unsaved changes">●</span>
+          <span class="path">~/Projects/ECON_0150/week-3</span>
+          <span class="spacer"></span>
+          <span class="python"><i></i>uv · Python 3.13</span>
+        </div>
+        <button class="ctl on" id="ctl-session" data-label="Session at the edge · click to hide"><svg class="ico" viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="3"/><line x1="15" y1="3" x2="15" y2="21"/></svg></button>
+      </div>
+
+      <!-- the frame: the rail -->
+      <nav id="rail" aria-label="Toolbar">
+        <button class="rb on" data-label="analysis.py"><svg class="ico" viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg></button>
+        <div class="rule"></div>
+        <button class="rb" data-label="Code cell"><svg class="ico" viewBox="0 0 24 24"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg></button>
+        <button class="rb" data-label="Scratch cell"><svg class="ico" viewBox="0 0 24 24"><rect x="4" y="4" width="16" height="16" rx="2" stroke-dasharray="3.4 2.8"/><line x1="9" y1="12" x2="15" y2="12"/></svg></button>
+        <button class="rb" data-label="Text cell"><svg class="ico" viewBox="0 0 24 24"><polyline points="4 7 4 4 20 4 20 7"/><line x1="9" y1="20" x2="15" y2="20"/><line x1="12" y1="4" x2="12" y2="20"/></svg></button>
+        <div class="rule"></div>
+        <button class="rb" data-label="Run stale" id="rail-stale"><svg class="ico solid" viewBox="0 0 24 24" style="width:14px;height:14px"><polygon points="7 4.5 19 12 7 19.5"/></svg></button>
+        <button class="rb" data-label="Run all"><svg class="ico solid" viewBox="0 0 24 24" style="width:14px;height:14px"><polygon points="3.5 5 11 12 3.5 19"/><polygon points="13 5 20.5 12 13 19"/></svg></button>
+        <button class="rb" data-label="Stop"><svg class="ico" viewBox="0 0 24 24" style="width:14px;height:14px"><rect x="6.5" y="6.5" width="11" height="11" rx="1.5"/></svg></button>
+        <button class="rb" data-label="Restart session"><svg class="ico" viewBox="0 0 24 24" style="width:15px;height:15px"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"/></svg></button>
+        <div class="grow"></div>
+        <button class="rb dim" data-label="Get Knuth"><svg class="ico" viewBox="0 0 24 24" style="width:15px;height:15px"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg></button>
+        <button class="rb dim" data-label="New document"><svg class="ico" viewBox="0 0 24 24" style="width:15px;height:15px"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg></button>
+      </nav>
+
+      <!-- the room: Knuth's bench -->
+      <main id="room">
+        <div id="doc">
+          <div id="sheet">
+            <button class="pkg">▸ Packages <span class="list">pandas · matplotlib</span></button>
+
+            <div class="cell-wrap" id="c1">
+              <div class="insert-zone"></div>
+              <div class="cell kind-program"><div class="body">
+                <div class="cm"><div class="gut"><button class="run" title="Run cell (Cmd-Enter)"></button><div class="ln"></div><div class="fold"></div></div>
+                  <div class="code">
+                    <div class="line"><span class="k">import</span> pandas <span class="k">as</span> pd</div>
+                    <div class="line">prices <span class="o">=</span> pd.<span class="p">read_csv</span>(<span class="s">'prices.csv'</span>)</div>
+                    <div class="line">prices.<span class="p">describe</span>()</div>
+                  </div>
+                </div>
+                <pre class="output">             price     quantity
+count  1200.000000  1200.000000
+mean      0.916667   410.283333
+std       0.144455   112.608109
+min       0.750000     0.000000
+50%       0.900000   409.000000
+max       1.100000   713.000000</pre>
+              </div></div>
+            </div>
+
+            <div class="cell-wrap" id="c2">
+              <div class="insert-zone"></div>
+              <div class="cell kind-text"><div class="body"><div class="prose">
+                <h2>Demand at three prices</h2>
+                <p>Each row of the table is one buyer’s answer at the price they were shown. The curve below joins the three medians; the slope between neighbouring medians is the elasticity we report in the summary at the end.</p>
+              </div></div></div>
+            </div>
+
+            <div class="cell-wrap" id="c3">
+              <div class="insert-zone"></div>
+              <div class="cell kind-program"><div class="body">
+                <div class="cm"><div class="gut"><button class="run" title="Run cell (Cmd-Enter)"></button><div class="ln"></div><div class="fold"></div></div>
+                  <div class="code">
+                    <div class="line">demand <span class="o">=</span> prices.<span class="p">groupby</span>(<span class="s">'price'</span>).<span class="p">quantity</span>.<span class="p">median</span>()</div>
+                    <div class="line">ax <span class="o">=</span> demand.<span class="p">plot</span>(marker<span class="o">=</span><span class="s">'o'</span>)</div>
+                    <div class="line">ax.<span class="p">set_ylabel</span>(<span class="s">'median quantity'</span>)</div>
+                  </div>
+                </div>
+                <div class="cell-figures"><div class="figure"><svg viewBox="0 0 460 300" role="img" aria-label="median quantity against price"><use href="#fig-line"/></svg></div></div>
+                <pre class="output">Text(0, 0.5, 'median quantity')</pre>
+              </div></div>
+            </div>
+
+            <div class="cell-wrap" id="c4">
+              <div class="insert-zone"></div>
+              <div class="cell kind-scratch"><div class="body">
+                <div class="scratch-label">scratch</div>
+                <div class="cm"><div class="gut"><button class="run" title="Run cell (Cmd-Enter)"></button><div class="ln"></div><div class="fold"></div></div>
+                  <div class="code">
+                    <div class="line">tmp <span class="o">=</span> demand.<span class="p">pct_change</span>()</div>
+                    <div class="line">tmp</div>
+                  </div>
+                </div>
+                <pre class="output">price
+0.75         NaN
+0.90   -0.211538
+1.10   -0.268293
+Name: quantity, dtype: float64</pre>
+              </div></div>
+            </div>
+
+            <div class="cell-wrap" id="c5">
+              <div class="insert-zone"></div>
+              <div class="cell kind-program"><div class="body">
+                <div class="cm"><div class="gut"><button class="run" title="Run cell (Cmd-Enter)"></button><div class="ln"></div><div class="fold"></div></div>
+                  <div class="code">
+                    <div class="line">prices <span class="o">=</span> prices[prices.<span class="p">quantity</span> <span class="o">&gt;</span> <span class="n">0</span>]          <span class="c"># drop the no-sale rows</span></div>
+                    <div class="line">dp <span class="o">=</span> demand.<span class="p">index</span>.<span class="p">to_series</span>().<span class="p">pct_change</span>()</div>
+                    <div class="line">elasticity <span class="o">=</span> (demand.<span class="p">pct_change</span>() <span class="o">/</span> dp).<span class="p">dropna</span>()</div>
+                    <div class="line">elasticity.<span class="p">round</span>(<span class="n">2</span>)</div>
+                  </div>
+                </div>
+                <pre class="output">price
+0.90   -1.06
+1.10   -1.21
+Name: quantity, dtype: float64</pre>
+              </div></div>
+            </div>
+
+            <div class="cell-wrap" id="c6">
+              <div class="insert-zone"></div>
+              <div class="cell kind-program stale"><div class="body">
+                <div class="cm"><div class="gut"><button class="run" title="Run cell (Cmd-Enter)"></button><div class="ln"></div><div class="fold"></div></div>
+                  <div class="code">
+                    <div class="line">summary <span class="o">=</span> pd.<span class="p">DataFrame</span>({<span class="s">'demand'</span>: demand, <span class="s">'elasticity'</span>: elasticity})</div>
+                    <div class="line">ax2 <span class="o">=</span> summary.<span class="p">elasticity</span>.<span class="p">plot</span>.<span class="p">bar</span>(color<span class="o">=</span><span class="s">'#305c8a'</span>)</div>
+                  </div>
+                </div>
+                <div class="c6-out"><pre class="output">       demand  elasticity
+price
+0.75    520.0         NaN
+0.90    410.0       -1.06
+1.10    300.0       -1.21</pre></div>
+              </div></div>
+            </div>
+
+            <div class="cell-wrap" id="c7">
+              <div class="insert-zone"></div>
+              <div class="cell kind-text"><div class="body"><div class="prose">
+                <p>Both elasticities are above one in magnitude: at these prices demand is <em>elastic</em>, and a price cut would raise revenue. The next section checks whether that holds in each region.</p>
+              </div></div></div>
+            </div>
+          </div>
+        </div>
+      </main>
+
+      <!-- the lane, drawn on request (mockup chrome) -->
+      <div id="guides"></div>
+
+      <!-- the edge: three tabs of the frame, fixed heights -->
+      <button class="tab" id="tab-session" data-box="session" style="--i: 0" aria-label="Session"><svg class="ico" viewBox="0 0 24 24"><use href="#g-session"/></svg><span class="b"></span></button>
+      <button class="tab" id="tab-figs" data-box="figs" style="--i: 1" aria-label="Figures"><svg class="ico" viewBox="0 0 24 24"><use href="#g-figs"/></svg><span class="b"></span></button>
+      <button class="tab" id="tab-data" data-box="data" style="--i: 2" aria-label="Data"><svg class="ico" viewBox="0 0 24 24"><use href="#g-data"/></svg><span class="b"></span></button>
+
+      <!-- the boxes, under the tabs; the script fills them -->
+      <section class="drawer" id="dr-session" data-box="session" aria-label="Session">
+        <div class="dhead"><span class="dt">Session</span><span class="dc" id="sess-count"></span><span class="sp"></span>
+          <button class="dbtn big" title="Large, for the projector"><svg class="ico" viewBox="0 0 24 24"><use href="#g-large"/></svg></button>
+          <button class="dbtn tuck" title="Tuck away"><svg class="ico" viewBox="0 0 24 24"><use href="#g-tuck"/></svg></button></div>
+        <div class="dscroll" id="sess-body"></div>
+      </section>
+      <section class="drawer" id="dr-figs" data-box="figs" aria-label="Figures">
+        <div class="dhead"><span class="dt">Figures</span><span class="dc" id="figs-count"></span><span class="sp"></span>
+          <button class="dbtn tuck" title="Tuck away"><svg class="ico" viewBox="0 0 24 24"><use href="#g-tuck"/></svg></button></div>
+        <div class="dscroll" id="figs-body"></div>
+      </section>
+      <section class="drawer" id="dr-data" data-box="data" aria-label="Data">
+        <div class="dhead"><span class="dt">Data</span><span class="sp"></span>
+          <button class="dbtn big" title="Large, for the projector"><svg class="ico" viewBox="0 0 24 24"><use href="#g-large"/></svg></button>
+          <button class="dbtn tuck" title="Tuck away"><svg class="ico" viewBox="0 0 24 24"><use href="#g-tuck"/></svg></button></div>
+        <div id="data-body" style="display: flex; flex-direction: column; min-height: 0; flex: 1 1 auto"></div>
+      </section>
+
+      <div id="large" hidden></div>
+    </div>
+
+    <div id="note"></div>
+    <div id="states" aria-label="Mockup states">
+      <span class="lab">State</span>
+      <button data-state="tucked" class="on">Tucked</button>
+      <button data-state="nudged">Nudged</button>
+      <button data-state="pulled">Pulled</button>
+      <button data-state="wide">Wide</button>
+      <button data-state="projector">Projector</button>
+      <span class="sep"></span>
+      <button id="st-lane">Show the lane</button>
+      <button id="st-run">Run cell 6</button>
+    </div>
+
+    <script>
+      (function () {
+        const $ = (s, r) => (r || document).querySelector(s);
+        const $$ = (s, r) => Array.from((r || document).querySelectorAll(s));
+        const TOPBAR = 40, RAIL = 44, EDGE = 8, TABW = 30, LANE_GAP = 14, DRAWER_GAP = 6;
+        const SIZES = { laptop: [1440, 900, 'laptop'], wide: [1920, 1080, 'display'], projector: [1280, 800, 'projector'] };
+        const win = $('#window'), doc = $('#doc'), sheet = $('#sheet'), guides = $('#guides'), large = $('#large'), note = $('#note');
+        const BOXES = ['session', 'figs', 'data'];
+        const TAB = {}, DR = {};
+        BOXES.forEach((b) => { TAB[b] = $('#tab-' + b); DR[b] = $('#dr-' + b); });
+
+        /* line numbers, as the app's gutter draws them */
+        $$('.cm').forEach((cm) => {
+          const n = $$('.line', cm).length;
+          $('.ln', cm).innerHTML = Array.from({ length: n }, (_, i) => '<span>' + (i + 1) + '</span>').join('');
+        });
+        const C6_BEFORE = $('#c6 .c6-out').innerHTML;
+        const C6_AFTER = '<div class="cell-figures"><div class="figure"><svg viewBox="0 0 460 300" role="img" aria-label="elasticity by price"><use href="#fig-bar"/></svg></div></div><pre class="output">&lt;Axes: xlabel=\'price\'&gt;</pre>';
+
+        /* ---- the data behind the boxes ---- */
+        let seed = 7;
+        const rnd = () => ((seed = (seed * 1103515245 + 12345) % 2147483648) / 2147483648);
+        const med = { '0.75': 520, '0.90': 410, '1.10': 300 };
+        const allRows = [];
+        for (let i = 0; i < 112; i++) {
+          const p = ['0.75', '0.90', '1.10'][i % 3];
+          const q = i === 17 || i === 58 || i === 91 ? 0 : Math.max(40, Math.round(med[p] + (rnd() + rnd() + rnd() - 1.5) * 150));
+          allRows.push({ i, p, q });
+        }
+        const sold = allRows.filter((r) => r.q > 0);
+        const DATA = {
+          prices: () => {
+            const filtered = M.names.prices.cell === 5;
+            const rows = (filtered ? sold : allRows).slice(0, 100);
+            return { index: '', cols: ['price', 'quantity'], idx: rows.map((r) => String(r.i)), rows: rows.map((r) => [r.p, String(r.q)]), total: filtered ? 1187 : 1200 };
+          },
+          demand: () => ({ index: 'price', cols: ['quantity'], idx: ['0.75', '0.90', '1.10'], rows: [['520.0'], ['410.0'], ['300.0']], total: 3 }),
+          tmp: () => ({ index: 'price', cols: ['quantity'], idx: ['0.75', '0.90', '1.10'], rows: [['NaN'], ['-0.211538'], ['-0.268293']], total: 3 }),
+          dp: () => ({ index: 'price', cols: ['price'], idx: ['0.75', '0.90', '1.10'], rows: [['NaN'], ['0.200000'], ['0.222222']], total: 3 }),
+          elasticity: () => ({ index: 'price', cols: ['quantity'], idx: ['0.90', '1.10'], rows: [['-1.057692'], ['-1.207317']], total: 2 }),
+          summary: () => ({ index: 'price', cols: ['demand', 'elasticity'], idx: ['0.75', '0.90', '1.10'], rows: [['520.0', 'NaN'], ['410.0', '-1.057692'], ['300.0', '-1.207317']], total: 3 }),
+        };
+        const FIGDEF = {
+          line: { name: 'ax', cell: 3, sym: '#fig-line', took: '0.38 s' },
+          bar: { name: 'ax2', cell: 6, sym: '#fig-bar', took: '0.21 s' },
+        };
+        const TOOK = { 1: '1.2 s', 3: '0.38 s', 4: '12 ms', 5: '41 ms', 6: '0.21 s' };
+
+        /* the session as the kernel would report it (NamespaceVar), plus the
+           cell that bound each name (the client-side diff, attributed to the
+           cell whose run just finished) */
+        let M, U, stale, fresh = new Set();
+        function freshModel() {
+          return {
+            names: {
+              prices: { type: 'DataFrame', shape: '1187×2', preview: 'price quantity · 0 0.75 512 · 1 0.90 398 …', cell: 5, view: 'prices' },
+              demand: { type: 'Series', shape: '3', preview: '0.75 520.0 · 0.90 410.0 · 1.10 300.0', cell: 3, view: 'demand' },
+              ax: { type: 'Axes', shape: '', preview: 'median quantity against price', cell: 3, fig: 'line' },
+              tmp: { type: 'Series', shape: '3', preview: 'NaN · −0.2115 · −0.2683', cell: 4, view: 'tmp', scratch: true },
+              dp: { type: 'Series', shape: '3', preview: 'NaN · 0.2000 · 0.2222', cell: 5, view: 'dp' },
+              elasticity: { type: 'Series', shape: '2', preview: '0.90 −1.0577 · 1.10 −1.2073', cell: 5, view: 'elasticity' },
+              summary: { type: 'DataFrame', shape: '3×2', preview: 'demand elasticity · 0.75 520.0 NaN …', cell: 6, view: 'summary' },
+            },
+            last: { cell: 5, took: '41 ms', marks: { prices: '~', dp: '+', elasticity: '+' } },
+            figs: ['line'], /* oldest first */
+          };
+        }
+
+        /* ---- state of the edge ---- */
+        let size = 'laptop', state = 'tucked', scale = 1, geo = {};
+        let pinned = null;                      /* a laptop's one pulled box */
+        let resting = new Set(['session', 'figs']); /* a wide window's boxes at rest */
+        let peeking = null, dataKey = 'prices', bigOpen = null;
+        let peekT = 0, hideT = 0;
+        const kickT = {};
+
+        /* ---- geometry: the lane is the room between the column's edge and the tabs ---- */
+        function measure() {
+          const [W, H] = SIZES[size];
+          const wr = win.getBoundingClientRect(), sr = sheet.getBoundingClientRect();
+          const sheetLeft = (sr.left - wr.left) / scale, sheetRight = (sr.right - wr.left) / scale;
+          const laneLeft = Math.round(sheetRight + LANE_GAP);
+          const laneRight = W - EDGE - TABW - DRAWER_GAP;
+          const lane = laneRight - laneLeft;
+          const rest = lane >= 340;
+          const dw = Math.max(0, rest ? Math.min(320, lane - 40) : Math.min(320, lane));
+          geo = { W, H, sheetLeft, sheetRight, laneLeft, laneRight, lane, rest, dw };
+          win.classList.toggle('rest', rest);
+        }
+        function fit() {
+          const [W, H] = SIZES[size];
+          win.style.width = W + 'px';
+          win.style.height = H + 'px';
+          scale = Math.max(0.25, Math.min(1, (innerWidth - 24) / W, (innerHeight - 112) / H));
+          win.style.transform = 'translateX(-50%) scale(' + scale + ')';
+          measure();
+          apply();
+          drawGuides();
+          writeNote();
+        }
+        addEventListener('resize', fit);
+
+        function isOut(b) { return pinned === b || (geo.rest && resting.has(b)) || peeking === b; }
+        function apply() {
+          const hidden = win.classList.contains('noedge');
+          BOXES.forEach((b) => {
+            const out = !hidden && isOut(b);
+            DR[b].classList.toggle('out', out);
+            DR[b].classList.toggle('peek', out && peeking === b && pinned !== b && !(geo.rest && resting.has(b)));
+            TAB[b].classList.toggle('on', pinned === b || (geo.rest && resting.has(b)));
+          });
+          place();
+        }
+        /* Laptop: the one box out sits at the lane's top, as wide as the lane.
+           Wide: resting boxes take fixed slots, sized by WHICH boxes rest,
+           never by what is in them, so a run never moves one. */
+        function place() {
+          const top = TOPBAR + 12, maxH = geo.H - TOPBAR - EDGE - 24;
+          BOXES.forEach((b) => { DR[b].style.width = geo.dw + 'px'; DR[b].style.bottom = 'auto'; DR[b].classList.toggle('narrow', geo.dw < 200); });
+          if (geo.rest) {
+            /* Session and Data hang from the top, Figures (prints, a near-
+               constant height) stands on the bottom, so short content leaves
+               bench in the middle rather than a gap that looks like a slot. */
+            const FR = { session: 0.46, data: 0.42, figs: 0.38 };
+            const order = ['session', 'data', 'figs'].filter((b) => resting.has(b));
+            const total = order.reduce((s, b) => s + FR[b], 0) || 1;
+            const gap = 12, avail = maxH - gap * Math.max(0, order.length - 1);
+            const H = {};
+            order.forEach((b) => (H[b] = Math.floor((avail * FR[b]) / total)));
+            let y = top;
+            ['session', 'data'].forEach((b) => {
+              if (!resting.has(b)) return;
+              DR[b].style.top = y + 'px';
+              DR[b].style.maxHeight = H[b] + 'px';
+              y += H[b] + gap;
+            });
+            if (resting.has('figs')) {
+              DR.figs.style.top = 'auto';
+              DR.figs.style.bottom = EDGE + 12 + 'px';
+              DR.figs.style.maxHeight = H.figs + 'px';
+            }
+            BOXES.forEach((b) => {
+              if (resting.has(b)) return;
+              DR[b].style.top = top + 'px';
+              DR[b].style.maxHeight = maxH + 'px';
+            });
+          } else {
+            BOXES.forEach((b) => { DR[b].style.top = top + 'px'; DR[b].style.maxHeight = maxH + 'px'; });
+          }
+        }
+
+        /* ---- the boxes' contents ---- */
+        function esc(s) { return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;'); }
+        function rowHtml(k, mark) {
+          const v = M.names[k];
+          const st = stale.has(v.cell);
+          const cls = ['srow', v.view || v.fig ? 'viewable' : '', v.scratch ? 'scratch' : '', U.session.has(k) ? 'unseen' : '', fresh.has(k) ? 'fresh' : ''].filter(Boolean).join(' ');
+          return '<div class="' + cls + '" data-name="' + k + '" data-cell="' + v.cell + '"' +
+            (v.view ? ' data-view="' + v.view + '"' : '') + (v.fig ? ' data-fig="' + v.fig + '"' : '') +
+            ' title="' + (v.view ? 'Open in Data' : v.fig ? 'Show in Figures' : '') + '">' +
+            '<i class="m' + (mark === '+' ? ' new' : '') + '">' + mark + '</i><b class="nm">' + k + '</b>' +
+            '<span class="cl' + (st ? ' stale' : '') + '" data-cell="' + v.cell + '" title="Go to the cell">cell ' + v.cell + (st ? ' · stale' : '') + '</span>' +
+            '<span class="ty">' + v.type + (v.shape ? ' ' + v.shape : '') + (v.scratch ? ' · scratch' : '') + '<em> · ' + esc(v.preview) + '</em></span></div>';
+        }
+        function renderSession() {
+          const keys = Object.keys(M.names);
+          const lastKeys = Object.keys(M.last.marks).filter((k) => M.names[k]);
+          const rest = keys.filter((k) => !(k in M.last.marks)).sort();
+          let h = '<div class="sgroup"><span>Last run · <span class="go" data-cell="' + M.last.cell + '">cell ' + M.last.cell + '</span></span><span class="t">' + M.last.took + '</span></div>';
+          lastKeys.forEach((k) => (h += rowHtml(k, M.last.marks[k])));
+          h += '<div class="sgroup"><span>Earlier</span></div>';
+          rest.forEach((k) => (h += rowHtml(k, '')));
+          $('#sess-body').innerHTML = h;
+          $('#sess-count').textContent = keys.length + ' names';
+        }
+        function renderFigs() {
+          const list = M.figs.slice().reverse();
+          $('#figs-count').textContent = String(list.length);
+          $('#figs-body').innerHTML = '<div class="flist">' + list.map((k) => {
+            const f = FIGDEF[k];
+            const cls = ['fitem', U.figs.has(k) ? 'unseen' : '', fresh.has('fig:' + k) ? 'fresh' : ''].filter(Boolean).join(' ');
+            return '<div class="' + cls + '" data-fig="' + k + '" id="fi-' + k + '"><div class="fcap"><b>' + f.name + '</b><span>cell ' + f.cell + ' · ' + f.took + '</span><span class="sp"></span>' +
+              '<span class="go" data-cell="' + f.cell + '">go to the cell →</span></div>' +
+              '<div class="print" data-fig="' + k + '" title="Large, for the projector"><svg viewBox="0 0 460 300"><use href="' + f.sym + '"/></svg></div></div>';
+          }).join('') + '</div>';
+        }
+        function tableHtml(d, limit) {
+          let h = '<table class="data-table"><thead><tr><th>' + d.index + '</th>' + d.cols.map((c) => '<th>' + c + '</th>').join('') + '</tr></thead><tbody>';
+          d.rows.slice(0, limit).forEach((r, i) => { h += '<tr><th>' + d.idx[i] + '</th>' + r.map((v) => '<td>' + v + '</td>').join('') + '</tr>'; });
+          return h + '</tbody></table>';
+        }
+        function renderData() {
+          const keys = Object.keys(M.names).filter((k) => M.names[k].view);
+          if (!M.names[dataKey]) dataKey = keys[0];
+          const v = M.names[dataKey], d = DATA[dataKey]();
+          $('#data-body').innerHTML =
+            '<div class="pick">' + keys.map((k) => '<button data-pick="' + k + '"' + (k === dataKey ? ' class="on"' : '') + '>' + k + '</button>').join('') + '</div>' +
+            '<div class="dsub"><b>' + dataKey + '</b><span>' + v.shape + '</span><span class="go" data-cell="' + v.cell + '" title="Go to the cell">bound by cell ' + v.cell + ' →</span></div>' +
+            '<div class="dscroll">' + tableHtml(d, 100) + '</div>' +
+            '<div class="dfoot">' + (d.total > d.rows.length ? '<button>More (' + Math.min(100, d.rows.length) + ' of ' + d.total + ' rows)</button>' : d.total + ' rows') + '</div>';
+        }
+        function renderAll() { renderSession(); renderFigs(); renderData(); badges(); fresh = new Set(); }
+        function badges() {
+          const set = (b, txt) => ($('.b', TAB[b]).textContent = txt);
+          set('session', U.session.size ? '+' + U.session.size : String(Object.keys(M.names).length));
+          set('figs', U.figs.size ? '+' + U.figs.size : String(M.figs.length));
+          set('data', U.data.size ? '~' : '');
+          TAB.session.title = 'Session · ' + Object.keys(M.names).length + ' names';
+          TAB.figs.title = 'Figures · ' + M.figs.length;
+          TAB.data.title = 'Data · ' + dataKey;
+        }
+
+        /* ---- news: a few pixels at the edge, or a tint in place ---- */
+        function ack(b) {
+          if (!U[b].size && !DR[b].classList.contains('unseen') && !TAB[b].classList.contains('unseen')) return;
+          U[b].clear();
+          TAB[b].classList.remove('unseen');
+          DR[b].classList.remove('unseen');
+          DR[b].classList.add('acked');
+          badges();
+        }
+        function kick(b) {
+          const t = TAB[b];
+          clearTimeout(kickT[b]);
+          t.classList.add('kick');
+          kickT[b] = setTimeout(() => t.classList.remove('kick'), 300);
+        }
+        function notify(b, items) {
+          items.forEach((i) => U[b].add(i));
+          DR[b].classList.remove('acked');
+          const visible = isOut(b) && !win.classList.contains('noedge');
+          if (visible) DR[b].classList.add('unseen');
+          else { TAB[b].classList.add('unseen'); kick(b); }
+          if (visible && DR[b].matches(':hover')) setTimeout(() => ack(b), 50);
+        }
+
+        /* ---- running a cell (the mockup's kernel) ---- */
+        function applyRun(n) {
+          const N = M.names;
+          let marks = {}, figs = [];
+          if (n === 1) { N.prices = Object.assign({}, N.prices, { shape: '1200×2', cell: 1, preview: 'price quantity · 0 0.75 512 · 1 0.90 398 …' }); marks = { prices: '~' }; }
+          if (n === 3) { marks = { demand: '~', ax: '~' }; figs = ['line']; }
+          if (n === 4) { marks = { tmp: '~' }; }
+          if (n === 5) { N.prices = Object.assign({}, N.prices, { shape: '1187×2', cell: 5 }); marks = { prices: '~', dp: '~', elasticity: '~' }; }
+          if (n === 6) {
+            const first = !N.ax2;
+            N.ax2 = { type: 'Axes', shape: '', preview: 'elasticity by price · 2 bars', cell: 6, fig: 'bar' };
+            marks = { summary: '~', ax2: first ? '+' : '~' };
+            figs = ['bar'];
+            $('#c6 .c6-out').innerHTML = C6_AFTER;
+          }
+          Object.keys(marks).forEach((k) => (N[k].cell = n));
+          M.last = { cell: n, took: TOOK[n], marks };
+          figs.forEach((f) => { M.figs = M.figs.filter((x) => x !== f); M.figs.push(f); });
+          stale.delete(n);
+          $('#c' + n + ' .cell').classList.remove('stale');
+          return { names: Object.keys(marks), figs };
+        }
+        function runCell(id) {
+          const n = +id.slice(1);
+          const cell = $('#' + id + ' .cell');
+          if (!cell || cell.classList.contains('running')) return;
+          cell.classList.add('running');
+          setTimeout(() => {
+            cell.classList.remove('running');
+            const fx = applyRun(n);
+            fx.names.forEach((k) => fresh.add(k));
+            fx.figs.forEach((f) => fresh.add('fig:' + f));
+            notify('session', fx.names);
+            if (fx.figs.length) notify('figs', fx.figs);
+            if (fx.names.includes(dataKey)) notify('data', [dataKey]);
+            renderAll();
+            if (bigOpen) openLarge(bigOpen.kind, bigOpen.key);
+            writeNote();
+          }, 650);
+        }
+        $$('.run').forEach((b) => b.addEventListener('click', (e) => { e.stopPropagation(); runCell(b.closest('.cell-wrap').id); }));
+        $('#rail-stale').addEventListener('click', () => { [...stale].forEach((n) => runCell('c' + n)); });
+        $('#st-run').addEventListener('click', () => {
+          const c6 = $('#c6');
+          scrollToCell(6, false);
+          runCell('c6');
+        });
+
+        /* ---- the tabs: hover peeks, click pulls; the column is never touched ---- */
+        function scheduleHide() {
+          clearTimeout(hideT);
+          hideT = setTimeout(() => {
+            if (peeking && !DR[peeking].matches(':hover') && !TAB[peeking].matches(':hover')) { peeking = null; apply(); }
+          }, 360);
+        }
+        BOXES.forEach((b) => {
+          const t = TAB[b], d = DR[b];
+          t.addEventListener('mouseenter', () => {
+            clearTimeout(hideT);
+            if (geo.rest || pinned === b || win.classList.contains('noedge')) return;
+            clearTimeout(peekT);
+            peekT = setTimeout(() => {
+              if (b === 'data' && geo.lane < 200) return;
+              peeking = b; apply(); ack(b);
+            }, 140);
+          });
+          t.addEventListener('mouseleave', () => { clearTimeout(peekT); scheduleHide(); });
+          d.addEventListener('mouseenter', () => { clearTimeout(hideT); ack(b); });
+          d.addEventListener('mouseleave', () => { if (peeking === b) scheduleHide(); });
+          t.addEventListener('click', () => {
+            clearTimeout(peekT);
+            if (geo.rest) {
+              if (resting.has(b)) resting.delete(b); else resting.add(b);
+              peeking = null; apply(); ack(b); return;
+            }
+            if (b === 'data' && geo.lane < 200) { ack(b); openLarge('data'); return; }
+            pinned = pinned === b && peeking !== b ? null : b;
+            peeking = null; apply(); ack(b);
+          });
+        });
+        function tuck(b) {
+          if (geo.rest) resting.delete(b);
+          if (pinned === b) pinned = null;
+          if (peeking === b) peeking = null;
+          apply();
+        }
+        function openBox(b) {
+          if (geo.rest) resting.add(b);
+          else pinned = b;
+          peeking = null; apply(); ack(b);
+        }
+        function openData(key) {
+          dataKey = key; renderData(); badges();
+          if (!geo.rest && geo.lane < 200) { openLarge('data'); return; }
+          openBox('data');
+        }
+        function openFig(key) {
+          openBox('figs');
+          const el = $('#fi-' + key);
+          if (el) { const sc = $('#figs-body'); sc.scrollTo({ top: el.offsetTop - 4, behavior: 'smooth' }); }
+        }
+
+        /* the column: hover a row and its cell lights; "cell n" scrolls to it */
+        function cellWrap(n) { return $('#c' + n); }
+        function scrollToCell(n, smooth) {
+          const w = cellWrap(n); if (!w) return;
+          const top = (w.getBoundingClientRect().top - doc.getBoundingClientRect().top) / scale + doc.scrollTop;
+          doc.scrollTo({ top: Math.max(0, top - doc.clientHeight * 0.3), behavior: smooth === false ? 'auto' : 'smooth' });
+        }
+        function goTo(n) {
+          if (bigOpen) closeLarge();
+          scrollToCell(n);
+          const w = cellWrap(n); if (!w) return;
+          w.classList.add('linked');
+          setTimeout(() => w.classList.remove('linked'), 1400);
+        }
+        win.addEventListener('mouseover', (e) => {
+          const r = e.target.closest('.srow, .fitem, .dsub');
+          $$('.cell-wrap.linked.hov').forEach((w) => w.classList.remove('linked', 'hov'));
+          if (!r) return;
+          const n = r.dataset.cell || (r.dataset.fig && FIGDEF[r.dataset.fig].cell) || ($('.go', r) && $('.go', r).dataset.cell);
+          const w = n && cellWrap(n);
+          if (w) w.classList.add('linked', 'hov');
+        });
+        win.addEventListener('click', (e) => {
+          const go = e.target.closest('.go, .cl');
+          if (go) { e.stopPropagation(); goTo(go.dataset.cell); return; }
+          const pk = e.target.closest('[data-pick]');
+          if (pk) { dataKey = pk.dataset.pick; renderData(); badges(); if (bigOpen) openLarge('data'); return; }
+          const pr = e.target.closest('.print');
+          if (pr) { openLarge('fig', pr.dataset.fig); return; }
+          const row = e.target.closest('.srow');
+          if (row) { if (row.dataset.view) openData(row.dataset.view); else if (row.dataset.fig) openFig(row.dataset.fig); return; }
+          const tk = e.target.closest('.drawer .tuck');
+          if (tk) { tuck(tk.closest('.drawer').dataset.box); return; }
+          const bg = e.target.closest('.drawer .big');
+          if (bg) { const b = bg.closest('.drawer').dataset.box; openLarge(b === 'data' ? 'data' : 'session'); return; }
+        });
+
+        /* ---- large: on request only, Esc or ⤡ returns ---- */
+        function openLarge(kind, key) {
+          bigOpen = { kind, key };
+          let title = '', sub = '', body = '';
+          if (kind === 'data') {
+            const v = M.names[dataKey], d = DATA[dataKey]();
+            title = dataKey; sub = v.shape + ' · bound by cell ' + v.cell;
+            body = '<div class="dscroll">' + tableHtml(d, 100) + '</div><div class="dfoot">' + (d.total > d.rows.length ? '<button>More (100 of ' + d.total + ' rows)</button>' : d.total + ' rows') + '</div>';
+          } else if (kind === 'fig') {
+            const f = FIGDEF[key];
+            title = f.name; sub = 'cell ' + f.cell + ' · ' + f.took;
+            body = '<div class="dscroll" style="display:flex;justify-content:center"><div class="figure"><svg viewBox="0 0 460 300"><use href="' + f.sym + '"/></svg></div></div>';
+          } else {
+            title = 'Session'; sub = Object.keys(M.names).length + ' names';
+            body = '<div class="dscroll" style="padding:4px 8px 8px">' + $('#sess-body').innerHTML + '</div>';
+          }
+          large.innerHTML = '<div class="lb ' + kind + '"><div class="dhead"><span class="lt">' + title + '</span><span class="ls">' + sub + '</span><span class="sp"></span>' +
+            '<button class="dbtn lsmall" title="Back to the edge"><svg class="ico" viewBox="0 0 24 24"><use href="#g-small"/></svg></button>' +
+            '<button class="dbtn lclose" title="Close (Esc)"><svg class="ico" viewBox="0 0 24 24"><use href="#g-x"/></svg></button></div>' + body + '</div>';
+          large.hidden = false;
+          $('.lsmall', large).addEventListener('click', closeLarge);
+          $('.lclose', large).addEventListener('click', closeLarge);
+        }
+        function closeLarge() { large.hidden = true; large.innerHTML = ''; bigOpen = null; }
+        large.addEventListener('click', (e) => { if (e.target === large) closeLarge(); });
+        document.addEventListener('keydown', (e) => {
+          if (e.key !== 'Escape') return;
+          if (bigOpen) closeLarge();
+          else if (pinned) { pinned = null; apply(); }
+        });
+
+        /* ---- the top bar's Session control: the edge shown or hidden ---- */
+        $('#ctl-session').addEventListener('click', () => {
+          const off = win.classList.toggle('noedge');
+          $('#ctl-session').classList.toggle('on', !off);
+          $('#ctl-session').dataset.label = off ? 'Session hidden · click to show' : 'Session at the edge · click to hide';
+        });
+
+        /* ---- the lane, drawn ---- */
+        let lane = false;
+        function drawGuides() {
+          const g = geo;
+          guides.innerHTML =
+            '<div class="g-col" style="left:' + g.sheetLeft + 'px;width:' + (g.sheetRight - g.sheetLeft) + 'px"><span>the column · ' + Math.round(g.sheetRight - g.sheetLeft) + ' px · never moves, never covered</span></div>' +
+            '<div class="g-lane" style="left:' + g.laneLeft + 'px;width:' + (g.W - g.laneLeft) + 'px"><span>lane · ' + g.lane + ' px' + (g.rest ? ' · boxes rest' : g.lane < 200 ? ' · Data opens large' : '') + '</span></div>';
+        }
+        $('#st-lane').addEventListener('click', () => {
+          lane = !lane;
+          win.classList.toggle('guides', lane);
+          $('#st-lane').classList.toggle('on', lane);
+        });
+
+        /* ---- the states ---- */
+        const NOTES = {
+          tucked: 'Three tabs of the frame’s grey stand 30 px into the room off its right edge, at fixed heights, with their counts. The column is centred on the room and nothing else is there.',
+          nudged: 'Cell 6 just ran. The Session and Figures tabs eased 9 px out and settled 5 px proud of Data, blue with what changed. Nothing opened, nothing reflowed. Hover a tab to look; looking settles it.',
+          pulled: 'Data pulled out into the lane beside the column. It never crosses the column’s edge and the column does not move, so it stays while you click and type. Figures still has news (+1).',
+          wide: 'The lane holds a 320 px box with bench to spare, so Session and Figures rest open at fixed slots; a run tints rows in place and moves nothing. Data stays a tab until a table is picked.',
+          projector: 'The lane is narrow here. Session’s two-line rows still fit it; Data and the prints open large on request, the one view that covers the column.',
+        };
+        function writeNote() {
+          const [W, H, label] = SIZES[size];
+          note.innerHTML = '<b>' + W + ' × ' + H + ' ' + label + ' · lane ' + geo.lane + ' px</b> — ' + NOTES[state];
+        }
+        function reset() {
+          clearTimeout(peekT); clearTimeout(hideT);
+          BOXES.forEach((b) => { clearTimeout(kickT[b]); TAB[b].classList.remove('unseen', 'kick'); DR[b].classList.remove('unseen', 'acked'); });
+          closeLarge();
+          M = freshModel();
+          U = { session: new Set(), figs: new Set(), data: new Set() };
+          stale = new Set([6]);
+          fresh = new Set();
+          $('#c6 .c6-out').innerHTML = C6_BEFORE;
+          $('#c6 .cell').classList.add('stale');
+          $$('.cell.running').forEach((c) => c.classList.remove('running'));
+          pinned = null; peeking = null; dataKey = 'prices';
+          resting = new Set(['session', 'figs']);
+        }
+        function setState(s) {
+          state = s;
+          $$('#states [data-state]').forEach((b) => b.classList.toggle('on', b.dataset.state === s));
+          reset();
+          size = s === 'wide' ? 'wide' : s === 'projector' ? 'projector' : 'laptop';
+          if (s !== 'tucked') applyRun(6);
+          renderAll();
+          fit();
+          doc.scrollTop = 0;
+          if (s === 'nudged') {
+            U.session = new Set(['summary', 'ax2']);
+            U.figs = new Set(['bar']);
+            TAB.session.classList.add('unseen'); TAB.figs.classList.add('unseen');
+            renderAll();
+            scrollToCell(6, false);
+            setTimeout(() => { kick('session'); setTimeout(() => kick('figs'), 90); }, 120);
+          } else if (s === 'pulled') {
+            U.figs = new Set(['bar']);
+            TAB.figs.classList.add('unseen');
+            pinned = 'data';
+            renderAll();
+            scrollToCell(5, false);
+          } else if (s === 'wide') {
+            U.session = new Set(['summary', 'ax2']);
+            U.figs = new Set(['bar']);
+            DR.session.classList.add('unseen'); DR.figs.classList.add('unseen');
+            renderAll();
+          } else if (s === 'projector') {
+            pinned = 'session';
+            renderAll();
+            scrollToCell(5, false);
+          }
+          apply();
+          writeNote();
+        }
+        $$('#states [data-state]').forEach((b) => b.addEventListener('click', () => setState(b.dataset.state)));
+
+        const first = (location.hash || '').slice(1);
+        setState(NOTES[first] ? first : 'tucked');
+        requestAnimationFrame(() => requestAnimationFrame(() => win.classList.remove('boot')));
+        if (document.fonts && document.fonts.ready) document.fonts.ready.then(fit);
+      })();
+    </script>
+  </body>
+</html>

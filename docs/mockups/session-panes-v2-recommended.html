@@ -1,0 +1,1889 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <title>Knuth — session panes, recommended (round two)</title>
+    <style>
+      /* THE SESSION PANES, ROUND TWO: THE RECOMMENDED COMPOSITE.
+         (Design session of 2026-10-02; the record is session-panes-round-2.md
+         beside this file, round one is session-panes.md.)
+
+         The direction is session-panes-v2-ledger-v2.html, which all three
+         judges ranked first: the session as marginalia, a card in the right
+         margin for each cell that bound something, its top on the cell's
+         first line, tied to it by a hairline. The column of cells and the
+         run chip are not touched. Grafted onto it:
+
+         - The session's trace lives in the frame (peek-v2): a pill at the
+           top bar's right end holds the kernel status and every name in
+           cell order, says "empty session" or "fresh session" in words, and
+           keeps new names blue. It replaces ledger-v2's in-room Session head
+           and its column of marks at the room's edge. Click it for the
+           Session tab; click a blue name to go to its card. Esc then P too.
+         - Carrying on is the acknowledgement (peek-v2): only the latest
+           run's card wears the blue rule; the next run, a keystroke or a
+           click in the document clears it on every card on screen. On a
+           narrow window a run unfolds the card from its tab and leaves it
+           up until you carry on. No timers anywhere.
+         - First run (peek-v2): a note in the margin, where the first card
+           will go, explains saved outputs and an empty session. Restart
+           fades the cards to "before the restart" (hybrid-ledger-peek).
+         - The Session tab large is the board for the back of the room
+           (peek-v2): 17px names, small tables drawn whole. Beside, it opens
+           on the last run's receipt (floating-v2).
+         - The Figures tab follows new figures; the pin holds one, and a
+           newer figure waits as "New: …" at the foot (hybrid-ledger-float).
+           On a wide display a figure rests at the margin's full width.
+         - Cards fold into their tabs along the tie, with a 140/152px
+           hysteresis (hybrid-ledger-peek). A "↑ cell N" chip brings back an
+           opened table's cell.
+         - Tuned: the print is small (still white), the tab's count is 13px,
+           the tab sits outside the code card at the 820 floor, and a wide
+           table leans only after the pointer rests on it.
+
+         The frame follows Taylor's Plass notes: a dark grey surround (not
+         black) so the room's shadow reads, a 44px rail of 32px tiles, and
+         the room rounded at all four corners inside one thin 8px edge, the
+         top bar and the rail being part of that edge. Inside the room
+         everything is the live app's (src/styles.css, src/icons.ts). Open
+         by double-click; the card at the bottom left switches the states
+         (it is mockup chrome, not Knuth). */
+      :root {
+        /* the frame (Zen's shape, lighter than round one's #111112) */
+        --frame: #1e1e21;
+        --frame-ink: #d5d3cf;
+        --frame-ink-soft: #85837f;
+        --tile: #2f2f34;
+        --tile-hover: #28282c;
+        --pill: #29292d;
+        --tip: #0e0e10;
+        /* the room (src/styles.css) */
+        --bg: #2b2a2d;
+        --amber: #c98a1d;
+        --accent: #305c8a;
+        --room-pane: #232226;
+        --room-line: rgba(255, 255, 255, 0.07);
+        --room-ink: #d8d6d1;
+        --room-ink-soft: #8f8d88;
+        --blue: #9db8d6;
+        --green: #6ea576;
+        --serif: 'STIX Two Text', 'Charter', 'Georgia', serif;
+        --prose: 'CMU Serif', 'Computer Modern Serif', 'Georgia', serif;
+        --mono: ui-monospace, 'SF Mono', 'Menlo', 'Consolas', monospace;
+        --sans: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Helvetica Neue', sans-serif;
+        --topbar: 44px;
+        --rail: 44px;
+        --edge: 8px;
+      }
+      * { box-sizing: border-box; }
+      html, body { margin: 0; height: 100%; overflow: hidden; }
+      body { background: var(--frame); font: 15px/1.55 var(--sans); } /* on body only: the sheet's 52rem stays 832px */
+      button { font: inherit; }
+
+      /* ---------- the window ---------- */
+      #app { position: fixed; inset: 0; background: var(--frame); overflow: hidden; color: var(--frame-ink); }
+      /* a fixed window size, drawn on the desk and scaled to fit the browser */
+      body.sized { background: radial-gradient(ellipse at 50% 28%, #5a5960, #34333a 62%, #29282d); }
+      body.sized #app {
+        inset: auto; left: var(--cx, 50%); top: calc(50% - 14px); width: var(--w); height: var(--h);
+        transform: translate(-50%, -50%) scale(var(--s, 1)); border-radius: 12px;
+        box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.55), inset 0 0 0 1px rgba(255, 255, 255, 0.07), 0 30px 90px rgba(0, 0, 0, 0.5);
+      }
+      #sizelabel { position: fixed; left: var(--cx, 50%); bottom: 10px; transform: translateX(-50%); font: 12px var(--sans); color: rgba(255, 255, 255, 0.7); display: none; white-space: nowrap; }
+      body.sized #sizelabel { display: block; }
+      body.squint #app { filter: blur(1.9px); }
+
+      /* ---------- the top bar: part of the frame ---------- */
+      #topbar {
+        position: absolute; top: 0; left: 0; right: 0; height: var(--topbar);
+        display: flex; align-items: center; gap: 2px; padding: 0 var(--edge) 0 14px;
+      }
+      #topbar svg, #rail svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; }
+      .lights { display: flex; gap: 8px; margin-right: 12px; }
+      .lights i { width: 12px; height: 12px; border-radius: 50%; display: block; background: #46464a; }
+      .ctl { position: relative; display: inline-flex; align-items: center; justify-content: center; width: 28px; height: 28px; padding: 0; border: 0; border-radius: 7px; background: transparent; color: var(--frame-ink); cursor: pointer; }
+      .ctl:hover { background: var(--tile-hover); }
+      .ctl.on { background: var(--tile); }
+      .ctl.dim { color: var(--frame-ink-soft); }
+      .ctl[data-label]::after, .rb[data-label]::after, #sesspill[data-label]::after {
+        content: attr(data-label); position: absolute; background: var(--tip); color: var(--frame-ink); font: 12px/1.3 var(--sans); white-space: nowrap;
+        padding: 5px 9px; border-radius: 7px; border: 1px solid rgba(255, 255, 255, 0.08); opacity: 0; pointer-events: none; transition: opacity 0.12s; z-index: 60;
+      }
+      .ctl[data-label]::after { top: calc(100% + 7px); left: 50%; transform: translateX(-50%); }
+      .ctl.end[data-label]::after { left: auto; right: 0; transform: none; }
+      .ctl:hover::after, .rb:hover::after { opacity: 1; }
+      #sesspill[data-label]::after { top: calc(100% + 7px); right: 0; }
+      #sesspill:hover::after { opacity: 1; transition-delay: 0.35s; }
+      #docpill {
+        flex: 1; min-width: 0; height: 30px; margin: 0 6px 0 8px; border-radius: 8px; background: var(--pill);
+        display: flex; align-items: center; gap: 10px; padding: 0 12px;
+      }
+      #docpill .file { color: var(--frame-ink-soft); display: inline-flex; }
+      #docpill .name { font: 15px/1 var(--serif); letter-spacing: 0.06em; color: var(--frame-ink); white-space: nowrap; }
+      #docpill .dirty { color: var(--amber); font-size: 8px; margin-left: -6px; }
+      #docpill .path { color: var(--frame-ink-soft); font: 12px var(--sans); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+      /* the session's pill: today's #kernel-status and #toggle-panel pod made one
+         control, part of the frame (peek-v2's trace). File on the left, memory on
+         the right. Names in the order of the cells that bound them; new names
+         blue until looked at; an empty session says so in words. */
+      #sesspill {
+        position: relative; flex: 0 1 auto; min-width: 0; max-width: 46%; height: 30px; margin: 0 4px 0 0;
+        display: flex; align-items: center; gap: 8px; padding: 0 11px; border: 0; border-radius: 8px;
+        background: var(--pill); color: var(--frame-ink-soft); cursor: pointer; transition: background 0.15s, color 0.15s;
+      }
+      #sesspill:hover { background: #303035; color: var(--frame-ink); }
+      #sesspill.on { background: var(--tile); color: var(--frame-ink); box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.07); }
+      #sesspill .py { display: inline-flex; align-items: center; gap: 6px; font: 11.5px var(--sans); white-space: nowrap; flex: 0 0 auto; }
+      #sesspill .py i { width: 7px; height: 7px; border-radius: 50%; background: #4caf7d; display: block; }
+      #sesspill .sep { width: 1px; height: 14px; background: rgba(255, 255, 255, 0.11); flex: 0 0 auto; }
+      #sesspill .br { position: relative; flex: 0 0 auto; display: inline-flex; }
+      #sesspill .br svg { width: 14px; height: 14px; }
+      #sesspill .br.unseen::after { content: ''; position: absolute; right: -3px; top: -2px; width: 5px; height: 5px; border-radius: 50%; background: var(--blue); box-shadow: 0 0 0 2px var(--pill); }
+      #sesspill .names { flex: 0 1 auto; min-width: 0; display: flex; align-items: center; gap: 9px; overflow: hidden; white-space: nowrap; font: 11.5px/1 var(--mono); }
+      #sesspill .names span { flex: 0 0 auto; transition: color 0.3s; }
+      #sesspill .names span[hidden] { display: none; }
+      #sesspill .names .scratch { font-style: italic; }
+      #sesspill .names .new { color: var(--blue); }
+      #sesspill .names .new:hover { text-decoration: underline; text-underline-offset: 3px; }
+      #sesspill .names .plus { color: var(--frame-ink-soft); font-family: var(--sans); }
+      #sesspill .names .empty { font: 11.5px/1 var(--sans); }
+      #sesspill .names .land { animation: land 1.3s ease-out; }
+      @keyframes land { 0%, 25% { color: #fff; text-shadow: 0 0 8px rgba(157, 184, 214, 0.9); } 100% { text-shadow: 0 0 8px rgba(157, 184, 214, 0); } }
+      #sesspill.got { animation: got 0.9s ease-out; }
+      @keyframes got { 0% { box-shadow: 0 0 0 2px rgba(157, 184, 214, 0.55); } 100% { box-shadow: 0 0 0 2px rgba(157, 184, 214, 0); } }
+      .avatar { width: 22px; height: 22px; border-radius: 50%; background: #2d7dbb; margin-left: 6px; flex: 0 0 auto; }
+
+      /* ---------- the rail: part of the frame, Zen's width ---------- */
+      #rail {
+        position: absolute; top: var(--topbar); left: 0; bottom: var(--edge); width: var(--rail);
+        display: flex; flex-direction: column; align-items: center; gap: 2px; padding: 0 0 2px;
+      }
+      .rb { position: relative; display: inline-flex; align-items: center; justify-content: center; width: 32px; height: 32px; padding: 0; border: 0; border-radius: 8px; background: transparent; color: var(--frame-ink); cursor: pointer; flex: 0 0 auto; }
+      .rb:hover { background: var(--tile-hover); }
+      .rb.on { background: var(--tile); }
+      .rb.dim { color: var(--frame-ink-soft); }
+      #rail .rb.solid svg { fill: currentColor; stroke: none; width: 13px; height: 13px; }
+      .rb[data-label]::after { left: calc(100% + 10px); top: 50%; transform: translateY(-50%); }
+      .rule { width: 18px; height: 1px; background: rgba(255, 255, 255, 0.09); margin: 5px 0; flex: 0 0 auto; }
+      .grow { flex: 1; }
+
+      /* ---------- the room: Knuth's bench, rounded at all four corners on one 8px edge ---------- */
+      #room {
+        position: absolute; top: var(--topbar); left: var(--rail); right: var(--edge); bottom: var(--edge);
+        border-radius: 10px; background: var(--bg); overflow: hidden; color: var(--room-ink);
+        box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.045), 0 1px 2px rgba(0, 0, 0, 0.35), 0 8px 26px rgba(0, 0, 0, 0.42);
+      }
+      #doc {
+        position: absolute; inset: 0; overflow-y: auto; overflow-x: hidden;
+        padding: 22px 24px 40vh 16px;
+        scrollbar-width: thin; scrollbar-color: rgba(255, 255, 255, 0.14) transparent;
+      }
+      #page { position: relative; max-width: 52rem; margin: 0 auto; }
+      #sheet { min-width: 0; }
+
+      /* cell zero: the packages fold */
+      .pkg {
+        display: flex; align-items: center; gap: 8px; width: 100%; margin: 0 0 6px; padding: 6px 12px;
+        border: 1px dashed rgba(255, 255, 255, 0.12); border-radius: 10px; background: transparent;
+        color: var(--room-ink-soft); font: 12px var(--sans); cursor: pointer; text-align: left;
+      }
+      .pkg:hover { color: var(--room-ink); border-color: rgba(255, 255, 255, 0.2); }
+      .pkg .list { font: 11.5px var(--mono); }
+
+      /* ---------- cells: the column that stays as it is (round one, verbatim) ---------- */
+      .cell-wrap { position: relative; }
+      .cell { display: flex; padding: 0.2rem 0; position: relative; }
+      .cell .body { flex: 1; min-width: 0; }
+      .insert-zone { position: relative; height: 22px; opacity: 0; transition: opacity 0.12s; }
+      .insert-zone:hover { opacity: 1; }
+      .insert-zone::before { content: ''; position: absolute; left: 2.2rem; right: 0; top: 50%; border-top: 1px solid rgba(157, 184, 214, 0.25); }
+      .insert-actions {
+        position: absolute; top: 50%; left: calc(2.2rem + (100% - 2.2rem) / 2); transform: translate(-50%, -50%);
+        display: flex; gap: 0; padding: 2px 5px; border-radius: 999px;
+        background: color-mix(in srgb, #3a3840 94%, transparent); backdrop-filter: blur(14px);
+        border: 1px solid rgba(255, 255, 255, 0.14); box-shadow: 0 5px 18px rgba(0, 0, 0, 0.45);
+      }
+      .insert-actions button { width: 24px; height: 18px; border: 0; border-radius: 5px; background: transparent; color: rgba(240, 238, 233, 0.75); display: inline-flex; align-items: center; justify-content: center; cursor: pointer; padding: 0; }
+      .insert-actions button:hover { color: #fff; background: rgba(255, 255, 255, 0.12); }
+      .insert-actions svg { width: 13px; height: 13px; fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; }
+
+      .cm {
+        display: flex; background: #282c34; color: #abb2bf;
+        border: 1px solid rgba(255, 255, 255, 0.07); border-radius: 8px; overflow: hidden;
+        font: 13.5px/18.9px var(--mono); transition: border-color 0.15s;
+      }
+      .cm:hover { border-color: rgba(255, 255, 255, 0.12); }
+      .cell-wrap.linked .cm { border-color: rgba(157, 184, 214, 0.45); }
+      .gut {
+        position: relative; display: flex; flex: 0 0 auto; padding: 0.5rem 0;
+        background: rgba(255, 255, 255, 0.022); border-right: 1px solid rgba(255, 255, 255, 0.06);
+        color: rgba(240, 238, 233, 0.28);
+      }
+      .cell.stale .gut { border-right-color: var(--amber); }
+      .ln { display: flex; flex-direction: column; min-width: 2.25rem; text-align: right; padding: 0 0.35rem 0 0.3rem; }
+      .ln span { height: 18.9px; }
+      .ln span:first-child { visibility: hidden; }
+      .fold { width: 12px; }
+      .run {
+        position: absolute; left: 0; right: 0; top: 0; height: min(calc(0.5rem + 37.8px), 100%);
+        border: 0; padding: 0; background: #2b2f37; color: #6ea576; cursor: pointer;
+        border-top-left-radius: 7px; border-bottom-left-radius: 7px; font-size: 13px; z-index: 3; transition: color 0.12s;
+      }
+      .run::before {
+        content: '▶'; position: absolute; left: 0; right: 0; top: 0; height: calc(1rem + 18.9px);
+        display: flex; align-items: center; justify-content: center;
+        border-bottom: 1px solid rgba(255, 255, 255, 0.08); transition: background 0.12s;
+      }
+      .run:hover { color: #8fc79a; }
+      .run:hover::before { background: rgba(255, 255, 255, 0.045); }
+      .cell.running .run::before { content: ''; }
+      .cell.running .run::after {
+        content: ''; position: absolute; left: 50%; top: calc((1rem + 18.9px) / 2); width: 11px; height: 11px; margin: -6px 0 0 -6px;
+        border: 1.6px solid rgba(110, 165, 118, 0.3); border-top-color: #6ea576; border-radius: 50%; animation: turn 0.8s linear infinite;
+      }
+      .cell.running .run:hover::before { content: '■'; }
+      .cell.running .run:hover::after { display: none; }
+      .cell.running .run:hover { color: #cd6452; }
+      @keyframes turn { to { transform: rotate(360deg); } }
+      .code { flex: 1; min-width: 0; padding: 0.5rem 0; margin-left: 0.15rem; }
+      .line { padding: 0 0.75rem; white-space: pre-wrap; }
+      .k { color: #c678dd; } .p { color: #e06c75; } .s { color: #98c379; } .n { color: #d19a66; } .c { color: #5c6370; } .o { color: #56b6c2; }
+      .cell.kind-scratch .cm { border-style: dashed; background: transparent; }
+      .cell.kind-scratch .gut { background: transparent; }
+      .cell.kind-scratch .run { background: var(--bg); }
+      .scratch-label { font-size: 10px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--room-ink-soft); margin-bottom: 0.15rem; }
+      .prose { position: relative; font: 18px/1.55 var(--prose); color: var(--room-ink); padding: 4px 0.75rem; }
+      .prose h2 { font-size: 1.35em; font-weight: 400; color: #f0eee9; margin: 0.9em 0 0.35em; }
+      .prose p { margin: 0.6em 0; }
+      .cell-figures { display: flex; flex-direction: column; gap: 0.5rem; margin: 0.45rem 0 0; }
+      .figure { background: #fff; border-radius: 6px; padding: 0.5rem; align-self: flex-start; max-width: 100%; overflow: hidden; box-shadow: 0 1px 3px rgba(0, 0, 0, 0.4); }
+      .figure svg { display: block; width: 460px; max-width: 100%; height: auto; }
+      @keyframes fig-in { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+      .cell-figures.fresh { animation: fig-in 0.3s ease-out both; }
+      .output { margin: 0.35rem 0 0; padding: 0.45rem 0.75rem; background: transparent; border-left: 3px solid rgba(255, 255, 255, 0.14); font: 12.5px/1.5 var(--mono); white-space: pre-wrap; color: #b5b3ae; }
+
+      /* ---------- the ledger: the session, beside the cells ---------- */
+      #ledger { position: absolute; top: 0; left: calc(100% + 24px); width: var(--lw, 224px); z-index: 3; font: 11.5px/1.45 var(--mono); color: var(--room-ink); }
+      body.ledger-off #ledger, body.ledger-off #coach { display: none; }
+
+      /* A card is two possible objects under one tie: the PRINT (white, the
+         cell drew) and the SLIP (dark, the names it bound). The wrapper
+         carries the tie, the unseen rule and the position, nothing else. */
+      .lcard { position: absolute; left: 0; right: 0; transition: top 0.18s; }
+      .lcard::before { content: ''; position: absolute; left: -25px; width: 20px; top: 16px; border-top: 1px solid rgba(255, 255, 255, 0.1); transition: border-color 0.18s; }
+      .lcard:hover::before, .lcard.linked::before { border-top-color: rgba(157, 184, 214, 0.55); }
+      .lcard.stale::before { border-top-color: var(--amber); }
+      .lcard.unseen::after { content: ''; position: absolute; left: -6px; top: 1px; bottom: 1px; width: 2px; border-radius: 1px; background: rgba(157, 184, 214, 0.8); }
+      .lcard.open .lslip, .lcard.open .lprint { outline: 1.5px solid rgba(255, 255, 255, 0.55); outline-offset: 1px; }
+
+      .lslip { position: relative; background: rgba(255, 255, 255, 0.022); border: 1px solid rgba(255, 255, 255, 0.065); border-radius: 8px; padding: 6px 8px 5px 9px; transition: border-color 0.18s; }
+      .lcard:hover .lslip, .lcard.linked .lslip { border-color: rgba(157, 184, 214, 0.42); }
+      .k-both .lslip { margin-top: 6px; }
+
+      .lprint { display: block; width: min(100%, 132px); background: #fff; border-radius: 4px; padding: 3px; box-shadow: 0 1px 3px rgba(0, 0, 0, 0.45); cursor: zoom-in; transition: box-shadow 0.18s; }
+      .lprint svg { display: block; width: 100%; height: auto; }
+      .lcard:hover .lprint, .lcard.linked .lprint { box-shadow: 0 0 0 1.5px rgba(157, 184, 214, 0.75), 0 3px 10px rgba(0, 0, 0, 0.45); }
+      .lcard.stale .lprint { opacity: 0.7; }
+      .lcap { display: flex; align-items: baseline; gap: 0 6px; padding: 4px 1px 0; font: 11px/1.4 var(--mono); color: var(--room-ink-soft); cursor: pointer; white-space: nowrap; }
+      .lcap b { color: var(--blue); font-weight: 600; }
+      .lcap.gone { cursor: default; }
+      .lcap.gone b { color: var(--room-ink-soft); text-decoration: line-through; text-decoration-color: rgba(255, 255, 255, 0.4); }
+
+      .lrow { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0 6px; padding: 1px 4px; margin: 0 -4px; border-radius: 4px; min-width: 0; }
+      .m { flex: 0 0 auto; width: 1ch; font-style: normal; font-weight: 600; color: var(--room-ink-soft); }
+      .m.new { color: var(--green); }
+      .g { align-self: center; width: 12px; height: 12px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; color: rgba(240, 238, 233, 0.38); flex: 0 0 auto; }
+      .lrow b { font-weight: 600; color: var(--room-ink); white-space: nowrap; }
+      .lrow .v { flex: 1 1 0; min-width: 0; color: var(--room-ink-soft); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+      .lrow .v.eq { color: #c4c2bd; }
+      .lrow .v.fn { margin-left: -6px; }
+      .lrow .cols { flex-basis: 100%; padding-left: calc(1ch + 24px); font: 10.5px/1.45 var(--mono); color: rgba(143, 141, 136, 0.85); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+      .lrow.viewable { cursor: pointer; }
+      .lrow.viewable:hover { background: rgba(255, 255, 255, 0.06); }
+      .lrow.viewable b { color: var(--blue); }
+      .lrow.scratch b { font-weight: 400; font-style: italic; }
+      .lrow.gone { opacity: 0.45; }
+      .lrow.gone b { text-decoration: line-through; text-decoration-color: rgba(255, 255, 255, 0.45); }
+      .to, .note, .took { flex: 0 0 auto; font: 10px/1.6 var(--sans); letter-spacing: 0.04em; color: var(--room-ink-soft); white-space: nowrap; }
+      .lcap .took, .lcap .to { margin-left: auto; }
+      .to { cursor: pointer; }
+      .to:hover { color: var(--blue); }
+      .note { text-transform: uppercase; letter-spacing: 0.06em; }
+      .lcard.stale .note { color: var(--amber); }
+      .took { display: none; opacity: 0.85; }
+      .lcard:hover .took, .lcard.linked .took, body.tabs #ledger .lcard .took, .sw .took { display: inline; }
+      #ledger.slim .to .w { display: none; }
+      #ledger.slim .lrow .v:not(.eq) { flex: 1 1 auto; }
+      #ledger.slim .lrow.gone .v { flex: 1 1 0; }
+
+      /* a card that would run into the next one clamps to the gap (+n) and opens over it on hover */
+      .lcard.clamped .lslip { max-height: var(--clamp); overflow: hidden; }
+            .more { display: none; position: absolute; right: 5px; bottom: 3px; z-index: 2; font: 600 9.5px/1 var(--mono); color: var(--room-ink); background: #3b3a41; border: 1px solid rgba(255, 255, 255, 0.1); border-radius: 999px; padding: 2px 5px; }
+      .lcard.clamped .more { display: block; }
+      .lcard.clamped:hover { z-index: 6; }
+      .lcard.clamped:hover .lslip { max-height: none; background: #302f33; box-shadow: 0 10px 28px rgba(0, 0, 0, 0.45); }
+      .lcard.clamped:hover .more { display: none; }
+
+      /* a run that changed the session: the card eases in, lit, then settles; it stays marked (unseen) until looked at */
+      @keyframes lcard-in { from { opacity: 0; transform: translateX(14px); } to { opacity: 1; transform: none; } }
+      @keyframes settle-slip { 0% { border-color: rgba(157, 184, 214, 0.75); box-shadow: 0 0 0 3px rgba(157, 184, 214, 0.18); } 100% { border-color: rgba(255, 255, 255, 0.065); box-shadow: 0 0 0 3px rgba(157, 184, 214, 0); } }
+      @keyframes settle-print { 0% { box-shadow: 0 0 0 2px rgba(157, 184, 214, 0.85), 0 0 0 7px rgba(157, 184, 214, 0.2); } 100% { box-shadow: 0 0 0 2px rgba(157, 184, 214, 0), 0 1px 3px rgba(0, 0, 0, 0.45); } }
+      .lcard.fresh { animation: lcard-in 0.24s ease-out both; }
+      .lcard.fresh .lslip { animation: settle-slip 2s ease-out 0.2s both; }
+      .lcard.fresh .lprint { animation: settle-print 2s ease-out 0.2s both; }
+      /* a run that changed nothing: the tie answers, nothing stays marked */
+      @keyframes tie-pulse { 0% { border-top-color: rgba(157, 184, 214, 0.95); } 100% { border-top-color: rgba(255, 255, 255, 0.1); } }
+      .lcard.visited::before { animation: tie-pulse 0.9s ease-out; }
+      /* before the restart: what the old session held, faded until the cell runs again */
+      .lcard.past { opacity: 0.4; }
+      .lcard.past::before { border-top-style: dashed; }
+      .lcard.past .lprint { box-shadow: none; cursor: default; }
+      .lcard.past .lcap, .lcard.past .lrow { cursor: default; }
+      .lpast { padding: 4px 1px 0; font: 9.5px var(--sans); letter-spacing: 0.08em; text-transform: uppercase; color: var(--room-ink-soft); }
+      @keyframes unfade { from { opacity: 0.4; } to { opacity: 1; } }
+      .lcard.settle { animation: unfade 0.5s ease-out; }
+      /* the fold along the tie: a ghost of the card flies into its tab (and back) */
+      .lcard.ghost { right: auto; z-index: 8; pointer-events: none; }
+      @keyframes tab-pop { 0% { transform: scale(0.5); } 60% { transform: scale(1.2); } 100% { transform: none; } }
+
+      /* ---------- the fold: a card that cannot fit becomes a tab where it was ---------- */
+      .ltab {
+        display: none; align-items: center; gap: 5px; height: 24px; padding: 0 7px; z-index: 4;
+        border: 1px solid rgba(255, 255, 255, 0.1); border-radius: 7px; background: #333238; color: var(--room-ink-soft);
+        font: 600 13px/1 var(--mono); cursor: pointer; white-space: nowrap; transition: border-color 0.15s, color 0.15s, background 0.15s;
+      }
+      body.tabs #ledger { left: calc(100% + 6px); width: 48px; }
+      /* at the floor: the tab sits in the gap above the code card, outside its border */
+      body.tabs.tight #ledger { left: calc(100% - 48px); }
+      body.tabs.tight #ledger .ltab { left: auto; right: 0; height: 20px; padding: 0 6px; font-size: 12px; }
+      body.tabs #ledger .ltab { position: absolute; left: 0; display: inline-flex; }
+      body.tabs #ledger .ltab::before, .sw.tabsw .ltab::before { content: ''; position: absolute; left: -7px; width: 6px; top: 50%; border-top: 1px solid rgba(255, 255, 255, 0.12); }
+      body.tabs.tight #ledger .ltab::before { content: none; }
+      body.tabs.tight #ledger .ltab { box-shadow: 0 2px 8px rgba(0, 0, 0, 0.4); }
+      .ltab .pm { display: block; width: 13px; height: 9px; border-radius: 1.5px; background: #fff; box-shadow: 0 0 0 0.5px rgba(0, 0, 0, 0.5); }
+      .ltab .pm svg { display: block; width: 13px; height: 9px; fill: none; stroke: #305c8a; stroke-width: 1.3; stroke-linecap: round; stroke-linejoin: round; }
+      .ltab:hover, .ltab.linked, .ltab.on { color: var(--room-ink); border-color: rgba(157, 184, 214, 0.55); }
+      .ltab.stale { border-color: rgba(201, 138, 29, 0.6); color: var(--amber); }
+      .ltab.unseen { background: rgba(157, 184, 214, 0.18); border-color: rgba(157, 184, 214, 0.6); color: var(--blue); }
+      @keyframes tab-blink { 0% { background: rgba(157, 184, 214, 0.45); color: #fff; } 100% { background: #333238; } }
+      .ltab.blink { animation: tab-blink 0.9s ease-out; }
+      .ltab.pop { animation: tab-pop 0.36s ease-out; }
+      .ltab.past { opacity: 0.45; }
+
+      /* the unfolded card: the frame's material laid over the room */
+      body.tabs #ledger .lcard { display: none; right: auto; width: 252px; z-index: 6; }
+      body.tabs #ledger .lcard.peek, body.tabs #ledger .lcard.pinned { display: block; }
+      body.tabs #ledger .lcard::before, body.tabs #ledger .lcard::after { content: none; }
+      body.tabs #ledger .lcard .lbody {
+        background: var(--frame); border: 1px solid rgba(255, 255, 255, 0.1); border-radius: 10px; padding: 9px 10px 8px 11px;
+        box-shadow: 0 14px 36px rgba(0, 0, 0, 0.5); transform-origin: var(--ox, 90%) var(--oy, -14px); animation: unfold 0.2s cubic-bezier(0.2, 0.8, 0.2, 1) both;
+      }
+      body.tabs #ledger .lcard.unseen .lbody { box-shadow: 0 14px 36px rgba(0, 0, 0, 0.5), inset 2px 0 0 rgba(157, 184, 214, 0.75); }
+      body.tabs #ledger .lcard.pinned .lbody { border-color: rgba(157, 184, 214, 0.45); }
+      body.tabs #ledger .lcard.folding .lbody { animation: fold-in 0.19s ease-in both; }
+      body.tabs #ledger .lcard .lslip { background: transparent; border: 0; padding: 0; }
+      body.tabs #ledger .lcard.k-both .lslip { margin-top: 7px; padding-top: 6px; border-top: 1px solid rgba(255, 255, 255, 0.07); border-radius: 0; }
+      body.tabs #ledger .lcard.clamped .lslip { max-height: none; }
+      body.tabs #ledger .lcard.clamped .more { display: none; }
+      body.tabs #ledger .lcard.fresh .lslip, body.tabs #ledger .lcard.fresh .lprint { animation: none; }
+      body.tabs #ledger .lcard.fresh .lbody { animation: unfold 0.2s cubic-bezier(0.2, 0.8, 0.2, 1) both, settle-pop 2.2s ease-out 0.2s both; }
+      @keyframes settle-pop { 0% { border-color: rgba(157, 184, 214, 0.8); } 100% { border-color: rgba(255, 255, 255, 0.1); } }
+      @keyframes unfold { from { opacity: 0; transform: scale(0.1, 0.06); } to { opacity: 1; transform: none; } }
+      @keyframes fold-in { to { opacity: 0; transform: scale(0.1, 0.06); } }
+
+      /* ---------- first run: the empty session explained where the first card will go (peek-v2) ----------
+         Ink on the bench, no box (a dashed box would say scratch). Gone once
+         the session holds a name. On a narrow window, a callout under the pill. */
+      #coach { position: absolute; left: calc(100% + 24px); top: 0; width: 224px; z-index: 2; font: 12.5px/1.5 var(--sans); color: var(--room-ink-soft); }
+      #coach[hidden] { display: none; }
+      #coach .arrow { position: absolute; left: -24px; top: 8px; width: 18px; height: 9px; fill: none; stroke: rgba(240, 238, 233, 0.35); stroke-width: 1.4; stroke-linecap: round; stroke-linejoin: round; }
+      #coach p { margin: 0 0 8px; }
+      #coach .lead { color: var(--room-ink); font-weight: 500; margin-bottom: 3px; }
+      #coach .k, .b-empty .k { display: inline-block; font-size: 10px; line-height: 16px; padding: 0 5px; border-radius: 4px; background: #2b2f37; color: var(--green); vertical-align: 1px; }
+      #coach kbd { font: 10.5px var(--sans); color: var(--room-ink-soft); background: rgba(255, 255, 255, 0.07); border: 1px solid rgba(255, 255, 255, 0.1); border-radius: 4px; padding: 0 4px; }
+      #coach .soft { color: rgba(143, 141, 136, 0.9); font-size: 12px; }
+      #coach .up { color: var(--room-ink); white-space: nowrap; }
+      #pillnote {
+        position: absolute; z-index: 25; top: calc(var(--topbar) + 4px); width: 250px; padding: 10px 12px 11px; border-radius: 10px;
+        background: #26262a; border: 1px solid rgba(255, 255, 255, 0.09); box-shadow: 0 12px 32px rgba(0, 0, 0, 0.45);
+        font: 12.5px/1.5 var(--sans); color: var(--room-ink-soft);
+      }
+      #pillnote[hidden] { display: none; }
+      #pillnote::before { content: ''; position: absolute; top: -6px; right: 40px; width: 10px; height: 10px; background: #26262a; border-left: 1px solid rgba(255, 255, 255, 0.09); border-top: 1px solid rgba(255, 255, 255, 0.09); transform: rotate(45deg); }
+      #pillnote b { color: var(--room-ink); font-weight: 500; }
+
+      /* ---------- the viewer: grows out of its card; beside (leans on hover) or large ---------- */
+      #dim { position: absolute; inset: 0; z-index: 40; background: rgba(18, 18, 20, 0.6); backdrop-filter: blur(5px); -webkit-backdrop-filter: blur(5px); }
+      #dim[hidden] { display: none; }
+      #viewer {
+        position: absolute; z-index: 30; display: flex; flex-direction: column; overflow: hidden;
+        background: var(--room-pane); border: 1px solid rgba(255, 255, 255, 0.1); border-radius: 10px;
+        box-shadow: 0 18px 50px rgba(0, 0, 0, 0.5); color: var(--room-ink);
+      }
+      #viewer[hidden] { display: none; }
+      #viewer.beside { width: var(--rest-w); transition: width 0.2s ease 0.25s; transform-origin: right var(--oy, 20px); }
+      #viewer.beside.can-lean:hover, #viewer.beside.lean { width: var(--lean-w); transition-delay: 0.4s; }
+      #viewer.beside.can-lean:hover, #viewer.beside.lean { box-shadow: 0 18px 60px rgba(0, 0, 0, 0.6), -14px 0 30px rgba(0, 0, 0, 0.25); }
+      #viewer.large { z-index: 41; left: 50% !important; top: 50% !important; right: auto !important; transform: translate(-50%, -50%); width: min(var(--large-w), calc(100% - 96px)); max-height: calc(100% - 96px) !important; }
+      @keyframes grow { from { opacity: 0; transform: translateX(10px) scale(0.97); } to { opacity: 1; transform: none; } }
+      @keyframes pop { from { opacity: 0; transform: translate(-50%, calc(-50% + 8px)) scale(0.985); } to { opacity: 1; transform: translate(-50%, -50%); } }
+      #viewer.beside.anim { animation: grow 0.2s ease-out; }
+      #viewer.large.anim { animation: pop 0.2s ease-out; }
+      .vhead { display: flex; align-items: center; gap: 1px; padding: 5px 5px 5px 6px; background: rgba(255, 255, 255, 0.018); border-bottom: 1px solid var(--room-line); flex: 0 0 auto; }
+      .vtab { position: relative; border: 0; background: transparent; color: var(--room-ink-soft); font: 12px var(--sans); padding: 3px 7px; border-radius: 6px; cursor: pointer; white-space: nowrap; }
+      .vtab:hover { color: var(--room-ink); }
+      .vtab.on { color: var(--room-ink); background: rgba(255, 255, 255, 0.075); }
+      .vtab .vdot { position: absolute; top: 3px; right: 1px; width: 5px; height: 5px; border-radius: 50%; background: var(--blue); }
+      .vhead .sp { flex: 1; }
+      .vbtn { border: 0; background: none; color: var(--room-ink-soft); cursor: pointer; padding: 3px 5px; border-radius: 5px; display: inline-flex; align-items: center; font-size: 13px; line-height: 1; }
+      .vbtn:hover { color: var(--room-ink); background: rgba(255, 255, 255, 0.06); }
+      .vbtn svg { width: 13px; height: 13px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; display: block; }
+      .vpick { display: flex; gap: 5px; padding: 6px 8px; overflow-x: auto; scrollbar-width: none; border-bottom: 1px solid var(--room-line); flex: 0 0 auto; -webkit-mask-image: linear-gradient(90deg, #000 86%, transparent); mask-image: linear-gradient(90deg, #000 86%, transparent); }
+      #viewer.large .vpick { flex-wrap: wrap; -webkit-mask-image: none; mask-image: none; }
+      .vpick button { flex: 0 0 auto; font: 11.5px var(--mono); border: 1px solid var(--room-line); border-radius: 999px; background: transparent; color: var(--room-ink-soft); padding: 2px 8px; cursor: pointer; }
+      .vpick button:hover { color: var(--room-ink); }
+      .vpick button.on { color: var(--room-ink); background: rgba(255, 255, 255, 0.08); border-color: transparent; }
+      .vsub { display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 8px; padding: 7px 10px 6px; border-bottom: 1px solid var(--room-line); font: 11.5px var(--mono); color: var(--room-ink-soft); flex: 0 0 auto; }
+      .vsub .name { font: 600 12.5px var(--mono); color: var(--room-ink); }
+      .vsub .shape.fresh { color: var(--blue); }
+      .vsub .was { font: 10.5px var(--sans); }
+      .vsub .from { flex-basis: 100%; min-width: 0; font: 11px var(--mono); cursor: pointer; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+      .vsub .from:hover { color: var(--blue); }
+      .vsub .from i { font: 10.5px var(--sans); font-style: normal; margin-right: 5px; opacity: 0.85; }
+      .vsub .chip { flex: 0 0 auto; order: -1; margin-right: 2px; border: 1px solid rgba(157, 184, 214, 0.45); background: rgba(157, 184, 214, 0.1); color: var(--blue); border-radius: 999px; padding: 1px 8px; font: 11px var(--sans); cursor: pointer; }
+      .vsub .chip[hidden] { display: none; }
+      .vbtn.pin.on { color: var(--blue); background: rgba(157, 184, 214, 0.12); }
+      .fig-one { padding: 10px 12px 12px; }
+      .fig-one .figure { display: block; align-self: auto; }
+      .fig-one .figure svg { width: 100%; }
+      .fig-one.fresh .figure { animation: settle-print 2s ease-out both; }
+      .b-cap .took { display: inline; }
+      #viewer.large .vsub .from { flex-basis: auto; margin-left: auto; max-width: 60%; }
+      .vscroll { flex: 1 1 auto; min-height: 0; overflow: auto; position: relative; scrollbar-width: thin; scrollbar-color: rgba(255, 255, 255, 0.16) transparent; }
+      .data-table { border-collapse: separate; border-spacing: 0; font: 12px/1.45 var(--mono); color: var(--room-ink); }
+      #viewer.large .data-table { font-size: 13px; }
+      .data-table th, .data-table td { padding: 0.16rem 0.55rem; border-bottom: 1px solid rgba(255, 255, 255, 0.045); white-space: nowrap; text-align: right; }
+      .data-table thead th { position: sticky; top: 0; background: var(--room-pane); color: var(--room-ink-soft); font-weight: 600; z-index: 2; }
+      .data-table tbody th { position: sticky; left: 0; background: var(--room-pane); color: var(--room-ink-soft); font-weight: 400; text-align: left; z-index: 1; }
+      .data-table thead th:first-child { left: 0; z-index: 3; text-align: left; font-weight: 400; }
+      .data-table td:first-of-type { padding-left: 0.8rem; }
+      @keyframes cell-flash { 0%, 35% { background: rgba(157, 184, 214, 0.2); color: #fff; } 100% { background: transparent; } }
+      .data-table .fresh { animation: cell-flash 2.6s ease-out; }
+      .vfoot { display: flex; align-items: center; gap: 8px; padding: 6px 10px; font-size: 11.5px; color: var(--room-ink-soft); border-top: 1px solid var(--room-line); flex: 0 0 auto; white-space: nowrap; }
+      .vfoot button { font: 11.5px/1 var(--sans); border: 1px solid var(--room-line); border-radius: 999px; background: transparent; color: var(--room-ink); padding: 0.25rem 0.65rem; cursor: pointer; }
+      .vfoot button:hover { background: rgba(255, 255, 255, 0.07); }
+      .vfoot .cut { margin-left: auto; color: var(--blue); }
+      #viewer.can-lean:hover .vfoot .cut, #viewer.lean .vfoot .cut, #viewer.large .vfoot .cut { display: none; }
+      .vfoot .mode { margin-left: auto; opacity: 0.85; }
+      .vfoot .newpill { margin-left: auto; padding: 2px 9px; border: 1px solid rgba(157, 184, 214, 0.4); border-radius: 999px; background: rgba(157, 184, 214, 0.1); color: var(--blue); font: 11.5px var(--sans); }
+      .vfoot .newpill:hover { background: rgba(157, 184, 214, 0.18); }
+      .vfoot .newpill b { font: 600 11.5px var(--mono); }
+      .vars-table { width: 100%; border-collapse: collapse; font: 12px/1.5 var(--mono); }
+      .vars-table td { padding: 0.22rem 0.45rem; vertical-align: baseline; }
+      .vars-table tr + tr td { border-top: 1px solid rgba(255, 255, 255, 0.045); }
+      .vars-table td:first-child { padding-left: 0.75rem; white-space: nowrap; }
+      .vars-table td:last-child { padding-right: 0.75rem; }
+      .vars-table .v-name { font-weight: 600; color: var(--room-ink); }
+      .vars-table .v-type { color: var(--room-ink-soft); white-space: nowrap; max-width: 0; width: 45%; overflow: hidden; text-overflow: ellipsis; }
+      .vars-table .v-by { color: var(--room-ink-soft); font-size: 11px; white-space: nowrap; max-width: 0; width: 55%; overflow: hidden; text-overflow: ellipsis; cursor: pointer; }
+      .vars-table .v-by:hover { color: var(--blue); }
+      .vars-table .v-by.stale { color: var(--amber); }
+      .vars-table tr.scratch .v-name { font-weight: 400; font-style: italic; }
+      .vars-table tr.viewable { cursor: pointer; }
+      .vars-table tr.viewable:hover { background: rgba(255, 255, 255, 0.05); }
+      .vars-table tr.viewable .v-name { color: var(--blue); }
+      .vars-table .v-dot { display: inline-block; width: 5px; height: 5px; border-radius: 50%; margin: 0 6px 1px 0; vertical-align: middle; background: transparent; }
+      .vars-table tr.unseen .v-dot { background: var(--blue); }
+      .vars-table .v-cell { color: var(--room-ink-soft); font: 11px var(--sans); white-space: nowrap; text-align: right; cursor: pointer; }
+      .vars-table .v-cell:hover { color: var(--blue); }
+      .vars-table .v-cell.stale { color: var(--amber); }
+      .vars-table .v-name .m { display: inline-block; width: 1.5ch; font-style: normal; font-weight: 600; color: var(--room-ink-soft); }
+      .vars-table .v-name .m.new { color: var(--green); }
+      .vars-table tr.grp td { padding: 9px 0.75rem 3px; border-top: 0; font: 10px var(--sans); letter-spacing: 0.12em; text-transform: uppercase; color: var(--room-ink-soft); }
+      .vars-table tr.grp + tr td { border-top: 0; }
+      .vars-table tr.grp .go { cursor: pointer; }
+      .vars-table tr.grp .go:hover { color: var(--blue); }
+      .vars-table tr.grp .t { float: right; letter-spacing: 0; text-transform: none; font: 10.5px var(--mono); }
+      .vars-table .v-type { width: 100%; }
+      /* the board: the Session tab large, for the back of the room (peek-v2) */
+      .b-band { position: relative; padding: 14px 18px 12px 22px; border-bottom: 1px solid var(--room-line); }
+      .b-band::before { content: ''; position: absolute; left: 0; top: 14px; bottom: 12px; width: 3px; border-radius: 0 2px 2px 0; background: var(--blue); }
+      .b-cap { display: flex; align-items: baseline; gap: 10px; margin-bottom: 8px; font: 11px var(--sans); letter-spacing: 0.14em; text-transform: uppercase; color: var(--room-ink-soft); white-space: nowrap; }
+      .b-cap .took { font: 12.5px var(--mono); letter-spacing: 0; text-transform: none; }
+      .b-cap .go { margin-left: auto; font: 13px var(--sans); letter-spacing: 0; text-transform: none; cursor: pointer; }
+      .b-cap .go:hover, .l-row .cl:hover { color: var(--blue); }
+      .b-row { display: flex; align-items: baseline; gap: 10px; padding: 3px 6px; margin: 0 -6px; border-radius: 6px; }
+      .b-row .m { font: 600 17px/1 var(--mono); font-style: normal; }
+      .b-row .g { width: 15px; height: 15px; }
+      .b-row b { font: 600 17px/1.35 var(--mono); color: #f0eee9; white-space: nowrap; }
+      .b-row .ty { margin-left: auto; padding-left: 10px; font: 14px var(--mono); color: var(--room-ink-soft); white-space: nowrap; }
+      .b-row.viewable, .l-row.viewable { cursor: pointer; }
+      .b-row.viewable b, .l-row.viewable b { color: var(--blue); }
+      .b-row.viewable:hover { background: rgba(255, 255, 255, 0.05); }
+      .b-row.scratch b, .l-row.scratch b { font-style: italic; font-weight: 400; }
+      .b-val { margin: 2px 0 10px 44px; font: 14px/1.5 var(--mono); color: #c3c1bc; overflow-x: auto; }
+      .mini { border-collapse: collapse; font: 14px/1.5 var(--mono); }
+      .mini th { color: var(--room-ink-soft); font-weight: 400; text-align: left; padding: 0 18px 0 0; }
+      .mini td { text-align: right; padding: 0 0 0 18px; color: #e6e4df; }
+      .mini.h tr:first-child td, .mini.v thead td { color: var(--room-ink-soft); }
+      .b-fig { margin: 6px 0 6px 44px; max-width: 480px; background: #fff; border-radius: 6px; padding: 6px; box-shadow: 0 1px 3px rgba(0, 0, 0, 0.4); cursor: pointer; }
+      .b-fig svg { display: block; width: 100%; height: auto; }
+      .b-list { padding: 12px 18px 14px 22px; }
+      .l-row { display: flex; align-items: baseline; gap: 10px; padding: 3px 0; min-width: 0; }
+      .l-row .g { width: 14px; height: 14px; align-self: center; }
+      .l-row b { font: 600 15px var(--mono); color: var(--room-ink); white-space: nowrap; }
+      .l-row .ty { flex: 1 1 auto; min-width: 0; font: 13.5px var(--mono); color: var(--room-ink-soft); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+      .l-row .cl { font: 13px var(--sans); color: var(--room-ink-soft); cursor: pointer; white-space: nowrap; }
+      .vfoot.b-foot { gap: 16px; font-size: 12.5px; }
+      .b-foot .m { font: 600 13px var(--mono); font-style: normal; margin-right: 4px; }
+      .b-empty { padding: 16px 16px 14px; }
+      .b-empty .lead { margin: 0 0 6px; font: 500 15px/1.3 var(--sans); color: #f0eee9; }
+      .b-empty p { margin: 0 0 8px; font: 12.5px/1.5 var(--sans); color: #c3c1bc; }
+      .b-empty .soft { color: var(--room-ink-soft); }
+      #viewer.large .b-empty { padding: 24px 26px 20px; }
+      #viewer.large .b-empty .lead { font-size: 21px; }
+      #viewer.large .b-empty p { font-size: 15px; }
+      .e-act { font: 12.5px/1 var(--sans); border: 1px solid rgba(255, 255, 255, 0.14); border-radius: 999px; background: transparent; color: var(--room-ink); padding: 0.35rem 0.85rem; cursor: pointer; }
+      .e-act:hover { background: rgba(255, 255, 255, 0.07); }
+      .fig-list { padding: 10px 12px 14px; display: flex; flex-direction: column; gap: 14px; }
+      .fig-cap { display: flex; align-items: baseline; gap: 7px; margin: 0 2px 5px; font: 11px var(--sans); color: var(--room-ink-soft); white-space: nowrap; }
+      .fig-cap .n { font: 600 12px var(--mono); color: var(--room-ink); }
+      .fig-cap .n.gone { text-decoration: line-through; color: var(--room-ink-soft); }
+      .fig-cap .go { margin-left: auto; cursor: pointer; }
+      .fig-cap .go:hover { color: var(--blue); }
+      .fig-item .figure { align-self: auto; display: block; }
+      .fig-item .figure svg { width: 100%; }
+      .fig-item.fresh .figure { animation: settle-print 2s ease-out both; }
+
+      /* ---------- mockup chrome (not Knuth): the states card ---------- */
+      #states {
+        position: fixed; left: 52px; bottom: 16px; z-index: 100; width: 268px; max-height: calc(100vh - 80px); display: flex; flex-direction: column;
+        background: rgba(251, 250, 248, 0.96); backdrop-filter: blur(18px) saturate(140%); -webkit-backdrop-filter: blur(18px) saturate(140%);
+        border: 1px solid rgba(0, 0, 0, 0.08); border-radius: 14px; box-shadow: 0 10px 30px rgba(0, 0, 0, 0.38);
+        color: #2c2b29; font: 12px/1.35 var(--sans);
+      }
+      #states header { display: flex; align-items: center; gap: 8px; padding: 9px 12px 7px; cursor: pointer; user-select: none; }
+      #states header b { font-weight: 600; }
+      #states header span { margin-left: auto; color: #8a8883; font-size: 11px; }
+      #states .bd { overflow-y: auto; padding: 0 8px 4px; }
+      #states.min .bd, #states.min .cap { display: none; }
+      #states .grp { padding: 4px 2px 6px; }
+      #states .lab { display: block; margin: 0 4px 4px; color: #85837e; letter-spacing: 0.06em; text-transform: uppercase; font-size: 10px; }
+      #states .grp button { border: 1px solid rgba(0, 0, 0, 0.1); background: rgba(255, 255, 255, 0.7); color: #2c2b29; border-radius: 999px; padding: 3px 9px; margin: 0 2px 4px 0; cursor: pointer; font: 11.5px var(--sans); }
+      #states .grp button:hover { background: #fff; border-color: rgba(0, 0, 0, 0.22); }
+      #states .grp button.on { background: #2c2b29; border-color: #2c2b29; color: #fff; }
+      #states .cap { padding: 9px 12px 11px; border-top: 1px solid rgba(0, 0, 0, 0.08); color: #4d4b47; font-size: 12px; line-height: 1.5; }
+
+      /* the specimen sheet (mockup chrome): every kind of card at its real size */
+      #spec { position: fixed; inset: 0; z-index: 120; display: flex; align-items: center; justify-content: center; padding: 24px; background: rgba(14, 14, 16, 0.55); backdrop-filter: blur(4px); -webkit-backdrop-filter: blur(4px); }
+      #spec[hidden] { display: none; }
+      #spec .sheetp { width: min(1120px, 100%); max-height: 100%; overflow: auto; background: rgba(251, 250, 248, 0.97); border-radius: 16px; box-shadow: 0 20px 60px rgba(0, 0, 0, 0.45); padding: 18px 20px 20px; color: #2c2b29; font: 12.5px/1.45 var(--sans); }
+      #spec h3 { margin: 0 0 2px; font: 600 15px var(--sans); }
+      #spec .intro { margin: 0 0 14px; color: #5a5853; max-width: 80ch; }
+      #spec .x { float: right; border: 0; background: rgba(0, 0, 0, 0.06); border-radius: 999px; width: 26px; height: 26px; cursor: pointer; font-size: 13px; }
+      #spec .squintbtn { float: right; margin-right: 8px; border: 1px solid rgba(0, 0, 0, 0.12); background: #fff; border-radius: 999px; padding: 3px 10px; cursor: pointer; font: 12px var(--sans); }
+      #spec .squintbtn.on { background: #2c2b29; color: #fff; }
+      #spec .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(296px, 1fr)); gap: 14px; }
+      #spec.squint .sw { filter: blur(1.9px); }
+      .item .lbl { margin: 6px 2px 0; font-weight: 600; font-size: 12px; }
+      .item .sub { margin: 1px 2px 0; color: #66645f; font-size: 11.5px; }
+      .sw { position: relative; background: var(--bg); border-radius: 10px; padding: 14px 14px 14px 52px; min-height: 92px; color: var(--room-ink); font: 11.5px/1.45 var(--mono); }
+      .sw .edge { position: absolute; left: 0; top: 14px; width: 26px; height: 46px; background: #282c34; border: 1px solid rgba(255, 255, 255, 0.07); border-left: 0; border-radius: 0 8px 8px 0; }
+      .sw .edge.stale { box-shadow: inset 0 0 0 0 transparent; }
+      .sw .slot { position: relative; width: 224px; }
+      .sw .lcard { position: relative; left: auto; right: auto; top: auto; animation: none; }
+      .sw .lcard .took { opacity: 0.85; }
+      .sw.tabsw { padding: 18px 14px; display: flex; gap: 16px; align-items: center; flex-wrap: wrap; }
+      .sw.tabsw .ltab { position: relative; display: inline-flex; cursor: default; }
+      .sw.popsw { padding-left: 14px; }
+      .sw.popsw .lbody { width: 252px; background: var(--frame); border: 1px solid rgba(255, 255, 255, 0.1); border-radius: 10px; padding: 9px 10px 8px 11px; box-shadow: 0 14px 36px rgba(0, 0, 0, 0.5); }
+      .sw.popsw .lslip { background: transparent; border: 0; padding: 0; margin-top: 7px; padding-top: 6px; border-top: 1px solid rgba(255, 255, 255, 0.07); border-radius: 0; }
+    </style>
+  </head>
+  <body>
+    <!-- figures, drawn once: the cell, the print in the card and the viewer all use them -->
+    <svg width="0" height="0" style="position: absolute" aria-hidden="true">
+      <defs>
+        <symbol id="fig-line" viewBox="0 0 460 300">
+          <rect width="460" height="300" fill="#fff"/>
+          <g font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', 'Helvetica Neue', sans-serif" font-size="11" fill="#000">
+            <rect x="60" y="20" width="380" height="235" fill="none" stroke="#000" stroke-width="0.8"/>
+            <g stroke="#000" stroke-width="0.8">
+              <line x1="60" y1="255" x2="60" y2="259"/><line x1="144.4" y1="255" x2="144.4" y2="259"/><line x1="228.9" y1="255" x2="228.9" y2="259"/><line x1="313.3" y1="255" x2="313.3" y2="259"/><line x1="397.8" y1="255" x2="397.8" y2="259"/>
+              <line x1="56" y1="237" x2="60" y2="237"/><line x1="56" y1="192" x2="60" y2="192"/><line x1="56" y1="146.6" x2="60" y2="146.6"/><line x1="56" y1="101.4" x2="60" y2="101.4"/><line x1="56" y1="56" x2="60" y2="56"/>
+            </g>
+            <g text-anchor="middle"><text x="60" y="272">0.70</text><text x="144.4" y="272">0.80</text><text x="228.9" y="272">0.90</text><text x="313.3" y="272">1.00</text><text x="397.8" y="272">1.10</text></g>
+            <g text-anchor="end"><text x="52" y="241">300</text><text x="52" y="196">350</text><text x="52" y="150.6">400</text><text x="52" y="105.4">450</text><text x="52" y="60">500</text></g>
+            <text x="250" y="292" text-anchor="middle" font-size="12">price</text>
+            <text transform="translate(16 137.5) rotate(-90)" text-anchor="middle" font-size="12">median quantity</text>
+            <polyline points="102,38 229,137.5 398,237" fill="none" stroke="#1f77b4" stroke-width="1.6"/>
+            <circle cx="102" cy="38" r="3.6" fill="#1f77b4"/><circle cx="229" cy="137.5" r="3.6" fill="#1f77b4"/><circle cx="398" cy="237" r="3.6" fill="#1f77b4"/>
+          </g>
+        </symbol>
+        <symbol id="fig-multi" viewBox="0 0 460 132">
+          <rect width="460" height="132" fill="#fff"/>
+          <g font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', 'Helvetica Neue', sans-serif" font-size="8" fill="#000">
+            <g fill="none" stroke="#000" stroke-width="0.7">
+              <rect x="40" y="18" width="96" height="82"/><rect x="144" y="18" width="96" height="82"/><rect x="248" y="18" width="96" height="82"/><rect x="352" y="18" width="96" height="82"/>
+              <line x1="36" y1="94.1" x2="40" y2="94.1"/><line x1="36" y1="64.9" x2="40" y2="64.9"/><line x1="36" y1="35.6" x2="40" y2="35.6"/>
+            </g>
+            <g text-anchor="end"><text x="33" y="97">300</text><text x="33" y="67.8">400</text><text x="33" y="38.5">500</text></g>
+            <g text-anchor="middle" font-size="9.5"><text x="88" y="13">east</text><text x="192" y="13">north</text><text x="296" y="13">south</text><text x="400" y="13">west</text></g>
+            <g text-anchor="middle" font-size="7.5">
+              <text x="50" y="110">0.75</text><text x="81" y="110">0.90</text><text x="122" y="110">1.10</text>
+              <text x="154" y="110">0.75</text><text x="185" y="110">0.90</text><text x="226" y="110">1.10</text>
+              <text x="258" y="110">0.75</text><text x="289" y="110">0.90</text><text x="330" y="110">1.10</text>
+              <text x="362" y="110">0.75</text><text x="393" y="110">0.90</text><text x="434" y="110">1.10</text>
+            </g>
+            <g text-anchor="middle" font-size="8.5"><text x="88" y="124">price</text><text x="192" y="124">price</text><text x="296" y="124">price</text><text x="400" y="124">price</text></g>
+            <g fill="none" stroke="#1f77b4" stroke-width="1.3">
+              <polyline points="50,36.2 81,64.3 122,96.8"/><polyline points="154,21.8 185,55.8 226,88.9"/><polyline points="258,32.9 289,65.4 330,95.3"/><polyline points="362,26.5 393,60.5 434,92.7"/>
+            </g>
+            <g fill="#1f77b4">
+              <circle cx="50" cy="36.2" r="2.4"/><circle cx="81" cy="64.3" r="2.4"/><circle cx="122" cy="96.8" r="2.4"/>
+              <circle cx="154" cy="21.8" r="2.4"/><circle cx="185" cy="55.8" r="2.4"/><circle cx="226" cy="88.9" r="2.4"/>
+              <circle cx="258" cy="32.9" r="2.4"/><circle cx="289" cy="65.4" r="2.4"/><circle cx="330" cy="95.3" r="2.4"/>
+              <circle cx="362" cy="26.5" r="2.4"/><circle cx="393" cy="60.5" r="2.4"/><circle cx="434" cy="92.7" r="2.4"/>
+            </g>
+          </g>
+        </symbol>
+        <symbol id="fig-bar" viewBox="0 0 460 300">
+          <rect width="460" height="300" fill="#fff"/>
+          <g font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', 'Helvetica Neue', sans-serif" font-size="11" fill="#000">
+            <rect x="60" y="20" width="380" height="235" fill="none" stroke="#000" stroke-width="0.8"/>
+            <g stroke="#000" stroke-width="0.8">
+              <line x1="123" y1="255" x2="123" y2="259"/><line x1="250" y1="255" x2="250" y2="259"/><line x1="377" y1="255" x2="377" y2="259"/>
+              <line x1="56" y1="20" x2="60" y2="20"/><line x1="56" y1="53.6" x2="60" y2="53.6"/><line x1="56" y1="87.1" x2="60" y2="87.1"/><line x1="56" y1="120.7" x2="60" y2="120.7"/><line x1="56" y1="154.3" x2="60" y2="154.3"/><line x1="56" y1="187.9" x2="60" y2="187.9"/><line x1="56" y1="221.4" x2="60" y2="221.4"/><line x1="56" y1="255" x2="60" y2="255"/>
+            </g>
+            <g text-anchor="middle"><text x="123" y="272">0.75</text><text x="250" y="272">0.90</text><text x="377" y="272">1.10</text></g>
+            <g text-anchor="end"><text x="52" y="24">0.0</text><text x="52" y="57.6">−0.2</text><text x="52" y="91.1">−0.4</text><text x="52" y="124.7">−0.6</text><text x="52" y="158.3">−0.8</text><text x="52" y="191.9">−1.0</text><text x="52" y="225.4">−1.2</text><text x="52" y="259">−1.4</text></g>
+            <text x="250" y="292" text-anchor="middle" font-size="12">price</text>
+            <rect x="208" y="20" width="84" height="178" fill="#305c8a"/>
+            <rect x="335" y="20" width="84" height="203" fill="#305c8a"/>
+            <line x1="60" y1="20" x2="440" y2="20" stroke="#000" stroke-width="0.8"/>
+          </g>
+        </symbol>
+        <!-- the ledger's glyphs (icons.ts style: 24-box, round caps) -->
+        <symbol id="g-tbl" viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="14" rx="2"/><line x1="3" y1="10" x2="21" y2="10"/><line x1="3" y1="14.5" x2="21" y2="14.5"/><line x1="10" y1="5" x2="10" y2="19"/></symbol>
+        <symbol id="g-ser" viewBox="0 0 24 24"><rect x="8" y="3" width="8" height="18" rx="1.5"/><line x1="8" y1="9" x2="16" y2="9"/><line x1="8" y1="15" x2="16" y2="15"/></symbol>
+        <symbol id="g-fig" viewBox="0 0 24 24"><path d="M3 3v18h18"/><polyline points="7 16 11 10 14.5 13 20 6"/></symbol>
+        <symbol id="g-val" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3.4"/></symbol>
+        <symbol id="g-list" viewBox="0 0 24 24"><line x1="9" y1="7" x2="20" y2="7"/><line x1="9" y1="12" x2="20" y2="12"/><line x1="9" y1="17" x2="20" y2="17"/><line x1="4" y1="7" x2="5" y2="7"/><line x1="4" y1="12" x2="5" y2="12"/><line x1="4" y1="17" x2="5" y2="17"/></symbol>
+        <symbol id="g-fn" viewBox="0 0 24 24"><path d="M16 4h-2a3 3 0 0 0-3 3v13"/><line x1="7.5" y1="10.5" x2="15" y2="10.5"/></symbol>
+        <symbol id="g-obj" viewBox="0 0 24 24"><rect x="4.5" y="4.5" width="15" height="15" rx="3.5"/><circle cx="12" cy="12" r="1.6"/></symbol>
+        <symbol id="g-arr" viewBox="0 0 24 24"><path d="M8.5 4H5v16h3.5"/><path d="M15.5 4H19v16h-3.5"/></symbol>
+        <symbol id="g-braces" viewBox="0 0 24 24"><path d="M8.5 3H7.5a2 2 0 0 0-2 2v4.5a2 2 0 0 1-2 2.5 2 2 0 0 1 2 2.5V19a2 2 0 0 0 2 2h1"/><path d="M15.5 3h1a2 2 0 0 1 2 2v4.5a2 2 0 0 0 2 2.5 2 2 0 0 0-2 2.5V19a2 2 0 0 1-2 2h-1"/></symbol>
+      </defs>
+    </svg>
+
+    <div id="app">
+      <div id="topbar">
+        <div class="lights"><i></i><i></i><i></i></div>
+        <button class="ctl dim" data-label="Back"><svg viewBox="0 0 24 24"><line x1="19" y1="12" x2="5" y2="12"/><polyline points="12 19 5 12 12 5"/></svg></button>
+        <button class="ctl dim" data-label="Forward"><svg viewBox="0 0 24 24"><line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/></svg></button>
+        <div id="docpill">
+          <span class="file"><svg viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg></span>
+          <span class="name">analysis.py</span><span class="dirty">●</span>
+          <span class="path">~/Projects/ECON_0150/week-3</span>
+        </div>
+        <!-- the session's home: today's #kernel-status and #toggle-panel pod, made one control -->
+        <button id="sesspill" data-label="">
+          <span class="py"><i></i>uv · Python 3.13</span>
+          <span class="sep"></span>
+          <span class="br"><svg viewBox="0 0 24 24"><use href="#g-braces"/></svg></span>
+          <span class="names"></span>
+        </button>
+        <button class="ctl on end" id="ctl-session" data-label="Auto: cards beside the cells (click to change)"><svg viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="2"/><line x1="15" y1="3" x2="15" y2="21"/></svg></button>
+        <div class="avatar"></div>
+      </div>
+
+      <nav id="rail" aria-label="Toolbar">
+        <button class="rb on" data-label="analysis.py"><svg viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg></button>
+        <button class="rb dim" data-label="Open…"><svg viewBox="0 0 24 24"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg></button>
+        <div class="rule"></div>
+        <button class="rb" data-label="Code cell"><svg viewBox="0 0 24 24"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg></button>
+        <button class="rb" data-label="Scratch cell"><svg viewBox="0 0 24 24"><rect x="4" y="4" width="16" height="16" rx="2" stroke-dasharray="3.4 2.8"/><line x1="9" y1="12" x2="15" y2="12"/></svg></button>
+        <button class="rb" data-label="Text cell"><svg viewBox="0 0 24 24"><polyline points="4 7 4 4 20 4 20 7"/><line x1="9" y1="20" x2="15" y2="20"/><line x1="12" y1="4" x2="12" y2="20"/></svg></button>
+        <div class="rule"></div>
+        <button class="rb solid" id="rb-stale" data-label="Run stale"><svg viewBox="0 0 24 24"><polygon points="7 4.5 19 12 7 19.5"/></svg></button>
+        <button class="rb solid" id="rb-all" data-label="Run all"><svg viewBox="0 0 24 24"><polygon points="3.5 5 11 12 3.5 19"/><polygon points="13 5 20.5 12 13 19"/></svg></button>
+        <button class="rb" data-label="Stop"><svg viewBox="0 0 24 24"><rect x="6.5" y="6.5" width="11" height="11" rx="1.5"/></svg></button>
+        <button class="rb" id="rb-restart" data-label="Restart session"><svg viewBox="0 0 24 24"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"/></svg></button>
+        <div class="grow"></div>
+        <button class="rb dim" data-label="Get Knuth"><svg viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg></button>
+        <button class="rb dim" data-label="New document"><svg viewBox="0 0 24 24"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg></button>
+      </nav>
+
+      <main id="room">
+        <div id="doc">
+          <div id="page">
+            <div id="sheet"></div>
+            <!-- The ledger. One card per cell that bound something (and its tab, for
+                 the narrow window); script sets each card's top from its cell's first
+                 line and clamps a card that would run into the next one. -->
+            <aside id="ledger" aria-label="Session"></aside>
+            <!-- first run: the empty session, explained where the first card will go -->
+            <aside id="coach" hidden>
+              <svg class="arrow" viewBox="0 0 20 10"><line x1="19" y1="5" x2="2" y2="5"/><polyline points="6 1 2 5 6 9"/></svg>
+              <p class="lead">Nothing has run yet.</p>
+              <p>Press <span class="k">▶</span>, or <kbd>⌘</kbd> <kbd>↵</kbd> in a cell. What a run makes (names, tables, figures) shows up here, beside the cell that made it.</p>
+              <p class="soft">The outputs under the cells were saved with the file. The session starts empty each time the file opens; the bar above says what is in it <span class="up">↗</span></p>
+            </aside>
+          </div>
+        </div>
+      </main>
+
+      <div id="dim" hidden></div>
+      <section id="viewer" hidden aria-label="Viewer"></section>
+      <!-- first run on a window too narrow for the margin note -->
+      <div id="pillnote" hidden><b>The session is empty.</b> The outputs were saved with the file; run a cell with ▶ and what it makes shows up beside it, and up here.</div>
+    </div>
+    <div id="sizelabel"></div>
+
+    <div id="states" aria-label="Mockup states">
+      <header><b>Recommended · round two</b><span>states</span></header>
+      <div class="bd">
+        <div class="grp"><span class="lab">Wide (cards in the margin)</span>
+          <button data-st="first">First run</button><button data-st="rest">At rest</button><button data-st="twenty">Twenty cells</button><button data-st="stale">Run the stale cell</button><button data-st="runall">Run all</button><button data-st="restart">Restart</button><button data-st="proj">1280 projector</button>
+        </div>
+        <div class="grp"><span class="lab">The viewer</span>
+          <button data-st="beside">Table beside</button><button data-st="wide">Wide table</button><button data-st="lean">…leaning</button><button data-st="live">Open as a run changes it</button><button data-st="large">Large</button><button data-st="figure">Figure</button><button data-st="held">Figure held</button><button data-st="figwide">Figure, 1920</button><button data-st="session">Session</button><button data-st="board">Session large</button>
+        </div>
+        <div class="grp"><span class="lab">Narrow (cards fold to tabs)</span>
+          <button data-st="n_rest">1100 at rest</button><button data-st="n_hover">Unfolded</button><button data-st="n_run">A run</button><button data-st="n_fold">The fold</button><button data-st="n_tight">820 floor</button>
+        </div>
+        <div class="grp"><span class="lab">Look</span>
+          <button data-st="kinds">Card kinds</button><button id="st-squint">Squint</button><button data-win="fill" class="on">Fill</button><button data-win="1440">1440</button><button data-win="1100">1100</button>
+        </div>
+      </div>
+      <div class="cap" id="cap"></div>
+    </div>
+
+    <div id="spec" hidden></div>
+
+    <script>
+      (function () {
+        'use strict';
+        const $ = (s, r) => (r || document).querySelector(s);
+        const $$ = (s, r) => Array.from((r || document).querySelectorAll(s));
+        const body = document.body, app = $('#app'), room = $('#room'), doc = $('#doc'), page = $('#page'), sheet = $('#sheet');
+        const ledger = $('#ledger'), viewer = $('#viewer'), dim = $('#dim'), pill = $('#sesspill'), coach = $('#coach'), pillnote = $('#pillnote');
+        const esc = (s) => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+        const strip = (h) => h.replace(/<[^>]+>/g, '').replace(/&gt;/g, '>').replace(/&lt;/g, '<').replace(/&amp;/g, '&');
+        const wait = (ms) => new Promise((r) => setTimeout(r, ms));
+
+        /* ================= the document: twenty cells ================= */
+        const K = (s) => '<span class="k">' + s + '</span>', P = (s) => '<span class="p">' + s + '</span>', S_ = (s) => '<span class="s">' + s + '</span>';
+        const N = (s) => '<span class="n">' + s + '</span>', O = (s) => '<span class="o">' + s + '</span>', C = (s) => '<span class="c">' + s + '</span>';
+        const CELLS = [
+          { id: 'c1', kind: 'program', code: [K('import') + ' pandas ' + K('as') + ' pd', K('import') + ' numpy ' + K('as') + ' np', K('import') + ' matplotlib.pyplot ' + K('as') + ' plt'] },
+          { id: 'c2', kind: 'program', code: ['prices ' + O('=') + ' pd.' + P('read_csv') + '(' + S_("'prices.csv'") + ')', 'prices.' + P('head') + '()'],
+            out: '   price  quantity region\n0   0.75       583  north\n1   0.90       402  south\n2   1.10       297   east\n3   0.75       511   west\n4   0.90       455  north' },
+          { id: 'c3', kind: 'text', html: '<h2>Demand at three prices</h2><p>Each row is one buyer’s answer at the price they were shown, in one of four regions. The curve below joins the median quantity at each price; the slope between neighbouring medians is the elasticity we report at the end.</p>' },
+          { id: 'c4', kind: 'program', code: ['n ' + O('=') + ' ' + P('len') + '(prices)', 'regions ' + O('=') + ' ' + P('sorted') + '(prices.region.' + P('unique') + '())', 'n, regions'],
+            out: "(1200, ['east', 'north', 'south', 'west'])" },
+          { id: 'c5', kind: 'program', code: ['demand ' + O('=') + ' prices.' + P('groupby') + '(' + S_("'price'") + ').quantity.' + P('median') + '()', 'ax ' + O('=') + ' demand.' + P('plot') + '(marker' + O('=') + S_("'o'") + ')', 'ax.' + P('set_ylabel') + '(' + S_("'median quantity'") + ')'],
+            fig: 'line', out: "Text(0, 0.5, 'median quantity')" },
+          { id: 'c6', kind: 'program', code: ['prices ' + O('=') + ' prices[prices.quantity ' + O('&gt;') + ' ' + N('0') + ']   ' + C('# drop the no-sale rows'), 'n ' + O('=') + ' ' + P('len') + '(prices)', 'n'], out: '1187' },
+          { id: 'c7', kind: 'scratch', code: ['tmp ' + O('=') + ' demand.' + P('pct_change') + '()', 'tmp'], out: 'price\n0.75         NaN\n0.90   -0.211538\n1.10   -0.268293\nName: quantity, dtype: float64' },
+          { id: 'c8', kind: 'text', html: '<h2>Elasticity</h2><p>Between neighbouring prices, the elasticity is the percentage change in quantity over the percentage change in price. The arc version measures both changes from the midpoint, so it does not depend on which way you move.</p>' },
+          { id: 'c9', kind: 'program', code: ['dp ' + O('=') + ' demand.index.' + P('to_series') + '().' + P('pct_change') + '()', 'elasticity ' + O('=') + ' (demand.' + P('pct_change') + '() ' + O('/') + ' dp).' + P('dropna') + '()', 'elasticity.' + P('round') + '(' + N('2') + ')'],
+            out: 'price\n0.90   -1.06\n1.10   -1.21\nName: quantity, dtype: float64' },
+          { id: 'c10', kind: 'program', code: [K('def') + ' ' + P('arc') + '(q0, q1, p0, p1):', '    ' + S_('"""Arc elasticity between two points."""'), '    ' + K('return') + ' ((q1 ' + O('-') + ' q0) ' + O('/') + ' (q1 ' + O('+') + ' q0)) ' + O('/') + ' ((p1 ' + O('-') + ' p0) ' + O('/') + ' (p1 ' + O('+') + ' p0))'] },
+          { id: 'c11', kind: 'program', code: ['pairs ' + O('=') + ' ' + P('list') + '(' + P('zip') + '(demand.index[:' + O('-') + N('1') + '], demand.index[' + N('1') + ':]))', 'arcs ' + O('=') + ' pd.' + P('Series') + '([' + P('arc') + '(demand[a], demand[b], a, b) ' + K('for') + ' a, b ' + K('in') + ' pairs],', '                 index' + O('=') + '[' + S_("f'{a}–{b}'") + ' ' + K('for') + ' a, b ' + K('in') + ' pairs])', 'arcs.' + P('round') + '(' + N('2') + ')'],
+            out: '0.75–0.9   -1.30\n0.9–1.1    -1.55\ndtype: float64' },
+          { id: 'c12', kind: 'text', html: '<h2>By region</h2><p>The four regions face the same three prices. If their curves have the same shape, one elasticity with a region intercept is a fair summary; the regression below checks that.</p>' },
+          { id: 'c13', kind: 'program', code: ['by_region ' + O('=') + ' (prices', '    .' + P('groupby') + '([' + S_("'region'") + ', ' + S_("'price'") + ']).quantity.' + P('median') + '()', '    .' + P('unstack') + '(' + S_("'price'") + '))', 'by_region'],
+            out: 'price    0.75   0.90   1.10\nregion\neast    498.0  402.0  291.0\nnorth   547.0  431.0  318.0\nsouth   509.0  398.0  296.0\nwest    531.0  415.0  305.0' },
+          { id: 'c14', kind: 'program', code: ['fig, axes ' + O('=') + ' plt.' + P('subplots') + '(' + N('1') + ', ' + N('4') + ', figsize' + O('=') + '(' + N('10') + ', ' + N('2.6') + '), sharey' + O('=') + K('True') + ')', K('for') + ' ax, (region, row) ' + K('in') + ' ' + P('zip') + '(axes, by_region.' + P('iterrows') + '()):', '    row.' + P('plot') + '(ax' + O('=') + 'ax, marker' + O('=') + S_("'o'") + ', title' + O('=') + 'region)', 'fig.' + P('tight_layout') + '()'],
+            fig: 'multi' },
+          { id: 'c15', kind: 'scratch', code: ['by_region.loc[' + S_("'north'") + '] ' + O('-') + ' by_region.loc[' + S_("'south'") + ']'], out: 'price\n0.75    38.0\n0.90    33.0\n1.10    22.0\ndtype: float64' },
+          { id: 'c16', kind: 'program', code: [K('import') + ' statsmodels.formula.api ' + K('as') + ' smf', 'prices[' + S_("'log_q'") + '] ' + O('=') + ' np.' + P('log') + '(prices.quantity)', 'prices[' + S_("'log_p'") + '] ' + O('=') + ' np.' + P('log') + '(prices.price)', 'model ' + O('=') + ' smf.' + P('ols') + '(' + S_("'log_q ~ log_p + C(region)'") + ', data' + O('=') + 'prices).' + P('fit') + '()', 'model.params.' + P('round') + '(' + N('3') + ')'],
+            out: 'Intercept             5.851\nC(region)[T.north]    0.082\nC(region)[T.south]    0.011\nC(region)[T.west]     0.051\nlog_p                -1.183\ndtype: float64' },
+          { id: 'c17', kind: 'program', code: ['beta, se, r2 ' + O('=') + ' model.params[' + S_("'log_p'") + '], model.bse[' + S_("'log_p'") + '], model.rsquared'] },
+          { id: 'c18', kind: 'program', stale: true, code: ['summary ' + O('=') + ' pd.' + P('DataFrame') + '({' + S_("'demand'") + ': demand, ' + S_("'elasticity'") + ': elasticity})', 'summary[' + S_("'revenue'") + '] ' + O('=') + ' summary.index ' + O('*') + ' summary.demand', 'ax2 ' + O('=') + ' summary.elasticity.' + P('plot') + '.' + P('bar') + '(color' + O('=') + S_("'#305c8a'") + ')'],
+            out: '       demand  elasticity\nprice\n0.75    520.0         NaN\n0.90    410.0   -1.057692\n1.10    300.0   -1.207317' },
+          { id: 'c19', kind: 'text', html: '<p>Both elasticities are above one in magnitude: at these prices demand is <em>elastic</em>, and the revenue column agrees, 390 at 0.75 falling to 330 at 1.10. The regression’s −1.18, with an intercept for each region, says the same with all 1,187 answers.</p>' },
+          { id: 'c20', kind: 'program', code: ['summary.' + P('to_csv') + '(' + S_("'summary.csv'") + ')', P('print') + '(' + S_("'wrote'") + ', ' + P('len') + '(summary), ' + S_("'rows'") + ')'], out: 'wrote 3 rows' },
+        ];
+        const BY_ID = Object.fromEntries(CELLS.map((c) => [c.id, c]));
+
+        const FIGS = {
+          line: { vb: '0 0 460 300', name: 'ax', type: 'Axes', from: 'c5', label: 'median quantity against price' },
+          multi: { vb: '0 0 460 132', name: 'fig', type: 'Figure', from: 'c14', label: 'median quantity against price, one panel per region' },
+          bar: { vb: '0 0 460 300', name: 'ax2', type: 'Axes', from: 'c18', label: 'elasticity by price' },
+        };
+
+        /* What each cell put in the session, as the ledger knows it: the diff of
+           kernel.namespace() after the run against the snapshot before it. m is
+           the receipt mark (+ first bound here, ~ rebound); gone names the cell
+           that took the name later; by is the line that bound it. */
+        const CARDS = {
+          c2: { took: '1.2 s', rows: [{ m: '+', k: 'tbl', name: 'prices', v: '1200 × 3', cols: 'price · quantity · region', gone: 'c6' }] },
+          c4: { took: '3 ms', rows: [{ m: '+', k: 'val', name: 'n', eq: '= 1200', gone: 'c6' }, { m: '+', k: 'list', name: 'regions', eq: "= ['east', 'north', 'south', 'west']" }] },
+          c5: { took: '0.38 s', print: { fig: 'line', m: '+', gone: 'c14' }, rows: [{ m: '+', k: 'ser', name: 'demand', v: 'Series 3', view: 'demand' }] },
+          c6: { took: '9 ms', rows: [{ m: '~', k: 'tbl', name: 'prices', v: '1187 × 3', cols: 'price · quantity · region', gone: 'c16' }, { m: '~', k: 'val', name: 'n', eq: '= 1187' }] },
+          c7: { took: '2 ms', rows: [{ m: '+', k: 'ser', name: 'tmp', v: 'Series 3', scratch: true, view: 'tmp' }] },
+          c9: { took: '4 ms', rows: [{ m: '+', k: 'ser', name: 'dp', v: 'Series 3', view: 'dp' }, { m: '+', k: 'ser', name: 'elasticity', v: 'Series 2', view: 'elasticity' }] },
+          c10: { took: '1 ms', rows: [{ m: '+', k: 'fn', name: 'arc', eq: '(q0, q1, p0, p1)', fn: true }] },
+          c11: { took: '2 ms', rows: [{ m: '+', k: 'list', name: 'pairs', eq: '= [(0.75, 0.9), (0.9, 1.1)]' }, { m: '+', k: 'ser', name: 'arcs', v: 'Series 2', view: 'arcs', by: 'arcs = pd.Series([arc(demand[a], …' }] },
+          c13: { took: '11 ms', rows: [{ m: '+', k: 'tbl', name: 'by_region', v: '4 × 3', cols: '0.75 · 0.90 · 1.10', view: 'by_region' }] },
+          c14: { took: '0.61 s', print: { fig: 'multi', m: '+' }, rows: [{ m: '+', k: 'arr', name: 'axes', v: 'ndarray 4' }, { m: '~', k: 'fig', name: 'ax', v: 'Axes', fig: 'multi', by: 'for ax, (region, row) in zip(axes, …' }, { m: '+', k: 'val', name: 'region', eq: "= 'west'", by: 'for ax, (region, row) in zip(axes, …' }, { m: '+', k: 'ser', name: 'row', v: 'Series 3', view: 'row', by: 'for ax, (region, row) in zip(axes, …' }] },
+          c16: { took: '1.9 s', rows: [{ m: '~', k: 'tbl', name: 'prices', v: '1187 × 5', cols: 'price · quantity · region · log_q · log_p', view: 'prices', by: "prices['log_q'] = np.log(prices.quantity)" }, { m: '+', k: 'obj', name: 'model', v: 'RegressionResultsWrapper', by: "model = smf.ols('log_q ~ log_p + C(region)', …" }] },
+          c17: { took: '1 ms', rows: [{ m: '+', k: 'val', name: 'beta', eq: '= -1.1834' }, { m: '+', k: 'val', name: 'se', eq: '= 0.0391' }, { m: '+', k: 'val', name: 'r2', eq: '= 0.6127' }] },
+          c18: { took: '0.21 s', stale: true, rows: [{ m: '+', k: 'tbl', name: 'summary', v: '3 × 2', cols: 'demand · elasticity', view: 'summary', note: 'last run' }] },
+        };
+        const C18_AFTER = { took: '0.24 s', print: { fig: 'bar', m: '+' }, rows: [{ m: '~', k: 'tbl', name: 'summary', v: '3 × 3', cols: 'demand · elasticity · revenue', view: 'summary', by: "summary = pd.DataFrame({'demand': demand, …" }] };
+
+        /* ---- the data behind the viewer ---- */
+        let seed = 7;
+        const rnd = () => ((seed = (seed * 1103515245 + 12345) % 2147483648) / 2147483648);
+        const MED = { '0.75': 520, '0.90': 410, '1.10': 300 }, REG = ['north', 'south', 'east', 'west'], REFF = { north: 1.07, south: 0.99, east: 0.96, west: 1.03 };
+        const LOGP = { '0.75': '-0.287682', '0.90': '-0.105361', '1.10': '0.095310' };
+        const raw = [];
+        for (let i = 0; i < 112; i++) {
+          const p = ['0.75', '0.90', '1.10'][i % 3], r = REG[(i * 7 + (i >> 2)) % 4];
+          let q = Math.max(1, Math.round(MED[p] * REFF[r] + (rnd() + rnd() + rnd() - 1.5) * 150));
+          if (i === 17 || i === 58 || i === 101) q = 0; // the no-sale rows
+          raw.push({ i, p, q, r });
+        }
+        const kept = raw.filter((x) => x.q > 0);
+        const DATA = {
+          prices: { name: 'prices', shape: '1187 × 5', index: '', cols: ['price', 'quantity', 'region', 'log_q', 'log_p'], idx: kept.map((x) => String(x.i)), rows: kept.map((x) => [x.p, String(x.q), x.r, Math.log(x.q).toFixed(6), LOGP[x.p]]), total: 1187, from: 'c16', by: "prices['log_q'] = np.log(prices.quantity)" },
+          demand: { name: 'demand', shape: 'Series 3', index: 'price', cols: ['quantity'], idx: ['0.75', '0.90', '1.10'], rows: [['520.0'], ['410.0'], ['300.0']], total: 3, from: 'c5', by: "demand = prices.groupby('price').quantity.median()" },
+          tmp: { name: 'tmp', shape: 'Series 3 · scratch', index: 'price', cols: ['quantity'], idx: ['0.75', '0.90', '1.10'], rows: [['NaN'], ['-0.211538'], ['-0.268293']], total: 3, from: 'c7', by: 'tmp = demand.pct_change()' },
+          dp: { name: 'dp', shape: 'Series 3', index: 'price', cols: ['price'], idx: ['0.75', '0.90', '1.10'], rows: [['NaN'], ['0.200000'], ['0.222222']], total: 3, from: 'c9', by: 'dp = demand.index.to_series().pct_change()' },
+          elasticity: { name: 'elasticity', shape: 'Series 2', index: 'price', cols: ['quantity'], idx: ['0.90', '1.10'], rows: [['-1.057692'], ['-1.207317']], total: 2, from: 'c9', by: 'elasticity = (demand.pct_change() / dp).dropna()' },
+          arcs: { name: 'arcs', shape: 'Series 2', index: '', cols: ['0'], idx: ['0.75–0.9', '0.9–1.1'], rows: [['-1.301075'], ['-1.549296']], total: 2, from: 'c11', by: 'arcs = pd.Series([arc(demand[a], demand[b], a, b) …' },
+          by_region: { name: 'by_region', shape: '4 × 3', index: 'region', cols: ['0.75', '0.90', '1.10'], idx: ['east', 'north', 'south', 'west'], rows: [['498.0', '402.0', '291.0'], ['547.0', '431.0', '318.0'], ['509.0', '398.0', '296.0'], ['531.0', '415.0', '305.0']], total: 4, from: 'c13', by: 'by_region = (prices.groupby([…]).quantity.median().unstack(…))' },
+          row: { name: 'row', shape: 'Series 3', index: 'price', cols: ['west'], idx: ['0.75', '0.90', '1.10'], rows: [['531.0'], ['415.0'], ['305.0']], total: 3, from: 'c14', by: 'for ax, (region, row) in zip(axes, by_region.iterrows()):' },
+          summary: { name: 'summary', shape: '3 × 2', index: 'price', cols: ['demand', 'elasticity'], idx: ['0.75', '0.90', '1.10'], rows: [['520.0', 'NaN'], ['410.0', '-1.057692'], ['300.0', '-1.207317']], total: 3, from: 'c18', by: "summary = pd.DataFrame({'demand': demand, 'elasticity': elasticity})", stale: true },
+        };
+        const SUMMARY_AFTER = { name: 'summary', shape: '3 × 3', index: 'price', cols: ['demand', 'elasticity', 'revenue'], idx: ['0.75', '0.90', '1.10'], rows: [['520.0', 'NaN', '390.0'], ['410.0', '-1.057692', '369.0'], ['300.0', '-1.207317', '330.0']], total: 3, from: 'c18', by: "summary = pd.DataFrame({'demand': demand, 'elasticity': elasticity})" };
+
+        /* ================= the model =================
+           What the page keeps, as panel.ts would: a card per cell (what the
+           cell's last run bound), and the owner of each name (the cell that
+           bound it last). Marks and strikes are read off those two at render
+           time: + first bound here (no card above binds the name), ~ rebound;
+           a row is struck when another cell owns the name now. A run changes
+           a card only if its bindings came out different; that is the one
+           test for "this card is news" (Run all, a restart, a rerun). */
+        const ORDER = Object.fromEntries(CELLS.map((c, i) => [c.id, i]));
+        const cellNo = (id) => id.slice(1);
+        const clone = (o) => JSON.parse(JSON.stringify(o));
+        function bare(d) {
+          const o = clone(d);
+          if (o.print) { delete o.print.m; delete o.print.gone; }
+          for (const r of o.rows) { delete r.m; delete r.gone; }
+          return o;
+        }
+        const RESULT = (id) => (id === 'c18' ? C18_AFTER : CARDS[id]);
+        function namesOf(d) { return (d.print ? [FIGS[d.print.fig].name] : []).concat(d.rows.map((r) => r.name)); }
+        const sigOf = (d) => JSON.stringify([d.print ? d.print.fig : '', d.rows.map((r) => [r.name, r.v || '', r.eq || '', r.cols || ''])]);
+
+        let S = null;          // the session as the page knows it
+        let V = null;          // the viewer: { tab, key, origin, size, held, pending }
+        let SIZE = 'beside';   // remembered across opens (knuth-panel in the app)
+        let forced = null;     // the topbar's Session control: null (auto), 'tabs', 'off'
+        let mode = null;       // what the ledger is doing now: 'cards', 'tabs', 'off'
+        let fitted = false;
+
+        function freshState(kind) {
+          const s = { kind, cards: {}, owner: {}, data: clone(DATA), stale: new Set(), unseen: new Set(), lastRun: null, c18: false,
+            restarted: false, coach: kind === 'first', figOrder: [], gen: (S ? S.gen : 0) + 1 };
+          if (kind === 'first') {
+            for (const c of CELLS) if (c.kind === 'program') s.stale.add(c.id);
+          } else {
+            for (const c of CELLS) {
+              if (!CARDS[c.id]) continue;
+              s.cards[c.id] = bare(CARDS[c.id]);
+              for (const n of namesOf(s.cards[c.id])) s.owner[n] = c.id;
+            }
+            s.stale.add('c18');
+            s.lastRun = 'c17';
+            s.figOrder = ['line', 'multi'];
+          }
+          return s;
+        }
+        function decorate(id, d) {
+          const o = clone(d), i = ORDER[id];
+          const above = (n) => Object.keys(S.cards).some((k) => ORDER[k] < i && namesOf(S.cards[k]).includes(n));
+          const gone = (n) => (!d.past && S.owner[n] && S.owner[n] !== id ? S.owner[n] : null);
+          if (o.print) { const n = FIGS[o.print.fig].name; o.print.m = above(n) ? '~' : '+'; o.print.gone = gone(n); }
+          for (const r of o.rows) { r.m = above(r.name) ? '~' : '+'; r.gone = gone(r.name); }
+          return o;
+        }
+        function goneSig(id) {
+          const d = decorate(id, S.cards[id]);
+          return (d.print ? (d.print.gone || '') + d.print.m : '') + '|' + d.rows.map((r) => (r.gone || '') + r.m).join(',');
+        }
+        function applyRun(id) {
+          const res = RESULT(id);
+          if (!res) return { card: false, changed: false };
+          const prev = S.cards[id];
+          const changed = !prev || sigOf(prev) !== sigOf(res);
+          const out = { card: true, changed, first: !prev, wasPast: !!(prev && prev.past), names: namesOf(res) };
+          S.cards[id] = bare(res);
+          for (const n of out.names) S.owner[n] = id;
+          return out;
+        }
+        function liveRows() {
+          const out = [];
+          for (const id of Object.keys(S.cards).sort((a, b) => ORDER[a] - ORDER[b])) {
+            if (S.cards[id].past) continue;
+            const d = decorate(id, S.cards[id]);
+            if (d.print && !d.print.gone) out.push({ name: FIGS[d.print.fig].name, type: FIGS[d.print.fig].type, kind: FIGS[d.print.fig].type, cell: id, fig: d.print.fig, m: d.print.m, glyph: 'g-fig' });
+            for (const r of d.rows) if (!r.gone) out.push({ name: r.name, type: typeLabel(r), kind: kindLabel(r), cell: id, view: r.view, fig: r.fig, scratch: r.scratch, m: r.m, glyph: GLYPH[r.k], r });
+          }
+          return out;
+        }
+        const typeLabel = (r) => (r.eq ? (r.fn ? 'function ' + r.eq : r.eq.replace(/^= /, '')) : (r.k === 'tbl' ? 'DataFrame ' : '') + r.v);
+        function kindLabel(r) {
+          if (r.k === 'tbl') return 'DataFrame ' + r.v;
+          if (r.k === 'fn') return 'function';
+          if (r.k === 'list') return 'list';
+          if (r.k === 'val') return '';
+          return r.v;
+        }
+        /* the pill's order: where each live name first appears in the document */
+        function orderedNames() {
+          const out = [], seen = new Set();
+          for (const id of Object.keys(S.cards).sort((a, b) => ORDER[a] - ORDER[b])) {
+            if (S.cards[id].past) continue;
+            for (const n of namesOf(S.cards[id])) if (S.owner[n] && !seen.has(n)) { seen.add(n); out.push(n); }
+          }
+          return out;
+        }
+        function liveTables() { return liveRows().filter((r) => r.view).map((r) => r.view); }
+        function newestFig() {
+          const live = new Set(liveRows().filter((r) => r.fig && r.glyph === 'g-fig' && !r.r).map((r) => r.fig));
+          for (let i = S.figOrder.length - 1; i >= 0; i--) if (live.has(S.figOrder[i])) return S.figOrder[i];
+          return null;
+        }
+
+        /* ================= rendering ================= */
+        const INSERT = '<div class="insert-actions">' +
+          '<button title="Code"><svg viewBox="0 0 24 24"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg></button>' +
+          '<button title="Scratch"><svg viewBox="0 0 24 24"><rect x="4" y="4" width="16" height="16" rx="2" stroke-dasharray="3.4 2.8"/><line x1="9" y1="12" x2="15" y2="12"/></svg></button>' +
+          '<button title="Text"><svg viewBox="0 0 24 24"><polyline points="4 7 4 4 20 4 20 7"/><line x1="9" y1="20" x2="15" y2="20"/><line x1="12" y1="4" x2="12" y2="20"/></svg></button></div>';
+        const figHTML = (k, fresh) => '<div class="cell-figures' + (fresh ? ' fresh' : '') + '"><div class="figure"><svg viewBox="' + FIGS[k].vb + '" role="img" aria-label="' + FIGS[k].label + '"><use href="#fig-' + k + '"/></svg></div></div>';
+        function cellHTML(c) {
+          const zone = '<div class="insert-zone">' + INSERT + '</div>';
+          if (c.kind === 'text') return '<div class="cell-wrap" id="' + c.id + '">' + zone + '<div class="cell kind-text"><div class="body"><div class="prose">' + c.html + '</div></div></div></div>';
+          const ln = c.code.map((_, i) => '<span>' + (i + 1) + '</span>').join('');
+          const lines = c.code.map((l) => '<div class="line">' + l + '</div>').join('');
+          return '<div class="cell-wrap" id="' + c.id + '">' + zone +
+            '<div class="cell kind-' + c.kind + '"><div class="body">' + (c.kind === 'scratch' ? '<div class="scratch-label">scratch</div>' : '') +
+            '<div class="cm"><div class="gut"><button class="run" title="Run cell (Cmd-Enter)"></button><div class="ln">' + ln + '</div><div class="fold"></div></div><div class="code">' + lines + '</div></div>' +
+            '<div class="outs">' + (c.fig ? figHTML(c.fig) : '') + (c.out != null ? '<pre class="output">' + esc(c.out) + '</pre>' : '') + '</div></div></div></div>';
+        }
+        const GLYPH = { tbl: 'g-tbl', ser: 'g-ser', fig: 'g-fig', val: 'g-val', list: 'g-list', fn: 'g-fn', obj: 'g-obj', arr: 'g-arr' };
+        const mark = (m) => '<i class="m' + (m === '+' ? ' new' : '') + '">' + m + '</i>';
+        function toHTML(from, to) {
+          const up = ORDER[to] < ORDER[from];
+          return '<span class="to" data-to="' + to + '" title="Rebound by cell ' + cellNo(to) + ': go there">' + (up ? '↑' : '↓') + '<span class="w"> rebound</span></span>';
+        }
+        function rowHTML(id, r, took, past) {
+          const viewable = !past && !r.gone && (r.view || r.fig);
+          const cls = ['lrow', viewable ? 'viewable' : '', r.gone ? 'gone' : '', r.scratch ? 'scratch' : ''].filter(Boolean).join(' ');
+          let h = '<div class="' + cls + '"' + (viewable && r.view ? ' data-view="' + r.view + '"' : '') + (viewable && r.fig ? ' data-fig="' + r.fig + '"' : '') + '>' +
+            mark(r.m) + '<svg class="g"><use href="#' + GLYPH[r.k] + '"/></svg><b>' + esc(r.name) + '</b>';
+          h += r.eq ? '<span class="v eq' + (r.fn ? ' fn' : '') + '">' + esc(r.eq) + '</span>' : '<span class="v">' + esc(r.v) + (r.scratch ? ' · scratch' : '') + '</span>';
+          if (r.gone) h += toHTML(id, r.gone);
+          else if (r.note) h += '<span class="note">' + r.note + '</span>';
+          else if (took) h += '<span class="took">' + took + '</span>';
+          if (r.cols) h += '<span class="cols">' + esc(r.cols) + '</span>';
+          return h + '</div>';
+        }
+        function liveCount(d) { return d.rows.filter((r) => !r.gone).length + (d.print && !d.print.gone ? 1 : 0); }
+        function cardKind(d) { return d.print ? (d.rows.length ? 'k-both' : 'k-print') : 'k-slip'; }
+        function bodyHTML(id, d) {
+          let h = '', tookDone = false;
+          if (d.print) {
+            const f = FIGS[d.print.fig];
+            h += '<div class="lprint" data-fig="' + d.print.fig + '" title="Show the figure"><svg viewBox="' + f.vb + '"><use href="#fig-' + d.print.fig + '"/></svg></div>';
+            h += '<div class="lcap' + (d.print.gone ? ' gone' : '') + '" data-fig="' + d.print.fig + '">' + mark(d.print.m) + '<svg class="g"><use href="#g-fig"/></svg><b>' + f.name + '</b><span>' + f.type + '</span>' +
+              (d.print.gone ? toHTML(id, d.print.gone) : '<span class="took">' + d.took + '</span>') + '</div>';
+            tookDone = !d.print.gone;
+          }
+          if (d.rows.length) h += '<div class="lslip">' + d.rows.map((r, i) => rowHTML(id, r, !tookDone && i === 0 ? d.took : null, d.past)).join('') + '<span class="more"></span></div>';
+          if (d.past) h += '<div class="lpast">before the restart</div>';
+          return '<div class="lbody">' + h + '</div>';
+        }
+        function cardHTML(id, d, extra) {
+          return '<div class="lcard ' + cardKind(d) + (d.stale && !d.past ? ' stale' : '') + (d.past ? ' past' : '') + (extra ? ' ' + extra : '') + '" data-cell="' + id + '">' + bodyHTML(id, d) + '</div>';
+        }
+        const PM = '<i class="pm"><svg viewBox="0 0 11 8"><polyline points="2 6 4.5 3.5 6.5 5 9 2"/></svg></i>';
+        function tabHTML(id, d, extra) {
+          const n = liveCount(d);
+          return '<button class="ltab' + (d.stale && !d.past ? ' stale' : '') + (d.past ? ' past' : '') + (extra ? ' ' + extra : '') + '" data-cell="' + id + '" title="' + esc(namesOf(d).join(', ')) + '">' + (d.print ? PM : '') + '<span>' + (n || '↓') + '</span></button>';
+        }
+
+        function render() {
+          sheet.innerHTML = '<button class="pkg">▸ Packages <span class="list">pandas · matplotlib · statsmodels</span></button>' + CELLS.map(cellHTML).join('');
+          for (const id of S.stale) { const c = $('#' + id + ' .cell'); if (c) c.classList.add('stale'); }
+          buildLedger();
+          wireCells();
+        }
+        function buildLedger() {
+          ledger.innerHTML = Object.keys(S.cards).map((id) => {
+            const d = decorate(id, S.cards[id]), u = S.unseen.has(id) ? 'unseen' : '';
+            return cardHTML(id, d, u) + tabHTML(id, d, u);
+          }).join('');
+          for (const id of Object.keys(S.cards)) wireCard(id);
+        }
+        const cardEl = (id) => $('.lcard[data-cell="' + id + '"]', ledger);
+        const tabEl = (id) => $('.ltab[data-cell="' + id + '"]', ledger);
+        function ensureCard(id) {
+          if (cardEl(id)) return;
+          const tmp = document.createElement('div');
+          const d = decorate(id, S.cards[id]);
+          tmp.innerHTML = cardHTML(id, d, '') + tabHTML(id, d, '');
+          ledger.append(...tmp.children);
+          wireCard(id);
+        }
+        function refreshCard(id, extra) {
+          const card = cardEl(id), tab = tabEl(id), d = decorate(id, S.cards[id]);
+          const keep = ['peek', 'pinned', 'open', 'runpeek'].filter((k) => card && card.classList.contains(k));
+          const tmp = document.createElement('div');
+          tmp.innerHTML = cardHTML(id, d, [S.unseen.has(id) ? 'unseen' : '', extra || ''].concat(keep).join(' ')) +
+            tabHTML(id, d, [S.unseen.has(id) ? 'unseen' : '', tab && tab.classList.contains('on') ? 'on' : ''].join(' '));
+          card.replaceWith(tmp.children[0]);
+          tab.replaceWith(tmp.children[0]);
+          wireCard(id);
+        }
+
+        /* ================= geometry ================= */
+        function topIn(el, anc) { let y = 0; while (el && el !== anc) { y += el.offsetTop; el = el.offsetParent; } return y; }
+        const anchorTop = (id) => topIn($('#' + id + ' .cm'), page);
+        const tabsMode = () => mode === 'tabs';
+        const POPW = 252;
+        let LW = 224;
+        /* Cards fold to tabs below a 140px card and open again above 152:
+           the gap keeps a resize near the line from flapping. */
+        function fit() {
+          if (!S) return;
+          const pageRight = page.offsetLeft + page.offsetWidth;
+          const rightGap = doc.clientWidth - pageRight;
+          const lw = Math.min(224, rightGap - 24 - 22);
+          const auto = mode === 'tabs' ? (lw >= 152 ? 'cards' : 'tabs') : (lw >= 140 ? 'cards' : 'tabs');
+          const next = forced === 'off' ? 'off' : forced === 'tabs' ? 'tabs' : auto;
+          const prev = mode;
+          const fromCards = fitted && prev === 'cards' && next === 'tabs' ? capture('card') : null;
+          const fromTabs = fitted && prev === 'tabs' && next === 'cards' ? capture('tab') : null;
+          mode = next;
+          body.classList.toggle('tabs', next === 'tabs');
+          body.classList.toggle('tight', next === 'tabs' && rightGap < 56);
+          body.classList.toggle('ledger-off', next === 'off');
+          LW = Math.max(140, lw);
+          ledger.style.setProperty('--lw', LW + 'px');
+          ledger.classList.toggle('slim', LW < 200);
+          const ctl = $('#ctl-session');
+          ctl.classList.toggle('on', next !== 'off');
+          ctl.dataset.label = (forced ? '' : 'Auto: ') + (next === 'off' ? 'cards hidden' : next === 'tabs' ? 'cards folded to tabs' : 'cards beside the cells') + ' (click to change)';
+          layout();
+          if (fromCards) foldInto(fromCards);
+          if (fromTabs) unfoldFrom(fromTabs);
+          fitted = true;
+          if (V) placeViewer();
+          paintPill();
+        }
+        function layout() {
+          if (!S) return;
+          const ids = Object.keys(S.cards).sort((a, b) => anchorTop(a) - anchorTop(b));
+          if (tabsMode()) {
+            const tight = body.classList.contains('tight');
+            const ledgerLeft = page.offsetLeft + ledger.offsetLeft;
+            const popLeft = Math.max(page.offsetLeft + 30, doc.clientWidth - 22 - POPW) - ledgerLeft;
+            for (const id of ids) {
+              const a = anchorTop(id), tab = tabEl(id), card = cardEl(id);
+              const tabTop = tight ? a - 23 : a + 6, cardTop = tight ? a + 1 : a + 32;
+              tab.style.top = tabTop + 'px';
+              card.style.top = cardTop + 'px'; /* under the tab, which stays the handle */
+              card.style.left = popLeft + 'px';
+              card.style.setProperty('--ox', (tab.offsetLeft + tab.offsetWidth / 2 - popLeft).toFixed(1) + 'px');
+              card.style.setProperty('--oy', (tabTop + tab.offsetHeight / 2 - cardTop).toFixed(1) + 'px');
+              card.classList.remove('clamped');
+            }
+          } else {
+            let prevBottom = -1e9;
+            ids.forEach((id, i) => {
+              const card = cardEl(id), slip = $('.lslip', card);
+              card.style.left = '';
+              card.classList.remove('clamped');
+              const top = Math.max(anchorTop(id), prevBottom + 8);
+              let h = card.offsetHeight;
+              const next = i + 1 < ids.length ? anchorTop(ids[i + 1]) : Infinity;
+              if (slip && top + h > next - 8) {
+                const room = next - 8 - top - slip.offsetTop;
+                const rows = $$('.lrow', slip);
+                const maxH = Math.max(room, 40);
+                if (maxH < slip.offsetHeight - 2) {
+                  let shown = 0;
+                  for (const r of rows) if (r.offsetTop + r.offsetHeight + 5 <= maxH) shown++;
+                  shown = Math.max(1, shown);
+                  const last = rows[shown - 1];
+                  const clampH = last.offsetTop + last.offsetHeight + 5;
+                  card.classList.add('clamped');
+                  slip.style.setProperty('--clamp', clampH + 'px');
+                  $('.more', slip).textContent = '+' + (rows.length - shown);
+                  h = slip.offsetTop + clampH;
+                }
+              }
+              card.style.top = top + 'px';
+              prevBottom = top + h;
+            });
+          }
+          syncCoach();
+        }
+
+        /* ---- the fold, along the tie: a card collapses into its tab (and back) when the window crosses the floor ---- */
+        function capture(kind) {
+          const out = [];
+          for (const id of Object.keys(S.cards)) {
+            if (!inView(id)) continue;
+            const el = kind === 'card' ? cardEl(id) : tabEl(id);
+            if (!el) continue;
+            out.push({ id, l: ledger.offsetLeft + el.offsetLeft, t: el.offsetTop, w: el.offsetWidth, h: el.offsetHeight, node: kind === 'card' ? el.cloneNode(true) : null });
+          }
+          return out;
+        }
+        function ghostOf(node, l, t, w) {
+          node.classList.add('ghost');
+          node.classList.remove('fresh', 'peek', 'pinned', 'runpeek', 'folding', 'linked', 'visited', 'settle');
+          Object.assign(node.style, { left: l + 'px', top: t + 'px', width: w + 'px', transformOrigin: '0 0' });
+          page.append(node);
+          return node;
+        }
+        function foldInto(from) {
+          from.forEach((f, k) => {
+            const tab = tabEl(f.id);
+            if (!tab) return;
+            const tl = ledger.offsetLeft + tab.offsetLeft, tt = tab.offsetTop, tw = tab.offsetWidth, th = tab.offsetHeight;
+            const g = ghostOf(f.node, f.l, f.t, f.w);
+            g.animate([
+              { transform: 'none', opacity: 1 },
+              { transform: 'translate(' + (tl - f.l) * 0.5 + 'px,' + (tt - f.t) * 0.6 + 'px) scale(0.55,' + Math.max(0.4, th / f.h) + ')', opacity: 0.85, offset: 0.55 },
+              { transform: 'translate(' + (tl - f.l) + 'px,' + (tt - f.t) + 'px) scale(' + tw / f.w + ',' + th / f.h + ')', opacity: 0 },
+            ], { duration: 500, delay: k * 35, easing: 'cubic-bezier(.45,0,.2,1)', fill: 'both' }).onfinish = () => g.remove();
+            tab.animate([{ opacity: 0, transform: 'scale(.4)' }, { opacity: 1, transform: 'scale(1.25)', offset: 0.7 }, { opacity: 1, transform: 'none' }],
+              { duration: 340, delay: 330 + k * 35, easing: 'ease-out', fill: 'backwards' });
+          });
+        }
+        function unfoldFrom(from) {
+          from.forEach((f, k) => {
+            const card = cardEl(f.id);
+            if (!card) return;
+            const to = { l: ledger.offsetLeft + card.offsetLeft, t: card.offsetTop, w: card.offsetWidth, h: card.offsetHeight };
+            const g = ghostOf(card.cloneNode(true), to.l, to.t, to.w);
+            card.style.visibility = 'hidden';
+            g.animate([
+              { transform: 'translate(' + (f.l - to.l) + 'px,' + (f.t - to.t) + 'px) scale(' + f.w / to.w + ',' + f.h / to.h + ')', opacity: 0 },
+              { opacity: 1, offset: 0.35 },
+              { transform: 'none', opacity: 1 },
+            ], { duration: 480, delay: k * 35, easing: 'cubic-bezier(.2,.7,.2,1)', fill: 'both' }).onfinish = () => { g.remove(); card.style.visibility = ''; };
+          });
+        }
+
+        /* ---- the session's pill in the top bar (peek-v2's trace): kernel status, then every name in cell order ---- */
+        function paintPill(land) {
+          if (!S) return;
+          const box = $('.names', pill), names = orderedNames();
+          const unseen = new Set(names.filter((n) => S.unseen.has(S.owner[n])));
+          $('.br', pill).classList.toggle('unseen', unseen.size > 0);
+          pill.classList.toggle('on', !!(V && V.tab === 'session'));
+          if (!names.length) {
+            box.innerHTML = '<span class="empty">' + (S.restarted ? 'fresh session' : 'empty session') + '</span>';
+            pill.dataset.label = S.restarted ? 'Fresh session: Run stale rebuilds it' : 'Nothing in the session yet: run a cell';
+            return;
+          }
+          const scratch = new Set(liveRows().filter((r) => r.scratch).map((r) => r.name));
+          box.innerHTML = names.map((n) => {
+            const cls = [scratch.has(n) ? 'scratch' : '', unseen.has(n) ? 'new' : '', land && land.includes(n) ? 'land' : ''].filter(Boolean).join(' ');
+            return '<span class="' + cls + '" data-go="' + S.owner[n] + '"' + (unseen.has(n) ? ' title="New: go to its card"' : '') + '>' + esc(n) + '</span>';
+          }).join('') + '<span class="plus" hidden></span>';
+          const spans = $$('[data-go]', box), more = $('.plus', box);
+          const order = spans.slice().reverse().sort((a, b) => a.classList.contains('new') - b.classList.contains('new')); /* hide old names before new ones */
+          let hid = 0;
+          while (box.scrollWidth > box.clientWidth + 1 && hid < order.length - 1) { order[hid].hidden = true; hid++; more.hidden = false; more.textContent = '+' + hid; }
+          pill.dataset.label = 'The session: ' + names.length + ' names. Click for all of it (Esc, P)' + (unseen.size ? '. Blue is new: click it to go to its card' : '');
+        }
+        function pillGot() { pill.classList.remove('got'); void pill.offsetWidth; pill.classList.add('got'); }
+        pill.addEventListener('click', (e) => {
+          const n = e.target.closest('[data-go]');
+          if (n && n.classList.contains('new')) { e.stopPropagation(); goTo(n.dataset.go); ack(n.dataset.go); return; }
+          if (V && V.tab === 'session') return closeViewer();
+          openViewer('session', null, null);
+        });
+
+        /* ---- first run: the empty session explained where the first card will go ---- */
+        function syncCoach() {
+          const show = S.coach && !orderedNames().length && mode !== 'off';
+          const first = CELLS.find((c) => c.kind === 'program').id;
+          coach.hidden = !(show && mode === 'cards');
+          pillnote.hidden = !(show && mode === 'tabs');
+          if (!coach.hidden) { coach.style.top = anchorTop(first) + 'px'; coach.style.width = LW + 'px'; }
+          if (!pillnote.hidden) pillnote.style.right = Math.max(8, app.clientWidth - (pill.offsetLeft + pill.offsetWidth) - 6) + 'px';
+          if (!show) S.coach = S.coach && !orderedNames().length;
+        }
+
+        let raf = 0;
+        doc.addEventListener('scroll', () => {
+          cancelAnimationFrame(raf);
+          raf = requestAnimationFrame(() => updateFrom());
+        });
+
+        /* ================= interactions ================= */
+        function link(id, on) {
+          const card = cardEl(id), tab = tabEl(id), wrap = $('#' + id);
+          if (card) card.classList.toggle('linked', on);
+          if (tab) tab.classList.toggle('linked', on);
+          if (wrap) wrap.classList.toggle('linked', on);
+        }
+        function ack(id) {
+          if (!S.unseen.has(id)) return;
+          S.unseen.delete(id);
+          const card = cardEl(id), tab = tabEl(id);
+          if (card) card.classList.remove('unseen');
+          if (tab) tab.classList.remove('unseen');
+          paintPill();
+        }
+        /* Carrying on is the acknowledgement: the next run, a keystroke or a
+           click in the document clears the blue rule on every card that was
+           on screen (only the latest run keeps one), and folds a card a run
+           unfolded on a narrow window back into its tab. No timers. */
+        function carryOn(except) {
+          for (const id of [...S.unseen]) if (id !== except && inView(id)) ack(id);
+          foldRunPeeks();
+        }
+        function popTab(id) { const t = tabEl(id); if (!t) return; t.classList.remove('pop'); void t.offsetWidth; t.classList.add('pop'); }
+        function foldRunPeeks() {
+          for (const card of $$('.lcard.runpeek', ledger)) {
+            card.classList.remove('runpeek');
+            if (card.classList.contains('pinned') || card.matches(':hover')) continue;
+            const id = card.dataset.cell;
+            card.classList.add('folding');
+            setTimeout(() => { card.classList.remove('peek', 'folding'); popTab(id); }, 190);
+          }
+        }
+        const peekT = new Map();
+        function peek(id, on, delay) {
+          const card = cardEl(id);
+          if (!card) return;
+          clearTimeout(peekT.get(id));
+          if (on) { card.classList.remove('folding'); card.classList.add('peek'); return; }
+          peekT.set(id, setTimeout(() => {
+            const c = cardEl(id);
+            if (!c || !c.classList.contains('peek') || c.classList.contains('pinned') || c.classList.contains('runpeek')) return;
+            c.classList.add('folding');
+            setTimeout(() => c.classList.remove('peek', 'folding'), 190);
+          }, delay || 0));
+        }
+        function unpinAll() {
+          $$('.lcard.pinned', ledger).forEach((c) => { c.classList.remove('pinned'); if (!c.matches(':hover')) peek(c.dataset.cell, false, 0); });
+          $$('.ltab.on', ledger).forEach((t) => t.classList.remove('on'));
+        }
+        function pin(id) {
+          unpinAll();
+          const card = cardEl(id), tab = tabEl(id);
+          card.classList.add('pinned'); card.classList.remove('folding');
+          tab.classList.add('on');
+          ack(id);
+        }
+        function wireCard(id) {
+          const card = cardEl(id), tab = tabEl(id);
+          card.addEventListener('mouseenter', () => { link(id, true); ack(id); if (tabsMode()) peek(id, true); });
+          card.addEventListener('mouseleave', () => { link(id, false); if (tabsMode()) peek(id, false, 500); });
+          tab.addEventListener('mouseenter', () => { link(id, true); peek(id, true); ack(id); });
+          tab.addEventListener('mouseleave', () => { link(id, false); peek(id, false, 300); });
+          tab.addEventListener('click', (e) => {
+            e.stopPropagation();
+            const c = cardEl(id);
+            if (c.classList.contains('pinned')) { unpinAll(); peek(id, false, 0); } else pin(id);
+          });
+        }
+        ledger.addEventListener('click', (e) => {
+          const to = e.target.closest('.to');
+          if (to) { e.stopPropagation(); return goTo(to.dataset.to); }
+          const card = e.target.closest('.lcard');
+          if (!card) return;
+          const id = card.dataset.cell;
+          if (!S.cards[id] || S.cards[id].past) return;
+          const row = e.target.closest('[data-view]');
+          if (row) { e.stopPropagation(); return openViewer('data', row.dataset.view, id); }
+          const fig = e.target.closest('.lprint, .lcap:not(.gone), .lrow[data-fig]');
+          if (fig) { e.stopPropagation(); return openViewer('figs', fig.dataset.fig, id); }
+        });
+        function wireCells() {
+          for (const c of CELLS) {
+            const wrap = $('#' + c.id);
+            wrap.addEventListener('mouseenter', () => { if (S.cards[c.id]) link(c.id, true); });
+            wrap.addEventListener('mouseleave', () => { if (S.cards[c.id]) link(c.id, false); });
+            const run = $('.run', wrap);
+            if (run) run.addEventListener('click', () => runCell(c.id, {}));
+          }
+        }
+        doc.addEventListener('mousedown', (e) => { if (!e.target.closest('.lcard, .ltab, .run')) carryOn(); });
+        document.addEventListener('click', (e) => {
+          if (!e.target.closest('.lcard, .ltab, #states, #viewer, #sesspill')) unpinAll();
+        });
+        let escAt = 0;
+        document.addEventListener('keydown', (e) => {
+          if (e.target.closest && e.target.closest('#states') && e.key !== 'Escape') return;
+          if (e.key === 'Escape') {
+            escAt = Date.now();
+            if (!specEl.hidden) return closeSpec();
+            if (V) return closeViewer();
+            if ($('.lcard.pinned', ledger)) return unpinAll();
+            return carryOn();
+          }
+          if (e.metaKey || e.ctrlKey || e.altKey) return;
+          if ((e.key === 'p' || e.key === 'P') && Date.now() - escAt < 2000) {
+            /* Esc then P: the Session tab (joins the Esc-Y/S/M chord) */
+            e.preventDefault(); escAt = 0;
+            return V && V.tab === 'session' ? closeViewer() : openViewer('session', null, null);
+          }
+          if (e.key.length === 1 || e.key === 'Enter' || e.key === 'Backspace' || e.key === 'Tab') carryOn();
+        });
+        function goTo(id) {
+          if (V && V.size === 'large') closeViewer();
+          const y = page.offsetTop + anchorTop(id) - room.clientHeight / 3;
+          doc.scrollTo({ top: Math.max(0, y), behavior: 'smooth' });
+          link(id, true);
+          setTimeout(() => link(id, false), 1500);
+        }
+
+        /* ================= a run ================= */
+        function inView(id) {
+          const y = page.offsetTop + anchorTop(id) - doc.scrollTop;
+          return y > 20 && y < room.clientHeight - 40;
+        }
+        async function runCell(id, opt) {
+          opt = opt || {};
+          const wrap = $('#' + id), cell = $('.cell', wrap), gen = S.gen;
+          if (!cell || cell.classList.contains('running')) return;
+          if (!opt.batch) carryOn(id);
+          cell.classList.add('running');
+          await wait(opt.batch ? 170 : 650);
+          if (gen !== S.gen) return;
+          cell.classList.remove('running');
+          S.lastRun = id;
+          if (BY_ID[id].kind === 'program') { S.stale.delete(id); cell.classList.remove('stale'); }
+          if (id === 'c18' && !S.c18) {
+            /* the edited cell's new code: a figure and a third column */
+            S.c18 = true;
+            $('.outs', wrap).innerHTML = figHTML('bar', true);
+            S.data.summary = clone(SUMMARY_AFTER);
+          }
+          const before = {};
+          for (const k of Object.keys(S.cards)) before[k] = goneSig(k);
+          const r = applyRun(id);
+          let newFig = null;
+          if (r.card) {
+            ensureCard(id);
+            if (r.changed && (!r.first || !opt.batch)) S.unseen.add(id);
+            for (const k of Object.keys(S.cards)) if (k !== id && before[k] !== goneSig(k)) refreshCard(k);
+            if (r.changed || r.wasPast) refreshCard(id, r.changed ? 'fresh' : 'settle');
+            else {
+              const card = cardEl(id), tab = tabEl(id);
+              card.classList.remove('visited'); void card.offsetWidth; card.classList.add('visited');
+              tab.classList.remove('blink'); void tab.offsetWidth; tab.classList.add('blink');
+            }
+            const res = RESULT(id);
+            if (r.changed && res.print) {
+              newFig = res.print.fig;
+              S.figOrder = S.figOrder.filter((k) => k !== newFig).concat(newFig);
+            }
+          }
+          layout();
+          paintPill(r.changed ? r.names : null);
+          if (r.changed) {
+            if (tabsMode()) {
+              popTab(id);
+              if (!opt.batch && inView(id)) { const card = cardEl(id); card.classList.remove('folding'); card.classList.add('peek', 'runpeek'); }
+            }
+            if (!inView(id) || mode === 'off') pillGot();
+          }
+          if (V) {
+            if (newFig && V.tab === 'figs') offerFig(newFig);
+            else if (r.changed) renderViewer({ changed: id });
+          }
+        }
+        async function runAll() {
+          const gen = S.gen;
+          for (const c of CELLS) {
+            if (c.kind !== 'program') continue;
+            await runCell(c.id, { batch: true });
+            if (gen !== S.gen) return;
+          }
+        }
+        async function runStale() {
+          const gen = S.gen;
+          for (const c of CELLS) {
+            if (c.kind !== 'program' || !S.stale.has(c.id)) continue;
+            await runCell(c.id, { batch: true });
+            if (gen !== S.gen) return;
+          }
+        }
+        /* Restart: a fresh session. The cards stay, faded, as what the old
+           session held; the cells turn amber; a run brings each card back. */
+        function restart() {
+          S.gen++;
+          $$('.cell.running').forEach((c) => c.classList.remove('running'));
+          for (const id of Object.keys(S.cards)) S.cards[id].past = true;
+          S.owner = {}; S.unseen.clear(); S.restarted = true; S.coach = false;
+          for (const c of CELLS) if (c.kind === 'program') { S.stale.add(c.id); const el = $('#' + c.id + ' .cell'); if (el) el.classList.add('stale'); }
+          if (V) closeViewer();
+          buildLedger(); layout(); paintPill();
+        }
+        $('#rb-all').addEventListener('click', () => runAll());
+        $('#rb-stale').addEventListener('click', () => runStale());
+        $('#rb-restart').addEventListener('click', () => restart());
+
+        /* ================= the viewer ================= */
+        const ICON_LARGE = '<svg viewBox="0 0 24 24"><polyline points="15 3 21 3 21 9"/><polyline points="9 21 3 21 3 15"/><line x1="21" y1="3" x2="14" y2="10"/><line x1="3" y1="21" x2="10" y2="14"/></svg>';
+        const ICON_SMALL = '<svg viewBox="0 0 24 24"><polyline points="4 14 10 14 10 20"/><polyline points="20 10 14 10 14 4"/><line x1="14" y1="10" x2="21" y2="3"/><line x1="3" y1="21" x2="10" y2="14"/></svg>';
+        const ICON_PIN = '<svg viewBox="0 0 24 24"><path d="M9 3.5h6l-1 6.5 3.2 3.2v1.3H6.8v-1.3L10 10z"/><line x1="12" y1="14.5" x2="12" y2="20.5"/></svg>';
+        function bindLine(id, name) {
+          const lines = BY_ID[id].code.map(strip);
+          const re = new RegExp('^[^=]*\\b' + name + '\\b[^=]*=(?!=)');
+          const i = lines.findIndex((l) => re.test(l));
+          let l = lines[Math.max(0, i)].trim();
+          if (/[(,]$/.test(l) || (l.match(/\(/g) || []).length > (l.match(/\)/g) || []).length) l += ' …';
+          return l;
+        }
+        function lineFor(id, name) {
+          const row = S.cards[id] && S.cards[id].rows.find((r) => r.name === name);
+          return (row && row.by) || bindLine(id, name);
+        }
+        function fromHTML(id, line) {
+          return '<button class="chip" data-cell="' + id + '" hidden title="The cell is off screen: go there"></button>' +
+            '<span class="from" data-cell="' + id + '" title="Go to the cell"><i>bound by</i>' + esc(line) + '</span>';
+        }
+        function tableHTML(d, fresh) {
+          const f = (j) => (fresh && fresh.includes(j) ? ' class="fresh"' : '');
+          let h = '<table class="data-table"><thead><tr><th>' + esc(d.index) + '</th>' + d.cols.map((c, j) => '<th' + f(j) + '>' + esc(c) + '</th>').join('') + '</tr></thead><tbody>';
+          d.rows.slice(0, 100).forEach((r, i) => { h += '<tr><th>' + esc(d.idx[i]) + '</th>' + r.map((v, j) => '<td' + f(j) + '>' + esc(v) + '</td>').join('') + '</tr>'; });
+          return h + '</tbody></table>';
+        }
+        function emptyHTML() {
+          if (S.restarted) {
+            return '<div class="vscroll"><div class="b-empty"><p class="lead">Fresh session.</p><p>Restarted just now. The names are gone; the cells keep their outputs and wear amber until they run again. The faded cards are what the old session held.</p>' +
+              '<button class="e-act" data-act="runstale">▶ Run stale</button></div></div>';
+          }
+          return '<div class="vscroll"><div class="b-empty"><p class="lead">Nothing in the session yet.</p>' +
+            '<p>Run a cell with <span class="k">▶</span> or ⌘↵, or Run all. The names it binds, the tables it makes and the figures it draws appear beside it, and here.</p>' +
+            '<p class="soft">The outputs under the cells were saved with the file. The session starts empty each time the file opens.</p></div></div>';
+        }
+        let lastShape = {};
+        function dataHTML(opts) {
+          const live = liveTables();
+          if (!live.length) return S.restarted || !orderedNames().length ? emptyHTML() : '<div class="vscroll"><div class="b-empty"><p>No tables in the session.</p></div></div>';
+          if (!live.includes(V.key)) V.key = live[0];
+          const d = S.data[V.key], owner = S.owner[V.key] || d.from;
+          V.origin = V.origin || owner;
+          const was = opts.changed && lastShape[V.key] && lastShape[V.key].shape !== d.shape ? lastShape[V.key] : null;
+          const fresh = was ? d.cols.map((c, j) => (was.cols.includes(c) ? -1 : j)).filter((j) => j >= 0) : null;
+          lastShape[V.key] = { shape: d.shape, cols: d.cols.slice() };
+          let h = '<div class="vpick">' + live.map((k) => '<button data-pick="' + k + '"' + (k === V.key ? ' class="on"' : '') + '>' + k + '</button>').join('') + '</div>';
+          h += '<div class="vsub"><span class="name">' + d.name + '</span><span class="shape' + (was ? ' fresh' : '') + '">' + d.shape + '</span>' +
+            (was ? '<span class="was">was ' + was.shape + '</span>' : '') + (S.stale.has(owner) && d.stale ? '<span class="was" style="color:var(--amber)">stale · last run</span>' : '') + fromHTML(owner, lineFor(owner, V.key)) + '</div>';
+          h += '<div class="vscroll">' + tableHTML(d, fresh) + '</div>';
+          const shown = Math.min(100, d.rows.length);
+          h += '<div class="vfoot">' + (d.total > shown ? '<button>More (' + shown + ' of ' + d.total + ' rows)</button>' : d.total + (d.total === 1 ? ' row' : ' rows')) + '<span class="cut"></span></div>';
+          return h;
+        }
+        /* Figures: one print at a time, a chip for each, newest first (the
+           Data tab's shape). The tab follows each new figure a run draws; the
+           pin holds the one you are studying, and a newer one waits at the
+           foot instead of replacing it (hybrid-ledger-float). */
+        function figsHTML(opts) {
+          const list = [];
+          for (const id of Object.keys(S.cards)) {
+            const d0 = S.cards[id];
+            if (d0.past || !d0.print) continue;
+            const d = decorate(id, d0);
+            list.push({ key: d.print.fig, gone: d.print.gone, cell: id, took: d.took });
+          }
+          if (!list.length) return emptyHTML();
+          list.sort((a, b) => S.figOrder.indexOf(b.key) - S.figOrder.indexOf(a.key));
+          if (!list.some((f) => f.key === V.key)) V.key = list[0].key;
+          const cur = list.find((f) => f.key === V.key), F = FIGS[cur.key];
+          V.origin = cur.cell;
+          let h = '<div class="vpick">' + list.map((f) => '<button data-figpick="' + f.key + '"' + (f.key === V.key ? ' class="on"' : '') + '>' + FIGS[f.key].name + ' · ' + cellNo(f.cell) + '</button>').join('') + '</div>';
+          h += '<div class="vscroll"><div class="fig-one' + (opts.newFig === cur.key ? ' fresh' : '') + '"><div class="fig-cap"><span class="n' + (cur.gone ? ' gone' : '') + '">' + F.name + '</span><span>' + F.type + ' · cell ' + cellNo(cur.cell) + ' · ' + cur.took + (cur.gone ? ' · name rebound since' : '') + '</span><span class="go" data-cell="' + cur.cell + '">the cell →</span></div>' +
+            '<div class="figure"><svg viewBox="' + F.vb + '" role="img" aria-label="' + F.label + '"><use href="#fig-' + cur.key + '"/></svg></div></div></div>';
+          h += '<div class="vfoot"><span>' + list.length + (list.length === 1 ? ' figure' : ' figures') + '</span>';
+          if (V.held && V.pending) h += '<button class="newpill" data-take="' + V.pending + '">New: <b>' + FIGS[V.pending].name + '</b>, cell ' + cellNo(S.owner[FIGS[V.pending].name] || FIGS[V.pending].from) + ' →</button>';
+          else h += '<span class="mode">' + (V.held ? 'held' : 'follows new figures') + '</span>';
+          return h + '</div>';
+        }
+        function offerFig(key) {
+          if (V.held && V.key !== key) { V.pending = key; renderViewer({}); return; }
+          V.key = key; V.origin = S.owner[FIGS[key].name] || FIGS[key].from; V.pending = null;
+          renderViewer({ newFig: key });
+        }
+        /* The Session tab. Beside: the last run's receipt on top, then the
+           rest, sorted (floating-v2). Large: the board, for the back of the
+           room (peek-v2): 17px names, small tables drawn whole. */
+        function lastRunCard() {
+          const id = S.lastRun;
+          return id && S.cards[id] && !S.cards[id].past ? id : null;
+        }
+        function sessionBesideHTML() {
+          const rows = liveRows();
+          if (!rows.length) return emptyHTML();
+          const last = lastRunCard();
+          const lastRows = last ? rows.filter((r) => r.cell === last) : [];
+          const rest = rows.filter((r) => r.cell !== last).sort((a, b) => a.name.localeCompare(b.name));
+          const tr = (r, withMark) => {
+            const cls = [r.view || r.fig ? 'viewable' : '', r.scratch ? 'scratch' : '', S.unseen.has(r.cell) ? 'unseen' : ''].filter(Boolean).join(' ');
+            return '<tr class="' + cls + '"' + (r.view ? ' data-view="' + r.view + '"' : '') + (r.fig ? ' data-fig="' + r.fig + '"' : '') + ' data-cell="' + r.cell + '">' +
+              '<td class="v-name"><i class="v-dot"></i>' + (withMark ? mark(r.m) : '') + esc(r.name) + '</td><td class="v-type" title="' + esc(r.type) + '">' + esc(r.type) + (r.scratch ? ' · scratch' : '') + '</td>' +
+              '<td class="v-cell' + (S.stale.has(r.cell) ? ' stale' : '') + '" data-go="' + r.cell + '" title="' + esc(lineFor(r.cell, r.name)) + '">cell ' + cellNo(r.cell) + '</td></tr>';
+          };
+          let h = '<div class="vscroll"><table class="vars-table"><tbody>';
+          if (lastRows.length) {
+            h += '<tr class="grp"><td colspan="3">Last run · <span class="go" data-go="' + last + '">cell ' + cellNo(last) + '</span><span class="t">' + S.cards[last].took + '</span></td></tr>';
+            h += lastRows.map((r) => tr(r, true)).join('');
+            h += '<tr class="grp"><td colspan="3">Earlier</td></tr>';
+          }
+          h += rest.map((r) => tr(r, false)).join('');
+          return h + '</tbody></table></div><div class="vfoot">' + rows.length + ' names · the last run first<span class="cut"></span></div>';
+        }
+        function miniHTML(key) {
+          const d = S.data[key];
+          if (!d || d.total > 5 || d.cols.length > 4) return '';
+          if (d.cols.length === 1 && d.index) {
+            return '<table class="mini h"><tr><th>' + esc(d.index) + '</th>' + d.idx.map((i) => '<td>' + esc(i) + '</td>').join('') + '</tr>' +
+              '<tr><th></th>' + d.rows.map((r) => '<td>' + esc(r[0]) + '</td>').join('') + '</tr></table>';
+          }
+          return '<table class="mini v"><thead><tr><th>' + esc(d.index) + '</th>' + d.cols.map((c) => '<td>' + esc(c) + '</td>').join('') + '</tr></thead><tbody>' +
+            d.rows.map((r, i) => '<tr><th>' + esc(d.idx[i]) + '</th>' + r.map((x) => '<td>' + esc(x) + '</td>').join('') + '</tr>').join('') + '</tbody></table>';
+        }
+        function sessionLargeHTML() {
+          const rows = liveRows();
+          if (!rows.length) return emptyHTML();
+          const last = lastRunCard();
+          let h = '<div class="vscroll board">';
+          if (last) {
+            const d = decorate(last, S.cards[last]);
+            h += '<section class="b-band"><div class="b-cap">Last run · cell ' + cellNo(last) + '<span class="took">' + d.took + '</span><span class="go" data-cell="' + last + '">go there →</span></div>';
+            if (d.print && !d.print.gone) {
+              const F = FIGS[d.print.fig];
+              h += '<div class="b-row viewable" data-fig="' + d.print.fig + '" data-cell="' + last + '">' + mark(d.print.m) + '<svg class="g"><use href="#g-fig"/></svg><b>' + F.name + '</b><span class="ty">' + F.type + '</span></div>' +
+                '<div class="b-fig" data-fig="' + d.print.fig + '" data-cell="' + last + '"><svg viewBox="' + F.vb + '"><use href="#fig-' + d.print.fig + '"/></svg></div>';
+            }
+            for (const r of d.rows) {
+              if (r.gone) continue;
+              h += '<div class="b-row' + (r.view || r.fig ? ' viewable' : '') + (r.scratch ? ' scratch' : '') + '"' + (r.view ? ' data-view="' + r.view + '"' : '') + (r.fig ? ' data-fig="' + r.fig + '"' : '') + ' data-cell="' + last + '">' +
+                mark(r.m) + '<svg class="g"><use href="#' + GLYPH[r.k] + '"/></svg><b>' + esc(r.name) + '</b><span class="ty">' + esc(kindLabel(r)) + '</span></div>';
+              const mini = r.view ? miniHTML(r.view) : '';
+              if (mini) h += '<div class="b-val">' + mini + '</div>';
+              else if (r.eq) h += '<div class="b-val">' + esc(r.fn ? r.name + r.eq : r.eq) + '</div>';
+            }
+            h += '</section>';
+          }
+          const rest = rows.filter((r) => r.cell !== last);
+          if (rest.length) {
+            h += '<section class="b-list"><div class="b-cap">' + (last ? 'Also in the session' : 'The session') + '</div>';
+            for (const r of rest) {
+              h += '<div class="l-row' + (r.view || r.fig ? ' viewable' : '') + (r.scratch ? ' scratch' : '') + '"' + (r.view ? ' data-view="' + r.view + '"' : '') + (r.fig ? ' data-fig="' + r.fig + '"' : '') + ' data-cell="' + r.cell + '">' +
+                '<svg class="g"><use href="#' + r.glyph + '"/></svg><b>' + esc(r.name) + '</b><span class="ty">' + esc(r.r && r.r.eq ? r.r.eq.replace(/^= /, '') : r.kind) + '</span><span class="cl" data-go="' + r.cell + '">cell ' + cellNo(r.cell) + '</span></div>';
+            }
+            h += '</section>';
+          }
+          return h + '</div><div class="vfoot b-foot"><span><i class="m new">+</i>first bound here</span><span><i class="m">~</i>rebound</span><span class="cut"></span><span><span style="color:var(--blue)">blue</span> names open</span></div>';
+        }
+        function openViewer(tab, key, origin, size) {
+          const isNew = !V;
+          const held = V && V.tab === 'figs' && tab === 'figs' ? V.held : false;
+          V = { tab, key: key || null, origin: origin || null, size: size || SIZE, held, pending: null };
+          if (tab === 'data' && !V.key) V.key = liveTables()[0] || null;
+          if (tab === 'figs') { if (!V.key) V.key = newestFig(); if (!V.origin && V.key) V.origin = S.owner[FIGS[V.key].name] || FIGS[V.key].from; }
+          renderViewer({ anim: true, isNew });
+        }
+        function renderViewer(opts) {
+          opts = opts || {};
+          if (!V) return;
+          const large = V.size === 'large';
+          viewer.hidden = false;
+          viewer.className = (large ? 'large' : 'beside') + (opts.anim ? ' anim' : '');
+          const t = (k, l, dot) => '<button class="vtab' + (V.tab === k ? ' on' : '') + '" data-tab="' + k + '">' + l + (dot ? '<i class="vdot"></i>' : '') + '</button>';
+          let h = '<div class="vhead">' + t('session', 'Session', S.unseen.size > 0 && V.tab !== 'session') + t('data', 'Data') + t('figs', 'Figures') + '<span class="sp"></span>' +
+            (V.tab === 'figs' ? '<button class="vbtn pin' + (V.held ? ' on' : '') + '" title="' + (V.held ? 'Held: click to follow new figures again' : 'Hold this figure: runs won’t replace it') + '">' + ICON_PIN + '</button>' : '') +
+            '<button class="vbtn size" title="' + (large ? 'Beside the column' : 'Large, for the projector') + '">' + (large ? ICON_SMALL : ICON_LARGE) + '</button>' +
+            '<button class="vbtn x" title="Close (Esc)">✕</button></div>';
+          h += V.tab === 'data' ? dataHTML(opts) : V.tab === 'figs' ? figsHTML(opts) : large ? sessionLargeHTML() : sessionBesideHTML();
+          viewer.innerHTML = h;
+          $$('.vtab', viewer).forEach((b) => b.addEventListener('click', () => { const k = b.dataset.tab; if (k === V.tab) return; openViewer(k, k === 'figs' ? null : null, null, V.size); }));
+          $('.x', viewer).addEventListener('click', closeViewer);
+          $('.size', viewer).addEventListener('click', () => { V.size = SIZE = large ? 'beside' : 'large'; renderViewer({ anim: true }); });
+          const pinB = $('.pin', viewer);
+          if (pinB) pinB.addEventListener('click', () => { V.held = !V.held; V.pending = null; if (!V.held) { V.key = newestFig(); } renderViewer({}); });
+          const take = $('[data-take]', viewer);
+          if (take) take.addEventListener('click', () => { V.key = take.dataset.take; V.pending = null; renderViewer({ newFig: V.key }); });
+          $$('[data-pick]', viewer).forEach((b) => b.addEventListener('click', () => { V.key = b.dataset.pick; V.origin = S.owner[V.key] || S.data[V.key].from; renderViewer(); }));
+          $$('[data-figpick]', viewer).forEach((b) => b.addEventListener('click', () => { V.key = b.dataset.figpick; V.pending = V.pending === V.key ? null : V.pending; renderViewer(); }));
+          $$('.from, .go, .chip, .b-cap .go', viewer).forEach((el) => el.addEventListener('click', (e) => { e.stopPropagation(); goTo(el.dataset.cell || el.dataset.go); }));
+          $$('[data-go]', viewer).forEach((el) => el.addEventListener('click', (e) => { e.stopPropagation(); goTo(el.dataset.go); }));
+          $$('[data-act="runstale"]', viewer).forEach((el) => el.addEventListener('click', () => { closeViewer(); runStale(); }));
+          $$('tr[data-view], .b-row[data-view], .l-row[data-view]', viewer).forEach((el) => el.addEventListener('click', () => openViewer('data', el.dataset.view, el.dataset.cell, V.size)));
+          $$('tr[data-fig], .b-row[data-fig], .l-row[data-fig], .b-fig', viewer).forEach((el) => el.addEventListener('click', () => openViewer('figs', el.dataset.fig, el.dataset.cell, V.size)));
+          dim.hidden = !large;
+          $$('.lcard.open', ledger).forEach((c) => c.classList.remove('open'));
+          if (V.origin && cardEl(V.origin)) cardEl(V.origin).classList.add('open');
+          if (V.tab === 'session') { [...S.unseen].forEach(ack); }
+          placeViewer();
+          const chip = $('.vpick .on', viewer);
+          if (chip) chip.parentElement.scrollLeft = chip.offsetLeft - 40;
+          updateFrom();
+          paintPill();
+        }
+        /* Beside: right-anchored at the margin's edge, top at its card (clamped
+           into the room), sized to the content. At rest it keeps to the margin;
+           a table wider than that leans over the column after the pointer has
+           rested on it a moment. A figure rests at the margin's full width, up
+           to 720px on a wide display. Large: centred over the dimmed window. */
+        function placeViewer() {
+          if (!V) return;
+          const roomW = room.clientWidth, roomH = room.clientHeight;
+          const table = $('.data-table', viewer);
+          const isFig = V.tab === 'figs';
+          const nat = table ? table.offsetWidth + 12 : isFig ? 744 : 380;
+          const natLean = isFig ? 486 : nat;
+          if (V.size === 'large') {
+            viewer.style.setProperty('--large-w', (V.tab === 'data' ? Math.max(640, Math.min(1100, nat + 40)) : isFig ? 900 : 760) + 'px');
+            viewer.style.top = viewer.style.right = '';
+            viewer.style.maxHeight = '';
+            return;
+          }
+          const usableRight = roomW - 22;
+          const colRight = page.offsetLeft + page.offsetWidth;
+          let rest, rightEdge;
+          if (mode !== 'cards') {
+            rightEdge = usableRight;
+            rest = Math.min(Math.max(natLean, 300), 340);
+          } else {
+            const ledgerLeft = colRight + 24; /* the card's own left edge */
+            rest = Math.max(LW, Math.min(nat, usableRight - ledgerLeft));
+            rightEdge = ledgerLeft + rest;
+          }
+          const lean = Math.max(rest, Math.min(natLean, rightEdge - page.offsetLeft - 70));
+          viewer.style.setProperty('--rest-w', rest + 'px');
+          viewer.style.setProperty('--lean-w', lean + 'px');
+          viewer.classList.toggle('can-lean', lean > rest + 8);
+          viewer.style.right = app.clientWidth - (room.offsetLeft + rightEdge) + 'px';
+          viewer.style.maxHeight = roomH - 56 + 'px';
+          viewer.style.top = '0px';
+          const h = viewer.offsetHeight;
+          let top = 44;
+          if (V.origin && cardEl(V.origin)) {
+            const card = cardEl(V.origin);
+            const cy = page.offsetTop + (tabsMode() ? anchorTop(V.origin) : card.offsetTop) - doc.scrollTop;
+            top = Math.min(Math.max(cy - 6, 44), roomH - 12 - h);
+            viewer.style.setProperty('--oy', Math.max(10, cy - top + 12) + 'px');
+          }
+          viewer.style.top = room.offsetTop + Math.max(top, 12) + 'px';
+          const cut = $('.vfoot .cut', viewer);
+          if (cut && table) {
+            const ths = $$('thead th', table).slice(1), sc = $('.vscroll', viewer);
+            const hidden = ths.filter((th) => th.offsetLeft + th.offsetWidth > sc.clientWidth + 1).length;
+            cut.textContent = hidden ? hidden + (hidden === 1 ? ' more column →' : ' more columns →') : '';
+          }
+        }
+        function dirOf(id) {
+          const y = page.offsetTop + anchorTop(id) - doc.scrollTop;
+          return y < 30 ? '↑' : y > room.clientHeight - 40 ? '↓' : '';
+        }
+        /* the "bound by" line's chip: when the cell has scrolled away, one click brings it back */
+        function updateFrom() {
+          if (!V) return;
+          const c = $('.vsub .chip', viewer);
+          if (!c) return;
+          const d = dirOf(c.dataset.cell);
+          c.hidden = !d;
+          c.textContent = d + ' cell ' + cellNo(c.dataset.cell);
+        }
+        function closeViewer() {
+          V = null;
+          viewer.hidden = true;
+          viewer.innerHTML = '';
+          dim.hidden = true;
+          $$('.lcard.open', ledger).forEach((c) => c.classList.remove('open'));
+          paintPill();
+        }
+        dim.addEventListener('click', closeViewer);
+
+        /* ================= the window ================= */
+        const WIN = { fill: null, 1920: [1920, 1080, '1920 × 1080 · a wide display'], 1440: [1440, 900, '1440 × 900 · a laptop, full screen'], 1280: [1280, 800, '1280 × 800 · the classroom projector'], 1100: [1100, 800, '1100 × 800 · a split screen'], 820: [820, 760, '820 × 760 · near the floor'] };
+        let win = 'fill';
+        function setWin(k) {
+          win = k;
+          $$('#states [data-win]').forEach((b) => b.classList.toggle('on', b.dataset.win === k));
+          if (!WIN[k]) { body.classList.remove('sized'); app.style.removeProperty('--w'); app.style.removeProperty('--h'); }
+          else { body.classList.add('sized'); app.style.setProperty('--w', WIN[k][0] + 'px'); app.style.setProperty('--h', WIN[k][1] + 'px'); $('#sizelabel').textContent = WIN[k][2]; }
+          scaleApp();
+          fit();
+        }
+        function scaleApp() {
+          if (!WIN[win]) return;
+          const panel = $('#states').classList.contains('min') ? 0 : 330;
+          const availW = innerWidth - panel;
+          const s = Math.min(1, (availW - 24) / WIN[win][0], (innerHeight - 60) / WIN[win][1]);
+          app.style.setProperty('--s', s.toFixed(4));
+          app.style.setProperty('--cx', panel + availW / 2 + 'px');
+          $('#sizelabel').style.setProperty('--cx', panel + availW / 2 + 'px');
+        }
+        /* the fold, played: the window narrows across the floor and widens back */
+        function sweep(a, b, ms, gen) {
+          return new Promise((res) => {
+            const t0 = performance.now();
+            const step = (t) => {
+              if (gen !== S.gen) return res();
+              const k = Math.min(1, (t - t0) / ms), e = k < 0.5 ? 2 * k * k : 1 - Math.pow(-2 * k + 2, 2) / 2;
+              const w = Math.round(a + (b - a) * e);
+              app.style.setProperty('--w', w + 'px');
+              $('#sizelabel').textContent = w + ' × 900 · the fold';
+              if (k < 1) requestAnimationFrame(step); else res();
+            };
+            requestAnimationFrame(step);
+          });
+        }
+        async function playFold() {
+          reset('1440');
+          scrollToCell('c13', 0.06);
+          const gen = S.gen;
+          await wait(900); if (gen !== S.gen) return;
+          await sweep(1440, 1100, 1500, gen); if (gen !== S.gen) return;
+          await wait(1200); if (gen !== S.gen) return;
+          await sweep(1100, 1440, 1500, gen);
+        }
+        window.addEventListener('resize', () => { scaleApp(); });
+        new ResizeObserver(() => fit()).observe(doc);
+        new ResizeObserver(() => layout()).observe(sheet);
+        $('#ctl-session').addEventListener('click', () => {
+          forced = forced === null ? 'tabs' : forced === 'tabs' ? 'off' : null;
+          fit();
+        });
+
+        /* ================= the states (mockup chrome) ================= */
+        const CAP = {
+          first: 'First run. A saved notebook opens with its outputs but an empty session: the bar says <b>empty session</b> in words, and a note in the margin, where the first card will go, says what that means. Run cell 1 (imports: nothing to show, so the note stays), then cell 2: its card arrives, the note goes, <b>prices</b> lands in the bar.',
+          rest: 'At rest, on a wide window. Each cell that bound something has its card in the margin, its top on the cell’s first line. <b>A small white print</b>: the cell drew. <b>A dark slip</b>: the names it bound, scalars with their values, tables with their columns. The session’s trace is in the bar: the kernel, then every name in cell order. Hover a card or a cell: the two light each other.',
+          twenty: 'The middle of twenty cells. Cards never drift: the one-line cell (beta, se, r2) has 57px before the next card, so its slip clamps with a <b>+1</b> and hover opens it over its neighbour. Rebinding reads down the page: <b>prices</b> is struck in two earlier cards and live in the regression’s; <b>↓ rebound</b> goes there.',
+          stale: 'Run the stale cell. The amber slip (summary 3 × 2) becomes a print and a slip: the bar chart arrives and summary gains a column. Only this card wears the blue rule, and its names land blue in the bar. Type, click the document or run another cell and the rule goes: carrying on is the acknowledgement.',
+          runall: 'Run all, from the top. Fourteen cells run while the view stays put; each card’s tie answers as its cell runs. A card is marked only if its names came out different, here the edited cell. Its names stay blue in the bar until you look; click a blue name to go to its card.',
+          restart: 'Restart. The cards stay, faded, as <b>before the restart</b>; the cells turn amber; the bar says <b>fresh session</b>. Run stale (rail) rebuilds it: each card comes back as its cell runs, unmarked, since nothing about it changed. The scratch cell’s <b>tmp</b> stays faded: Run stale runs program cells only.',
+          proj: '1280, the classroom projector. The narrow rail gives back 36px, so cards still fit (about 150px) where round one folded them. Try <b>Squint</b>: the white prints and the dark slips still tell apart.',
+          beside: 'A table beside its cell: click a blue name. The card grows into the viewer where it was, sized to the table. by_region is 4 × 3 and fits the margin, so it covers nothing; type in the column as before. The viewer stays put while you scroll.',
+          wide: 'A wide table beside. prices is 1187 × 5: at rest the viewer keeps to the margin and says what is cut (<b>2 more columns →</b>). Rest the pointer on it a moment and it leans over the column; take the pointer back to the code and it gives the room back. Scroll the cell away and a <b>↑ cell 16</b> chip brings it back.',
+          lean: 'The wide table, leaning (as after the pointer rests on it): every column shown, over the right of the column with a shadow; the index column stays put while the table scrolls sideways.',
+          live: 'The viewer open as a run changes its table. summary was 3 × 2; the edited cell runs and the viewer redraws in place: <b>revenue</b> flashes in, the head says <b>3 × 3, was 3 × 2</b>.',
+          large: 'Large, for the projector: ⤢ on any viewer. Centred over the dimmed window, 13px type, every table one chip away. Knuth remembers the size you used last, so in class it opens large from then on.',
+          figure: 'A figure beside: click a print. The Figures tab lists every print, newest first, and <b>follows new figures</b>: run a cell that draws and the tab moves to it. On a laptop the figure rests at the margin and leans to its full width under the pointer.',
+          held: 'Held. The Figures tab is pinned on the demand curve; the stale cell runs and draws the bar chart, which waits at the foot as <b>New: ax2, cell 18 →</b> instead of replacing what you were studying. Unpin to follow again.',
+          figwide: '1920, a wide display. The margin is about 470px, so a figure opened from a print rests beside the column at the margin’s full width (up to 720px), larger than the inline one, with nothing covered.',
+          session: 'The Session tab, from a click on the bar’s pill (or Esc then P). The last run’s receipt on top, + first bound here and ~ rebound, then every other name, sorted, with its cell.',
+          board: 'The Session tab large, for the back of the room: 17px names, the last run behind a blue rule with its figure, small tables drawn whole (summary, 3 × 3), every other name with its cell. Knuth remembers large, so in class it opens like this.',
+          n_rest: '1100, a split screen. The margin cannot hold a card, so each card folds to a tab where it was, on its cell’s top-right corner: the count is how many names it holds, white means it drew, amber is stale, blue is new. The run chip is untouched.',
+          n_hover: 'Hover a tab (drawn here pinned): the card unfolds out of it, in the frame’s material, over the right of the column. Click pins it; Esc or a click elsewhere folds it back.',
+          n_run: 'A run at 1100. The card unfolds out of its tab and stays up while you read it. Type, press Esc or click the document and it folds back into the tab, which pops to show where it went. No timer.',
+          n_fold: 'The fold. The window narrows from 1440 to 1100 and widens back: the cards fold into their tabs along the tie at a 140px card and open out again at 152, so a resize near the line does not flap.',
+          n_tight: '820, near the floor: no margin at all. The tabs sit in the gap above each code card, outside its border, and the card unfolds under them. The column is still the column.',
+          kinds: 'Every kind of card at its real size, on the specimen sheet.',
+        };
+        function reset(winKey, kind) {
+          S = freshState(kind || 'rest');
+          V = null; viewer.hidden = true; viewer.innerHTML = ''; dim.hidden = true;
+          lastShape = {};
+          forced = null; mode = null; fitted = false;
+          render();
+          setWin(winKey || 'fill');
+          doc.scrollTop = 0;
+          layout();
+          paintPill();
+        }
+        const scrollToCell = (id, frac) => { doc.scrollTop = Math.max(0, page.offsetTop + anchorTop(id) - room.clientHeight * (frac == null ? 0.18 : frac)); };
+        const STATES = {
+          first: () => reset('fill', 'first'),
+          rest: () => reset('fill'),
+          twenty: () => { reset('fill'); doc.scrollTop = page.offsetTop + anchorTop('c14') - 52; },
+          stale: async () => { reset('fill'); scrollToCell('c18', 0.2); await wait(500); runCell('c18', {}); },
+          runall: async () => { reset('fill'); await wait(400); runAll(); },
+          restart: async () => { reset('fill'); scrollToCell('c4', 0.1); await wait(400); restart(); },
+          proj: () => { reset('1280'); scrollToCell('c4', 0.08); },
+          beside: () => { reset('fill'); scrollToCell('c13', 0.2); openViewer('data', 'by_region', 'c13'); },
+          wide: () => { reset('fill'); scrollToCell('c16', 0.2); openViewer('data', 'prices', 'c16'); },
+          lean: () => { reset('fill'); scrollToCell('c16', 0.2); openViewer('data', 'prices', 'c16'); viewer.classList.add('lean'); },
+          live: async () => { reset('fill'); scrollToCell('c18', 0.12); openViewer('data', 'summary', 'c18'); await wait(1100); runCell('c18', {}); },
+          large: () => { reset('fill'); scrollToCell('c16', 0.2); openViewer('data', 'prices', 'c16', 'large'); },
+          figure: () => { reset('fill'); scrollToCell('c14', 0.15); openViewer('figs', 'multi', 'c14'); viewer.classList.add('lean'); },
+          held: async () => { reset('fill'); scrollToCell('c18', 0.12); openViewer('figs', 'line', 'c5'); V.held = true; renderViewer({}); await wait(1000); runCell('c18', {}); },
+          figwide: () => { reset('1920'); scrollToCell('c14', 0.15); openViewer('figs', 'multi', 'c14'); },
+          session: () => { reset('fill'); scrollToCell('c13', 0.15); openViewer('session', null, null, 'beside'); },
+          board: async () => { reset('fill'); scrollToCell('c18', 0.15); await wait(300); runCell('c18', {}); await wait(1000); openViewer('session', null, null, 'large'); },
+          n_rest: () => { reset('1100'); scrollToCell('c13', 0.06); },
+          n_hover: () => { reset('1100'); scrollToCell('c14', 0.12); pin('c14'); },
+          n_run: async () => { reset('1100'); scrollToCell('c18', 0.2); await wait(500); runCell('c18', {}); },
+          n_fold: () => playFold(),
+          n_tight: () => { reset('820'); scrollToCell('c13', 0.1); pin('c13'); },
+          kinds: () => { showSpec(); },
+        };
+        function go(name) {
+          $$('#states [data-st]').forEach((b) => b.classList.toggle('on', b.dataset.st === name));
+          $('#cap').innerHTML = CAP[name] || '';
+          if (name !== 'kinds') closeSpec();
+          STATES[name]();
+        }
+        $$('#states [data-st]').forEach((b) => b.addEventListener('click', () => go(b.dataset.st)));
+        $$('#states [data-win]').forEach((b) => b.addEventListener('click', () => setWin(b.dataset.win)));
+        $('#st-squint').addEventListener('click', (e) => { body.classList.toggle('squint'); e.currentTarget.classList.toggle('on'); });
+        $('#states header').addEventListener('click', () => { $('#states').classList.toggle('min'); scaleApp(); });
+
+        /* ---- the specimen sheet ---- */
+        const specEl = $('#spec');
+        function sw(d, extra, lbl, sub) {
+          return '<div class="item"><div class="sw"><div class="edge"></div><div class="slot">' + cardHTML('x', d, extra) + '</div></div><div class="lbl">' + lbl + '</div><div class="sub">' + sub + '</div></div>';
+        }
+        function showSpec() {
+          const both = clone(C18_AFTER); both.rows[0].m = '+';
+          const past = clone(CARDS.c13); past.past = true;
+          const tabs = [
+            ['c13', CARDS.c13, '', 'names only'], ['c14', CARDS.c14, '', 'drew, and holds 5'], ['c18', CARDS.c18, '', 'stale'], ['c9', CARDS.c9, 'unseen', 'new since you looked'], ['c2', CARDS.c2, '', 'every name rebound below'],
+          ].map((t) => '<span style="display:inline-flex;flex-direction:column;align-items:center;gap:6px">' + tabHTML(t[0], t[1], t[2]) + '<span style="font:10.5px var(--sans);color:var(--room-ink-soft)">' + t[3] + '</span></span>').join('');
+          specEl.innerHTML = '<div class="sheetp"><button class="x" title="Close (Esc)">✕</button><button class="squintbtn">Squint</button><h3>Card kinds, at the size they render</h3>' +
+            '<p class="intro">A card is at most two objects under one tie. The <b>print</b> is white because it is a figure: the same lit object as under the cell, kept small so it says “this cell drew” without competing with the figure beside it. The <b>slip</b> is dark and holds names: the glyph says what kind (table, series, value, list, function, object), blue opens the viewer, a value is shown when it is short. Squint to see what survives at a distance.</p>' +
+            '<div class="grid">' +
+            sw(CARDS.c17, '', 'Slip: names', 'Scalars show their values; + first bound here.') +
+            sw(CARDS.c13, '', 'Slip: a table', 'Blue name opens the viewer; its columns under it.') +
+            sw({ took: '0.24 s', print: { fig: 'bar', m: '+' }, rows: [] }, '', 'Print: the cell drew', 'White and small, captioned by name; click for the viewer.') +
+            sw(both, '', 'Print and slip: drew and bound', 'The print first, the names under it, one tie.') +
+            sw(CARDS.c6, '', 'Rebound', '~ rebound here; struck where a later cell took the name.') +
+            sw(CARDS.c18, '', 'Stale', 'Amber tie and note: the cell changed since this run.') +
+            sw(CARDS.c9, 'unseen', 'Unseen', 'A blue rule on the latest run’s card, until you carry on or point at it.') +
+            sw(CARDS.c17, 'clamped spec-clamp', 'Clamped', 'A short cell: the slip keeps to the gap, +n, opens on hover.') +
+            sw(past, '', 'Before the restart', 'What the old session held, faded until the cell runs again.') +
+            '<div class="item"><div class="sw tabsw">' + tabs + '</div><div class="lbl">Tabs, on a narrow window</div><div class="sub">The card folded where it was: count, white = drew, amber, blue.</div></div>' +
+            '<div class="item"><div class="sw popsw">' + bodyHTML('c14', CARDS.c14) + '</div><div class="lbl">Unfolded from its tab</div><div class="sub">The frame’s material over the room; the same anatomy.</div></div>' +
+            '</div></div>';
+          specEl.hidden = false;
+          const cl = $('.spec-clamp', specEl);
+          if (cl) { const slip = $('.lslip', cl); slip.style.setProperty('--clamp', '40px'); $('.more', slip).textContent = '+1'; }
+          $('.x', specEl).addEventListener('click', closeSpec);
+          $('.squintbtn', specEl).addEventListener('click', (e) => { specEl.classList.toggle('squint'); e.currentTarget.classList.toggle('on'); });
+        }
+        function closeSpec() { specEl.hidden = true; specEl.innerHTML = ''; specEl.classList.remove('squint'); $$('#states [data-st="kinds"]').forEach((b) => b.classList.remove('on')); }
+        specEl.addEventListener('click', (e) => { if (e.target === specEl) closeSpec(); });
+
+        /* ---- start ---- */
+        if (innerWidth < 1360) $('#states').classList.add('min'); /* the card would sit on the column; its header opens it */
+        reset('fill');
+        go('rest');
+        if (document.fonts && document.fonts.ready) document.fonts.ready.then(() => { layout(); paintPill(); });
+        window.addEventListener('load', () => fit());
+      })();
+    </script>
+  </body>
+</html>

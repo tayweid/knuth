@@ -1,0 +1,1232 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Knuth — the margin is history, the box is attention (round two)</title>
+    <style>
+      /* ROUND TWO, hybrid: the ledger's cards plus one floating box.
+
+         THE MARGIN IS HISTORY. Every cell that bound something keeps a
+         small card in the right margin of the cell column, its top on the
+         cell's first line, tied to it by a hairline, scrolling with it:
+         what the cell bound (+ first bound here, ~ rebound), a name struck
+         when a later cell rebinds it, a thumbnail when it drew, the time
+         the run took. That is round one's recommended ledger, unchanged in
+         spirit.
+
+         THE BOX IS ATTENTION. One box, not three, holds the thing you are
+         looking at now: the current figure, or a table you picked. It is
+         pinned at the room's top-right corner and it sits ON THE FRAME,
+         never over the room: the room draws aside around it, so the box
+         stands in a bay of frame cut into the room's corner, with the same
+         8px edge of grey all round both, rounded corners on both (the
+         room's inner corner is concentric with the box's). Its height is
+         its content's, so the room flows back under it: a box, not a
+         column. It follows each new figure a run draws; a table only
+         comes into it when you pick one (every run binds Series, and a box
+         that chased them would be a thief); a pick, or the pin, holds it,
+         and then a newer figure waits as a "New" chip at its foot.
+
+         RESERVE, DON'T SLIDE. The column's place depends on the window
+         alone, laid out against the room as it will be with the box open,
+         so opening, closing or resizing the box, folding the cards or a
+         run never moves a cell: the room's right edge draws in and out
+         through empty bench. When the window is short of width, the left
+         margin gives first, then the cards fold to the run chips' dots
+         (hover shows a card, click pins it; a run does not peek one over
+         the column, since the box has already lit), then the box narrows
+         to its floor, then it tucks to a spine in the bay that opens as a
+         glance. The box keeps the cards only while it is at least 412px
+         wide, so its figure stays readable. The column never narrows. ⤢
+         is the glance: large, over the dimmed window, for a projector;
+         Esc puts it back.
+
+         THE FRAME follows Taylor's Plass notes of 2026-10-02: a dark grey
+         surround (#1e1e21, not black, so a soft shadow under the room
+         reads), a 44px rail of 32px tiles like Zen's, the top bar part of
+         the frame, and the room inset with one 8px margin and rounded
+         corners on all four. Everything inside the room is the live app's
+         bench (src/styles.css, src/icons.ts).
+
+         Open by double-click. The pill at the bottom is mockup chrome: it
+         switches the window size (drawn to scale) and plays the runs. */
+      :root {
+        /* the frame */
+        --frame: #1e1e21;
+        --frame-ink: #d5d3cf;
+        --frame-ink-soft: #85837f;
+        --tile: #303035;
+        --tile-hover: #29292d;
+        --pill: #28282c;
+        --tip: #111113;
+        --topbar: 44px;
+        --rail: 44px;
+        --edge: 8px;
+        --corner: 12px;
+        --lift: drop-shadow(0 1px 1.5px rgba(0, 0, 0, 0.42)) drop-shadow(0 10px 26px rgba(0, 0, 0, 0.36));
+        --lift-box: 0 0 0 1px rgba(255, 255, 255, 0.055), 0 1px 1.5px rgba(0, 0, 0, 0.42), 0 10px 26px rgba(0, 0, 0, 0.36);
+        /* the room: Knuth's bench (src/styles.css) */
+        --bg: #2b2a2d;
+        --room-pane: #232226;
+        --room-line: rgba(255, 255, 255, 0.07);
+        --room-ink: #d8d6d1;
+        --room-ink-soft: #8f8d88;
+        --blue: #9db8d6;
+        --amber: #c98a1d;
+        --green: #6ea576;
+        --accent: #305c8a;
+        --serif: 'STIX Two Text', 'Charter', 'Georgia', serif;
+        --prose: 'CMU Serif', 'Computer Modern Serif', 'Georgia', serif;
+        --mono: ui-monospace, 'SF Mono', 'Menlo', 'Consolas', monospace;
+        --sans: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Helvetica Neue', sans-serif;
+      }
+      * { box-sizing: border-box; }
+      html, body { margin: 0; height: 100%; overflow: hidden; background: var(--frame); }
+      body.desk { background: #0b0b0c; }
+      button { font: inherit; }
+
+      /* ---------- the window ---------- */
+      #app {
+        position: absolute; inset: 0; overflow: hidden; background: var(--frame);
+        color: var(--frame-ink); font: 15px/1.55 var(--sans); /* on #app, not html: 52rem stays 832px */
+      }
+      body.desk #app {
+        inset: auto; transform-origin: 0 0; border-radius: 12px;
+        box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.08), 0 30px 90px rgba(0, 0, 0, 0.7);
+      }
+
+      /* ---------- the top bar: part of the frame ---------- */
+      #topbar {
+        position: absolute; top: 0; left: 0; right: 0; height: var(--topbar);
+        display: flex; align-items: center; gap: 4px; padding: 0 14px 0 14px;
+      }
+      .lights { display: flex; gap: 8px; margin-right: 16px; }
+      .lights i { display: block; width: 12px; height: 12px; border-radius: 50%; background: #3b3b40; }
+      .tt {
+        position: relative; display: inline-flex; align-items: center; justify-content: center;
+        width: 30px; height: 30px; padding: 0; border: 0; border-radius: 8px; background: transparent;
+        color: rgba(240, 238, 233, 0.62); cursor: pointer;
+      }
+      .tt:hover { background: var(--tile-hover); color: #fff; }
+      .tt svg, .rb svg { fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; }
+      .tt svg { width: 18px; height: 18px; }
+      #docpill {
+        display: flex; align-items: center; gap: 9px; min-width: 0; max-width: 520px; height: 30px;
+        margin: 0 2px; padding: 0 12px; border-radius: 9px; background: var(--pill);
+      }
+      #docpill .name { font: 14.5px/1 var(--serif); letter-spacing: 0.05em; color: var(--frame-ink); white-space: nowrap; cursor: text; }
+      #docpill .dirty { color: var(--amber); font-size: 8px; margin-left: -4px; }
+      #docpill .path { font: 12px var(--sans); color: var(--frame-ink-soft); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+      .status { margin-left: auto; display: inline-flex; align-items: center; gap: 7px; font: 12px var(--sans); color: var(--frame-ink-soft); white-space: nowrap; }
+      .status i { display: block; width: 7px; height: 7px; border-radius: 50%; background: #4caf7d; }
+      [data-label]::after {
+        content: attr(data-label); position: absolute; z-index: 40; white-space: nowrap; pointer-events: none;
+        background: var(--tip); color: var(--frame-ink); font: 12px/1.4 var(--sans); letter-spacing: 0; text-transform: none;
+        padding: 4px 9px; border-radius: 7px; border: 1px solid rgba(255, 255, 255, 0.08);
+        opacity: 0; transition: opacity 0.12s;
+      }
+      [data-label]:hover::after { opacity: 1; transition-delay: 0.25s; }
+      .tt[data-label]::after { top: calc(100% + 6px); left: 50%; transform: translateX(-50%); }
+
+      /* ---------- the rail: 44px, 32px tiles (Zen's) ---------- */
+      #rail {
+        position: absolute; top: var(--topbar); left: 0; bottom: 0; width: var(--rail);
+        display: flex; flex-direction: column; align-items: center; gap: 3px; padding: 2px 0 10px;
+      }
+      .rb {
+        position: relative; display: inline-flex; align-items: center; justify-content: center; flex: 0 0 auto;
+        width: 32px; height: 32px; padding: 0; border: 0; border-radius: 9px; background: transparent;
+        color: rgba(240, 238, 233, 0.62); cursor: pointer;
+      }
+      .rb svg { width: 17px; height: 17px; }
+      .rb.solid svg { fill: currentColor; stroke: none; }
+      .rb:hover { background: var(--tile-hover); color: #fff; }
+      .rb.on { background: var(--tile); color: #f0eee9; }
+      .rb.on #pip-inner { fill: currentColor; }
+      .rb[data-label]::after { left: calc(100% + 10px); top: 50%; transform: translateY(-50%); }
+      .rb .badge { position: absolute; top: 5px; right: 5px; width: 6px; height: 6px; border-radius: 50%; background: var(--blue); box-shadow: 0 0 0 2px var(--frame); display: none; }
+      .rb.has-new .badge { display: block; }
+      .rule { width: 18px; height: 1px; margin: 5px 0; background: rgba(255, 255, 255, 0.09); flex: 0 0 auto; }
+      .grow { flex: 1; }
+
+      /* ---------- the room: rounded on all four, one 8px edge of frame ----------
+         Its outline is a path (script: roomPath) so it can draw aside
+         around the box: a bay cut from the top-right corner, the inner
+         corner concentric with the box's. The shadow follows the path. */
+      #room { position: absolute; top: var(--topbar); left: var(--rail); right: var(--edge); bottom: var(--edge); }
+      #roomshape { position: absolute; left: 0; top: 0; width: 100%; height: 100%; overflow: visible; filter: var(--lift); pointer-events: none; }
+      #roomshape path { fill: var(--bg); stroke: rgba(255, 255, 255, 0.055); stroke-width: 1; }
+      #doc {
+        position: absolute; inset: 0; overflow-y: auto; overflow-x: hidden; padding: 22px 0 40vh;
+        color: var(--room-ink); scrollbar-width: thin; scrollbar-color: rgba(255, 255, 255, 0.14) transparent;
+      }
+      /* The column keeps its 832px; only its left margin is set (script:
+         fit), against the room as it will be with the box open. */
+      #page { position: relative; width: 52rem; max-width: calc(100% - 32px); margin-left: 16px; }
+
+      /* cell zero: the packages fold */
+      .pkg {
+        display: flex; align-items: center; gap: 8px; width: 100%; margin: 0 0 6px; padding: 6px 12px;
+        border: 1px dashed rgba(255, 255, 255, 0.12); border-radius: 10px; background: transparent;
+        color: var(--room-ink-soft); font: 12px var(--sans); cursor: pointer; text-align: left;
+      }
+      .pkg:hover { color: var(--room-ink); border-color: rgba(255, 255, 255, 0.2); }
+      .pkg .list { font: 11.5px var(--mono); }
+
+      /* ---------- cells: the column that stays as it is ---------- */
+      .cell-wrap { position: relative; }
+      .cell { display: flex; padding: 0.2rem 0; position: relative; }
+      .cell .body { flex: 1; min-width: 0; }
+      .insert-zone { position: relative; height: 22px; opacity: 0; transition: opacity 0.12s; }
+      .insert-zone:hover { opacity: 1; }
+      .insert-zone::before { content: ''; position: absolute; left: 2.2rem; right: 0; top: 50%; border-top: 1px solid rgba(157, 184, 214, 0.25); }
+      .insert-actions {
+        position: absolute; top: 50%; left: calc(2.2rem + (100% - 2.2rem) / 2); transform: translate(-50%, -50%);
+        display: flex; padding: 2px 5px; border-radius: 999px;
+        background: color-mix(in srgb, #3a3840 94%, transparent); backdrop-filter: blur(14px);
+        border: 1px solid rgba(255, 255, 255, 0.14); box-shadow: 0 5px 18px rgba(0, 0, 0, 0.45);
+      }
+      .insert-actions button { width: 24px; height: 18px; border: 0; border-radius: 5px; background: transparent; color: rgba(240, 238, 233, 0.75); display: inline-flex; align-items: center; justify-content: center; cursor: pointer; padding: 0; }
+      .insert-actions button:hover { color: #fff; background: rgba(255, 255, 255, 0.12); }
+      .insert-actions svg { width: 13px; height: 13px; fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; }
+
+      .cm {
+        display: flex; background: #282c34; color: #abb2bf;
+        border: 1px solid rgba(255, 255, 255, 0.07); border-radius: 8px; overflow: hidden;
+        font: 13.5px/18.9px var(--mono); transition: border-color 0.15s;
+      }
+      .cm:hover { border-color: rgba(255, 255, 255, 0.12); }
+      .cell-wrap.linked .cm { border-color: rgba(157, 184, 214, 0.45); }
+      .gut {
+        position: relative; display: flex; flex: 0 0 auto; padding: 0.5rem 0;
+        background: rgba(255, 255, 255, 0.022); border-right: 1px solid rgba(255, 255, 255, 0.06);
+        color: rgba(240, 238, 233, 0.28);
+      }
+      .cell.stale .gut { border-right-color: var(--amber); }
+      .ln { display: flex; flex-direction: column; min-width: 2.25rem; text-align: right; padding: 0 0.35rem 0 0.3rem; }
+      .ln span { height: 18.9px; }
+      .ln span:first-child { visibility: hidden; }
+      .fold { width: 12px; }
+      .run {
+        position: absolute; left: 0; right: 0; top: 0; height: min(calc(0.5rem + 37.8px), 100%);
+        border: 0; padding: 0; background: #2b2f37; color: var(--green); cursor: pointer;
+        border-top-left-radius: 7px; border-bottom-left-radius: 7px; font-size: 13px; z-index: 3; transition: color 0.12s;
+      }
+      .run::before {
+        content: '▶'; position: absolute; left: 0; right: 0; top: 0; height: calc(1rem + 18.9px);
+        display: flex; align-items: center; justify-content: center;
+        border-bottom: 1px solid rgba(255, 255, 255, 0.08); transition: background 0.12s;
+      }
+      .run:hover { color: #8fc79a; }
+      .run:hover::before { background: rgba(255, 255, 255, 0.045); }
+      .cell.running .run::before { content: ''; }
+      .cell.running .run::after {
+        content: ''; position: absolute; left: 50%; top: calc((1rem + 18.9px) / 2); width: 11px; height: 11px; margin: -6px 0 0 -6px;
+        border: 1.6px solid rgba(110, 165, 118, 0.3); border-top-color: var(--green); border-radius: 50%; animation: turn 0.8s linear infinite;
+      }
+      @keyframes turn { to { transform: rotate(360deg); } }
+      /* the dot (round one's graft from peek-overlay): after a run, blue on
+         the cell that ran last, grey on earlier ones; on a narrow window it
+         is the ledger's whole affordance */
+      .run .dot {
+        position: absolute; right: 4px; top: calc((1rem + 18.9px) / 2 - 2.5px); width: 5px; height: 5px; border-radius: 50%;
+        background: rgba(240, 238, 233, 0.28); display: none; z-index: 4; cursor: pointer; transition: background 0.12s, transform 0.12s;
+      }
+      .cell.ran .run .dot { display: block; }
+      .cell.ran-last .run .dot { background: var(--blue); box-shadow: 0 0 0 3px rgba(157, 184, 214, 0.12); }
+      .run .dot:hover, .cell-wrap.linked .run .dot { background: #fff; transform: scale(1.3); }
+      .cell.running .run .dot { display: none; }
+      .code { flex: 1; min-width: 0; padding: 0.5rem 0; margin-left: 0.15rem; }
+      .line { padding: 0 0.75rem; white-space: pre-wrap; }
+      .k { color: #c678dd; } .p { color: #e06c75; } .s { color: #98c379; } .n { color: #d19a66; } .c { color: #5c6370; } .o { color: #56b6c2; }
+      .cell.kind-scratch .cm { border-style: dashed; background: transparent; }
+      .cell.kind-scratch .gut { background: transparent; }
+      .cell.kind-scratch .run { background: var(--bg); }
+      .scratch-label { font-size: 10px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--room-ink-soft); margin-bottom: 0.15rem; }
+      .prose { position: relative; font: 18px/1.55 var(--prose); color: var(--room-ink); padding: 4px 0.75rem; }
+      .prose h2 { font-size: 1.35em; font-weight: 400; color: #f0eee9; margin: 0.9em 0 0.35em; }
+      .prose p { margin: 0.6em 0; }
+      .prose code { font-family: var(--mono); font-size: 0.82em; background: rgba(255, 255, 255, 0.08); border-radius: 3px; padding: 0.1em 0.35em; }
+      .cell-figures { display: flex; flex-direction: column; gap: 0.5rem; margin: 0.45rem 0 0; }
+      .figure { background: #fff; border-radius: 6px; padding: 0.5rem; align-self: flex-start; max-width: 100%; overflow: hidden; box-shadow: 0 1px 3px rgba(0, 0, 0, 0.4); }
+      .figure svg { display: block; width: 460px; max-width: 100%; height: auto; }
+      .output { margin: 0.35rem 0 0; padding: 0.45rem 0.75rem; background: transparent; border-left: 3px solid rgba(255, 255, 255, 0.14); font: 12.5px/1.5 var(--mono); white-space: pre-wrap; color: #b5b3ae; }
+      @keyframes arrive { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: none; } }
+      .c6-out > * { animation: arrive 0.22s ease-out both; }
+
+      /* ---------- the margin: history, one card per cell ---------- */
+      #ledger {
+        position: absolute; top: 0; left: calc(100% + 20px); width: 156px;
+        z-index: 3; font: 11px/1.45 var(--mono); color: var(--room-ink);
+      }
+      .lhead {
+        position: absolute; top: 0; left: 0; right: 0; padding: 8px 0 6px 10px; cursor: pointer; white-space: nowrap;
+        font: 10.5px var(--sans); letter-spacing: 0.14em; text-transform: uppercase; color: var(--room-ink-soft); transition: color 0.15s;
+      }
+      .lhead b { font-weight: 400; opacity: 0.75; letter-spacing: 0.04em; text-transform: none; }
+      .lhead:hover { color: var(--room-ink); }
+      .lcard {
+        position: absolute; left: 0; right: 0;
+        background: rgba(255, 255, 255, 0.022); border: 1px solid rgba(255, 255, 255, 0.06); border-radius: 8px;
+        padding: 7px 8px 6px 9px; transition: border-color 0.18s, top 0.18s;
+      }
+      .lcard:hover, .lcard.linked { border-color: rgba(157, 184, 214, 0.4); }
+      .lcard::before { content: ''; position: absolute; left: -21px; width: 16px; top: 15px; border-top: 1px solid rgba(255, 255, 255, 0.09); transition: border-color 0.18s; }
+      .lcard:hover::before, .lcard.linked::before { border-top-color: rgba(157, 184, 214, 0.45); }
+      .lcard .took { position: absolute; top: -8px; right: 8px; padding: 0 5px; border-radius: 4px; background: var(--bg); font: 10px var(--sans); letter-spacing: 0.02em; color: var(--room-ink-soft); opacity: 0; transition: opacity 0.15s; }
+      .lcard:hover .took, .lcard.linked .took { opacity: 1; }
+      .lrow { display: flex; align-items: center; gap: 0 6px; padding: 1px 4px; margin: 0 -4px; border-radius: 4px; white-space: nowrap; }
+      .lrow .m { flex: 0 0 auto; width: 1ch; font-style: normal; font-weight: 600; color: var(--room-ink-soft); }
+      .lrow .m.new { color: var(--green); }
+      .lrow .g { flex: 0 0 auto; width: 12px; height: 12px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; color: rgba(240, 238, 233, 0.38); }
+      .lrow b { font-weight: 600; color: var(--room-ink); overflow: hidden; text-overflow: ellipsis; }
+      .lrow span { color: var(--room-ink-soft); }
+      .lrow.viewable { cursor: pointer; }
+      .lrow.viewable:hover { background: rgba(255, 255, 255, 0.06); }
+      .lrow.viewable b { color: var(--blue); }
+      .lrow.scratch b { font-weight: 400; font-style: italic; }
+      .lrow.gone { opacity: 0.42; }
+      .lrow.gone b { text-decoration: line-through; text-decoration-color: rgba(255, 255, 255, 0.4); }
+      .lsub { padding-left: calc(1ch + 24px); font: 10px var(--sans); letter-spacing: 0.02em; color: var(--room-ink-soft); opacity: 0.8; }
+      /* what is in the box right now: a small box glyph on the row, a ring on the thumbnail */
+      .lrow .iv { display: none; flex: 0 0 auto; width: 11px; height: 11px; margin-left: auto; fill: none; stroke: var(--blue); stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+      .lrow.inbox .iv { display: block; }
+      .lcard.unseen { box-shadow: inset 2px 0 0 rgba(157, 184, 214, 0.65); }
+      .lthumb { display: block; margin: 6px 0 2px; background: #fff; border-radius: 4px; padding: 3px; box-shadow: 0 1px 3px rgba(0, 0, 0, 0.4); cursor: pointer; transition: transform 0.12s, box-shadow 0.15s; }
+      .lthumb:hover { transform: translateY(-1px); box-shadow: 0 3px 8px rgba(0, 0, 0, 0.45); }
+      .lthumb.inbox { box-shadow: 0 0 0 1.5px var(--blue), 0 1px 3px rgba(0, 0, 0, 0.4); }
+      .lthumb svg { display: block; width: 100%; height: auto; }
+      @keyframes lcard-in { from { opacity: 0; transform: translateX(14px); } to { opacity: 1; transform: none; } }
+      @keyframes lcard-settle {
+        0% { border-color: rgba(157, 184, 214, 0.7); box-shadow: 0 0 0 3px rgba(157, 184, 214, 0.16), inset 2px 0 0 rgba(157, 184, 214, 0.65); }
+        100% { border-color: rgba(255, 255, 255, 0.06); box-shadow: 0 0 0 3px rgba(157, 184, 214, 0), inset 2px 0 0 rgba(157, 184, 214, 0.65); }
+      }
+      .lcard.fresh { animation: lcard-in 0.24s ease-out both, lcard-settle 2s ease-out 0.2s both; }
+      .lcard.fresh:not(.unseen) { animation: lcard-in 0.24s ease-out both; }
+
+      /* the narrow window: the cards fold to the run chips' dots; hover a
+         dot and the cell's card shows as a popover in the frame's material,
+         click pins it; a run peeks it for a breath */
+      #app[data-ledger='dots'] #ledger { left: auto; right: 6px; width: 236px; }
+      #app[data-ledger='dots'] .lhead { display: none; }
+      #app[data-ledger='dots'] .lcard {
+        display: none; padding: 9px 10px 8px 11px; border-radius: 10px; z-index: 6;
+        background: #202023; border-color: rgba(255, 255, 255, 0.1); box-shadow: 0 12px 32px rgba(0, 0, 0, 0.45);
+      }
+      #app[data-ledger='dots'] .lcard.peek, #app[data-ledger='dots'] .lcard.pinned { display: block; }
+      #app[data-ledger='dots'] .lcard.pinned { border-color: rgba(157, 184, 214, 0.4); }
+      #app[data-ledger='dots'] .lcard::before { content: none; }
+      #app[data-ledger='dots'] .lcard .took { opacity: 1; background: #202023; }
+      #app[data-ledger='hidden'] #ledger, #app[data-ledger='hidden'] .run .dot { display: none; }
+
+      /* ---------- the box: attention, on the frame ---------- */
+      .boxlike { display: flex; flex-direction: column; background: var(--bg); color: var(--room-ink); overflow: hidden; }
+      #box {
+        position: absolute; top: var(--topbar); right: var(--edge); z-index: 8; width: 400px; height: 300px;
+        border-radius: var(--corner); box-shadow: var(--lift-box); will-change: transform;
+        transition: box-shadow 0.25s;
+      }
+      .boxmeasure { position: absolute; left: -9999px; top: 0; visibility: hidden; height: auto; }
+      .boxmeasure .spine { display: none; }
+      #box.linked { box-shadow: 0 0 0 1px rgba(157, 184, 214, 0.5), 0 1px 1.5px rgba(0, 0, 0, 0.42), 0 10px 26px rgba(0, 0, 0, 0.36); }
+      @keyframes box-lit {
+        0% { box-shadow: 0 0 0 1px rgba(157, 184, 214, 0.8), 0 0 0 5px rgba(157, 184, 214, 0.16), 0 1px 1.5px rgba(0, 0, 0, 0.42), 0 10px 26px rgba(0, 0, 0, 0.36); }
+        100% { box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.055), 0 0 0 5px rgba(157, 184, 214, 0), 0 1px 1.5px rgba(0, 0, 0, 0.42), 0 10px 26px rgba(0, 0, 0, 0.36); }
+      }
+      #box.lit { animation: box-lit 2.2s ease-out; }
+      .bhead { flex: 0 0 auto; display: flex; align-items: center; gap: 2px; height: 38px; padding: 0 6px; border-bottom: 1px solid var(--room-line); background: rgba(255, 255, 255, 0.018); }
+      .btab {
+        display: inline-flex; align-items: center; gap: 6px; min-width: 0; height: 26px; padding: 0 8px;
+        border: 0; border-radius: 7px; background: transparent; color: var(--room-ink-soft); cursor: pointer; white-space: nowrap;
+      }
+      .btab:hover { color: var(--room-ink); }
+      .btab.on { background: rgba(255, 255, 255, 0.07); color: var(--room-ink); }
+      .btab .g { flex: 0 0 auto; width: 13px; height: 13px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; opacity: 0.7; }
+      .btab b { font: 600 12.5px var(--mono); overflow: hidden; text-overflow: ellipsis; }
+      .btab.thing.on b { color: var(--room-ink); }
+      .btab .t { font: 11.5px var(--mono); color: var(--room-ink-soft); }
+      .btab.idx { font: 10.5px var(--sans); letter-spacing: 0.14em; text-transform: uppercase; }
+      .btab.idx i { font: 11px var(--mono); font-style: normal; letter-spacing: 0; opacity: 0.8; }
+      .bhead .spacer { flex: 1; }
+      .hb {
+        display: inline-flex; align-items: center; justify-content: center; flex: 0 0 auto; width: 24px; height: 24px;
+        padding: 0; border: 0; border-radius: 6px; background: transparent; color: var(--room-ink-soft); cursor: pointer; font-size: 12px;
+      }
+      .hb:hover { color: var(--room-ink); background: rgba(255, 255, 255, 0.07); }
+      .hb svg { width: 14px; height: 14px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+      .hb.pin.on { color: var(--blue); }
+      .hb.pin.on svg { fill: currentColor; }
+      .bbody { flex: 1 1 auto; min-height: 0; overflow: auto; transition: opacity 0.14s; }
+      .bbody.out { opacity: 0; }
+      .bfig { padding: 10px; }
+      .bfig .figure { display: block; max-width: none; padding: 8px; }
+      .bfig .figure svg { width: 100%; max-width: none; }
+      .bfoot {
+        flex: 0 0 auto; display: flex; align-items: center; gap: 6px; height: 32px; padding: 0 8px 0 12px;
+        border-top: 1px solid var(--room-line); font: 11.5px var(--sans); color: var(--room-ink-soft); white-space: nowrap; overflow: hidden;
+      }
+      .bfoot .from { cursor: pointer; }
+      .bfoot .from b { font: 11.5px var(--mono); color: var(--room-ink); }
+      .bfoot .from:hover, .bfoot .from:hover b { color: var(--blue); }
+      .bfoot .mode { margin-left: auto; opacity: 0.85; overflow: hidden; text-overflow: ellipsis; }
+      .newpill {
+        margin-left: auto; padding: 2px 9px; border: 1px solid rgba(157, 184, 214, 0.4); border-radius: 999px;
+        background: rgba(157, 184, 214, 0.1); color: var(--blue); font: 11.5px var(--sans); cursor: pointer; white-space: nowrap;
+      }
+      .newpill b { font: 600 11.5px var(--mono); }
+      .newpill:hover { background: rgba(157, 184, 214, 0.18); }
+      .bsub { padding: 7px 12px 5px; font: 11px var(--sans); color: var(--room-ink-soft); }
+      .bsub .m { font: 600 11px var(--mono); margin-right: 4px; }
+      .bmore { padding: 8px 12px 10px; font-size: 12px; color: var(--room-ink-soft); }
+      .bmore button { font: 12px/1 var(--sans); border: 1px solid var(--room-line); border-radius: 999px; background: transparent; color: var(--room-ink); padding: 0.25rem 0.7rem; cursor: pointer; }
+      .bmore button:hover { background: rgba(255, 255, 255, 0.07); }
+      .data-table { border-collapse: collapse; font: 12px/1.45 var(--mono); color: var(--room-ink); min-width: 100%; }
+      .data-table th, .data-table td { padding: 0.16rem 0.6rem; border-bottom: 1px solid rgba(255, 255, 255, 0.045); white-space: nowrap; text-align: right; }
+      .data-table thead th { position: sticky; top: 0; background: #2f2e32; color: var(--room-ink-soft); font-weight: 600; z-index: 1; }
+      .data-table tbody th { color: var(--room-ink-soft); font-weight: 400; text-align: left; padding-left: 12px; }
+      .data-table thead th:first-child { text-align: left; font-weight: 400; padding-left: 12px; }
+      .data-table td:last-child { padding-right: 14px; }
+      /* the Session tab: today's vars-table, sorted, with the cell that bound each name */
+      .vars-table { width: 100%; border-collapse: collapse; font: 12px/1.5 var(--mono); }
+      .vars-table td { padding: 0.24rem 0.45rem; vertical-align: top; }
+      .vars-table tr + tr td { border-top: 1px solid rgba(255, 255, 255, 0.045); }
+      .vars-table td:first-child { padding-left: 12px; }
+      .vars-table td:last-child { padding-right: 12px; }
+      .vars-table .v-name { font-weight: 600; white-space: nowrap; color: var(--room-ink); }
+      .vars-table .v-type { color: var(--room-ink-soft); white-space: nowrap; width: 100%; }
+      .vars-table .v-cell { color: var(--room-ink-soft); font: 11px/1.65 var(--sans); white-space: nowrap; text-align: right; cursor: pointer; }
+      .vars-table .v-cell:hover { color: var(--blue); }
+      .vars-table tr.scratch .v-name { font-weight: 400; font-style: italic; }
+      .vars-table tr.viewable { cursor: pointer; }
+      .vars-table tr.viewable:hover { background: rgba(255, 255, 255, 0.05); }
+      .vars-table tr.viewable .v-name { color: var(--blue); }
+      .vars-table tr.inbox { background: rgba(157, 184, 214, 0.07); }
+      .vars-table .v-dot { display: inline-block; width: 5px; height: 5px; border-radius: 50%; margin: 0 6px 1px 0; vertical-align: middle; background: transparent; }
+      .vars-table tr.unseen .v-dot { background: var(--blue); }
+      /* the spine: a window too narrow for the box tucks it to a tile in
+         the bay; a click opens the glance */
+      .spine { display: none; }
+      #box.tucked > :not(.spine) { display: none; }
+      #box.tucked .spine {
+        display: flex; flex-direction: column; align-items: center; gap: 10px; width: 100%; height: 100%; padding: 12px 0;
+        border: 0; background: transparent; color: var(--room-ink-soft); cursor: pointer; position: relative;
+      }
+      #box.tucked .spine:hover { color: var(--room-ink); background: rgba(255, 255, 255, 0.03); }
+      .spine .g { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+      .spine span { writing-mode: vertical-rl; font: 600 11.5px var(--mono); color: var(--blue); }
+      .spine .sdot { position: absolute; top: 8px; right: 8px; width: 6px; height: 6px; border-radius: 50%; background: var(--blue); display: none; }
+      #box.tucked.fresh-spine .sdot { display: block; }
+
+      /* the glance: ⤢, large over the dimmed window (Zen's glance) */
+      #glance {
+        position: absolute; inset: 0; z-index: 30; display: none; align-items: center; justify-content: center; padding: 48px;
+        background: rgba(14, 14, 16, 0.6); backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px);
+      }
+      #glance.on { display: flex; }
+      @keyframes pop { from { opacity: 0; transform: translateY(8px) scale(0.985); } to { opacity: 1; transform: none; } }
+      .gbox { width: min(900px, 100%); max-height: 100%; border-radius: 14px; box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.07), 0 30px 80px rgba(0, 0, 0, 0.6); animation: pop 0.2s ease-out; }
+      .gbox .bfig { padding: 16px; }
+      .gbox .bhead { height: 42px; padding: 0 10px; }
+
+      /* ---------- mockup chrome (not part of Knuth) ---------- */
+      #states {
+        position: fixed; left: 50%; bottom: 12px; transform: translateX(-50%); z-index: 100;
+        display: flex; flex-wrap: wrap; justify-content: center; align-items: center; gap: 2px; max-width: calc(100vw - 24px);
+        padding: 4px 6px 4px 12px; border-radius: 18px; border: 1px solid rgba(0, 0, 0, 0.08);
+        background: rgba(251, 250, 248, 0.93); backdrop-filter: blur(18px) saturate(140%);
+        box-shadow: 0 6px 18px rgba(0, 0, 0, 0.35); color: #2c2b29; font: 12px var(--sans); white-space: nowrap;
+      }
+      #states .lab { color: #6b6b6b; margin-right: 4px; letter-spacing: 0.06em; text-transform: uppercase; font-size: 10.5px; }
+      #states .sep { width: 1px; height: 16px; background: rgba(0, 0, 0, 0.12); margin: 0 6px; }
+      #states button { border: 0; background: transparent; color: #2c2b29; border-radius: 999px; padding: 4px 9px; cursor: pointer; }
+      #states button:hover { background: rgba(0, 0, 0, 0.06); }
+      #states button.on { background: #2c2b29; color: #fff; }
+      #states .hint { color: #6b6b6b; margin: 0 4px; font-size: 11.5px; }
+    </style>
+  </head>
+  <body>
+    <!-- the two figures, drawn once; the cell, the thumbnail, the box and the glance all use them -->
+    <svg width="0" height="0" style="position: absolute" aria-hidden="true">
+      <defs>
+        <symbol id="fig-line" viewBox="0 0 460 300">
+          <rect width="460" height="300" fill="#fff"/>
+          <g font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', 'Helvetica Neue', sans-serif" font-size="11" fill="#000">
+            <rect x="60" y="20" width="380" height="235" fill="none" stroke="#000" stroke-width="0.8"/>
+            <g stroke="#000" stroke-width="0.8">
+              <line x1="60" y1="255" x2="60" y2="259"/><line x1="144.4" y1="255" x2="144.4" y2="259"/><line x1="228.9" y1="255" x2="228.9" y2="259"/><line x1="313.3" y1="255" x2="313.3" y2="259"/><line x1="397.8" y1="255" x2="397.8" y2="259"/>
+              <line x1="56" y1="237" x2="60" y2="237"/><line x1="56" y1="192" x2="60" y2="192"/><line x1="56" y1="146.6" x2="60" y2="146.6"/><line x1="56" y1="101.4" x2="60" y2="101.4"/><line x1="56" y1="56" x2="60" y2="56"/>
+            </g>
+            <g text-anchor="middle"><text x="60" y="272">0.70</text><text x="144.4" y="272">0.80</text><text x="228.9" y="272">0.90</text><text x="313.3" y="272">1.00</text><text x="397.8" y="272">1.10</text></g>
+            <g text-anchor="end"><text x="52" y="241">300</text><text x="52" y="196">350</text><text x="52" y="150.6">400</text><text x="52" y="105.4">450</text><text x="52" y="60">500</text></g>
+            <text x="250" y="292" text-anchor="middle" font-size="12">price</text>
+            <text transform="translate(16 137.5) rotate(-90)" text-anchor="middle" font-size="12">median quantity</text>
+            <polyline points="102,38 229,137.5 398,237" fill="none" stroke="#1f77b4" stroke-width="1.6"/>
+            <circle cx="102" cy="38" r="3.6" fill="#1f77b4"/><circle cx="229" cy="137.5" r="3.6" fill="#1f77b4"/><circle cx="398" cy="237" r="3.6" fill="#1f77b4"/>
+          </g>
+        </symbol>
+        <!-- summary.plot.bar(y='elasticity', rot=0, legend=False); axhline(-1, ls='--') -->
+        <symbol id="fig-bar" viewBox="0 0 460 300">
+          <rect width="460" height="300" fill="#fff"/>
+          <g font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', 'Helvetica Neue', sans-serif" font-size="11" fill="#000">
+            <rect x="218.5" y="20" width="63" height="177.9" fill="#305c8a"/>
+            <rect x="345.2" y="20" width="63" height="203.1" fill="#305c8a"/>
+            <line x1="60" y1="187.9" x2="440" y2="187.9" stroke="#000" stroke-width="0.8" stroke-dasharray="5 3"/>
+            <rect x="60" y="20" width="380" height="235" fill="none" stroke="#000" stroke-width="0.8"/>
+            <g stroke="#000" stroke-width="0.8">
+              <line x1="123.3" y1="255" x2="123.3" y2="259"/><line x1="250" y1="255" x2="250" y2="259"/><line x1="376.7" y1="255" x2="376.7" y2="259"/>
+              <line x1="56" y1="20" x2="60" y2="20"/><line x1="56" y1="53.6" x2="60" y2="53.6"/><line x1="56" y1="87.1" x2="60" y2="87.1"/><line x1="56" y1="120.7" x2="60" y2="120.7"/><line x1="56" y1="154.3" x2="60" y2="154.3"/><line x1="56" y1="187.9" x2="60" y2="187.9"/><line x1="56" y1="221.4" x2="60" y2="221.4"/><line x1="56" y1="255" x2="60" y2="255"/>
+            </g>
+            <g text-anchor="middle"><text x="123.3" y="272">0.75</text><text x="250" y="272">0.90</text><text x="376.7" y="272">1.10</text></g>
+            <g text-anchor="end"><text x="52" y="24">0.0</text><text x="52" y="57.6">−0.2</text><text x="52" y="91.1">−0.4</text><text x="52" y="124.7">−0.6</text><text x="52" y="158.3">−0.8</text><text x="52" y="191.9">−1.0</text><text x="52" y="225.4">−1.2</text><text x="52" y="259">−1.4</text></g>
+            <text x="250" y="292" text-anchor="middle" font-size="12">price</text>
+          </g>
+        </symbol>
+        <symbol id="g-tbl" viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="14" rx="2"/><line x1="3" y1="10" x2="21" y2="10"/><line x1="3" y1="14.5" x2="21" y2="14.5"/><line x1="10" y1="5" x2="10" y2="19"/></symbol>
+        <symbol id="g-ser" viewBox="0 0 24 24"><rect x="8" y="3" width="8" height="18" rx="1.5"/><line x1="8" y1="9" x2="16" y2="9"/><line x1="8" y1="15" x2="16" y2="15"/></symbol>
+        <symbol id="g-fig" viewBox="0 0 24 24"><path d="M3 3v18h18"/><polyline points="7 16 11 10 14.5 13 20 6"/></symbol>
+        <symbol id="g-pip" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2.5"/><rect x="12" y="7" width="6" height="5" rx="1"/></symbol>
+        <symbol id="g-pin" viewBox="0 0 24 24"><path d="M9 3.5h6l-1 6.5 3.2 3.2v1.3H6.8v-1.3L10 10z"/><line x1="12" y1="14.5" x2="12" y2="20.5"/></symbol>
+        <symbol id="g-large" viewBox="0 0 24 24"><polyline points="15 3 21 3 21 9"/><polyline points="9 21 3 21 3 15"/><line x1="21" y1="3" x2="14" y2="10"/><line x1="3" y1="21" x2="10" y2="14"/></symbol>
+        <symbol id="g-small" viewBox="0 0 24 24"><polyline points="4 14 10 14 10 20"/><polyline points="20 10 14 10 14 4"/><line x1="14" y1="10" x2="21" y2="3"/><line x1="3" y1="21" x2="10" y2="14"/></symbol>
+      </defs>
+    </svg>
+
+    <div id="app">
+      <header id="topbar">
+        <div class="lights"><i></i><i></i><i></i></div>
+        <button class="tt" data-label="Open…"><svg viewBox="0 0 24 24"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg></button>
+        <div id="docpill">
+          <span class="name" title="Click to rename">analysis.py</span><span class="dirty">●</span>
+          <span class="path">~/Projects/ECON_0150/week-3</span>
+        </div>
+        <button class="tt" data-label="Download a copy"><svg viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg></button>
+        <span class="status"><i></i>uv · Python 3.13</span>
+      </header>
+
+      <nav id="rail" aria-label="Tools">
+        <button class="rb" data-label="Code cell"><svg viewBox="0 0 24 24"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg></button>
+        <button class="rb" data-label="Scratch cell"><svg viewBox="0 0 24 24"><rect x="4" y="4" width="16" height="16" rx="2" stroke-dasharray="3.4 2.8"/><line x1="9" y1="12" x2="15" y2="12"/></svg></button>
+        <button class="rb" data-label="Text cell"><svg viewBox="0 0 24 24"><polyline points="4 7 4 4 20 4 20 7"/><line x1="9" y1="20" x2="15" y2="20"/><line x1="12" y1="4" x2="12" y2="20"/></svg></button>
+        <div class="rule"></div>
+        <button class="rb solid" id="rb-stale" data-label="Run stale"><svg viewBox="0 0 24 24"><polygon points="7 4.5 19 12 7 19.5"/></svg></button>
+        <button class="rb solid" id="rb-all" data-label="Run all"><svg viewBox="0 0 24 24"><polygon points="3.5 5 11 12 3.5 19"/><polygon points="13 5 20.5 12 13 19"/></svg></button>
+        <button class="rb" data-label="Stop"><svg viewBox="0 0 24 24"><rect x="6.5" y="6.5" width="11" height="11" rx="1.5"/></svg></button>
+        <button class="rb" data-label="Restart session"><svg viewBox="0 0 24 24"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"/></svg></button>
+        <div class="grow"></div>
+        <button class="rb on" id="rb-session" data-label="Session: in the margin"><svg viewBox="0 0 24 24"><path d="M8.5 3H7.5a2 2 0 0 0-2 2v4.5a2 2 0 0 1-2 2.5 2 2 0 0 1 2 2.5V19a2 2 0 0 0 2 2h1"/><path d="M15.5 3h1a2 2 0 0 1 2 2v4.5a2 2 0 0 0 2 2.5 2 2 0 0 0-2 2.5V19a2 2 0 0 1-2 2h-1"/></svg></button>
+        <button class="rb on" id="rb-box" data-label="The box: open"><svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2.5"/><rect id="pip-inner" x="12" y="7" width="6" height="5" rx="1"/></svg><i class="badge"></i></button>
+        <button class="rb" data-label="Source view"><svg viewBox="0 0 24 24"><path d="M4 6h16M4 12h10M4 18h13"/></svg></button>
+      </nav>
+
+      <main id="room">
+        <svg id="roomshape" aria-hidden="true"><path d=""/></svg>
+        <div id="doc">
+          <div id="page">
+            <div id="sheet">
+              <button class="pkg">▸ Packages <span class="list">pandas · matplotlib</span></button>
+
+              <div class="cell-wrap" id="c1">
+                <div class="insert-zone"></div>
+                <div class="cell kind-program">
+                  <div class="body">
+                    <div class="cm">
+                      <div class="gut"><button class="run" title="Run cell (Cmd-Enter)"></button><div class="ln"></div><div class="fold"></div></div>
+                      <div class="code">
+                        <div class="line"><span class="k">import</span> pandas <span class="k">as</span> pd</div>
+                        <div class="line">prices <span class="o">=</span> pd.<span class="p">read_csv</span>(<span class="s">'prices.csv'</span>)</div>
+                        <div class="line">prices.<span class="p">describe</span>()</div>
+                      </div>
+                    </div>
+                    <pre class="output">             price     quantity
+count  1200.000000  1200.000000
+mean      0.916667   410.283333
+std       0.144455   112.608109
+min       0.750000     0.000000
+50%       0.900000   409.000000
+max       1.100000   713.000000</pre>
+                  </div>
+                </div>
+              </div>
+
+              <div class="cell-wrap" id="c2">
+                <div class="insert-zone"></div>
+                <div class="cell kind-text">
+                  <div class="body">
+                    <div class="prose">
+                      <h2>Demand at three prices</h2>
+                      <p>Each row of the table is one buyer’s answer at the price they were shown. The curve below joins the three medians; the slope between neighbouring medians is the elasticity we report at the end.</p>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <div class="cell-wrap" id="c3">
+                <div class="insert-zone"></div>
+                <div class="cell kind-program">
+                  <div class="body">
+                    <div class="cm">
+                      <div class="gut"><button class="run" title="Run cell (Cmd-Enter)"></button><div class="ln"></div><div class="fold"></div></div>
+                      <div class="code">
+                        <div class="line">demand <span class="o">=</span> prices.<span class="p">groupby</span>(<span class="s">'price'</span>).<span class="p">quantity</span>.<span class="p">median</span>()</div>
+                        <div class="line">ax <span class="o">=</span> demand.<span class="p">plot</span>(marker<span class="o">=</span><span class="s">'o'</span>)</div>
+                        <div class="line">ax.<span class="p">set_ylabel</span>(<span class="s">'median quantity'</span>)</div>
+                      </div>
+                    </div>
+                    <div class="cell-figures"><div class="figure"><svg viewBox="0 0 460 300" role="img" aria-label="median quantity against price"><use href="#fig-line"/></svg></div></div>
+                    <pre class="output">Text(0, 0.5, 'median quantity')</pre>
+                  </div>
+                </div>
+              </div>
+
+              <div class="cell-wrap" id="c4">
+                <div class="insert-zone"></div>
+                <div class="cell kind-scratch">
+                  <div class="body">
+                    <div class="scratch-label">scratch</div>
+                    <div class="cm">
+                      <div class="gut"><button class="run" title="Run cell (Cmd-Enter)"></button><div class="ln"></div><div class="fold"></div></div>
+                      <div class="code">
+                        <div class="line">tmp <span class="o">=</span> demand.<span class="p">pct_change</span>()</div>
+                        <div class="line">tmp</div>
+                      </div>
+                    </div>
+                    <pre class="output">price
+0.75         NaN
+0.90   -0.211538
+1.10   -0.268293
+Name: quantity, dtype: float64</pre>
+                  </div>
+                </div>
+              </div>
+
+              <div class="cell-wrap" id="c5">
+                <div class="insert-zone"></div>
+                <div class="cell kind-program">
+                  <div class="body">
+                    <div class="cm">
+                      <div class="gut"><button class="run" title="Run cell (Cmd-Enter)"></button><div class="ln"></div><div class="fold"></div></div>
+                      <div class="code">
+                        <div class="line">prices <span class="o">=</span> prices[prices.<span class="p">quantity</span> <span class="o">&gt;</span> <span class="n">0</span>]          <span class="c"># drop the no-sale rows</span></div>
+                        <div class="line">dp <span class="o">=</span> demand.<span class="p">index</span>.<span class="p">to_series</span>().<span class="p">pct_change</span>()</div>
+                        <div class="line">elasticity <span class="o">=</span> (demand.<span class="p">pct_change</span>() <span class="o">/</span> dp).<span class="p">dropna</span>()</div>
+                        <div class="line">elasticity.<span class="p">round</span>(<span class="n">2</span>)</div>
+                      </div>
+                    </div>
+                    <pre class="output">price
+0.90   -1.06
+1.10   -1.21
+Name: quantity, dtype: float64</pre>
+                  </div>
+                </div>
+              </div>
+
+              <!-- the new cell: written, not yet run (new program cells are stale: document-view.ts spliceIn) -->
+              <div class="cell-wrap" id="c6">
+                <div class="insert-zone"></div>
+                <div class="cell kind-program stale">
+                  <div class="body">
+                    <div class="cm">
+                      <div class="gut"><button class="run" title="Run cell (Cmd-Enter)"></button><div class="ln"></div><div class="fold"></div></div>
+                      <div class="code">
+                        <div class="line">summary <span class="o">=</span> pd.<span class="p">DataFrame</span>({<span class="s">'demand'</span>: demand, <span class="s">'elasticity'</span>: elasticity})</div>
+                        <div class="line">ax2 <span class="o">=</span> summary.<span class="p">plot</span>.<span class="p">bar</span>(y<span class="o">=</span><span class="s">'elasticity'</span>, rot<span class="o">=</span><span class="n">0</span>, legend<span class="o">=</span><span class="k">False</span>, color<span class="o">=</span><span class="s">'#305c8a'</span>)</div>
+                        <div class="line">ax2.<span class="p">axhline</span>(<span class="o">-</span><span class="n">1</span>, ls<span class="o">=</span><span class="s">'--'</span>, lw<span class="o">=</span><span class="n">0.8</span>, color<span class="o">=</span><span class="s">'k'</span>)   <span class="c"># unit elasticity</span></div>
+                      </div>
+                    </div>
+                    <div class="c6-out"></div>
+                  </div>
+                </div>
+              </div>
+
+              <div class="cell-wrap" id="c7">
+                <div class="insert-zone"></div>
+                <div class="cell kind-text">
+                  <div class="body">
+                    <div class="prose">
+                      <p>Both bars fall below the dashed line: at these prices demand is <em>elastic</em>, and a price cut would raise revenue. The next section checks whether that holds in each region.</p>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- The margin. One card per cell that bound something; the script sets each
+                 card's top from its cell's first line, stacking down only on overlap. -->
+            <aside id="ledger" aria-label="Session, by cell">
+              <div class="lhead" title="The whole session, sorted, in the box">Session <b>· <span id="lcount">6</span> names</b></div>
+
+              <div class="lcard" data-cell="c1" data-took="1.2 s">
+                <div class="lrow gone" data-name="prices" data-type="DataFrame 1200×2" title="Rebound by cell 5"><i class="m new">+</i><svg class="g"><use href="#g-tbl"/></svg><b>prices</b><span>1200×2</span></div>
+                <div class="lsub">rebound in cell 5 ↓</div>
+              </div>
+
+              <div class="lcard" data-cell="c3" data-took="0.38 s">
+                <div class="lrow viewable" data-view="demand" data-name="demand" data-type="Series 3"><i class="m new">+</i><svg class="g"><use href="#g-ser"/></svg><b>demand</b><span>3</span></div>
+                <div class="lrow viewable" data-fig="line" data-name="ax" data-type="Axes"><i class="m new">+</i><svg class="g"><use href="#g-fig"/></svg><b>ax</b><span>Axes</span></div>
+                <div class="lthumb" data-fig="line" title="Look at it in the box"><svg viewBox="0 0 460 300"><use href="#fig-line"/></svg></div>
+              </div>
+
+              <div class="lcard" data-cell="c4" data-took="12 ms">
+                <div class="lrow viewable scratch" data-view="tmp" data-name="tmp" data-type="Series 3 · scratch"><i class="m new">+</i><svg class="g"><use href="#g-ser"/></svg><b>tmp</b><span>3</span></div>
+              </div>
+
+              <div class="lcard" data-cell="c5" data-took="41 ms">
+                <div class="lrow viewable" data-view="prices" data-name="prices" data-type="DataFrame 1187×2"><i class="m">~</i><svg class="g"><use href="#g-tbl"/></svg><b>prices</b><span>1187×2</span></div>
+                <div class="lrow viewable" data-view="dp" data-name="dp" data-type="Series 3"><i class="m new">+</i><svg class="g"><use href="#g-ser"/></svg><b>dp</b><span>3</span></div>
+                <div class="lrow viewable" data-view="elasticity" data-name="elasticity" data-type="Series 2"><i class="m new">+</i><svg class="g"><use href="#g-ser"/></svg><b>elasticity</b><span>2</span></div>
+              </div>
+            </aside>
+          </div>
+        </div>
+      </main>
+
+      <!-- The box: on the frame, in the bay the room draws aside to make. -->
+      <section id="box" class="boxlike" aria-label="Looking at"></section>
+      <div id="glance" aria-label="Glance"></div>
+    </div>
+
+    <!-- cell 6 after its run: the figure and the readout under the cell, and a new card -->
+    <template id="c6-after">
+      <div class="cell-figures"><div class="figure"><svg viewBox="0 0 460 300" role="img" aria-label="elasticity by price, unit elasticity dashed"><use href="#fig-bar"/></svg></div></div>
+      <pre class="output">&lt;matplotlib.lines.Line2D at 0x13f2a6d50&gt;</pre>
+    </template>
+    <template id="c6-card">
+      <div class="lcard" data-cell="c6" data-took="0.24 s">
+        <div class="lrow viewable" data-view="summary" data-name="summary" data-type="DataFrame 3×2"><i class="m new">+</i><svg class="g"><use href="#g-tbl"/></svg><b>summary</b><span>3×2</span></div>
+        <div class="lrow viewable" data-fig="bar" data-name="ax2" data-type="Axes"><i class="m new">+</i><svg class="g"><use href="#g-fig"/></svg><b>ax2</b><span>Axes</span></div>
+        <div class="lthumb" data-fig="bar" title="Look at it in the box"><svg viewBox="0 0 460 300"><use href="#fig-bar"/></svg></div>
+      </div>
+    </template>
+
+    <div id="states" aria-label="Mockup states">
+      <span class="lab">Window</span>
+      <button data-win="fit">Fit</button>
+      <button data-win="1920">1920</button>
+      <button data-win="1728">1728</button>
+      <button data-win="1512">1512</button>
+      <button data-win="1440">1440</button>
+      <button data-win="1280">1280</button>
+      <button data-win="1100">1100</button>
+      <span class="sep"></span>
+      <button id="st-run">Run the new cell</button>
+      <button id="st-hold">Hold ax, then run</button>
+      <button id="st-table">Pick a table</button>
+      <button id="st-glance">Glance</button>
+      <button id="st-reset">Reset</button>
+      <span class="hint">· or click any ▶, a thumbnail, a name</span>
+    </div>
+
+    <script>
+      (function () {
+        'use strict';
+        const $ = (s, r) => (r || document).querySelector(s);
+        const $$ = (s, r) => Array.from((r || document).querySelectorAll(s));
+        const body = document.body, app = $('#app'), room = $('#room'), doc = $('#doc'), page = $('#page');
+        const ledger = $('#ledger'), box = $('#box'), glance = $('#glance'), shape = $('#roomshape path');
+        const tileSession = $('#rb-session'), tileBox = $('#rb-box');
+
+        /* ---- the numbers: the column, the margin, the box ---- */
+        const COL = 832;          /* the cell column, 52rem: never narrows */
+        const LW = 156, TIE = 20, LPAD = 12; /* a card, the gap to it (the tie), the gap after it */
+        const LEFTMIN = 16;       /* the column's least left margin */
+        const GAP = 8;            /* the frame's edge, between the room and the box */
+        const WCARDS = 412;       /* the box keeps the cards only while it is at least this wide */
+        const WMIN = 308;         /* the box's floor; below it, the spine */
+        const WMAX = 720;
+        const SPINE_W = 40, SPINE_H = 120;
+        const R_OUT = 12, R_IN = R_OUT + GAP; /* the room's corners; the bay's inner corner, concentric with the box's */
+
+        /* ---- the parts of the bench the app builds for itself ---- */
+        const PILL = '<div class="insert-actions">' +
+          '<button title="Code"><svg viewBox="0 0 24 24"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg></button>' +
+          '<button title="Scratch"><svg viewBox="0 0 24 24"><rect x="4" y="4" width="16" height="16" rx="2" stroke-dasharray="3.4 2.8"/><line x1="9" y1="12" x2="15" y2="12"/></svg></button>' +
+          '<button title="Text"><svg viewBox="0 0 24 24"><polyline points="4 7 4 4 20 4 20 7"/><line x1="9" y1="20" x2="15" y2="20"/><line x1="12" y1="4" x2="12" y2="20"/></svg></button></div>';
+        $$('.insert-zone').forEach((z) => (z.innerHTML = PILL));
+        $$('.cm').forEach((cm) => {
+          const n = $$('.line', cm).length;
+          $('.ln', cm).innerHTML = Array.from({ length: n }, (_, i) => '<span>' + (i + 1) + '</span>').join('');
+        });
+        $$('.run').forEach((b) => b.insertAdjacentHTML('beforeend', '<i class="dot" title="What this run put in the session"></i>'));
+        for (const card of $$('.lcard', ledger)) $('.cell', document.getElementById(card.dataset.cell)).classList.add('ran');
+        $('#c5 .cell').classList.add('ran-last');
+
+        /* ---- the data behind the names ---- */
+        let seed = 11;
+        const rnd = () => ((seed = (seed * 1103515245 + 12345) % 2147483648) / 2147483648);
+        const med = { '0.75': 520, '0.90': 410, '1.10': 300 };
+        const raw = [];
+        for (let i = 0; i < 112; i++) {
+          const p = ['0.75', '0.90', '1.10'][i % 3];
+          const q = i === 7 || i === 41 || i === 86 ? 0 : Math.max(1, Math.round(med[p] + (rnd() + rnd() + rnd() - 1.5) * 150));
+          raw.push({ i, p, q });
+        }
+        const kept = raw.filter((r) => r.q > 0).slice(0, 100);
+        const DATA = {
+          prices: { name: 'prices', type: 'DataFrame', shape: '1187×2', glyph: 'g-tbl', index: '', cols: ['price', 'quantity'],
+            rows: kept.map((r) => [r.p, String(r.q)]), idx: kept.map((r) => String(r.i)), total: 1187, from: 'c5',
+            note: '<span class="m">~</span>rebound in cell 5; it was 1200×2, from cell 1. Rows 7, 41, 86 are gone.' },
+          demand: { name: 'demand', type: 'Series', shape: '3', glyph: 'g-ser', index: 'price', cols: ['quantity'], rows: [['520.0'], ['410.0'], ['300.0']], idx: ['0.75', '0.90', '1.10'], total: 3, from: 'c3' },
+          tmp: { name: 'tmp', type: 'Series', shape: '3', glyph: 'g-ser', index: 'price', cols: ['quantity'], rows: [['NaN'], ['-0.211538'], ['-0.268293']], idx: ['0.75', '0.90', '1.10'], total: 3, from: 'c4', note: 'scratch: session only, never saved' },
+          dp: { name: 'dp', type: 'Series', shape: '3', glyph: 'g-ser', index: 'price', cols: ['price'], rows: [['NaN'], ['0.200000'], ['0.222222']], idx: ['0.75', '0.90', '1.10'], total: 3, from: 'c5' },
+          elasticity: { name: 'elasticity', type: 'Series', shape: '2', glyph: 'g-ser', index: 'price', cols: ['quantity'], rows: [['-1.057692'], ['-1.207317']], idx: ['0.90', '1.10'], total: 2, from: 'c5' },
+          summary: { name: 'summary', type: 'DataFrame', shape: '3×2', glyph: 'g-tbl', index: 'price', cols: ['demand', 'elasticity'], rows: [['520.0', 'NaN'], ['410.0', '-1.057692'], ['300.0', '-1.207317']], idx: ['0.75', '0.90', '1.10'], total: 3, from: 'c6' },
+        };
+        const FIGS = {
+          line: { name: 'ax', from: 'c3', sym: '#fig-line', alt: 'median quantity against price' },
+          bar: { name: 'ax2', from: 'c6', sym: '#fig-bar', alt: 'elasticity by price, unit elasticity dashed' },
+        };
+        const TOOK = { c1: '1.2 s', c3: '0.38 s', c4: '12 ms', c5: '41 ms', c6: '0.24 s' };
+
+        /* ---- state ---- */
+        let scale = 1, preset = 'fit';
+        let ledgerPref = 'auto';            /* auto | dots | hidden: the rail's Session tile */
+        let boxOpen = true;
+        let geo = { left: LEFTMIN, W: 400, mode: 'cards', tucked: false };
+        const anim = { t: 1, W: 400, H: 300 }, target = { t: 1, W: 400, H: 300 };
+        let thing = { kind: 'figure', key: 'line' }; /* what the box shows */
+        let tab = 'thing';                  /* thing | index */
+        let held = false;                   /* a pick or the pin: runs don't replace it */
+        let pending = null;                 /* a newer figure, waiting while held */
+        let latestFig = 'line';
+        let glanceOn = false;
+
+        const esc = (s) => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+        const cellNo = (id) => id.slice(1);
+        const cardFor = (id) => $('.lcard[data-cell="' + id + '"]', ledger);
+        function info(t) {
+          if (t.kind === 'figure') { const f = FIGS[t.key]; return { name: f.name, type: 'Axes', short: 'Axes', from: f.from, glyph: 'g-fig' }; }
+          const d = DATA[t.key]; return { name: d.name, type: d.type + ' ' + d.shape, short: d.shape, from: d.from, glyph: d.glyph };
+        }
+        /* the session as the margin knows it: every live row, sorted */
+        function namespace() {
+          const rows = [];
+          for (const card of $$('.lcard', ledger)) {
+            for (const r of $$('.lrow:not(.gone)', card)) {
+              rows.push({ name: r.dataset.name, type: r.dataset.type, cell: card.dataset.cell, view: r.dataset.view, fig: r.dataset.fig,
+                scratch: r.classList.contains('scratch'), unseen: card.classList.contains('unseen') });
+            }
+          }
+          return rows.sort((a, b) => a.name.localeCompare(b.name));
+        }
+
+        /* ---- the room's outline: a rounded rectangle, or one with a bay
+           cut from its top-right corner for the box (bw, bh include the
+           8px edge). Convex corners 12, the bay's inner corner 20, so it
+           is concentric with the box's own 12px corner. ---- */
+        function rect(w, h, r) {
+          return 'M ' + r + ' 0 L ' + (w - r) + ' 0 A ' + r + ' ' + r + ' 0 0 1 ' + w + ' ' + r + ' L ' + w + ' ' + (h - r) +
+            ' A ' + r + ' ' + r + ' 0 0 1 ' + (w - r) + ' ' + h + ' L ' + r + ' ' + h + ' A ' + r + ' ' + r + ' 0 0 1 0 ' + (h - r) +
+            ' L 0 ' + r + ' A ' + r + ' ' + r + ' 0 0 1 ' + r + ' 0 Z';
+        }
+        function roomPath(w, h, bw, bh) {
+          const r = R_OUT, q = R_IN;
+          if (bw < r + q + 1 || bh < r + q + 1 || bh > h - r - 2) return rect(w, h, r);
+          const x = w - bw, f = (n) => Math.round(n * 10) / 10;
+          return 'M ' + r + ' 0 L ' + f(x - r) + ' 0 A ' + r + ' ' + r + ' 0 0 1 ' + f(x) + ' ' + r +
+            ' L ' + f(x) + ' ' + f(bh - q) + ' A ' + q + ' ' + q + ' 0 0 0 ' + f(x + q) + ' ' + f(bh) +
+            ' L ' + (w - r) + ' ' + f(bh) + ' A ' + r + ' ' + r + ' 0 0 1 ' + w + ' ' + f(bh + r) +
+            ' L ' + w + ' ' + (h - r) + ' A ' + r + ' ' + r + ' 0 0 1 ' + (w - r) + ' ' + h +
+            ' L ' + r + ' ' + h + ' A ' + r + ' ' + r + ' 0 0 1 0 ' + (h - r) + ' L 0 ' + r + ' A ' + r + ' ' + r + ' 0 0 1 ' + r + ' 0 Z';
+        }
+        function apply() {
+          const w = room.clientWidth, h = room.clientHeight;
+          const d = roomPath(w, h, anim.t * (anim.W + GAP), anim.H + GAP);
+          shape.setAttribute('d', d);
+          doc.style.clipPath = "path('" + d + "')";
+          box.style.width = anim.W + 'px';
+          box.style.height = anim.H + 'px';
+          box.style.transform = 'translateX(' + (1 - anim.t) * (anim.W + 24) + 'px)';
+          box.style.visibility = anim.t < 0.02 ? 'hidden' : 'visible';
+        }
+        let raf = 0;
+        function tween(dur) {
+          cancelAnimationFrame(raf);
+          const from = { t: anim.t, W: anim.W, H: anim.H }, to = { t: target.t, W: target.W, H: target.H }, t0 = performance.now();
+          const step = (now) => {
+            const k = Math.min(1, (now - t0) / (dur || 320)), e = 1 - Math.pow(1 - k, 3);
+            anim.t = from.t + (to.t - from.t) * e; anim.W = from.W + (to.W - from.W) * e; anim.H = from.H + (to.H - from.H) * e;
+            apply();
+            if (k < 1) raf = requestAnimationFrame(step);
+          };
+          raf = requestAnimationFrame(step);
+        }
+
+        /* ---- fit: where the column sits, whether the cards fit, how wide
+           the box is. The column is held to the layout with the box open,
+           so opening and closing the box never moves a cell. ---- */
+        function fit(snap) {
+          const R = room.clientWidth;
+          const unitCards = COL + TIE + LW + LPAD, unitDots = COL + 16, centred = (R - COL) / 2;
+          const Sc = R - LEFTMIN - unitCards - GAP, Sd = R - LEFTMIN - unitDots - GAP;
+          /* 1. the column's place depends on the window alone (never on the
+             box, the cards or the Session tile): the widest arrangement the
+             window can hold, the column as far right as it allows, up to centred */
+          let left, tucked = false;
+          if (Sc >= WCARDS) left = LEFTMIN + Math.max(0, Sc - WMAX);
+          else if (Sd >= WMIN) left = LEFTMIN + Math.max(0, Sd - WMAX);
+          else { tucked = true; left = Math.min(centred, R - unitDots - SPINE_W - GAP); }
+          left = Math.max(LEFTMIN, Math.min(left, centred));
+          /* 2. the box takes what is right of the column and its cards (or of the column alone, when the cards fold) */
+          const cardsIfOpen = ledgerPref === 'auto' && R - left - unitCards - GAP >= WCARDS;
+          const W = tucked ? SPINE_W : Math.min(WMAX, R - left - (cardsIfOpen ? unitCards : unitDots) - GAP);
+          /* 3. with the box closed the margin is free again: the cards come back if they fit, and nothing moves */
+          const mode = ledgerPref === 'hidden' ? 'hidden'
+            : (boxOpen ? cardsIfOpen : ledgerPref === 'auto' && left + unitCards <= R) ? 'cards' : 'dots';
+          geo = { left, W, mode, tucked };
+          app.dataset.ledger = mode;
+          box.classList.toggle('tucked', tucked);
+          page.style.marginLeft = Math.round(left) + 'px';
+          target.W = W; target.t = boxOpen ? 1 : 0; target.H = tucked ? SPINE_H : measure();
+          if (snap) { anim.t = target.t; anim.W = target.W; anim.H = target.H; cancelAnimationFrame(raf); apply(); } else tween();
+          labelTiles();
+          layout();
+        }
+
+        /* ---- the margin: each card's top is its cell's first line ---- */
+        function relTop(el) { return (el.getBoundingClientRect().top - page.getBoundingClientRect().top) / scale; }
+        function layout() {
+          const dots = app.dataset.ledger === 'dots';
+          const minTop = dots ? 0 : $('.lhead', ledger).offsetHeight + 6;
+          let prev = -1e9;
+          for (const card of $$('.lcard', ledger)) {
+            const cell = document.getElementById(card.dataset.cell);
+            let top = relTop($('.cm', cell) || cell);
+            if (!dots) { top = Math.max(top, prev + 10, minTop); prev = top + card.offsetHeight; }
+            card.style.top = Math.round(top) + 'px';
+          }
+        }
+
+        /* ---- the box: what it says ---- */
+        function headHtml(inGlance) {
+          const i = info(thing), n = namespace().length;
+          return '<div class="bhead">' +
+            '<button class="btab thing' + (tab === 'thing' ? ' on' : '') + '" data-tab="thing" title="' + esc(i.name + ' · ' + i.type) + '"><svg class="g"><use href="#' + i.glyph + '"/></svg><b>' + esc(i.name) + '</b><span class="t">' + esc(i.short) + '</span></button>' +
+            '<button class="btab idx' + (tab === 'index' ? ' on' : '') + '" data-tab="index" title="The whole session, sorted">Session <i>' + n + '</i></button>' +
+            '<span class="spacer"></span>' +
+            '<button class="hb pin' + (held ? ' on' : '') + '" data-act="pin" title="' + (held ? 'Held. Click to follow new figures again' : 'Hold this: runs won’t replace it') + '"><svg viewBox="0 0 24 24"><use href="#g-pin"/></svg></button>' +
+            '<button class="hb" data-act="' + (inGlance ? 'unglance' : 'glance') + '" title="' + (inGlance ? 'Back to the edge (Esc)' : 'Glance: large, for the projector') + '"><svg viewBox="0 0 24 24"><use href="#' + (inGlance ? 'g-small' : 'g-large') + '"/></svg></button>' +
+            (inGlance ? '' : '<button class="hb" data-act="close" title="Close the box (the rail’s box tile opens it)">✕</button>') +
+            '</div>';
+        }
+        function tableHtml(key) {
+          const d = DATA[key], shown = d.rows.slice(0, 100);
+          let h = d.note ? '<div class="bsub">' + d.note + '</div>' : '';
+          h += '<table class="data-table"><thead><tr><th>' + d.index + '</th>' + d.cols.map((c) => '<th>' + c + '</th>').join('') + '</tr></thead><tbody>';
+          shown.forEach((r, i) => { h += '<tr><th>' + d.idx[i] + '</th>' + r.map((v) => '<td>' + v + '</td>').join('') + '</tr>'; });
+          h += '</tbody></table><div class="bmore">' + (d.total > shown.length ? '<button data-act="more">More (' + shown.length + ' of ' + d.total + ' rows)</button>' : d.total + (d.total === 1 ? ' row' : ' rows')) + '</div>';
+          return h;
+        }
+        function indexHtml() {
+          const rows = namespace();
+          let h = '<table class="vars-table"><tbody>';
+          for (const r of rows) {
+            const isIn = (r.fig && thing.kind === 'figure' && thing.key === r.fig) || (r.view && thing.kind === 'table' && thing.key === r.view);
+            const cls = ['viewable', r.scratch ? 'scratch' : '', r.unseen ? 'unseen' : '', isIn ? 'inbox' : ''].filter(Boolean).join(' ');
+            h += '<tr class="' + cls + '"' + (r.view ? ' data-view="' + r.view + '"' : '') + (r.fig ? ' data-fig="' + r.fig + '"' : '') + '>' +
+              '<td class="v-name"><i class="v-dot"></i>' + esc(r.name) + '</td><td class="v-type">' + esc(r.type) + '</td>' +
+              '<td class="v-cell" data-cell="' + r.cell + '" title="Go to the cell">cell ' + cellNo(r.cell) + '</td></tr>';
+          }
+          return h + '</tbody></table>';
+        }
+        function bodyHtml() {
+          if (tab === 'index') return indexHtml();
+          if (thing.kind === 'figure') { const f = FIGS[thing.key]; return '<div class="bfig"><div class="figure"><svg viewBox="0 0 460 300" role="img" aria-label="' + f.alt + '"><use href="' + f.sym + '"/></svg></div></div>'; }
+          return tableHtml(thing.key);
+        }
+        function footHtml() {
+          if (tab === 'index') return '<div class="bfoot"><span>a name opens it here</span><span class="mode">scratch in italics</span></div>';
+          const i = info(thing);
+          let h = '<div class="bfoot"><span class="from" data-cell="' + i.from + '" title="Go to the cell">bound by <b>cell ' + cellNo(i.from) + '</b></span><span>· ' + TOOK[i.from] + '</span>';
+          if (held && pending) h += '<button class="newpill" data-act="take" title="Show it here">New: <b>' + FIGS[pending.key].name + '</b>, cell ' + cellNo(FIGS[pending.key].from) + ' →</button>';
+          else h += '<span class="mode">' + (held ? 'held' : 'follows new figures') + '</span>';
+          return h + '</div>';
+        }
+        function spineHtml() {
+          const i = info(thing);
+          return '<button class="spine" data-act="glance" title="Look at ' + esc(i.name) + '"><svg class="g"><use href="#g-pip"/></svg><span>' + esc(i.name) + '</span><i class="sdot"></i></button>';
+        }
+        const boxHtml = () => headHtml(false) + '<div class="bbody">' + bodyHtml() + '</div>' + footHtml() + spineHtml();
+        function measure() {
+          const m = document.createElement('div');
+          m.className = 'boxlike boxmeasure';
+          m.style.width = target.W + 'px';
+          m.innerHTML = boxHtml();
+          app.appendChild(m);
+          const h = $('.bhead', m).offsetHeight + $('.bbody', m).scrollHeight + $('.bfoot', m).offsetHeight;
+          m.remove();
+          /* a box, not a column: at most about three-fifths of the room's
+             height, so the room always visibly flows back under it */
+          return Math.round(Math.max(150, Math.min(h, Math.max(300, room.clientHeight * 0.62))));
+        }
+        function syncMarks() {
+          $$('.inbox', ledger).forEach((e) => e.classList.remove('inbox'));
+          if (!boxOpen) return;
+          const sel = thing.kind === 'figure' ? '[data-fig="' + thing.key + '"]' : '.lrow[data-view="' + thing.key + '"]';
+          $$(sel, ledger).forEach((e) => e.classList.add('inbox'));
+        }
+        function lit() { box.classList.remove('lit'); void box.offsetWidth; box.classList.add('lit'); }
+        function draw() {
+          box.innerHTML = boxHtml();
+          syncMarks();
+          target.H = geo.tucked ? SPINE_H : measure();
+          tween();
+          if (glanceOn) drawGlance();
+        }
+        /* swap: the content fades out and in; lit: the box's edge lights blue and settles */
+        function renderBox(how) {
+          how = how || {};
+          if (how.swap && boxOpen && !geo.tucked) {
+            const b = $('.bbody', box);
+            if (b) b.classList.add('out');
+            setTimeout(() => {
+              draw();
+              const nb = $('.bbody', box);
+              nb.classList.add('out'); void nb.offsetWidth; nb.classList.remove('out');
+              if (how.lit) lit();
+            }, 140);
+          } else { draw(); if (how.lit) lit(); }
+        }
+
+        /* the rules: a pick holds; a run's new figure is followed, or waits while held */
+        function look(t) {
+          held = true; thing = t; pending = null; tab = 'thing';
+          if (!boxOpen) setBoxOpen(true);
+          renderBox({ swap: true });
+          if (geo.tucked) openGlance();
+        }
+        function followLatest() { thing = { kind: 'figure', key: latestFig }; tab = 'thing'; renderBox({ swap: true }); }
+        function offer(figKey) {
+          latestFig = figKey;
+          if (!boxOpen) { tileBox.classList.add('has-new'); return; }
+          if (held) {
+            if (thing.kind === 'figure' && thing.key === figKey) { renderBox({ lit: true }); return; }
+            pending = { kind: 'figure', key: figKey };
+            renderBox({ lit: true });
+            return;
+          }
+          thing = { kind: 'figure', key: figKey }; tab = 'thing';
+          if (geo.tucked) box.classList.add('fresh-spine');
+          renderBox({ swap: true, lit: true });
+        }
+        function setBoxOpen(open) {
+          boxOpen = open;
+          if (open) { tileBox.classList.remove('has-new'); if (!held) thing = { kind: 'figure', key: latestFig }; draw(); }
+          else closeGlance();
+          syncMarks();
+          fit(false);
+        }
+
+        /* the glance: the same box, large, over the dimmed window */
+        function drawGlance() { glance.innerHTML = '<div class="gbox boxlike">' + headHtml(true) + '<div class="bbody">' + bodyHtml() + '</div>' + footHtml() + '</div>'; }
+        function openGlance() { glanceOn = true; box.classList.remove('fresh-spine'); drawGlance(); glance.classList.add('on'); }
+        function closeGlance() { glanceOn = false; glance.classList.remove('on'); glance.innerHTML = ''; }
+
+        function goTo(id) {
+          closeGlance();
+          const cell = document.getElementById(id);
+          cell.scrollIntoView({ behavior: 'smooth', block: 'center' });
+          cell.classList.add('linked');
+          setTimeout(() => cell.classList.remove('linked'), 1400);
+          const card = cardFor(id);
+          if (card) { card.classList.add('linked'); setTimeout(() => card.classList.remove('linked'), 1400); }
+        }
+        function onBoxClick(e) {
+          const t = e.target.closest('[data-tab], [data-act], [data-cell], tr[data-view], tr[data-fig]');
+          if (!t) return;
+          if (t.dataset.tab) { if (tab !== t.dataset.tab) { tab = t.dataset.tab; renderBox({ swap: true }); } return; }
+          const act = t.dataset.act;
+          if (act === 'pin') { held = !held; pending = null; if (!held) followLatest(); else renderBox(); return; }
+          if (act === 'glance') return openGlance();
+          if (act === 'unglance') return closeGlance();
+          if (act === 'close') return setBoxOpen(false);
+          if (act === 'take') { thing = pending; pending = null; tab = 'thing'; renderBox({ swap: true, lit: true }); return; }
+          if (act === 'more') { t.textContent = 'More (200 of 1187 rows)'; return; }
+          if (t.dataset.cell) return goTo(t.dataset.cell);
+          if (t.dataset.view) return look({ kind: 'table', key: t.dataset.view });
+          if (t.dataset.fig) return look({ kind: 'figure', key: t.dataset.fig });
+        }
+        box.addEventListener('click', onBoxClick);
+        glance.addEventListener('click', (e) => { if (e.target === glance) closeGlance(); else onBoxClick(e); });
+        /* the box and its card light each other */
+        box.addEventListener('mouseenter', () => {
+          if (tab !== 'thing' || geo.tucked) return;
+          const card = cardFor(info(thing).from);
+          if (card) { card.classList.add('linked'); ack(card); document.getElementById(card.dataset.cell).classList.add('linked'); }
+        });
+        box.addEventListener('mouseleave', () => {
+          $$('.lcard.linked', ledger).forEach((c) => { c.classList.remove('linked'); document.getElementById(c.dataset.cell).classList.remove('linked'); });
+        });
+
+        /* ---- the cards: hover ties a card to its cell (and to the box, when the box shows it) ---- */
+        function link(card, on) {
+          card.classList.toggle('linked', on);
+          document.getElementById(card.dataset.cell).classList.toggle('linked', on);
+          box.classList.toggle('linked', on && boxOpen && tab === 'thing' && info(thing).from === card.dataset.cell);
+        }
+        function ack(card) { card.classList.remove('unseen'); }
+        function unpinAll() { $$('.lcard.pinned', ledger).forEach((c) => c.classList.remove('pinned')); }
+        const peekTimers = new Map();
+        function peek(card, on, delay) {
+          clearTimeout(peekTimers.get(card));
+          if (on) return card.classList.add('peek');
+          peekTimers.set(card, setTimeout(() => card.classList.remove('peek'), delay || 0));
+        }
+        function wireCard(card) {
+          if (!$('.took', card)) card.insertAdjacentHTML('afterbegin', '<span class="took">' + card.dataset.took + '</span>');
+          $$('.lrow.viewable', card).forEach((r) => { if (!$('.iv', r)) r.insertAdjacentHTML('beforeend', '<svg class="iv" viewBox="0 0 24 24"><title>In the box</title><use href="#g-pip"/></svg>'); });
+          if (card.dataset.wired) return;
+          card.dataset.wired = '1';
+          const cell = document.getElementById(card.dataset.cell);
+          card.addEventListener('mouseenter', () => { link(card, true); peek(card, true); ack(card); });
+          card.addEventListener('mouseleave', () => { link(card, false); peek(card, false, 900); });
+          cell.addEventListener('mouseenter', () => link(card, true));
+          cell.addEventListener('mouseleave', () => link(card, false));
+          const dot = $('.run .dot', cell);
+          dot.addEventListener('mouseenter', () => { if (app.dataset.ledger === 'dots') peek(card, true); });
+          dot.addEventListener('mouseleave', () => peek(card, false, 300));
+          dot.addEventListener('click', (e) => {
+            e.stopPropagation();
+            if (app.dataset.ledger === 'hidden') { tab = 'index'; if (!boxOpen) setBoxOpen(true); return renderBox({ swap: true }); }
+            if (app.dataset.ledger === 'dots') {
+              const was = card.classList.contains('pinned');
+              unpinAll();
+              card.classList.toggle('pinned', !was);
+              if (!was) ack(card);
+            } else {
+              card.classList.add('linked'); setTimeout(() => card.classList.remove('linked'), 1400); ack(card);
+            }
+          });
+        }
+        $$('.lcard', ledger).forEach(wireCard);
+        ledger.addEventListener('click', (e) => {
+          if (e.target.closest('.lhead')) { tab = 'index'; if (!boxOpen) setBoxOpen(true); renderBox({ swap: true }); if (geo.tucked) openGlance(); return; }
+          const fig = e.target.closest('[data-fig]');
+          if (fig) return look({ kind: 'figure', key: fig.dataset.fig });
+          const row = e.target.closest('.lrow.viewable[data-view]');
+          if (row) return look({ kind: 'table', key: row.dataset.view });
+        });
+        document.addEventListener('mousedown', (e) => { if (!e.target.closest('.lcard') && !e.target.closest('.dot')) unpinAll(); });
+        document.addEventListener('keydown', (e) => {
+          if (e.key !== 'Escape') return;
+          if (glanceOn) closeGlance(); else unpinAll();
+        });
+
+        /* ---- a run: the chip spins; then the readout, the card in the
+           margin (eased in, lit, keeping a blue rule until the pointer
+           finds it), and the box takes the figure ---- */
+        function count() {
+          const n = namespace().length;
+          $('#lcount').textContent = n;
+          $$('.btab.idx i').forEach((i) => (i.textContent = n));
+          if (tab === 'index') renderBox();
+        }
+        function freshen(card) {
+          card.classList.remove('fresh');
+          void card.offsetWidth;
+          card.classList.add('fresh', 'unseen');
+          layout();
+          /* In the narrow window a run does not peek the card over the
+             column (round one's 2.5s peek): the box already lit with the
+             figure, and the chip's dot turning blue says the rest. A card
+             comes over the column only when the pointer asks. */
+        }
+        const wait = (ms) => new Promise((r) => setTimeout(r, ms));
+        function run(wrap) {
+          const cell = $('.cell', wrap);
+          if (!cell || cell.classList.contains('running') || cell.classList.contains('kind-text')) return Promise.resolve();
+          cell.classList.add('running');
+          return wait(700).then(() => {
+            cell.classList.remove('running', 'stale');
+            $$('.cell.ran-last').forEach((c) => c.classList.remove('ran-last'));
+            cell.classList.add('ran', 'ran-last');
+            let card = cardFor(wrap.id), fig = null;
+            if (wrap.id === 'c6') {
+              if (!card) {
+                $('.c6-out', wrap).innerHTML = $('#c6-after').innerHTML;
+                cardFor('c5').insertAdjacentHTML('afterend', $('#c6-card').innerHTML);
+                card = cardFor('c6');
+                wireCard(card);
+              }
+              fig = 'bar';
+            } else if (wrap.id === 'c3') fig = 'line';
+            if (card) freshen(card);
+            count();
+            if (fig) setTimeout(() => offer(fig), 60);
+            else if (boxOpen && tab === 'thing' && thing.kind === 'table' && DATA[thing.key].from === wrap.id) renderBox({ lit: true });
+            syncMarks();
+          });
+        }
+        $$('.run').forEach((b) => b.addEventListener('click', (e) => { if (e.target.closest('.dot')) return; run(b.closest('.cell-wrap')); }));
+        function scrollThenRun(id) {
+          const w = document.getElementById(id);
+          w.scrollIntoView({ behavior: 'smooth', block: 'center' });
+          return wait(420).then(() => run(w));
+        }
+        $('#rb-stale').addEventListener('click', () => { if ($('#c6 .cell').classList.contains('stale')) scrollThenRun('c6'); });
+        $('#rb-all').addEventListener('click', async () => {
+          for (const id of ['c1', 'c3', 'c4', 'c5', 'c6']) { await run(document.getElementById(id)); await wait(150); }
+        });
+
+        /* ---- the rail's two session tiles ---- */
+        function labelTiles() {
+          const m = app.dataset.ledger;
+          tileSession.classList.toggle('on', m !== 'hidden');
+          tileSession.dataset.label = m === 'hidden' ? 'Session: hidden' : m === 'dots' ? (ledgerPref === 'dots' ? 'Session: in the run chips' : 'Session: in the run chips (no room for the cards)') : 'Session: in the margin';
+          tileBox.classList.toggle('on', boxOpen);
+          tileBox.dataset.label = boxOpen ? 'The box: open' : 'The box: closed';
+        }
+        tileSession.addEventListener('click', () => {
+          ledgerPref = ledgerPref === 'auto' ? 'dots' : ledgerPref === 'dots' ? 'hidden' : 'auto';
+          unpinAll();
+          fit(false);
+        });
+        tileBox.addEventListener('click', () => setBoxOpen(!boxOpen));
+
+        /* ---- mockup chrome: window sizes drawn to scale, and the scenes ---- */
+        const PRESETS = { '1920': [1920, 1080], '1728': [1728, 1080], '1512': [1512, 945], '1440': [1440, 900], '1280': [1280, 800], '1100': [1100, 760] };
+        function applyPreset(p) {
+          preset = PRESETS[p] ? p : 'fit';
+          body.classList.toggle('desk', preset !== 'fit');
+          if (preset === 'fit') {
+            scale = 1; app.style.width = app.style.height = app.style.left = app.style.top = app.style.transform = '';
+          } else {
+            const [w, h] = PRESETS[preset];
+            scale = Math.min(1, (innerWidth - 32) / w, (innerHeight - 92) / h);
+            app.style.width = w + 'px'; app.style.height = h + 'px';
+            app.style.left = Math.round((innerWidth - w * scale) / 2) + 'px'; app.style.top = '18px';
+            app.style.transform = 'scale(' + scale + ')';
+          }
+          $$('#states [data-win]').forEach((b) => b.classList.toggle('on', b.dataset.win === preset));
+          fit(true);
+        }
+        $$('#states [data-win]').forEach((b) => b.addEventListener('click', () => {
+          try { history.replaceState(null, '', b.dataset.win === 'fit' ? location.pathname : '#' + b.dataset.win); } catch (_) { /* a data: or sandboxed page */ }
+          applyPreset(b.dataset.win);
+        }));
+        window.addEventListener('resize', () => applyPreset(preset));
+        new ResizeObserver(layout).observe($('#sheet'));
+        if (document.fonts && document.fonts.ready) document.fonts.ready.then(() => fit(true));
+
+        $('#st-run').addEventListener('click', () => scrollThenRun('c6'));
+        $('#st-hold').addEventListener('click', () => {
+          look({ kind: 'figure', key: 'line' });
+          wait(500).then(() => scrollThenRun('c6'));
+        });
+        $('#st-table').addEventListener('click', () => look({ kind: 'table', key: 'prices' }));
+        $('#st-glance').addEventListener('click', () => {
+          if (!boxOpen) setBoxOpen(true);
+          if (tab !== 'thing') { tab = 'thing'; renderBox(); }
+          openGlance();
+        });
+        $('#st-reset').addEventListener('click', () => location.reload());
+
+        /* first paint: the box follows the last figure drawn (ax, cell 3) */
+        box.innerHTML = boxHtml();
+        syncMarks();
+        const hash = location.hash.slice(1);
+        applyPreset(PRESETS[hash] ? hash : innerWidth >= 1508 ? 'fit' : '1512');
+      })();
+    </script>
+  </body>
+</html>
