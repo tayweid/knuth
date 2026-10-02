@@ -443,6 +443,14 @@ export class SidecarKernel implements Kernel {
         this.rejectRequest(msg);
         break;
       }
+      case 'incompatible': {
+        // The engine refused the attach outright (server.py): the page is
+        // the newer or the older of the two, and only one of them can be
+        // told. Before this case the message was ignored and the close
+        // that followed read as the engine being down.
+        this.rejectIncompatible(msg.protocol);
+        break;
+      }
       case 'kernel_exit': {
         this.connectedReady = false;
         this.failPending(

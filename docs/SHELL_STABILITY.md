@@ -157,15 +157,18 @@ working as long as the signed framework is the one `complete.sh` clones.
 The install line updates in place as before, and the download button
 re-downloads and meets Gatekeeper again each release.
 
-### 8. The framework check covers the whole framework — low priority
+### 8. The framework check covers the whole framework — DONE 2026-10-01 (shell 0.2.0)
 
-`complete.sh` compares one file, the framework's main binary; its
-libraries and resources are copied unchecked from a sibling. A sibling
-in Applications already runs as the user, so this is a completeness gap,
-not an exposure. `codesign --verify` is not the cheap answer: Electron's
-stock framework fails even the non-deep check (tried 2026-09-30). The
-answer is a manifest of the framework's files with their SHA-256,
-written by `package.mjs` into Resources and checked by the completer.
+`complete.sh` compared one file, the framework's main binary; its
+libraries and resources were copied unchecked from a sibling. A sibling
+in Applications already runs as the user, so this was a completeness
+gap, not an exposure. `codesign --verify` was not the cheap answer:
+Electron's stock framework fails even the non-deep check (tried
+2026-09-30). Now `package.mjs` writes `Contents/Resources/framework.sha256`,
+every regular file of the framework with its SHA-256 (symbolic links are
+left to the copy), and `complete.sh` checks a clone or a download against
+it (`shasum --check`) before placing it; an app without the manifest (an
+older build) keeps the binary check alone.
 
 ### Phase 2 — the template's seams, reopened when Plass joins
 

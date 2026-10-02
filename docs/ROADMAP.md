@@ -102,16 +102,21 @@ question that still needs one.
 The Python engine is pinned by outcome-based tests over real subprocesses
 and sockets. The browser side is thinner:
 
-- The Playwright harness's mocked socket never answers `restart`,
-  `interrupt`, `table`, `artifacts`, or `incompatible`, so a server-side
-  reshape of those events would ship unnoticed. Extend the mock to exercise
-  each once.
+- DONE 2026-10-01: the Playwright mocks now answer each of `restart`,
+  `interrupt`, `table`, `artifacts` and `incompatible` once
+  (environment.spec.ts for restart and artifacts, since 2026-09-27;
+  protocol.spec.ts for the other three). Writing the `incompatible` one
+  found the page ignoring the engine's actual refusal — kernel.ts had no
+  case for the `incompatible` message, only for an `attached` with the
+  wrong number — so the close that followed read as "engine unavailable".
+  Fixed with the test.
 - `document-view.ts`: staleness propagation, cell-kind conversion, and
   delete-undo-restore have no tests, and need a DOM harness that does not
   exist yet.
-- `test_doctor.py` asserts on a mocked `websockets.connect` call rather
-  than a real server's answer; rewrite it against a live `serve()` the way
-  test_kernel.py works throughout.
+- DONE 2026-10-01: `test_doctor.py` runs against a live `serve()` the way
+  test_kernel.py does. The rewrite found `_engine_status` answering "not
+  running" for a port held by something else: a handshake timeout is a
+  TimeoutError, which is an OSError, and the OSError clause came first.
 
 ### Deferred refactors (audited 2026-08-18, left alone deliberately)
 

@@ -30,12 +30,15 @@ async def _engine_status(port):
                 "protocol": PROTOCOL_VERSION,
             }))
             raw = await asyncio.wait_for(ws.recv(), timeout=STATUS_TIMEOUT)
-    except (ConnectionRefusedError, OSError):
-        return None
+    # A handshake that times out is a TimeoutError, which is an OSError:
+    # it is the occupied-by-something-else case and is caught first, or
+    # "not running" would be the answer for a port some other program holds.
     except (asyncio.TimeoutError, websockets.exceptions.WebSocketException) as exc:
         raise RuntimeError(
             f"port {port} is occupied, but it did not answer as Knuth"
         ) from exc
+    except (ConnectionRefusedError, OSError):
+        return None
     try:
         result = json.loads(raw)
     except (TypeError, ValueError) as exc:

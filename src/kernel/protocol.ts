@@ -157,6 +157,9 @@ export interface TableWindow {
 
 export type ServerEvent =
   | { type: 'attached'; protocol: number; session: string; resumed: boolean; root?: string | null }
+  // The engine's answer to an attach whose protocol is not its own: its
+  // version, and what it was sent; the socket closes after it.
+  | { type: 'incompatible'; protocol: number; received?: unknown }
   | { type: 'incompatible'; protocol: number }
   | { type: 'ready'; resumed?: boolean; id?: number }
   | { type: 'stream'; id: number; which: StreamWhich; text: string }
