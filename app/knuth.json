@@ -19,7 +19,15 @@
     "python": "3.13",
     "requirements": ["websockets>=14.0"]
   },
-  "window": { "width": 1100, "height": 760, "minWidth": 520, "minHeight": 360 },
+  "window": {
+    "width": 1100,
+    "height": 760,
+    "minWidth": 520,
+    "minHeight": 360,
+    "titleBarStyle": "hiddenInset",
+    "trafficLightPosition": { "x": 20, "y": 23 },
+    "//": "No followZoom, on purpose: that is for a page laid out as a fixed-width paper (Plass). Knuth's room is fluid (the column has a max-width and rewraps), so a zoom step rewraps it inside the same window; the bar still follows the lights' band through env(titlebar-area-height)."
+  },
   "icon": "../python/knuth/web/icons/knuth-tiles-512.png",
   "copyright": "© 2026 Taylor J Weidman. MIT License.",
   "smoke": {

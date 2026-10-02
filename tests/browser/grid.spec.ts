@@ -147,9 +147,15 @@ test('a .csv opens as a grid of its cells', async ({ page }) => {
   await expect(grid.locator('tr').nth(0).locator('td')).toHaveText(['name', 'age']);
   await expect(grid.locator('tr').nth(1).locator('td')).toHaveText(['ada', '36']);
   await expect(page.locator('body')).toHaveAttribute('data-view', 'grid');
-  // The workbench chrome is away; the toggle offers the source view.
-  await expect(page.locator('#toolbar')).toBeHidden();
+  // The workbench's cell tools rest on the rail, dim (the frame and the
+  // file's name stay); the toggle offers the source view.
+  for (const id of ['add-code', 'run-all', 'toggle-panel']) {
+    await expect(page.locator(`#${id}`), id).toBeVisible();
+    await expect(page.locator(`#${id}`), id).toHaveAttribute('aria-disabled', 'true');
+  }
+  await expect(page.locator('#file-name')).toBeVisible();
   await expect(page.locator('#view-toggle')).toBeVisible();
+  await expect(page.locator('#view-toggle')).not.toHaveAttribute('aria-disabled', 'true');
   await expect(page.locator('#view-toggle')).toHaveText(/Source/);
 });
 
@@ -169,8 +175,8 @@ test('editing a cell rewrites its line and nothing else', async ({ page }) => {
   // Enter committed and moved down.
   await expect(page.locator('table.grid tr').nth(2).locator('td').nth(1)).toBeFocused();
   await expect.poll(() => stashedText(page)).toBe('name,age\nada,37\ngrace,45\n');
-  // Marked dirty (the dot lives in the toolbar, which the grid view hides).
-  await expect(page.locator('.dirty')).toHaveCount(1);
+  // Marked unsaved, by the name in the bar, which the grid view keeps.
+  await expect(page.locator('#doc-pod')).toHaveClass(/doc-unsaved/);
 });
 
 test('typing into a focused cell replaces it; Escape reverts', async ({ page }) => {
@@ -274,5 +280,6 @@ test('a .tsv splits on tabs; a .txt gets no grid', async ({ page }) => {
   await page.goto('/');
   await expect(page.locator('.cm-content')).toContainText('a,b');
   await expect(page.locator('table.grid')).toHaveCount(0);
-  await expect(page.locator('#view-toggle')).toBeHidden();
+  // No other view to switch to: the switch rests.
+  await expect(page.locator('#view-toggle')).toHaveAttribute('aria-disabled', 'true');
 });

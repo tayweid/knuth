@@ -25,69 +25,125 @@ import { delimiterFor } from './format/csv.ts';
 import { serializeDocument } from './format/percent.ts';
 import { DEFAULT_DOC_NAME, FileManager, basename, dirname } from './file-manager.ts';
 import { SessionPanel } from './panel.ts';
+import { menus } from './menu.ts';
 import { icon } from './icons.ts';
 import { Onboarding } from './onboarding.ts';
 import { reportCellRun, shell, type ShellMessage } from './shell.ts';
 
-// Plass's hover flyout: the trigger's group lays its labeled icons OVER
-// the trigger — pure :hover, no gap for the cursor to cross.
-function flyout(
-  parent: HTMLElement,
-  glyph: string,
-  title: string,
-  items: Array<{ glyph: string; label: string; title: string; run: () => void }>,
-) {
-  const wrap = document.createElement('span');
-  wrap.className = 'tb-flyout-wrap';
-  const trigger = document.createElement('button');
-  trigger.type = 'button';
-  trigger.className = 'tb-btn';
-  trigger.title = title;
-  trigger.innerHTML = glyph;
-  trigger.addEventListener('mousedown', (e) => e.preventDefault());
-  wrap.append(trigger);
-  const fly = document.createElement('span');
-  fly.className = 'tb-flyout';
-  for (const it of items) {
-    const b = document.createElement('button');
-    b.type = 'button';
-    b.className = 'tb-btn';
-    b.title = it.title;
-    b.innerHTML = `${it.glyph}<span class="lbl">${it.label}</span>`;
-    b.addEventListener('mousedown', (e) => e.preventDefault());
-    b.addEventListener('click', it.run);
-    fly.append(b);
-  }
-  wrap.append(fly);
-  parent.append(wrap);
+function labeled(id: string, glyph: string, label: string, title: string, className = 'tb-btn'): string {
+  return `<button type="button" class="${className}" id="${id}" title="${title}">${glyph}<span class="lbl">${label}</span></button>`;
 }
 
-function labeled(id: string, glyph: string, label: string, title: string): string {
-  return `<button class="tb-btn" id="${id}" title="${title}">${glyph}<span class="lbl">${label}</span></button>`;
-}
-
+// Zen's shape, as Plass has it (docs/ZEN-DRAFT.md): the bar across the top
+// holds the document's way in and out beside the traffic lights — the File
+// tile, whose text menu holds New, Open, Recent, Save and, where they
+// apply, Get Knuth, Install and the app's update (below); the name pill
+// with the save mark and the folder — and, at the right, the kernel's
+// status. In Knuth.app the bar is the window's title bar (styles.css).
 const toolbar = document.getElementById('toolbar')!;
+toolbar.setAttribute('aria-label', 'Document');
 toolbar.innerHTML = `
-  <div class="tb-pod doc-pod" id="doc-pod"><span class="name" id="file-name" title="Click to rename">${DEFAULT_DOC_NAME}</span></div>
-  <div class="tb-pod tb-group" id="cells-pod">
-    ${labeled('add-code', icon('code'), 'Code', 'Program cell below the current one')}
-    ${labeled('add-scratch', icon('scratch'), 'Scratch', 'Scratch cell — explores the session, never persists')}
-    ${labeled('add-text', icon('text'), 'Text', 'Markdown text cell')}
-  </div>
-  <div class="tb-pod tb-group" id="run-pod">
-    ${labeled('run-stale', icon('play'), 'Stale', 'Run stale program cells in order')}
-    ${labeled('run-all', icon('playall'), 'All', 'Run all program cells from the top')}
-    ${labeled('stop', icon('stop'), 'Stop', 'Interrupt the running cell')}
-    ${labeled('restart', icon('restart'), 'Restart', 'Fresh session (kernel process replaced)')}
-  </div>
-  <div class="tb-pod tb-group">
-    ${labeled('toggle-panel', icon('panel'), 'Session', 'Show/hide the session panes')}
-    <button type="button" id="install-app" hidden>Install</button>
-    <button type="button" id="update-app" hidden>Update</button>
-    ${labeled('get-app', icon('download'), 'Get Knuth', 'Get Knuth for your Mac — this page runs Python in the tab; the app runs it on your computer, on your files')}
+  ${labeled('file-tile', icon('open'), 'File', 'File — new, open, recent, save', 'tb-btn tb-tile')}
+  <div class="doc-pod" id="doc-pod"><span class="name" id="file-name" title="Click to rename">${DEFAULT_DOC_NAME}</span><span class="doc-mark" id="doc-mark" aria-hidden="true"></span><span class="doc-folder" id="doc-folder" hidden><span dir="ltr"></span></span></div>
+  <div class="tb-end">
     <span id="kernel-status">connecting…</span>
   </div>
 `;
+
+// The rail down the left: the cell and run tools in their groups under a
+// hairline, scrolling as one when the window is short, and the session
+// panel's toggle pinned at the foot with the view switch, as Zen pins its
+// bottom icons. The captions are longer words than the old bar's, since
+// there is room beside a tile; the titles are unchanged. The view switch
+// is the same spot in every view, so the way in and the way out are one
+// (Plass's Plain text / Paper switch); its caption names the view it
+// switches TO (styles.css), and it is lit in source view.
+const VIEW_TITLE = 'Switch between source and cell (or grid) view (⌘⇧E)';
+const rail = document.getElementById('rail')!;
+rail.innerHTML = `
+  <div class="tb-rail-groups">
+    <div class="tb-rail-group" id="cells-pod" role="group" aria-label="Cells">
+      ${labeled('add-code', icon('code'), 'Code cell', 'Program cell below the current one')}
+      ${labeled('add-scratch', icon('scratch'), 'Scratch cell', 'Scratch cell — explores the session, never persists')}
+      ${labeled('add-text', icon('text'), 'Text cell', 'Markdown text cell')}
+    </div>
+    <div class="tb-rule" role="separator"></div>
+    <div class="tb-rail-group" id="run-pod" role="group" aria-label="Run">
+      ${labeled('run-stale', icon('play'), 'Run stale', 'Run stale program cells in order')}
+      ${labeled('run-all', icon('playall'), 'Run all', 'Run all program cells from the top')}
+      ${labeled('stop', icon('stop'), 'Stop', 'Interrupt the running cell')}
+      ${labeled('restart', icon('restart'), 'Restart session', 'Fresh session (kernel process replaced)')}
+    </div>
+  </div>
+  <div class="tb-rail-foot">
+    ${labeled('toggle-panel', icon('panel'), 'Session panel', 'Show/hide the session panes')}
+    <button type="button" class="tb-btn" id="view-toggle" title="${VIEW_TITLE}">${icon('source')}<span class="lbl lbl-cells">Cells</span><span class="lbl lbl-grid">Grid</span><span class="lbl lbl-source">Source</span></button>
+  </div>
+`;
+
+// A short window cuts the groups: a fade at the cut edge says the rest is
+// a scroll away (styles.css). Read on scroll and resize only.
+const railGroups = rail.querySelector<HTMLElement>('.tb-rail-groups')!;
+const railCue = () => {
+  const { scrollTop, scrollHeight, clientHeight } = railGroups;
+  railGroups.classList.toggle('tb-more-above', scrollTop > 1);
+  railGroups.classList.toggle('tb-more-below', scrollTop + clientHeight < scrollHeight - 1);
+};
+railGroups.addEventListener('scroll', railCue, { passive: true });
+const railResized = new ResizeObserver(railCue);
+railResized.observe(railGroups);
+for (const group of railGroups.children) railResized.observe(group);
+
+// A rail tile's caption sits to its right, fixed to the window: the groups
+// scroll, and a scrolling box clips what hangs out of it. Placed when the
+// tile is hovered or focused, never on the typing path.
+function placeRailCaption(target: EventTarget | null, from: EventTarget | null = null) {
+  const button = target instanceof Element ? target.closest<HTMLElement>('.tb-btn') : null;
+  if (!button || (from instanceof Node && button.contains(from))) return;
+  const rect = button.getBoundingClientRect();
+  for (const label of button.querySelectorAll<HTMLElement>('.lbl')) {
+    label.style.top = `${rect.top + rect.height / 2}px`;
+    label.style.left = `${rect.right + 12}px`;
+  }
+}
+rail.addEventListener('mouseover', (e) => placeRailCaption(e.target, e.relatedTarget));
+rail.addEventListener('focusin', (e) => placeRailCaption(e.target));
+
+// Plass's rule: a tool that cannot act rests, dim, rather than going away,
+// so the strip reads as the rail in every view. Source and grid views (a
+// plain file is always in source view) rest the cell and run tiles and
+// the session panel's; the view switch rests only when there is no other
+// view to switch to — a script without # %% markers, a plain file.
+// aria-disabled rather than disabled: Tab walks the same tiles in every
+// view. A click on a resting tile does nothing, and its caption stays
+// hidden (styles.css). The body's data-view, data-cells and data-grid are
+// the document view's (DocumentView.syncView); written only on change.
+const CELL_TOOLS = ['add-code', 'add-scratch', 'add-text', 'run-stale', 'run-all', 'stop', 'restart', 'toggle-panel'];
+function rest(tile: HTMLElement, resting: boolean) {
+  if ((tile.getAttribute('aria-disabled') === 'true') === resting) return;
+  if (resting) tile.setAttribute('aria-disabled', 'true');
+  else tile.removeAttribute('aria-disabled');
+}
+function paintRail() {
+  const { view, cells, grid } = document.body.dataset;
+  for (const id of CELL_TOOLS) rest(document.getElementById(id)!, view === 'source' || view === 'grid');
+  const toggle = document.getElementById('view-toggle')!;
+  const alone = view === 'source' && cells !== 'true' && grid !== 'true';
+  rest(toggle, alone);
+  const title = alone ? 'No cell view: this file has no # %% cells' : VIEW_TITLE;
+  if (toggle.title !== title) toggle.title = title;
+}
+new MutationObserver(paintRail).observe(document.body, {
+  attributes: true,
+  attributeFilter: ['data-view', 'data-cells', 'data-grid'],
+});
+rail.addEventListener('click', (e) => {
+  const tile = (e.target as Element).closest('.tb-btn');
+  if (tile?.getAttribute('aria-disabled') === 'true') {
+    e.preventDefault();
+    e.stopPropagation();
+  }
+}, true);
 
 const $ = (id: string) => document.getElementById(id)!;
 const toastEl = $('toast');
@@ -132,13 +188,52 @@ function toast(
   }
 }
 
+// The File tile's menu, Plass's File (menu.ts): New window, Open…,
+// Recent ›, Save, and below a rule the three that apply in one place each
+// — Get Knuth for your Mac (the hosted demo), Install Knuth (a locally
+// served tab the browser offers to install) and the update (Knuth.app) —
+// built here, before the onboarding that drives Install, and given their
+// conditions and actions below, where those are decided. Folder needs no
+// item: Save on a homeless doc IS the folder grant (the browser grants the
+// project folder for values.json and figs/ through a picker), and opened
+// or launched documents get the attach offer when it matters.
+const menu = menus();
+const fileMenu = menu.create('File', $('file-tile') as HTMLButtonElement);
+const recentMenu = menu.create('Recent', $('file-tile') as HTMLButtonElement, fileMenu);
+const getMenu = menu.create('Get Knuth', $('file-tile') as HTMLButtonElement, fileMenu);
+menu.item(fileMenu, 'New window', () => void window.open(location.pathname, '_blank'), {
+  title: 'New document — opens in a new window (its own session)',
+});
+menu.item(fileMenu, 'Open…', () => void fileManager.open(), { title: 'Open… (⌘O)', shortcut: '⌘O' });
+menu.item(fileMenu, 'Recent documents', () => {}, { title: 'Your documents', submenu: recentMenu });
+menu.item(fileMenu, 'Save', () => void fileManager.save(), { title: 'Save (⌘S)', shortcut: '⌘S' });
+const ioRule = menu.divider(fileMenu);
+const getItem = menu.item(fileMenu, 'Get Knuth for your Mac', () => {}, {
+  id: 'get-app',
+  title: 'Get Knuth for your Mac — this page runs Python in the tab; the app runs it on your computer, on your files',
+  submenu: getMenu,
+});
+const installItem = menu.item(fileMenu, 'Install Knuth', () => {}, {
+  id: 'install-app',
+  title: 'Install Knuth as an app: its own icon and window (the Python engine stays separate and local)',
+});
+const updateItem = menu.item(fileMenu, 'Check for updates…', () => {}, {
+  id: 'update-app',
+  title: 'Knuth.app: compare this build with the site’s and install a newer one',
+});
+for (const item of [getItem, installItem, updateItem]) item.hidden = true;
+// The rule shows only above one of them.
+fileMenu.refresh = () => {
+  ioRule.hidden = [getItem, installItem, updateItem].every((item) => item.hidden);
+};
+
 const status = $('kernel-status');
 const onboarding = new Onboarding(
   $('onboarding'),
   $('install-app') as HTMLButtonElement,
 );
 // The install click is what gives Knuth its own icon and a tab-less window.
-// It is optional, so it lives in the toolbar — but a toolbar button nobody
+// It is optional, so it lives in the File menu — but an item nobody
 // notices is the same as no offer at all. Surface it once, when the app is
 // working and the browser says it can be installed.
 const INSTALL_OFFERED = 'knuth-install-offered';
@@ -351,7 +446,35 @@ const APP_ZIP = 'https://knuth.tayweid.io/app/Knuth.app.zip';
 const APP_LINE = 'curl -fsSL https://knuth.tayweid.io/install | bash';
 const ENGINE_LINE =
   'python3 -m pip install --upgrade --force-reinstall "knuth @ https://github.com/tayweid/knuth/archive/refs/heads/main.zip#subdirectory=python"';
-if (servedLocally || shell) $('get-app').hidden = true;
+// File → Get Knuth for your Mac, on the hosted demo only (Plass's Get
+// Plass): served by an engine or inside Knuth.app there is nothing to get.
+getItem.hidden = servedLocally || !!shell;
+/** A line for the terminal onto the clipboard, or into the toast to copy
+ *  by hand when the clipboard says no. */
+function copyLine(line: string, done: string) {
+  void navigator.clipboard.writeText(line).then(
+    () => toast(done),
+    () => toast(line),
+  );
+}
+menu.back(getMenu, 'File');
+menu.heading(getMenu, 'Knuth for your Mac');
+menu.hint(getMenu, 'This page runs Python in the tab. The app runs it on your computer, on your own files, with your own packages. For Macs with Apple silicon.');
+menu.item(getMenu, 'Download Knuth.app', () => void window.open(APP_ZIP, '_blank', 'noopener'), {
+  title: 'Download Knuth.app (a zip; unzip and drag to Applications)',
+});
+menu.hint(getMenu, 'Unzip and drag to Applications. The first launch is refused once because the app is not signed with Apple: open System Settings → Privacy & Security and click Open Anyway. Then it gets Electron, the window it runs in — shared with Plass or ManimLive if you have one, otherwise a 130 MB download, once.');
+menu.item(getMenu, 'Copy the install line', () => copyLine(APP_LINE, 'Install line copied — paste it in Terminal'), {
+  title: 'The terminal way: no prompt, since only browser downloads are quarantined',
+});
+menu.hint(getMenu, APP_LINE).classList.add('tb-menu-line');
+menu.divider(getMenu);
+menu.heading(getMenu, 'Windows or Linux');
+menu.hint(getMenu, 'The engine, from pip; then knuth app opens this page from your own computer.');
+menu.item(getMenu, 'Copy the pip line', () => copyLine(ENGINE_LINE, 'pip line copied — paste it in a terminal'), {
+  title: 'Install the engine with pip',
+});
+menu.hint(getMenu, ENGINE_LINE).classList.add('tb-menu-line');
 // The manifest, and with it installability, only where the app is served
 // by its engine (SAME_ORIGIN.md: one installable app, served locally; the
 // hosted demo is a demo). Inside Knuth.app there is nothing to install.
@@ -363,47 +486,68 @@ if (servedLocally && !shell) {
 }
 
 // Knuth.app updating itself (the shell's update.js; also Knuth menu → Check
-// for Updates…). The shell looks at the site after launch and tells every
-// window of a newer build: the button appears. A click has the shell
-// download that build, swap it in and relaunch, with the steps in the
-// toast; this window is reopened on its document.
-const updateButton = $('update-app') as HTMLButtonElement;
+// for Updates…), as Plass's File → Check for updates…: the item asks the
+// shell to compare this build with the site's, and once the shell says a
+// newer one is out — asked, or by itself after launch — it reads Install
+// update, and a click has the shell download that build, swap it in and
+// relaunch, with the steps in the toast; this window is reopened on its
+// document.
 if (shell) {
   const host = shell;
-  const showUpdate = (label: string, enabled: boolean) => {
-    updateButton.hidden = false;
-    updateButton.disabled = !enabled;
-    updateButton.textContent = label;
+  type UpdateStep = import('./shell.ts').UpdateStep;
+  let offered: string | null = null;
+  const label = updateItem.querySelector('.tb-menu-label')!;
+  const show = (text: string, enabled = true) => {
+    label.textContent = text;
+    updateItem.disabled = !enabled;
   };
+  const built = (step: UpdateStep) => (step.latest?.built ? ` (built ${step.latest.built.slice(0, 10)})` : '');
+  updateItem.hidden = false;
+  updateItem.addEventListener('click', () => {
+    if (offered) {
+      show('Updating…', false);
+      host.notify({ type: 'update', action: 'install' });
+      return;
+    }
+    show('Checking…', false);
+    void host.request<UpdateStep>({ type: 'update' }).then((step) => {
+      if (step?.state === 'available') {
+        offered = step.latest?.build ?? 'new';
+        show(`Install update${built(step)}`);
+        toast(`A new Knuth is available${built(step)} — File → Install update`);
+        return;
+      }
+      show('Check for updates…');
+      if (step?.state === 'current') toast(`Knuth is up to date${step.current?.build ? ` (build ${step.current.build})` : ''}`);
+      else if (step?.state === 'development') toast('Running from a checkout: nothing to update');
+      else toast(step?.text ? `Could not check for updates: ${step.text}` : 'Could not check for updates');
+    });
+  });
   host.on('update', (detail) => {
-    const step = (detail ?? {}) as import('./shell.ts').UpdateStep;
+    const step = (detail ?? {}) as UpdateStep;
     switch (step.state) {
       case 'available':
-        showUpdate('Update', true);
-        updateButton.title = `A new Knuth is available${step.latest?.built ? ` (built ${step.latest.built.slice(0, 10)})` : ''} — install it and relaunch`;
+        offered = step.latest?.build ?? 'new';
+        show(`Install update${built(step)}`);
         break;
       case 'downloading':
       case 'unpacking':
       case 'completing':
       case 'installing':
-        showUpdate('Updating…', false);
+        show('Updating…', false);
         progress(step.text ?? 'Updating Knuth…');
         break;
       case 'ready':
-        showUpdate('Relaunching…', false);
+        show('Relaunching…', false);
         progress(step.text ?? 'Knuth relaunches now…');
         break;
       case 'failed':
-        showUpdate('Update', true);
+        show(offered ? `Install update${built(step)}` : 'Check for updates…');
         toast(`Could not update Knuth: ${step.text ?? 'unknown error'}`);
         break;
       default:
         break;
     }
-  });
-  updateButton.addEventListener('click', () => {
-    showUpdate('Updating…', false);
-    host.notify({ type: 'update', action: 'install' });
   });
 }
 
@@ -628,6 +772,11 @@ function attachProjectFolder() {
 
 const panel = new SessionPanel($('panel'), kernel);
 if (localStorage.getItem('knuth-panel') === '0') $('panel').hidden = true;
+// The rail's panel tile is lit while the panel shows.
+function paintPanelToggle() {
+  $('toggle-panel').setAttribute('aria-pressed', String(!$('panel').hidden));
+}
+paintPanelToggle();
 
 // Structural changes the editors' own history cannot undo (deleted cell,
 // plain file converted to cells) get one immediate Cmd-Z lifeline,
@@ -781,17 +930,38 @@ async function afterInstall(result: { restart?: boolean }, cell: FailedCell) {
 
 function repaintName() {
   const label = $('file-name');
-  label.textContent = '';
-  label.append(fileManager.name, fileManager.dirty ? ' ' : '');
-  if (fileManager.dirty) {
-    const dot = document.createElement('span');
-    dot.className = 'dirty';
-    dot.textContent = '●';
-    label.append(dot);
-  }
+  // The name's own text is exactly the name (a rename's input replaces it
+  // while it is open).
+  if (!label.querySelector('input')) label.textContent = fileManager.name;
+  // The save mark, Plass's dot: green when the file on disk holds the
+  // document, red when it does not — unsaved changes, or no file yet
+  // (⌘S then picks where it lives).
+  const homeless = !fileManager.path && !fileManager.handle;
+  const unsaved = homeless || fileManager.dirty;
+  const pod = $('doc-pod');
+  pod.classList.toggle('doc-saved', !unsaved);
+  pod.classList.toggle('doc-unsaved', unsaved);
+  $('doc-mark').title = homeless ? 'Not saved yet — ⌘S picks its folder' : unsaved ? 'Unsaved changes' : 'Saved';
+  // The folder beside the name, in a sibling so the name's own text stays
+  // exactly the name: the path's folder (home as ~), or an attached
+  // folder's name, or nothing. It is what gives way when the pill is short,
+  // from its start, so the nearest folder stays (styles.css).
+  const folder = $('doc-folder');
+  const where = fileManager.path ? fileManager.root ?? dirname(fileManager.path) : null;
+  folder.firstElementChild!.textContent = where ? tilde(where) : fileManager.dir?.name ?? '';
+  folder.title = where ?? '';
+  folder.hidden = !folder.textContent;
   // Just the file name: the installed app's window prepends its own
   // app name, so anything more reads twice.
   document.title = fileManager.name;
+}
+
+/** A folder as a person reads it: their home as ~. The page has no way to
+ *  ask for the home folder, so a home is what macOS and Linux put there —
+ *  /Users/<name> or /home/<name> — but not /Users/Shared, which is no
+ *  one's. */
+function tilde(path: string): string {
+  return path.replace(/^\/(?:Users|home)\/(?!Shared(?:\/|$))[^/]+(?=\/|$)/, '~');
 }
 
 // During boot restore, setDoc must NOT restart the kernel — the whole
@@ -900,132 +1070,37 @@ void (async () => {
   }
 })();
 
-// Recents dropdown: the one inherently dynamic list (Plass's exception
-// to everything-on-the-bar).
-let recentsMenu: HTMLElement | null = null;
-function closeRecentsMenu() {
-  recentsMenu?.remove();
-  recentsMenu = null;
-}
-document.addEventListener('mousedown', (e) => {
-  if (recentsMenu && !recentsMenu.contains(e.target as Node)) closeRecentsMenu();
-});
-
-function commandRow(command: string): HTMLElement {
-  const row = document.createElement('div');
-  row.className = 'command-row';
-  const code = document.createElement('code');
-  code.textContent = command;
-  const copy = document.createElement('button');
-  copy.type = 'button';
-  copy.className = 'command-copy';
-  copy.textContent = 'Copy';
-  copy.addEventListener('click', () => {
-    void navigator.clipboard.writeText(command).then(
-      () => (copy.textContent = 'Copied'),
-      () => (copy.textContent = 'Select'),
-    );
-    window.setTimeout(() => (copy.textContent = 'Copy'), 1600);
+// File → Recent documents: the one inherently dynamic list, loaded each
+// time it opens, in place of the File menu with a way back (Plass's Recent
+// papers).
+menu.back(recentMenu, 'File');
+menu.heading(recentMenu, 'Recent documents');
+const recentEntries = document.createElement('div');
+recentEntries.setAttribute('role', 'group');
+recentEntries.setAttribute('aria-label', 'Recent documents');
+recentMenu.element.append(recentEntries);
+let recentRequest = 0;
+recentMenu.refresh = () => {
+  const request = ++recentRequest;
+  const hint = menu.hint(recentEntries, 'Loading recent documents…');
+  hint.setAttribute('role', 'status');
+  recentEntries.replaceChildren(hint);
+  void fileManager.recents().then((entries) => {
+    if (request !== recentRequest) return;
+    if (!entries.length) {
+      hint.textContent = 'Your saved documents will appear here.';
+      return;
+    }
+    recentEntries.replaceChildren();
+    for (const entry of entries) {
+      menu.item(recentEntries, entry.name, () => void fileManager.openRecent(entry), { title: entry.path ?? entry.name });
+    }
+  }).catch(() => {
+    if (request === recentRequest) hint.textContent = 'Recent documents could not be loaded.';
   });
-  row.append(code, copy);
-  return row;
-}
+};
 
-function showGetMenu(anchor: HTMLElement) {
-  if (recentsMenu) {
-    closeRecentsMenu();
-    return;
-  }
-  const menu = document.createElement('div');
-  menu.className = 'file-menu get-menu';
-  menu.innerHTML = `
-    <h2>Knuth for your Mac</h2>
-    <p>This page runs Python in the tab. The app runs it on your computer, on your own files, with your own packages.</p>
-    <a class="get-download" href="${APP_ZIP}">${icon('download')}<span>Download Knuth.app</span></a>
-    <p class="get-note">For Macs with Apple silicon. Unzip and drag to Applications. The first launch is refused once because the app is not signed with Apple: open System Settings → Privacy &amp; Security and click <b>Open Anyway</b>. Then it gets Electron, the window it runs in — shared with Plass or ManimLive if you have one, otherwise a 130 MB download, once.</p>
-    <h3>Or from the terminal</h3>
-    <p class="get-note">No prompt this way — only browser downloads are quarantined.</p>
-  `;
-  menu.append(commandRow(APP_LINE));
-  const other = document.createElement('h3');
-  other.textContent = 'Windows or Linux';
-  const otherNote = document.createElement('p');
-  otherNote.className = 'get-note';
-  otherNote.textContent = 'The engine, from pip; then knuth app opens this page from your own computer.';
-  menu.append(other, otherNote, commandRow(ENGINE_LINE));
-  const rect = anchor.getBoundingClientRect();
-  menu.style.top = `${rect.bottom + 10}px`;
-  menu.style.right = `${Math.max(8, window.innerWidth - rect.right - 10)}px`;
-  document.body.append(menu);
-  recentsMenu = menu;
-}
-
-async function showRecents(anchor: HTMLElement) {
-  if (recentsMenu) {
-    closeRecentsMenu();
-    return;
-  }
-  const entries = await fileManager.recents();
-  const menu = document.createElement('div');
-  menu.className = 'file-menu';
-  if (entries.length === 0) {
-    const empty = document.createElement('div');
-    empty.className = 'file-menu-empty';
-    empty.textContent = 'No recent documents';
-    menu.append(empty);
-  }
-  for (const entry of entries) {
-    const item = document.createElement('button');
-    item.className = 'file-menu-item';
-    item.textContent = entry.name;
-    if (entry.path) item.title = entry.path;
-    item.addEventListener('click', () => {
-      closeRecentsMenu();
-      void fileManager.openRecent(entry);
-    });
-    menu.append(item);
-  }
-  const rect = anchor.getBoundingClientRect();
-  menu.style.top = `${rect.bottom + 10}px`;
-  menu.style.left = `${Math.max(8, rect.left - 10)}px`;
-  document.body.append(menu);
-  recentsMenu = menu;
-}
-
-// The file lifecycle lives in the name slug — Plass's set (New, Open,
-// Recent) plus Folder, which only exists because the browser grants the
-// project-directory handle for values.json/figs through a user picker.
-// Folder needs no button: Save on a homeless doc IS the folder grant,
-// and opened/launched docs get the attach offer when it matters.
-flyout($('doc-pod'), icon('open'), 'File — new, open, recent', [
-  {
-    glyph: icon('new'),
-    label: 'New',
-    title: 'New document — opens in a new window (its own session)',
-    run: () => void window.open(location.pathname, '_blank'),
-  },
-  { glyph: icon('open'), label: 'Open', title: 'Open… (⌘O)', run: () => void fileManager.open() },
-  {
-    glyph: icon('clock'),
-    label: 'Recent',
-    title: 'Your documents',
-    run: () => void showRecents($('doc-pod')),
-  },
-]);
-
-// The view toggle lives in one corner in both views, so the way in and
-// the way out are the same spot. CSS swaps its label by view and hides
-// it when a markerless file offers no cell view to switch to.
-const viewToggle = document.createElement('button');
-viewToggle.id = 'view-toggle';
-viewToggle.title = 'Switch between source and cell (or grid) view (⌘⇧E)';
-viewToggle.innerHTML =
-  `${icon('code')}<span class="lbl lbl-cells">Cells</span>` +
-  `<span class="lbl lbl-grid">Grid</span><span class="lbl lbl-source">Source</span>`;
-viewToggle.addEventListener('click', () => docView.setSource(!docView.isSource));
-document.body.append(viewToggle);
-
-$('get-app').addEventListener('click', () => showGetMenu($('get-app')));
+$('view-toggle').addEventListener('click', () => docView.setSource(!docView.isSource));
 $('add-code').addEventListener('click', () => docView.insertRelative('program'));
 $('add-scratch').addEventListener('click', () => docView.insertRelative('scratch'));
 $('add-text').addEventListener('click', () => docView.insertRelative('text'));
@@ -1043,6 +1118,7 @@ $('toggle-panel').addEventListener('click', () => {
   const el = $('panel');
   el.hidden = !el.hidden;
   localStorage.setItem('knuth-panel', el.hidden ? '0' : '1');
+  paintPanelToggle();
   if (!el.hidden) void panel.refresh();
 });
 
@@ -1088,7 +1164,8 @@ $('file-name').addEventListener('click', () => {
     if (done) return;
     done = true;
     if (commit) await fileManager.rename(input.value);
-    repaintName(); // rebuilds the label whether renamed or cancelled
+    input.remove();
+    repaintName(); // the label again, whether renamed or cancelled
   };
   input.addEventListener('keydown', (e) => {
     if (e.key === 'Enter') void finish(true);
