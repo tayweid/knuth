@@ -708,12 +708,18 @@ export class DocumentView {
     return this.allRunnable().map((v) => v.id);
   }
 
-  /** A cell's number as the person counts them (1-based; 0 is cell zero,
-   *  the preamble), or null once the cell is gone. */
+  /** A code cell's number as the person counts them: the code cells
+   *  only, 1-based, the text cells between them uncounted (no number is
+   *  drawn on the page, so a student counts the cells that run); 0 is cell
+   *  zero, the preamble. Null for a text cell or once the cell is gone. */
   cellNumber(id: string): number | null {
     if (this.preambleView?.id === id) return 0;
-    const i = this.views.findIndex((v) => v.id === id);
-    return i < 0 ? null : i + 1;
+    let n = 0;
+    for (const v of this.views) {
+      if (v.cell.kind !== 'text') n += 1;
+      if (v.id === id) return v.cell.kind === 'text' ? null : n;
+    }
+    return null;
   }
 
   /** The cell's row (.cell), where its chip lives, or null once it is gone

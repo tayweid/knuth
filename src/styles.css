@@ -487,6 +487,12 @@ body {
 #session-pill:hover { background: #29292d; color: var(--glass-ink); }
 #session-pill.open { background: var(--tile); color: var(--glass-ink); }
 
+/* Source and grid views: no cells for the card to stand beside, so the
+   pill rests (session.ts; its title says why), the status as it was. */
+#session-pill[aria-disabled='true'] { cursor: default; }
+#session-pill[aria-disabled='true']:hover { background: var(--pill); color: var(--glass-ink-soft); }
+#session-pill[aria-disabled='true'] > :not(#kernel-status) { opacity: 0.45; }
+
 #kernel-status { flex: none; white-space: nowrap; }
 
 #session-pill:not(.ready) > :not(#kernel-status) { display: none; }
@@ -919,9 +925,10 @@ body[data-view='source'] #view-toggle {
    four corners, a shade lighter than the frame, which shows as one thin
    edge of it all round: the bar's band below its pills, the rail's beside
    its tiles, --edge at the window's right and bottom. The document column
-   keeps its width and centres in it (#sheet); the session's cards lie
-   over the room (session.ts) and never take its width. Below the layout
-   floor the room scrolls sideways instead of
+   centres in it (#sheet); the session's cards stand beside it
+   (session.ts), and the docked Session card slides it left by only what
+   the card lacks. Below the layout floor the room scrolls sideways
+   instead of
    crushing (a PWA can't refuse a small window; it can refuse to deform),
    and the bar and the rail stay put. */
 #layout {
@@ -943,9 +950,12 @@ body[data-view='source'] #view-toggle {
   flex: 1;
   /* The floor: the window main had, 640 px, less what the frame takes —
      the rail and the right edge — so the room scrolls sideways at the
-     same window width as before the frame. The Session card, docked or
-     floating, lies over the room and does not move the floor. */
-  min-width: calc(640px - var(--rail) - var(--edge));
+     same window width as before the frame. Docked, the Session card
+     raises it (--board-floor, session.ts) to the column's 640 px floor,
+     the chips' lane and the card: below that the room scrolls sideways
+     rather than the card lie over the column (a window under about
+     1085 px). */
+  min-width: max(calc(640px - var(--rail) - var(--edge)), var(--board-floor, 0px));
   overflow-y: auto;
   /* Never sideways: everything in the room wraps (editors, outputs), and
      wide receipts scroll inside their own boxes. Without this, anything
@@ -965,8 +975,23 @@ body[data-view='source'] #view-toggle {
 /* The bench: Knuth works directly on the room's surface — the lit white
    page belongs to Plass; the workbench glows quietly instead. */
 #sheet {
-  max-width: 52rem;
-  margin: 0 auto;
+  /* Centred, 52rem. The docked Session card (--need: its width, the
+     chips' lane and its gap, less the room's own margin; session.ts)
+     slides it left by only what the card lacks, then narrows it to a
+     640 px floor; a receipt card (--lean) only slides it, for its stay.
+     peek-v2's rule: margin-left = max(0, min(centred, room − column −
+     need)). The slide is animated (.slide) on the pin and for a receipt,
+     never on a resize, and a run never changes it. */
+  --need: 0px;
+  --lean: 0px;
+  max-width: max(min(40rem, 100%), min(52rem, 100% - var(--need)));
+  margin: 0 auto 0 max(0px, min((100% - 52rem) / 2, 100% - 52rem - max(var(--need), var(--lean))));
+}
+
+#sheet.slide {
+  transition:
+    margin-left 0.36s cubic-bezier(0.2, 0.7, 0.2, 1),
+    max-width 0.36s cubic-bezier(0.2, 0.7, 0.2, 1);
 }
 
 /* ---------- cells on the bench ---------- */
@@ -1489,9 +1514,10 @@ body[data-view='source'] .cell .run-num { visibility: visible; }
 
 /* ---------- the session: the receipt card, the chips, the Session card ---------- */
 
-/* session.ts, docs/SESSION.md. Everything here lies over the room in the
-   frame's dark glass (the menus' material, a step more opaque so names
-   read over code): the column under it never moves or narrows. */
+/* session.ts, docs/SESSION.md. The frame's dark glass (the menus'
+   material, a step more opaque so names read over code), beside the
+   column and never over it: the receipt card in the room's margin, the
+   docked card past the chips' lane (the column slides for either). */
 #receipt,
 #session {
   position: fixed;
@@ -1523,7 +1549,18 @@ body[data-view='source'] .cell .run-num { visibility: visible; }
 }
 
 #receipt.show { opacity: 1; transform: none; }
-#receipt.flying { transition: none; pointer-events: none; }
+/* Riding beside the column while it slides for the card (session.ts):
+   the same 0.36 s and curve as #sheet's slide. */
+#receipt.riding {
+  transition:
+    opacity 0.18s ease,
+    transform 0.24s cubic-bezier(0.2, 0.7, 0.2, 1),
+    left 0.36s cubic-bezier(0.2, 0.7, 0.2, 1);
+}
+/* Flying, above the bar: it is seen going into the pill. */
+#receipt.flying { z-index: 12; transition: none; pointer-events: none; }
+/* A click anywhere on a run's card or a chip's keeps it. */
+#receipt[data-kind='fresh'],
 #receipt[data-kind='hover'] { cursor: pointer; }
 
 .rv .r-head {
@@ -1615,14 +1652,20 @@ body[data-view='source'] .cell .run-num { visibility: visible; }
 .rv .r-vars tr.viewable:hover td { background: rgba(255, 255, 255, 0.05); }
 .rv .r-vars tr.viewable .n { color: #9db8d6; }
 
-/* A narrow card: names and kinds, no previews, the head's second half
-   ("· this run", "go there") gone. */
+/* A slim card: names and kinds, the head's second half ("· this run")
+   gone; a value its preview says in a few characters (a number, a short
+   string) shows in place of its kind, which stays in the row's tooltip. */
 .slim .rv .sub,
 #session.narrow .rv .sub,
-.slim .rv .r-vars .pv,
-#session.narrow .rv .r-vars .pv { display: none; }
-.slim .rv .r-vars .ty,
-#session.narrow .rv .r-vars .ty { width: 100%; padding-right: 0.75rem; }
+.slim .rv .r-vars tr:not(.short) .pv,
+.slim .rv .r-vars tr.short .ty { display: none; }
+.slim .rv .r-vars tr:not(.short) .ty {
+  max-width: 0;
+  width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  padding-right: 0.75rem;
+}
 
 .rv .r-none { padding: 0.55rem 0.75rem 0.25rem; font: 12.5px var(--sans); color: var(--room-ink-soft); }
 .rv .r-also,
@@ -1638,7 +1681,14 @@ body[data-view='source'] .cell .run-num { visibility: visible; }
 .rv .r-also code,
 .rv .r-folder code { font: 11.5px var(--mono); }
 .rv > :last-child { padding-bottom: 0.55rem; }
-.rv .r-hint { padding: 0.35rem 0.75rem 0.55rem; font: 11px/1.5 var(--sans); color: rgba(143, 141, 136, 0.85); }
+.rv .r-hint {
+  padding: 0.35rem 0.75rem 0.55rem;
+  font: 11px/1.5 var(--sans);
+  color: rgba(143, 141, 136, 0.85);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
 .rv.past { opacity: 0.55; }
 
 /* The chip: the receipt folded to a tab at the cell's right corner, in
@@ -1701,7 +1751,9 @@ body[data-view='source'] .cell .run-num { visibility: visible; }
 
 /* The Session card: dropped from the pill at the room's top right, or
    docked beside the column (the pin), in its own look either way — the
-   cells' cards are One Dark; this is the frame's glass. */
+   cells' cards are One Dark; this is the frame's glass. Docked, it is on
+   the page: inside the room (#layout), so below the floor it scrolls
+   sideways with the column. */
 #session {
   display: flex;
   flex-direction: column;
@@ -1710,6 +1762,7 @@ body[data-view='source'] .cell .run-num { visibility: visible; }
 }
 
 #session.docked {
+  position: absolute;
   z-index: 6;
   box-shadow: 0 1px 0 rgba(255, 255, 255, 0.04) inset, 0 10px 30px rgba(0, 0, 0, 0.35);
 }
@@ -1757,6 +1810,11 @@ body[data-view='source'] .cell .run-num { visibility: visible; }
   border-radius: 5px;
 }
 .s-modes button .ico { width: 11px; height: 11px; display: block; }
+/* A card under 370 px (the docked card on most windows): the tabs, the
+   modes and ✕ on one line, Pinned as its pin alone (its title says it). */
+#session.tight .s-tabs button { padding: 4px 6px; }
+#session.tight .s-modes button { padding: 4px 6px; }
+#session.tight .s-modes [data-mode='pinned'] span { display: none; }
 .s-modes button:hover { color: var(--room-ink); }
 .s-modes button.on { color: var(--room-ink); background: rgba(255, 255, 255, 0.1); }
 .s-modes button[data-mode='pinned'].on { color: #9db8d6; }
@@ -1773,8 +1831,9 @@ body[data-view='source'] .cell .run-num { visibility: visible; }
 .s-pane[data-pane='session'] { display: block; overflow-y: auto; overscroll-behavior: contain; }
 .s-pane[data-pane='session'][hidden] { display: none; }
 
-/* The last run's receipt on top, behind a blue rule; a run landing in a
-   docked card lights it for a moment. */
+/* The band: the last run's receipt on top, behind a blue rule (grey for
+   an earlier run's, a chip's while docked); a run landing in a docked
+   card, or a chip's receipt shown there, lights it for a moment. */
 #session .rv { position: relative; border-bottom: 1px solid rgba(255, 255, 255, 0.06); }
 #session .rv::before {
   content: '';
@@ -1786,12 +1845,58 @@ body[data-view='source'] .cell .run-num { visibility: visible; }
   border-radius: 0 2px 2px 0;
   background: #9db8d6;
 }
+#session .rv.earlier::before { background: rgba(240, 238, 233, 0.3); }
 #session .rv .r-head { background: transparent; }
 #session .rv.landed { animation: s-landed 1.2s ease-out; }
 @keyframes s-landed {
   from { background: rgba(157, 184, 214, 0.16); }
   to { background: transparent; }
 }
+
+/* Each name on its line — its mark, its kind at the right — and its value
+   under it: the preview on one line, or a table this small whole
+   (peek-v2's board, at the card's type size). */
+.band .b-rows { padding: 2px 12px 6px 14px; }
+.band .b-row {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  min-width: 0;
+  margin: 0 -6px;
+  padding: 2px 6px;
+  border-radius: 6px;
+  font: 12.5px/1.45 var(--mono);
+}
+.band .b-row .m { flex: none; width: 1ch; font-style: normal; font-weight: 600; color: var(--room-ink-soft); }
+.band .b-row .m.new { color: #6ea576; }
+.band .b-row b { font-weight: 600; color: var(--room-ink); white-space: nowrap; }
+.band .b-row .ty {
+  min-width: 0;
+  margin-left: auto;
+  padding-left: 8px;
+  color: var(--room-ink-soft);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.band .b-row.viewable { cursor: pointer; }
+.band .b-row.viewable b { color: #9db8d6; }
+.band .b-row.viewable:hover { background: rgba(255, 255, 255, 0.05); }
+.band .b-row.scratch b { font-style: italic; font-weight: 500; }
+.band .b-val { margin: 0 0 6px calc(1ch + 8px); font: 12px/1.45 var(--mono); color: #c3c1bc; }
+.band .b-val.pv { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.band .mt-wrap { overflow-x: auto; scrollbar-width: thin; }
+.band .mt { border-collapse: collapse; font: 12px/1.45 var(--mono); }
+.band .mt th { padding: 0 12px 0 0; color: var(--room-ink-soft); font-weight: 400; text-align: left; white-space: nowrap; }
+.band .mt td { padding: 0 0 0 12px; color: #e6e4df; text-align: right; white-space: nowrap; }
+.band .mt.h tr:first-child td,
+.band .mt.v thead td { color: var(--room-ink-soft); }
+
+/* The figure at the card's width, its name under it. */
+.rv .r-fig.wide { display: block; padding: 0.35rem 12px 0.45rem 14px; }
+.rv .r-fig.wide .thumb { width: 100%; padding: 6px; border-radius: 6px; }
+.rv .r-fig.wide .fl { margin-top: 6px; }
+.rv .r-fig.wide .fl small { display: inline; margin-left: 8px; }
 
 .s-sec {
   display: flex;
@@ -1827,7 +1932,8 @@ body[data-view='source'] .cell .run-num { visibility: visible; }
 .s-row.viewable:hover { background: rgba(255, 255, 255, 0.05); }
 .s-row.scratch b { font-style: italic; font-weight: 500; }
 #session.narrow .s-row { grid-template-columns: 14px auto minmax(0, 1fr) auto; }
-#session.narrow .s-row .pv { display: none; }
+#session.narrow .s-row:not(.short) .pv,
+#session.narrow .s-row.short .ty { display: none; }
 #session.narrow .s-row .ty { overflow: hidden; text-overflow: ellipsis; }
 
 .s-empty { padding: 18px 16px 10px; }
@@ -1953,6 +2059,7 @@ body[data-view='source'] .gutter {
    and an editor uses the width the window has. */
 body[data-view='source'] #sheet {
   max-width: none;
+  margin-left: 0;
 }
 
 /* All the way: a plain file is one editor, edge to edge in the room. The
@@ -2021,6 +2128,7 @@ body[data-view='grid'] #layout {
 
 body[data-view='grid'] #sheet {
   max-width: none;
+  margin-left: 0;
   height: 100%;
 }
 

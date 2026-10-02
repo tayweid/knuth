@@ -169,7 +169,7 @@ test('the controls are where the frame puts them, with every id the tests and th
   await expect(page.locator('#doc-folder')).toBeHidden();
 });
 
-test('the column keeps its width and centres in the room, with the Session card closed, floating or docked', async ({ page }) => {
+test('the column centres in the room, the Session card closed or floating; docked, it slides left with its width', async ({ page }) => {
   const centred = () => page.evaluate(() => {
     const doc = document.getElementById('doc')!;
     const sheet = document.getElementById('sheet')!.getBoundingClientRect();
@@ -178,20 +178,27 @@ test('the column keeps its width and centres in the room, with the Session card 
     const content = doc.clientWidth - parseFloat(style.paddingLeft) - parseFloat(style.paddingRight);
     return { width: sheet.width, offset: Math.abs(sheet.left + sheet.width / 2 - (left + content / 2)), content };
   });
+  await page.emulateMedia({ reducedMotion: 'reduce' });
   await boot(page, 1500, 900);
   await expect(page.locator('#session')).toBeHidden();
   const closed = await centred();
   expect(closed.width).toBe(832);
   expect(closed.offset).toBeLessThan(1);
-  // The card lies over the room, floating or docked: the column stays.
+  // Floating, the card lies over the room: the column stays.
   await page.locator('#toggle-panel').click();
   await expect(page.locator('#session')).toHaveClass(/floating/);
   expect(await centred()).toEqual(closed);
+  // Docked, the column slides left by what the card lacks, its width kept
+  // (session.spec.ts has the rule at each width).
   await page.locator('#session [data-mode="pinned"]').click();
   await expect(page.locator('#session')).toHaveClass(/docked/);
+  const docked = await centred();
+  expect(docked.width).toBe(832);
+  expect(docked.offset).toBeGreaterThan(50);
+  await page.locator('#session [data-mode="peek"]').click();
   expect(await centred()).toEqual(closed);
   // Narrower than the column and its margins: the column fills what there
-  // is, the card docked or not.
+  // is.
   await page.setViewportSize({ width: 900, height: 760 });
   const narrow = await centred();
   expect(narrow.width).toBe(narrow.content);
@@ -535,7 +542,7 @@ test('a short window cuts the cell tools under a fade and keeps the Session tile
 });
 
 test('below the layout floor the room scrolls sideways, and the bar and the rail stay put', async ({ page }) => {
-  // Under main's 640 px floor (the Session card takes none of the room).
+  // Under main's 640 px floor (with the Session card closed).
   await boot(page, 600, 600);
   const scroll = await page.evaluate(() => {
     const layout = document.getElementById('layout')!;
@@ -550,18 +557,27 @@ test('below the layout floor the room scrolls sideways, and the bar and the rail
   expect((await box(page, '#session-pill')).right).toBe(600 - 8);
 });
 
-test('the floor is main\'s 640 px, the Session card docked or not: it lies over the room and never takes its width', async ({ page }) => {
+test('the floor is main\'s 640 px; the docked card raises it, so the card never lies over the column', async ({ page }) => {
   const sideways = () => page.locator('#layout').evaluate((element) => element.scrollWidth > element.clientWidth);
   const column = () => page.locator('#sheet').evaluate((element) => element.getBoundingClientRect().width);
+  await page.emulateMedia({ reducedMotion: 'reduce' });
   await boot(page, 990, 700);
   expect(await sideways()).toBe(false);
-  // At 990 the column is whole, and docking the card leaves it so.
   expect(await column()).toBe(832);
+  // Docked at 990 the column narrows to its 640 px floor, and the chips'
+  // lane and the card need more than the room has: the room scrolls
+  // sideways, the card past the column's edge.
   await page.locator('#toggle-panel').click();
   await page.locator('#session [data-mode="pinned"]').click();
   await expect(page.locator('#session')).toHaveClass(/docked/);
-  expect(await column()).toBe(832);
-  expect(await sideways()).toBe(false);
+  expect(await column()).toBe(640);
+  expect(await sideways()).toBe(true);
+  const beside = await page.evaluate(() =>
+    document.getElementById('session')!.getBoundingClientRect().left - document.getElementById('sheet')!.getBoundingClientRect().right);
+  expect(beside).toBeGreaterThanOrEqual(45);
+  // Floating, main's floor again.
+  await page.locator('#session [data-mode="peek"]').click();
+  await expect.poll(sideways).toBe(false);
   await page.setViewportSize({ width: 640, height: 700 });
   await expect.poll(sideways).toBe(false);
   await page.setViewportSize({ width: 639, height: 700 });
