@@ -1,0 +1,1767 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>History — the record as a scrubber</title>
+    <style>
+      /* THE HISTORY WINDOW, AS A SCRUBBER. (Design session of 2026-10-02.)
+
+         Taylor: "a git history rewind visualizer, with the commits in a path,
+         with branches visualized, and the ability to rewind by clicking on a
+         node in the window." This draws it the way a video player is drawn:
+         the picture above, the scrubber below.
+
+         - The ROOM is the picture: the project's document as it was at the
+           commit under the pointer, drawn the way Knuth draws it (or, for a
+           Plass commit, the paper), with change bars where that commit
+           changed it and the view scrolled to the change. A slip in the
+           room's right margin says when, what, which files, and what a
+           rewind to there would write and remove.
+         - The SCRUBBER is the frame's bottom edge, grown into a band: time
+           runs left to right, the record (claerbout-autosave) is the bottom
+           lane, the user's branches are lanes above it. Pointing previews;
+           clicking holds a moment; clicking it again rewinds. Nothing
+           happens to the project until that second click (or Return, or the
+           slip's button).
+         - Time folds two ways. Closed stretches (nights, lunch) fold to a
+           fixed break mark, so a week is not mostly empty. Timer commits
+           between runs fold into a short bar when they would sit closer
+           than 10px; zooming in (wheel or pinch over the band, + and −)
+           unfolds them to one tick a minute. Scrubbing always walks every
+           commit, folded or not: the fold is only how it is drawn.
+         - A rewind is a step forward: two nodes land at the tip ("rewind
+           from", what you had; "rewind to", the old files again) and an arc
+           under the track points back to the moment it reproduces.
+
+         The frame is the live Zen frame (Plass src/style.css, merged
+         2026-10-02): #18181a surround, a 48px rail of 32px tiles, the room
+         rounded 12px inside one 8px edge. Open by double-click; the card at
+         the top left switches the states (mockup chrome, not the app). */
+      :root {
+        --frame: #18181a;
+        --frame-ink: #d5d3cf;
+        --frame-ink-soft: #85837f;
+        --frame-ink-faint: #5d5c59;
+        --tile: #2e2e32;
+        --tile-hover: #252528;
+        --pill: #232326;
+        --tip: #0e0e10;
+        --bg: #2b2a2d;
+        --room-ink: #d8d6d1;
+        --room-ink-soft: #8f8d88;
+        --room-line: rgba(255, 255, 255, 0.07);
+        --blue: #9db8d6;
+        --amber: #c98a1d;
+        --red: #cd6452;
+        --warm: #c4ad80;
+        --accent: #305c8a;
+        --serif: 'STIX Two Text', 'Charter', 'Georgia', serif;
+        --prose: 'CMU Serif', 'Computer Modern Serif', 'Charter', 'Georgia', serif;
+        --mono: ui-monospace, 'SF Mono', 'Menlo', 'Consolas', monospace;
+        --sans: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Helvetica Neue', sans-serif;
+        --topbar: 44px;
+        --rail: 48px;
+        --edge: 8px;
+        --band: 124px;
+        --slipw: 276px;
+      }
+      * { box-sizing: border-box; }
+      html, body { margin: 0; height: 100%; overflow: hidden; }
+      body { background: var(--frame); font: 15px/1.55 var(--sans); }
+      button { font: inherit; }
+
+      /* ---------- the window ---------- */
+      #app { position: fixed; inset: 0; background: var(--frame); overflow: hidden; color: var(--frame-ink); }
+      body.sized { background: radial-gradient(ellipse at 50% 28%, #5a5960, #34333a 62%, #29282d); }
+      body.sized #app {
+        inset: auto; left: var(--cx, 50%); top: calc(50% - 12px); width: var(--w); height: var(--h);
+        transform: translate(-50%, -50%) scale(var(--s, 1)); border-radius: 12px;
+        box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.55), inset 0 0 0 1px rgba(255, 255, 255, 0.07), 0 30px 90px rgba(0, 0, 0, 0.5);
+      }
+      #sizelabel { position: fixed; left: var(--cx, 50%); bottom: 8px; transform: translateX(-50%); font: 12px var(--sans); color: rgba(255, 255, 255, 0.7); display: none; white-space: nowrap; }
+      body.sized #sizelabel { display: block; }
+      body.squint #app { filter: blur(1.9px); }
+
+      /* ---------- the top bar: part of the frame ---------- */
+      #topbar { position: absolute; top: 0; left: 0; right: 0; height: var(--topbar); display: flex; align-items: center; gap: 4px; padding: 0 var(--edge) 0 14px; }
+      #topbar svg, #rail svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; }
+      .lights { display: flex; gap: 8px; margin-right: 14px; }
+      .lights i { width: 12px; height: 12px; border-radius: 50%; display: block; background: #46464a; }
+      #projpill { flex: 1; min-width: 0; height: 30px; border-radius: 8px; background: var(--pill); display: flex; align-items: center; gap: 10px; padding: 0 12px; margin-right: 6px; }
+      #projpill .ico { color: var(--frame-ink-soft); display: inline-flex; }
+      #projpill .name { font: 15px/1 var(--serif); letter-spacing: 0.06em; color: var(--frame-ink); white-space: nowrap; }
+      #projpill .path { color: var(--frame-ink-soft); font: 12px var(--sans); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; flex: 0 1 auto; }
+      #projpill .sep { width: 1px; height: 14px; background: rgba(255, 255, 255, 0.11); flex: 0 0 auto; }
+      #projpill .rec { color: var(--frame-ink-soft); font: 12px var(--sans); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+      #projpill .rec b { font: 11.5px var(--mono); font-weight: 400; color: var(--frame-ink); }
+      /* which document the room shows: it follows the commit, a click holds one */
+      #docsw { display: flex; align-items: center; height: 30px; padding: 3px; gap: 2px; border-radius: 8px; background: var(--pill); flex: 0 0 auto; }
+      #docsw[hidden] { display: none; }
+      #docsw button { position: relative; height: 24px; padding: 0 10px; border: 0; border-radius: 6px; background: transparent; color: var(--frame-ink-soft); font: 12px var(--sans); cursor: pointer; white-space: nowrap; }
+      #docsw button:hover { color: var(--frame-ink); }
+      #docsw button.on { background: var(--tile); color: var(--frame-ink); }
+      #docsw button.held::after { content: ''; position: absolute; left: 50%; bottom: 2px; width: 10px; margin-left: -5px; height: 1.5px; border-radius: 1px; background: var(--blue); }
+
+      /* ---------- the rail ---------- */
+      #rail { position: absolute; top: var(--topbar); left: 0; bottom: var(--edge); width: var(--rail); display: flex; flex-direction: column; align-items: center; gap: 2px; }
+      .rb { position: relative; display: inline-flex; align-items: center; justify-content: center; width: 32px; height: 32px; padding: 0; border: 0; border-radius: 8px; background: transparent; color: var(--frame-ink); cursor: pointer; flex: 0 0 auto; }
+      .rb:hover { background: var(--tile-hover); }
+      .rb.on { background: var(--tile); }
+      .rb.dim { color: var(--frame-ink-soft); }
+      .rb:disabled { color: var(--frame-ink-faint); cursor: default; background: transparent; }
+      .rb[data-label]::after {
+        content: attr(data-label); position: absolute; left: calc(100% + 10px); top: 50%; transform: translateY(-50%);
+        background: var(--tip); color: var(--frame-ink); font: 12px/1.3 var(--sans); white-space: nowrap; padding: 5px 9px; border-radius: 7px;
+        border: 1px solid rgba(255, 255, 255, 0.08); opacity: 0; pointer-events: none; transition: opacity 0.12s; z-index: 60;
+      }
+      .rb:hover::after { opacity: 1; }
+      .rule { width: 18px; height: 1px; background: rgba(255, 255, 255, 0.09); margin: 5px 0; flex: 0 0 auto; }
+      .grow { flex: 1; }
+
+      /* ---------- the room: the picture ---------- */
+      #room {
+        position: absolute; top: var(--topbar); left: var(--rail); right: var(--edge); bottom: var(--band);
+        border-radius: 12px; background: var(--bg); overflow: hidden; color: var(--room-ink);
+        box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.05), 0 1px 2px rgba(0, 0, 0, 0.35), 0 8px 26px rgba(0, 0, 0, 0.42);
+      }
+      #preview { position: absolute; top: 0; left: 0; bottom: 0; right: var(--slipw); overflow-y: auto; overflow-x: hidden; padding: 22px 26px 34vh 46px; scrollbar-width: thin; scrollbar-color: rgba(255, 255, 255, 0.14) transparent; }
+      #page { position: relative; max-width: 50rem; margin: 0 auto; transition: opacity 0.12s; }
+      body.scrubbing #page { transition: none; }
+
+      /* cell zero: the package header (pinned versions land in the track) */
+      .pkg { position: relative; display: flex; align-items: center; gap: 8px; margin: 0 0 8px; padding: 6px 12px; border: 1px dashed rgba(255, 255, 255, 0.12); border-radius: 10px; color: var(--room-ink-soft); font: 12px var(--sans); }
+      .pkg .list { font: 11.5px var(--mono); }
+      .pkg .list .new { color: var(--blue); }
+      .pkg .list s { color: var(--room-ink-soft); text-decoration-color: rgba(157, 184, 214, 0.8); }
+      .pkg.chg { border-color: rgba(157, 184, 214, 0.5); }
+
+      .cellw { position: relative; margin: 0 0 14px; }
+      .cno { position: absolute; left: -34px; top: 6px; width: 24px; text-align: right; font: 10.5px/18.9px var(--mono); color: rgba(240, 238, 233, 0.26); }
+      .cellw.chg .cno { color: var(--blue); }
+      .cm { display: flex; background: #282c34; color: #abb2bf; border: 1px solid rgba(255, 255, 255, 0.07); border-radius: 8px; overflow: hidden; font: 13.5px/18.9px var(--mono); }
+      .cellw.added .cm { border-color: rgba(157, 184, 214, 0.45); }
+      .cellw.scratch .cm { border-style: dashed; background: transparent; }
+      .gut { flex: 0 0 auto; padding: 0.5rem 0; background: rgba(255, 255, 255, 0.022); border-right: 1px solid rgba(255, 255, 255, 0.06); color: rgba(240, 238, 233, 0.28); }
+      .cellw.scratch .gut { background: transparent; }
+      .cellw.stale .gut { border-right-color: var(--amber); }
+      .ln { display: flex; flex-direction: column; min-width: 2.1rem; text-align: right; padding: 0 0.45rem 0 0.3rem; }
+      .ln span { height: 18.9px; }
+      .code { flex: 1; min-width: 0; padding: 0.5rem 0; }
+      .line { padding: 0 0.75rem; white-space: pre-wrap; min-height: 18.9px; }
+      .line.chg { background: rgba(157, 184, 214, 0.075); box-shadow: inset 2px 0 0 var(--blue); }
+      .k { color: #c678dd; } .p { color: #e06c75; } .s { color: #98c379; } .n { color: #d19a66; } .c { color: #5c6370; } .o { color: #56b6c2; }
+      .scratch-label { font-size: 10px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--room-ink-soft); margin-bottom: 0.15rem; }
+      .output { margin: 0.35rem 0 0; padding: 0.4rem 0.75rem; border-left: 3px solid rgba(255, 255, 255, 0.14); font: 12.5px/1.5 var(--mono); white-space: pre-wrap; color: #b5b3ae; }
+      .output.err { color: #e09a8c; border-left-color: rgba(205, 100, 82, 0.6); }
+      .output.chg { border-left-color: var(--blue); }
+      .output.err.chg { border-left-color: var(--red); }
+      .figure { display: inline-block; margin: 0.45rem 0 0; background: #fff; border-radius: 6px; padding: 0.5rem; box-shadow: 0 1px 3px rgba(0, 0, 0, 0.4); max-width: 100%; }
+      .figure svg { display: block; width: 440px; max-width: 100%; height: auto; }
+      .figure.chg { box-shadow: 0 0 0 2px rgba(157, 184, 214, 0.75), 0 1px 3px rgba(0, 0, 0, 0.4); }
+      .prose { position: relative; font: 18px/1.55 var(--prose); color: var(--room-ink); padding: 2px 0.75rem; }
+      .prose h2 { font-size: 1.35em; font-weight: 400; color: #f0eee9; margin: 0.5em 0 0.3em; }
+      .prose p { margin: 0.4em 0; }
+      .cellw.chg .prose { box-shadow: inset 2px 0 0 var(--blue); }
+      .gone { margin: 4px 0 16px; padding: 8px 12px; border: 1px dashed rgba(157, 184, 214, 0.35); border-radius: 8px; color: var(--room-ink-soft); font: 12.5px/1.45 var(--sans); }
+      .gone b { color: var(--room-ink); font-weight: 500; }
+      @keyframes fresh { from { opacity: 0.35; } to { opacity: 1; } }
+      .cellw.added { animation: fresh 0.25s ease-out; }
+      body.scrubbing .cellw.added { animation: none; }
+
+      /* the paper, for a Plass commit */
+      .paper { width: min(600px, 100%); margin: 4px auto 0; background: #fff; color: #1a1a1a; border-radius: 2px; padding: 56px 64px 80px; box-shadow: 0 2px 6px rgba(0, 0, 0, 0.35), 0 18px 50px rgba(0, 0, 0, 0.45); font: 15.5px/1.55 var(--prose); }
+      .paper .blk { position: relative; }
+      .paper .blk.chg::before { content: ''; position: absolute; left: -26px; top: 3px; bottom: 3px; width: 2px; border-radius: 1px; background: var(--accent); }
+      .paper .pb-title { font-size: 26px; line-height: 1.2; text-align: center; margin: 0 0 6px; }
+      .paper .pb-by { text-align: center; font-size: 13.5px; color: #555; margin: 0 0 28px; font-style: italic; }
+      .paper .pb-h { font-size: 17px; font-weight: 600; margin: 22px 0 6px; }
+      .paper .pb-p { margin: 0 0 10px; text-align: justify; hyphens: auto; }
+      .absent { margin: 80px auto 0; max-width: 30rem; text-align: center; color: var(--room-ink-soft); font: 14px/1.55 var(--sans); }
+      .absent b { display: block; color: var(--room-ink); font: 500 16px/1.4 var(--sans); margin-bottom: 6px; }
+
+      /* ---------- the slip: when, what, which files, and what a rewind would do ---------- */
+      #slip { position: absolute; top: 0; right: 0; bottom: 0; width: var(--slipw); padding: 18px 16px 18px 2px; overflow-y: auto; scrollbar-width: none; }
+      .sl { background: rgba(255, 255, 255, 0.022); border: 1px solid rgba(255, 255, 255, 0.065); border-radius: 10px; padding: 12px 14px 12px; font: 12.5px/1.45 var(--sans); color: var(--room-ink); }
+      .sl + .sl { margin-top: 10px; }
+      .sl .when { font: 400 24px/1.1 var(--sans); font-variant-numeric: tabular-nums; letter-spacing: -0.01em; color: #f0eee9; }
+      .sl .when small { font-size: 13px; color: var(--room-ink-soft); letter-spacing: 0; margin-left: 2px; }
+      .sl .day { margin: 3px 0 0; color: var(--room-ink-soft); font-size: 12px; }
+      .sl .msg { margin: 10px 0 0; font: 12.5px/1.4 var(--mono); color: var(--room-ink); word-break: break-word; }
+      .sl .msg .app { color: var(--room-ink-soft); }
+      .sl .msg .warm { color: var(--warm); }
+      .sl .msg .lane { font: 11px var(--sans); color: var(--frame); background: var(--room-ink); border-radius: 4px; padding: 0 5px; margin-right: 6px; }
+      .sl .go { color: var(--blue); cursor: pointer; }
+      .sl .go:hover { text-decoration: underline; text-underline-offset: 3px; }
+      .sl .why { margin: 6px 0 0; color: #b9b7b2; font-size: 12.5px; }
+      .sl .why.amber { color: #d9a85a; }
+      .sl .cap { margin: 12px 0 5px; font-size: 10.5px; letter-spacing: 0.07em; text-transform: uppercase; color: var(--room-ink-soft); }
+      .sl .files { display: flex; flex-direction: column; gap: 3px; }
+      .sl .f { display: flex; align-items: center; gap: 7px; font: 12px/1.35 var(--mono); min-width: 0; }
+      .sl .f .st { flex: 0 0 auto; width: 12px; text-align: center; font-size: 10.5px; color: var(--room-ink-soft); }
+      .sl .f .st.A { color: #8fc79a; } .sl .f .st.D { color: #e09a8c; } .sl .f .st.M { color: var(--blue); }
+      .sl .f .fp { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--room-ink); }
+      .sl .f .ad { flex: 0 0 auto; font-size: 11px; color: var(--room-ink-soft); }
+      .sl .f .ad i { font-style: normal; color: #8fc79a; } .sl .f .ad u { text-decoration: none; color: #e09a8c; }
+      .sl .f .th { flex: 0 0 auto; width: 40px; height: 22px; background: #fff; border-radius: 3px; overflow: hidden; display: inline-flex; }
+      .sl .f .th svg { width: 100%; height: 100%; }
+      .sl .f.amber .fp { color: #d9a85a; }
+      .sl .rw { display: grid; grid-template-columns: 58px 1fr; gap: 3px 8px; font-size: 12px; }
+      .sl .rw dt { color: var(--room-ink-soft); }
+      .sl .rw dd { margin: 0; min-width: 0; font: 11.5px/1.45 var(--mono); color: var(--room-ink); word-break: break-word; }
+      .sl .rw dd.sans { font: 12px/1.45 var(--sans); color: #b9b7b2; }
+      .btn { margin: 12px 0 0; width: 100%; display: flex; align-items: center; justify-content: center; gap: 7px; height: 30px; border: 1px solid rgba(157, 184, 214, 0.45); border-radius: 8px; background: rgba(157, 184, 214, 0.1); color: #dfe8f2; font: 500 12.5px var(--sans); cursor: pointer; }
+      .btn:hover { background: rgba(157, 184, 214, 0.18); }
+      .btn svg { width: 14px; height: 14px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+      .btn.quiet { border-color: rgba(255, 255, 255, 0.14); background: transparent; color: var(--room-ink); font-weight: 400; }
+      .btn.quiet:hover { background: rgba(255, 255, 255, 0.06); }
+      .sl .hint { margin: 6px 0 0; text-align: center; color: var(--room-ink-soft); font-size: 11.5px; }
+      .sl .hint kbd, .sl kbd { font: 10.5px var(--sans); border: 1px solid rgba(255, 255, 255, 0.16); border-bottom-width: 2px; border-radius: 4px; padding: 0 4px; color: var(--room-ink); }
+      .sl .meta { margin: 12px 0 0; padding-top: 9px; border-top: 1px solid rgba(255, 255, 255, 0.06); font: 11px var(--mono); color: var(--room-ink-soft); }
+      .sl.rewound { border-color: rgba(157, 184, 214, 0.35); background: rgba(157, 184, 214, 0.05); }
+      .sl.rewound .lead { font: 500 13px/1.4 var(--sans); color: #e6edf5; }
+      .sl .soft { color: var(--room-ink-soft); }
+      .sl p { margin: 6px 0 0; }
+
+      /* ---------- the band: the scrubber, in the frame ---------- */
+      #band { position: absolute; left: var(--rail); right: var(--edge); bottom: 0; height: var(--band); user-select: none; -webkit-user-select: none; cursor: default; touch-action: none; }
+      #track { position: absolute; left: 0; top: 0; width: 100%; height: 100%; overflow: visible; }
+      #track text { font: 10.5px var(--sans); fill: var(--frame-ink-soft); font-variant-numeric: tabular-nums; }
+      #track text.day { fill: var(--frame-ink); font-weight: 500; }
+      #track text.cn { font: 9.5px var(--mono); fill: #77756f; }
+      #track text.cn.on { fill: var(--blue); }
+      #track text.sub { font-size: 10.5px; fill: #8a8884; }
+      #track text.nowt { fill: var(--frame-ink-soft); font-size: 10px; }
+      #track .arcpath { fill: none; stroke: rgba(157, 184, 214, 0.6); stroke-width: 1.25; }
+      #track .arcpath.fresh { stroke-dasharray: 1; stroke-dashoffset: 1; animation: draw 0.7s ease-out forwards; }
+      @keyframes draw { to { stroke-dashoffset: 0; } }
+      #track .pulse { animation: pulse 1.4s ease-out; transform-box: fill-box; transform-origin: center; }
+      @keyframes pulse { 0% { transform: scale(2.6); opacity: 0.2; } 100% { transform: scale(1); opacity: 1; } }
+      .lanelab { position: absolute; left: 10px; transform: translateY(-50%); font: 10.5px var(--sans); color: var(--frame-ink-soft); letter-spacing: 0.02em; pointer-events: none; white-space: nowrap; }
+      .lanelab.rec { color: var(--frame-ink); }
+      .lanelab small { display: block; font-size: 9.5px; color: var(--frame-ink-faint); margin-top: -1px; }
+      #ph { position: absolute; width: 1px; margin-left: -0.5px; background: rgba(255, 255, 255, 0.5); pointer-events: none; display: none; }
+      #ph.held { background: rgba(157, 184, 214, 0.85); }
+      #ph2 { position: absolute; width: 1px; margin-left: -0.5px; background: rgba(157, 184, 214, 0.32); pointer-events: none; display: none; }
+      #flag { position: absolute; top: 12px; transform: translateX(-50%); background: var(--tip); border: 1px solid rgba(255, 255, 255, 0.09); border-radius: 6px; padding: 1px 7px 2px; font: 11px/1.35 var(--sans); white-space: nowrap; color: var(--frame-ink); pointer-events: none; font-variant-numeric: tabular-nums; display: none; z-index: 3; }
+      #flag .k { color: var(--frame-ink-soft); }
+      #flag.held { border-color: rgba(157, 184, 214, 0.5); }
+      #pill { position: absolute; transform: translate(-50%, -100%); background: #1c2633; border: 1px solid rgba(157, 184, 214, 0.55); color: #e6edf5; border-radius: 7px; padding: 4px 9px 5px; font: 12px/1.3 var(--sans); white-space: nowrap; pointer-events: none; display: none; z-index: 4; box-shadow: 0 6px 18px rgba(0, 0, 0, 0.45); }
+      #pill kbd { font: 10.5px var(--sans); border: 1px solid rgba(157, 184, 214, 0.4); border-bottom-width: 2px; border-radius: 4px; padding: 0 4px; margin-left: 4px; }
+      #readout { position: absolute; right: 12px; bottom: 6px; font: 10.5px var(--sans); color: var(--frame-ink-faint); white-space: nowrap; pointer-events: none; }
+      #readout b { font-weight: 400; color: var(--frame-ink-soft); }
+      #fakeptr { position: absolute; width: 14px; height: 20px; pointer-events: none; display: none; z-index: 5; }
+
+      /* ---------- the empty project ---------- */
+      #empty { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; padding: 40px; }
+      #empty[hidden] { display: none; }
+      #empty .card { max-width: 30rem; color: var(--room-ink-soft); font: 14px/1.6 var(--sans); }
+      #empty .card .lead { color: #f0eee9; font: 400 21px/1.3 var(--sans); margin: 0 0 10px; }
+      #empty .card p { margin: 0 0 10px; }
+      #empty .card code { font: 12.5px var(--mono); color: var(--room-ink); }
+      #empty .card .path { display: inline-block; margin: 2px 0 12px; font: 12.5px var(--mono); color: var(--room-ink); background: rgba(255, 255, 255, 0.04); border: 1px solid rgba(255, 255, 255, 0.07); border-radius: 6px; padding: 3px 8px; }
+
+      /* ---------- mockup chrome (not the app): the states card ---------- */
+      #states {
+        position: fixed; left: 14px; top: 14px; z-index: 100; width: 272px; max-height: calc(100vh - 28px); display: flex; flex-direction: column;
+        background: rgba(251, 250, 248, 0.96); backdrop-filter: blur(18px) saturate(140%); -webkit-backdrop-filter: blur(18px) saturate(140%);
+        border: 1px solid rgba(0, 0, 0, 0.08); border-radius: 14px; box-shadow: 0 10px 30px rgba(0, 0, 0, 0.38); color: #2c2b29; font: 12px/1.35 var(--sans);
+      }
+      #states header { display: flex; align-items: center; gap: 8px; padding: 9px 12px 7px; cursor: pointer; user-select: none; }
+      #states header b { font-weight: 600; }
+      #states header span { margin-left: auto; color: #8a8883; font-size: 11px; }
+      #states .bd { overflow-y: auto; padding: 0 8px 4px; }
+      #states.min .bd, #states.min .capt { display: none; }
+      #states .grp { padding: 4px 2px 6px; }
+      #states .lab { display: block; margin: 0 4px 4px; color: #85837e; letter-spacing: 0.06em; text-transform: uppercase; font-size: 10px; }
+      #states .grp button { border: 1px solid rgba(0, 0, 0, 0.1); background: rgba(255, 255, 255, 0.7); color: #2c2b29; border-radius: 999px; padding: 3px 9px; margin: 0 2px 4px 0; cursor: pointer; font: 11.5px var(--sans); }
+      #states .grp button:hover { background: #fff; border-color: rgba(0, 0, 0, 0.22); }
+      #states .grp button.on { background: #2c2b29; border-color: #2c2b29; color: #fff; }
+      #states .capt { padding: 9px 12px 11px; border-top: 1px solid rgba(0, 0, 0, 0.08); color: #4d4b47; font-size: 12px; line-height: 1.5; overflow-y: auto; max-height: 40vh; }
+      #states .capt p { margin: 0 0 6px; }
+      #states .legend { display: grid; grid-template-columns: 22px 1fr; gap: 3px 6px; align-items: center; margin: 6px 0 2px; font-size: 11.5px; color: #4d4b47; }
+      #states .legend svg { width: 22px; height: 14px; background: #18181a; border-radius: 3px; }
+    </style>
+  </head>
+  <body>
+    <!-- figures, drawn once (the cell, the slip's thumbnails) -->
+    <svg width="0" height="0" style="position: absolute" aria-hidden="true">
+      <defs>
+        <symbol id="fig-line" viewBox="0 0 460 300">
+          <rect width="460" height="300" fill="#fff"/>
+          <g font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', 'Helvetica Neue', sans-serif" font-size="11" fill="#000">
+            <rect x="60" y="20" width="380" height="235" fill="none" stroke="#000" stroke-width="0.8"/>
+            <g stroke="#000" stroke-width="0.8">
+              <line x1="60" y1="255" x2="60" y2="259"/><line x1="144.4" y1="255" x2="144.4" y2="259"/><line x1="228.9" y1="255" x2="228.9" y2="259"/><line x1="313.3" y1="255" x2="313.3" y2="259"/><line x1="397.8" y1="255" x2="397.8" y2="259"/>
+              <line x1="56" y1="237" x2="60" y2="237"/><line x1="56" y1="192" x2="60" y2="192"/><line x1="56" y1="146.6" x2="60" y2="146.6"/><line x1="56" y1="101.4" x2="60" y2="101.4"/><line x1="56" y1="56" x2="60" y2="56"/>
+            </g>
+            <g text-anchor="middle"><text x="60" y="272">0.70</text><text x="144.4" y="272">0.80</text><text x="228.9" y="272">0.90</text><text x="313.3" y="272">1.00</text><text x="397.8" y="272">1.10</text></g>
+            <g text-anchor="end"><text x="52" y="241">300</text><text x="52" y="196">350</text><text x="52" y="150.6">400</text><text x="52" y="105.4">450</text><text x="52" y="60">500</text></g>
+            <text x="250" y="292" text-anchor="middle" font-size="12">price</text>
+            <text transform="translate(16 137.5) rotate(-90)" text-anchor="middle" font-size="12">median quantity</text>
+            <polyline points="102,38 229,137.5 398,237" fill="none" stroke="#1f77b4" stroke-width="1.6"/>
+            <circle cx="102" cy="38" r="3.6" fill="#1f77b4"/><circle cx="229" cy="137.5" r="3.6" fill="#1f77b4"/><circle cx="398" cy="237" r="3.6" fill="#1f77b4"/>
+          </g>
+        </symbol>
+        <symbol id="fig-multi" viewBox="0 0 460 132">
+          <rect width="460" height="132" fill="#fff"/>
+          <g font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', 'Helvetica Neue', sans-serif" font-size="8" fill="#000">
+            <g fill="none" stroke="#000" stroke-width="0.7">
+              <rect x="40" y="18" width="96" height="82"/><rect x="144" y="18" width="96" height="82"/><rect x="248" y="18" width="96" height="82"/><rect x="352" y="18" width="96" height="82"/>
+              <line x1="36" y1="94.1" x2="40" y2="94.1"/><line x1="36" y1="64.9" x2="40" y2="64.9"/><line x1="36" y1="35.6" x2="40" y2="35.6"/>
+            </g>
+            <g text-anchor="end"><text x="33" y="97">300</text><text x="33" y="67.8">400</text><text x="33" y="38.5">500</text></g>
+            <g text-anchor="middle" font-size="9.5"><text x="88" y="13">east</text><text x="192" y="13">north</text><text x="296" y="13">south</text><text x="400" y="13">west</text></g>
+            <g text-anchor="middle" font-size="8.5"><text x="88" y="124">price</text><text x="192" y="124">price</text><text x="296" y="124">price</text><text x="400" y="124">price</text></g>
+            <g fill="none" stroke="#1f77b4" stroke-width="1.3">
+              <polyline points="50,36.2 81,64.3 122,96.8"/><polyline points="154,21.8 185,55.8 226,88.9"/><polyline points="258,32.9 289,65.4 330,95.3"/><polyline points="362,26.5 393,60.5 434,92.7"/>
+            </g>
+            <g fill="#1f77b4">
+              <circle cx="50" cy="36.2" r="2.4"/><circle cx="81" cy="64.3" r="2.4"/><circle cx="122" cy="96.8" r="2.4"/>
+              <circle cx="154" cy="21.8" r="2.4"/><circle cx="185" cy="55.8" r="2.4"/><circle cx="226" cy="88.9" r="2.4"/>
+              <circle cx="258" cy="32.9" r="2.4"/><circle cx="289" cy="65.4" r="2.4"/><circle cx="330" cy="95.3" r="2.4"/>
+              <circle cx="362" cy="26.5" r="2.4"/><circle cx="393" cy="60.5" r="2.4"/><circle cx="434" cy="92.7" r="2.4"/>
+            </g>
+          </g>
+        </symbol>
+        <symbol id="fig-bar" viewBox="0 0 460 300">
+          <rect width="460" height="300" fill="#fff"/>
+          <g font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', 'Helvetica Neue', sans-serif" font-size="11" fill="#000">
+            <rect x="60" y="20" width="380" height="235" fill="none" stroke="#000" stroke-width="0.8"/>
+            <g text-anchor="middle"><text x="123" y="272">0.75</text><text x="250" y="272">0.90</text><text x="377" y="272">1.10</text></g>
+            <g text-anchor="end"><text x="52" y="24">0.0</text><text x="52" y="91.1">−0.4</text><text x="52" y="158.3">−0.8</text><text x="52" y="225.4">−1.2</text></g>
+            <text x="250" y="292" text-anchor="middle" font-size="12">price</text>
+            <rect x="208" y="20" width="84" height="178" fill="#305c8a"/>
+            <rect x="335" y="20" width="84" height="203" fill="#305c8a"/>
+          </g>
+        </symbol>
+      </defs>
+    </svg>
+
+    <div id="app">
+      <div id="topbar">
+        <div class="lights"><i></i><i></i><i></i></div>
+        <div id="projpill">
+          <span class="ico"><svg viewBox="0 0 24 24"><path d="M3 12a9 9 0 1 0 2.64-6.36L3 8.3"/><polyline points="3 3.5 3 8.3 7.8 8.3"/><polyline points="12 7.5 12 12 15 14"/></svg></span>
+          <span class="name" id="pj-name"></span>
+          <span class="path" id="pj-path"></span>
+          <span class="sep"></span>
+          <span class="rec" id="pj-rec"></span>
+        </div>
+        <div id="docsw" aria-label="Document shown"></div>
+      </div>
+
+      <nav id="rail" aria-label="History tools">
+        <button class="rb" id="rb-doc" data-label="Back to analysis.py"><svg viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg></button>
+        <div class="rule"></div>
+        <button class="rb" id="rb-in" data-label="Zoom in   +"><svg viewBox="0 0 24 24"><circle cx="10.5" cy="10.5" r="6.5"/><line x1="15.5" y1="15.5" x2="21" y2="21"/><line x1="10.5" y1="7.5" x2="10.5" y2="13.5"/><line x1="7.5" y1="10.5" x2="13.5" y2="10.5"/></svg></button>
+        <button class="rb" id="rb-out" data-label="Zoom out   −"><svg viewBox="0 0 24 24"><circle cx="10.5" cy="10.5" r="6.5"/><line x1="15.5" y1="15.5" x2="21" y2="21"/><line x1="7.5" y1="10.5" x2="13.5" y2="10.5"/></svg></button>
+        <button class="rb" id="rb-fit" data-label="Today, or the whole record   0"><svg viewBox="0 0 24 24"><polyline points="8 4 4 4 4 8"/><polyline points="16 4 20 4 20 8"/><polyline points="8 20 4 20 4 16"/><polyline points="16 20 20 20 20 16"/><line x1="8" y1="12" x2="16" y2="12"/></svg></button>
+        <div class="rule"></div>
+        <button class="rb" id="rb-now" data-label="Back to now   Esc"><svg viewBox="0 0 24 24"><polygon points="5 5 13 12 5 19" fill="currentColor" stroke="none"/><line x1="18" y1="5" x2="18" y2="19"/></svg></button>
+        <div class="grow"></div>
+      </nav>
+
+      <main id="room">
+        <div id="preview"><div id="page"></div></div>
+        <aside id="slip" aria-label="The commit"></aside>
+        <div id="empty" hidden></div>
+      </main>
+
+      <section id="band" aria-label="The record, as a timeline">
+        <div id="lanelabs"></div>
+        <svg id="track"></svg>
+        <div id="ph2"></div>
+        <div id="ph"></div>
+        <div id="flag"></div>
+        <div id="pill"></div>
+        <div id="readout"></div>
+        <svg id="fakeptr" viewBox="0 0 14 20"><path d="M1 1 L1 16 L5 12.5 L7.6 18.5 L10 17.4 L7.5 11.6 L12.5 11.6 Z" fill="#fff" stroke="#000" stroke-width="1"/></svg>
+      </section>
+    </div>
+    <div id="sizelabel"></div>
+
+    <div id="states" aria-label="Mockup states">
+      <header><b>History · the scrubber</b><span>states</span></header>
+      <div class="bd">
+        <div class="grp"><span class="lab">A morning in week-3</span>
+          <button data-st="rest">At rest</button><button data-st="scrub">Scrub</button><button data-st="held">A moment held</button><button data-st="rewound">After a rewind</button><button data-st="main">main beside the record</button><button data-st="plass">A Plass commit</button>
+        </div>
+        <div class="grp"><span class="lab">A long record (price-experiment)</span>
+          <button data-st="long">Two weeks</button><button data-st="day">One day</button><button data-st="minutes">Minutes</button>
+        </div>
+        <div class="grp"><span class="lab">No record</span>
+          <button data-st="unsaved">Not saved yet</button><button data-st="refused">In Downloads</button>
+        </div>
+        <div class="grp"><span class="lab">Window</span>
+          <button data-win="1440">1440</button><button data-win="1100">1100</button><button data-win="fill">Fill</button><button id="st-squint">Squint</button>
+        </div>
+      </div>
+      <div class="capt" id="capt"></div>
+    </div>
+
+    <script>
+      (function () {
+        'use strict';
+        const $ = (s, r) => (r || document).querySelector(s);
+        const $$ = (s, r) => Array.from((r || document).querySelectorAll(s));
+        const esc = (s) => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+        const clone = (o) => (o == null ? o : JSON.parse(JSON.stringify(o)));
+        const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+        const body = document.body, app = $('#app'), band = $('#band'), track = $('#track');
+        const ph = $('#ph'), ph2 = $('#ph2'), flag = $('#flag'), pill = $('#pill'), readout = $('#readout'), fakeptr = $('#fakeptr');
+        const preview = $('#preview'), page = $('#page'), slip = $('#slip'), emptyEl = $('#empty'), docsw = $('#docsw');
+
+        /* ================= the document: Knuth's twenty cells (the round-two story) ================= */
+        const K = (s) => '<span class="k">' + s + '</span>', P = (s) => '<span class="p">' + s + '</span>', S_ = (s) => '<span class="s">' + s + '</span>';
+        const N = (s) => '<span class="n">' + s + '</span>', O = (s) => '<span class="o">' + s + '</span>', C = (s) => '<span class="c">' + s + '</span>';
+        const CELLS = [
+          { kind: 'program', code: [K('import') + ' pandas ' + K('as') + ' pd', K('import') + ' numpy ' + K('as') + ' np', K('import') + ' matplotlib.pyplot ' + K('as') + ' plt'] },
+          { kind: 'program', code: ['prices ' + O('=') + ' pd.' + P('read_csv') + '(' + S_("'prices.csv'") + ')', 'prices.' + P('head') + '()'],
+            out: '   price  quantity region\n0   0.75       583  north\n1   0.90       402  south\n2   1.10       297   east\n3   0.75       511   west\n4   0.90       455  north' },
+          { kind: 'text', h2: 'Demand at three prices', p: ['Each row is one buyer’s answer at the price they were shown, in one of four regions.', 'Each row is one buyer’s answer at the price they were shown, in one of four regions. The curve below joins the median quantity at each price; the slope between neighbouring medians is the elasticity we report at the end.'] },
+          { kind: 'program', code: ['n ' + O('=') + ' ' + P('len') + '(prices)', 'regions ' + O('=') + ' ' + P('sorted') + '(prices.region.' + P('unique') + '())', 'n, regions'], out: "(1200, ['east', 'north', 'south', 'west'])" },
+          { kind: 'program', code: ['demand ' + O('=') + ' prices.' + P('groupby') + '(' + S_("'price'") + ').quantity.' + P('median') + '()', 'ax ' + O('=') + ' demand.' + P('plot') + '(marker' + O('=') + S_("'o'") + ')', 'ax.' + P('set_ylabel') + '(' + S_("'median quantity'") + ')'],
+            fig: 'line', out: "Text(0, 0.5, 'median quantity')" },
+          { kind: 'program', code: ['prices ' + O('=') + ' prices[prices.quantity ' + O('&gt;') + ' ' + N('0') + ']   ' + C('# drop the no-sale rows'), 'n ' + O('=') + ' ' + P('len') + '(prices)', 'n'], out: '1187' },
+          { kind: 'scratch', code: ['tmp ' + O('=') + ' demand.' + P('pct_change') + '()', 'tmp'], out: 'price\n0.75         NaN\n0.90   -0.211538\n1.10   -0.268293\nName: quantity, dtype: float64' },
+          { kind: 'text', h2: 'Elasticity', p: ['Between neighbouring prices, the elasticity is the percentage change in quantity over the percentage change in price.', 'Between neighbouring prices, the elasticity is the percentage change in quantity over the percentage change in price. The arc version measures both changes from the midpoint, so it does not depend on which way you move.'] },
+          { kind: 'program', code: ['dp ' + O('=') + ' demand.index.' + P('to_series') + '().' + P('pct_change') + '()', 'elasticity ' + O('=') + ' (demand.' + P('pct_change') + '() ' + O('/') + ' dp).' + P('dropna') + '()', 'elasticity.' + P('round') + '(' + N('2') + ')'],
+            out: 'price\n0.90   -1.06\n1.10   -1.21\nName: quantity, dtype: float64' },
+          { kind: 'program', code: [K('def') + ' ' + P('arc') + '(q0, q1, p0, p1):', '    ' + S_('"""Arc elasticity between two points."""'), '    ' + K('return') + ' ((q1 ' + O('-') + ' q0) ' + O('/') + ' (q1 ' + O('+') + ' q0)) ' + O('/') + ' ((p1 ' + O('-') + ' p0) ' + O('/') + ' (p1 ' + O('+') + ' p0))'] },
+          { kind: 'program', code: ['pairs ' + O('=') + ' ' + P('list') + '(' + P('zip') + '(demand.index[:' + O('-') + N('1') + '], demand.index[' + N('1') + ':]))', 'arcs ' + O('=') + ' pd.' + P('Series') + '([' + P('arc') + '(demand[a], demand[b], a, b) ' + K('for') + ' a, b ' + K('in') + ' pairs],', '                 index' + O('=') + '[' + S_("f'{a}–{b}'") + ' ' + K('for') + ' a, b ' + K('in') + ' pairs])', 'arcs.' + P('round') + '(' + N('2') + ')'],
+            out: '0.75–0.9   -1.30\n0.9–1.1    -1.55\ndtype: float64' },
+          { kind: 'text', h2: 'By region', p: ['The four regions face the same three prices. If their curves have the same shape, one elasticity with a region intercept is a fair summary; the regression below checks that.'] },
+          { kind: 'program', code: ['by_region ' + O('=') + ' (prices', '    .' + P('groupby') + '([' + S_("'region'") + ', ' + S_("'price'") + ']).quantity.' + P('median') + '()', '    .' + P('unstack') + '(' + S_("'price'") + '))', 'by_region'],
+            out: 'price    0.75   0.90   1.10\nregion\neast    498.0  402.0  291.0\nnorth   547.0  431.0  318.0\nsouth   509.0  398.0  296.0\nwest    531.0  415.0  305.0' },
+          { kind: 'program', code: ['fig, axes ' + O('=') + ' plt.' + P('subplots') + '(' + N('1') + ', ' + N('4') + ', figsize' + O('=') + '(' + N('10') + ', ' + N('2.6') + '), sharey' + O('=') + K('True') + ')', K('for') + ' ax, (region, row) ' + K('in') + ' ' + P('zip') + '(axes, by_region.' + P('iterrows') + '()):', '    row.' + P('plot') + '(ax' + O('=') + 'ax, marker' + O('=') + S_("'o'") + ', title' + O('=') + 'region)', 'fig.' + P('tight_layout') + '()'],
+            fig: 'multi' },
+          { kind: 'scratch', code: ['by_region.loc[' + S_("'north'") + '] ' + O('-') + ' by_region.loc[' + S_("'south'") + ']'], out: 'price\n0.75    38.0\n0.90    33.0\n1.10    22.0\ndtype: float64' },
+          { kind: 'program', code: [K('import') + ' statsmodels.formula.api ' + K('as') + ' smf', 'prices[' + S_("'log_q'") + '] ' + O('=') + ' np.' + P('log') + '(prices.quantity)', 'prices[' + S_("'log_p'") + '] ' + O('=') + ' np.' + P('log') + '(prices.price)', 'model ' + O('=') + ' smf.' + P('ols') + '(' + S_("'log_q ~ log_p + C(region)'") + ', data' + O('=') + 'prices).' + P('fit') + '()', 'model.params.' + P('round') + '(' + N('3') + ')'],
+            out: 'Intercept             5.851\nC(region)[T.north]    0.082\nC(region)[T.south]    0.011\nC(region)[T.west]     0.051\nlog_p                -1.183\ndtype: float64' },
+          { kind: 'program', code: ['beta, se, r2 ' + O('=') + ' model.params[' + S_("'log_p'") + '], model.bse[' + S_("'log_p'") + '], model.rsquared'] },
+          { kind: 'program', code: ['summary ' + O('=') + ' pd.' + P('DataFrame') + '({' + S_("'demand'") + ': demand, ' + S_("'elasticity'") + ': elasticity})', 'summary[' + S_("'revenue'") + '] ' + O('=') + ' summary.index ' + O('*') + ' summary.demand', 'ax2 ' + O('=') + ' summary.elasticity.' + P('plot') + '.' + P('bar') + '(color' + O('=') + S_("'#305c8a'") + ')'],
+            fig: 'bar', out: '       demand  elasticity\nprice\n0.75    520.0         NaN\n0.90    410.0   -1.057692\n1.10    300.0   -1.207317' },
+          { kind: 'text', p: [
+            'Both elasticities are above one in magnitude: demand is elastic here.',
+            'Both elasticities are above one in magnitude: at these prices demand is <em>elastic</em>, and the revenue column agrees.',
+            'Both elasticities are above one in magnitude: at these prices demand is <em>elastic</em>, and the revenue column agrees, 390 at 0.75 falling to 330 at 1.10. The regression’s −1.18, with an intercept for each region, says the same with all 1,187 answers.',
+            'Both elasticities are above one in magnitude: at these prices demand is <em>elastic</em>, and the revenue column agrees, 390 at 0.75 falling to 330 at 1.10. The regression’s −1.18, with an intercept for each region, says the same with all 1,187 answers. Next week: the same check with a fourth price, 1.25.'] },
+          { kind: 'program', code: ['summary.' + P('to_csv') + '(' + S_("'summary.csv'") + ')', P('print') + '(' + S_("'wrote'") + ', ' + P('len') + '(summary), ' + S_("'rows'") + ')'], out: 'wrote 3 rows' },
+        ];
+        /* a cell's earlier versions: line overrides, or lines dropped */
+        const VAR = {
+          5: { typo: { 1: 'ax ' + O('=') + ' demnad.' + P('plot') + '(marker' + O('=') + S_("'o'") + ')' } },
+          9: { raw: { 2: 'elasticity' } },
+          14: { nosharey: { 0: 'fig, axes ' + O('=') + ' plt.' + P('subplots') + '(' + N('1') + ', ' + N('4') + ', figsize' + O('=') + '(' + N('10') + ', ' + N('2.6') + '))' },
+                wide: { 0: 'fig, axes ' + O('=') + ' plt.' + P('subplots') + '(' + N('1') + ', ' + N('4') + ', figsize' + O('=') + '(' + N('12') + ', ' + N('2.8') + '), sharey' + O('=') + K('True') + ')' } },
+          18: { pre: { drop: [1] } },
+        };
+        const OUTV = { 9: { raw: 'price\n0.90   -1.057692\n1.10   -1.207317\nName: quantity, dtype: float64' } };
+        const ERR = { 5: "NameError: name 'demnad' is not defined", 16: "ModuleNotFoundError: No module named 'statsmodels'" };
+        const FIG = { line: { sym: 'fig-line', vb: '0 0 460 300', file: 'figs/ax.svg' }, multi: { sym: 'fig-multi', vb: '0 0 460 132', file: 'figs/fig.svg' }, bar: { sym: 'fig-bar', vb: '0 0 460 300', file: 'figs/ax2.svg' } };
+        const FIGFILE = { 'figs/ax.svg': 'line', 'figs/fig.svg': 'multi', 'figs/ax2.svg': 'bar' };
+
+        /* the write-up, a Plass document beside it */
+        const PL = [
+          { k: 'title', t: 'Demand at three prices' },
+          { k: 'by', t: 'ECON 0150 · week 3 lab · draft' },
+          { k: 'h', t: '1   The experiment' },
+          { k: 'p', t: 'Twelve hundred buyers each saw one of three prices, 0.75, 0.90 or 1.10, and said how many they would buy. There were four regions and one price per buyer; nothing else changed between them.' },
+          { k: 'p', t: 'Thirteen answers were zero and are dropped. The medians below use the other 1,187.' },
+          { k: 'h', t: '2   What the medians say' },
+          { k: 'p', t: 'Median quantity falls from 520 to 410 to 300 as the price rises. Between neighbouring prices the arc elasticity is −1.30 and then −1.55: demand is elastic over the whole range, and revenue falls as the price goes up.' },
+        ];
+
+        /* ================= time ================= */
+        const DAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'], DAYL = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+        const MON = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'], MONL = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
+        const T = (day, hms) => new Date(day + 'T' + hms).getTime();
+        const p2 = (n) => String(n).padStart(2, '0');
+        const hm = (t) => { const d = new Date(t); return p2(d.getHours()) + ':' + p2(d.getMinutes()); };
+        const hms = (t) => { const d = new Date(t); return p2(d.getHours()) + ':' + p2(d.getMinutes()) + ':' + p2(d.getSeconds()); };
+        const dshort = (t) => { const d = new Date(t); return DAYS[d.getDay()] + ' ' + d.getDate() + ' ' + MON[d.getMonth()]; };
+        const dlong = (t) => { const d = new Date(t); return DAYL[d.getDay()] + ' ' + d.getDate() + ' ' + MONL[d.getMonth()]; };
+        const sameDay = (a, b) => new Date(a).toDateString() === new Date(b).toDateString();
+        function ago(t, now) {
+          const m = Math.round((now - t) / 60000);
+          if (m < 1) return 'moments before now';
+          if (m < 60) return m + ' min before now';
+          if (m < 60 * 20) return Math.floor(m / 60) + ' h ' + (m % 60) + ' min before now';
+          const d = Math.round(m / 1440);
+          return d <= 1 ? 'yesterday' : d + ' days before now';
+        }
+
+        /* ================= the record: a generator ================= */
+        function rng(seed) { let s = seed >>> 0; return () => { s = (s * 1664525 + 1013904223) >>> 0; return s / 4294967296; }; }
+        function Gen(seed) {
+          const R = rng(seed);
+          const sha = () => { let h = ''; for (let i = 0; i < 7; i++) h += '0123456789abcdef'[Math.floor(R() * 16)]; return h; };
+          const commits = [];
+          const st = { ks: { pins: ['pandas', 'numpy', 'matplotlib'], cells: Array(20).fill(null) }, ps: null, fs: {} };
+          let lastRec = null;
+          const lastByLane = {};
+          function push(t, app, kind, o) {
+            o = o || {};
+            const lane = o.lane || 'record';
+            const c = { i: commits.length, sha: sha(), t, lane, app, kind, cell: o.cell, doc: o.doc || null, target: o.target, tie: o.tie, msg: o.msg || '', note: o.note || '' };
+            if (lane === 'record') {
+              c.ks = clone(st.ks); c.ps = clone(st.ps); c.fs = clone(st.fs);
+              c.parents = lastRec ? [lastRec.i] : [];
+              c.files = diffFiles(lastRec, c);
+              lastRec = c;
+            } else {
+              const tie = commits[o.tie];
+              c.ks = tie.ks; c.ps = tie.ps; c.fs = tie.fs;
+              const prev = o.parents ? commits[o.parents[0]] : lastByLane[lane];
+              c.parents = o.parents || (prev ? [prev.i] : []);
+              c.files = diffFiles(prev || null, c);
+              lastByLane[lane] = c;
+            }
+            if (!c.msg) c.msg = defaultMsg(c, commits);
+            commits.push(c);
+            return c;
+          }
+          return { R, st, push, commits, sha, last: () => lastRec, lastOn: (lane) => lastByLane[lane] };
+        }
+        function defaultMsg(c, commits) {
+          const a = c.app;
+          switch (c.kind) {
+            case 'open': return a + ': session open';
+            case 'close': return a + ': session close';
+            case 'run': return a + ': cell run [' + c.cell + ']';
+            case 'timer': return a + ': timer';
+            case 'external': return a + ': external edit';
+            case 'closed': return a + ': changed while closed';
+            case 'rewind-from': return a + ': rewind from ' + commits[c.parents[0]].sha;
+            case 'rewind-to': return a + ': rewind to ' + commits[c.target].sha;
+          }
+          return a;
+        }
+
+        /* lines of a cell in a given state (variant applied, typing applied) */
+        function linesOf(no, cs) {
+          const cell = CELLS[no - 1];
+          let lines = cell.code.slice();
+          const v = cs.v && VAR[no] && VAR[no][cs.v];
+          if (v) {
+            lines = lines.map((l, j) => (v[j] !== undefined ? v[j] : l));
+            if (v.drop) lines = lines.filter((_, j) => v.drop.indexOf(j) < 0);
+          }
+          return lines.slice(0, cs.n);
+        }
+        function outOf(no, cs) {
+          if (!cs.out) return null;
+          if (cs.out === 'err') return { err: true, text: ERR[no] || "SyntaxError: invalid syntax" };
+          if (cs.out !== 'ok' && OUTV[no] && OUTV[no][cs.out]) return { text: OUTV[no][cs.out] };
+          return CELLS[no - 1].out ? { text: CELLS[no - 1].out } : null;
+        }
+        function proseOf(no, cs) {
+          const cell = CELLS[no - 1];
+          const full = cell.p[Math.min(cs.tv || 0, cell.p.length - 1)];
+          const words = full.split(' ');
+          const k = Math.max(1, Math.ceil(words.length * cs.n));
+          return { h2: cell.h2 || '', p: words.slice(0, k).join(' ') };
+        }
+        /* the line counts a commit changed in analysis.py (for the slip) */
+        function knuthStats(ks, pks) {
+          let a = 0, d = 0;
+          for (let i = 0; i < 20; i++) {
+            const cs = ks.cells[i], pc = pks ? pks.cells[i] : null, no = i + 1, kind = CELLS[i].kind;
+            if (kind === 'text') {
+              const now = cs ? proseOf(no, cs).p : null, was = pc ? proseOf(no, pc).p : null;
+              if (now !== was) { if (now) a += 1; if (was) d += 1; }
+              continue;
+            }
+            const L1 = cs ? linesOf(no, cs) : [], L0 = pc ? linesOf(no, pc) : [];
+            const n = Math.max(L1.length, L0.length);
+            for (let j = 0; j < n; j++) if (L1[j] !== L0[j]) { if (L1[j] !== undefined) a++; if (L0[j] !== undefined) d++; }
+            const o1 = cs ? outOf(no, cs) : null, o0 = pc ? outOf(no, pc) : null;
+            const t1 = o1 ? o1.text : '', t0 = o0 ? o0.text : '';
+            if (t1 !== t0) { a += t1 ? t1.split('\n').length : 0; d += t0 ? t0.split('\n').length : 0; }
+          }
+          if (pks && ks.pins.length !== pks.pins.length) a += 1;
+          return [a, d];
+        }
+        function plassStats(ps, pps) {
+          let a = 0, d = 0;
+          PL.forEach((b, j) => { const x = ps ? ps[j] || 0 : 0, y = pps ? pps[j] || 0 : 0; if (x !== y) { if (x) a++; if (y) d++; } });
+          return [a, d];
+        }
+        function diffFiles(prev, c) {
+          const a = prev ? prev.fs : {}, b = c.fs, out = [];
+          const paths = Array.from(new Set(Object.keys(a).concat(Object.keys(b)))).sort(fileOrder);
+          for (const p of paths) {
+            let s = null;
+            if (!a[p] && b[p]) s = 'A'; else if (a[p] && !b[p]) s = 'D'; else if (a[p] !== b[p]) s = 'M';
+            if (!s) continue;
+            let ad = null;
+            if (p === 'analysis.py' || p === 'estimate.py') ad = knuthStats(c.ks, prev ? prev.ks : null);
+            else if (p.endsWith('.typ')) ad = plassStats(c.ps, prev ? prev.ps : null);
+            else if (p === 'prices.csv' && s === 'M') ad = [1201, 1201];
+            else if (p === 'prices.csv') ad = [1201, 0];
+            else if (p === 'summary.csv') ad = [4, 0];
+            out.push({ p, s, ad });
+          }
+          return out;
+        }
+        function fileOrder(x, y) {
+          const r = (p) => (p.endsWith('.py') ? 0 : p.endsWith('.typ') ? 1 : p.startsWith('figs/') ? 2 : p.startsWith('.') ? 4 : 3);
+          return r(x) - r(y) || (x < y ? -1 : 1);
+        }
+
+        /* ================= a morning in week-3 ================= */
+        function buildMorning() {
+          const g = Gen(31);
+          const cs = g.st.ks.cells;
+          let D = '2026-10-01';
+          const at = (h) => T(D, h);
+          const cell = (n) => cs[n - 1] || (cs[n - 1] = { n: 0, out: null, fig: false });
+          const bump = (p) => { g.st.fs[p] = (g.st.fs[p] || 0) + 1; };
+          const code = (n, lines, v) => () => { const c = cell(n); c.n = lines; if (v !== undefined) c.v = v; };
+          const text = (n, frac, tv) => () => { const c = cell(n); c.n = frac; if (tv !== undefined) c.tv = tv; };
+          const timer = (h, fn, app) => { fn(); bump('analysis.py'); return g.push(at(h), app || 'knuth', 'timer', { doc: 'analysis.py' }); };
+          const run = (h, n, o) => {
+            o = o || {};
+            const before = clone(g.st.ks);
+            const c = cell(n);
+            if (o.lines) c.n = o.lines;
+            c.out = o.err ? 'err' : o.out === undefined ? 'ok' : o.out;
+            if (o.fig) c.fig = true;
+            c.stale = false;
+            if (o.pins) g.st.ks.pins.push(o.pins);
+            const st = knuthStats(g.st.ks, before);
+            if (st[0] + st[1] > 0) bump('analysis.py');
+            (o.files || []).forEach(bump);
+            return g.push(at(h), 'knuth', 'run', { cell: n, doc: 'analysis.py' });
+          };
+          const ptimer = (h, ps, app) => { g.st.ps = ps; bump('writeup.typ'); return g.push(at(h), app || 'plass', 'timer', { doc: 'writeup.typ' }); };
+
+          /* Thursday afternoon: analysis.py is saved into week-3, a folder in
+             no repository; the record makes one, quietly, and begins */
+          g.st.fs = { 'analysis.py': 1, 'prices.csv': 1, '.gitignore': 1, '.claerbout/untracked.json': 1 };
+          cell(1).n = 1;
+          g.push(at('16:40:10'), 'knuth', 'open', { doc: 'analysis.py' });
+          timer('16:41:04', code(1, 2)); timer('16:42:04', code(1, 3));
+          timer('16:44:04', code(2, 1)); run('16:45:31', 2, { lines: 2 });
+          [0.15, 0.3, 0.5, 0.7, 0.85, 1].forEach((f, k) => timer('16:' + (47 + k) + ':04', text(3, f, 0)));
+          code(4, 1)(); bump('analysis.py');
+          g.push(at('17:04:52'), 'knuth', 'close', { doc: 'analysis.py' });
+
+          /* Friday morning */
+          D = '2026-10-02';
+          bump('.claerbout/untracked.json');
+          g.push(at('09:12:04'), 'knuth', 'open', { doc: 'analysis.py', note: 'untracked/prices_raw.parquet arrived while Knuth was closed; the manifest lists it by size, time and hash.' });
+          timer('09:14:04', code(4, 2)); timer('09:15:04', code(4, 3)); run('09:15:38', 4);
+          timer('09:17:04', code(5, 1)); timer('09:18:04', code(5, 2, 'typo')); timer('09:19:04', code(5, 3)); run('09:19:20', 5, { err: true });
+          timer('09:20:04', code(5, 3, null)); run('09:20:12', 5, { fig: true, files: ['figs/ax.svg', '.knuth-artifacts.json'] });
+          timer('09:22:04', code(6, 2)); timer('09:23:04', code(6, 3)); run('09:23:30', 6);
+          run('09:23:52', 5, { files: ['figs/ax.svg'], same: true });
+          timer('09:25:04', code(7, 2)); run('09:25:20', 7);
+          for (let k = 0; k < 12; k++) timer('09:' + p2(27 + k) + ':04', text(8, (k + 1) / 12, 0));
+          timer('09:40:04', code(9, 1)); timer('09:41:04', code(9, 3, 'raw')); run('09:41:30', 9, { out: 'raw' });
+          timer('09:42:04', code(9, 3, null)); run('09:42:15', 9);
+          timer('09:44:04', code(10, 1)); timer('09:45:04', code(10, 2)); run('09:46:21', 10, { lines: 3, out: null });
+          timer('09:48:04', code(11, 1)); timer('09:49:04', code(11, 2)); timer('09:50:04', code(11, 3)); timer('09:51:04', code(11, 4)); run('09:51:40', 11);
+          const tie1 = timer('09:54:04', text(3, 1, 1));
+          const u1 = g.push(T(D, '09:58:30'), 'user', 'user', { lane: 'main', tie: tie1.i, msg: 'Demand curve and elasticity at three prices' });
+          for (let k = 0; k < 7; k++) timer('10:' + p2(13 + k) + ':04', text(12, (k + 1) / 7, 0));
+          timer('10:21:04', code(13, 2)); timer('10:22:04', code(13, 4)); run('10:22:40', 13);
+          timer('10:24:04', code(14, 1, 'nosharey')); timer('10:25:04', code(14, 3)); timer('10:26:04', code(14, 4));
+          const held = run('10:26:40', 14, { fig: true, files: ['figs/fig.svg', '.knuth-artifacts.json'] });
+          timer('10:27:04', code(14, 4, null)); run('10:27:18', 14, { files: ['figs/fig.svg'], same: true });
+          timer('10:29:04', code(15, 1)); run('10:29:15', 15);
+          for (let k = 1; k <= 5; k++) timer('10:' + p2(30 + k) + ':04', code(16, k));
+          run('10:35:30', 16, { err: true });
+          run('10:36:44', 16, { pins: 'statsmodels' });
+          timer('10:38:04', code(17, 1));
+          timer('10:40:04', code(18, 1, 'pre')); timer('10:41:04', code(18, 2));
+          run('10:42:31', 18, { fig: true, files: ['figs/ax2.svg', '.knuth-artifacts.json'] });
+          /* the write-up, in Plass; both apps' timers see its changes, and
+             whichever ticks first commits them */
+          g.st.ps = [1, 0, 0, 0, 0, 0, 0]; bump('writeup.typ');
+          g.push(at('10:47:50'), 'plass', 'open', { doc: 'writeup.typ' });
+          const plassA = ptimer('10:49:04', [1, 1, 1, 0.4, 0, 0, 0]);
+          ptimer('10:50:04', [1, 1, 1, 1, 0, 0, 0], 'knuth');
+          ptimer('10:51:04', [1, 1, 1, 1, 0.6, 0, 0]);
+          ptimer('10:52:04', [1, 1, 1, 1, 1, 0, 0]);
+          ptimer('10:53:04', [1, 1, 1, 1, 1, 1, 0.3], 'knuth');
+          ptimer('10:54:04', [1, 1, 1, 1, 1, 1, 0.7]);
+          ptimer('10:55:04', [1, 1, 1, 1, 1, 1, 0.9]);
+          g.st.ps = [1, 1, 1, 1, 1, 1, 1]; bump('writeup.typ');
+          g.push(at('10:56:40'), 'plass', 'close', { doc: 'writeup.typ' });
+          return finishMorning(g, { cell, bump, code, text, timer, run, at, u1, held, plassA });
+        }
+        function finishMorning(g, h) {
+          const { cell, bump, code, text, timer, run } = h;
+          /* the conclusion, then the afternoon's last hour */
+          [['10:59:04', 0.2], ['11:00:04', 0.4], ['11:01:04', 0.6], ['11:02:04', 0.8], ['11:03:04', 1]].forEach(([t, f]) => timer(t, text(19, f, 0)));
+          timer('11:05:04', code(20, 2)); run('11:05:30', 20, { files: ['summary.csv'] });
+          bump('prices.csv');
+          const ext = g.push(T('2026-10-02', '11:09:12'), 'knuth', 'external', { note: 'prices.csv changed on disk, written by neither Knuth nor Plass (another program saved it).' });
+          timer('11:14:04', () => { const c = cell(18); c.v = null; c.n = 3; c.stale = true; });
+          timer('11:18:04', text(19, 0.6, 1)); const tie2 = timer('11:19:04', text(19, 1, 1));
+          const u2 = g.push(T('2026-10-02', '11:24:20'), 'user', 'user', { lane: 'main', tie: tie2.i, msg: 'By region, the regression and the summary table' });
+          [0.3, 0.45, 0.6, 0.75, 0.9, 1].forEach((f, k) => timer('11:3' + (k + 1) + ':04', text(19, f, 2)));
+          timer('11:37:04', code(14, 4, 'wide')); run('11:38:12', 14, { files: ['figs/fig.svg'] });
+          [0.25, 0.5, 0.75, 1].forEach((f, k) => timer('11:4' + (k + 4) + ':04', text(8, f, 1)));
+          timer('11:58:04', text(19, 0.93, 3));
+          const nowKs = clone(g.st.ks); nowKs.cells[18] = Object.assign({}, nowKs.cells[18], { n: 1, tv: 3 });
+          return {
+            id: 'week-3', name: 'week-3', path: '~/Projects/ECON_0150', docs: ['analysis.py', 'writeup.typ'], lanes: ['main', 'record'],
+            commits: g.commits, gen: g, now: T('2026-10-02', '12:00:31'),
+            dirty: { since: T('2026-10-02', '11:59:20'), ks: nowKs, ps: clone(g.st.ps) },
+            held: h.held.i, u1: h.u1.i, u2: u2.i, plassA: h.plassA.i, ext: ext.i,
+            today: T('2026-10-02', '09:12:04'),
+          };
+        }
+
+        /* ================= a long record: price-experiment, two weeks ================= */
+        function buildLong() {
+          const g = Gen(921);
+          const R = g.R;
+          const SESS = [
+            ['2026-09-21', '13:10', '14:25', 'knuth'], ['2026-09-22', '09:40', '11:20', 'knuth'], ['2026-09-22', '15:05', '15:50', 'plass'],
+            ['2026-09-23', '10:00', '12:10', 'knuth'], ['2026-09-24', '09:15', '10:05', 'knuth'], ['2026-09-24', '14:30', '16:45', 'knuth'],
+            ['2026-09-25', '11:00', '11:40', 'plass'], ['2026-09-28', '09:30', '12:00', 'knuth'], ['2026-09-29', '13:00', '14:20', 'plass'],
+            ['2026-09-30', '09:05', '11:35', 'knuth'], ['2026-10-01', '10:20', '12:15', 'knuth'], ['2026-10-01', '14:00', '14:50', 'plass'],
+            ['2026-10-02', '09:10', '11:50', 'knuth'],
+          ];
+          const USER = [
+            ['2026-09-21', '14:31:10', 'main', 'Start: the data and a first plot'],
+            ['2026-09-22', '11:24:02', 'main', 'Medians by price'],
+            ['2026-09-23', '12:14:40', 'main', 'Elasticity, point and arc'],
+            ['2026-09-24', '16:50:12', 'main', 'Drop the zero rows; redraw'],
+            ['2026-09-25', '11:44:30', 'main', 'Paper: the experiment'],
+            ['2026-09-28', '12:04:51', 'main', 'Regression by region, first pass'],
+            ['2026-09-29', '14:24:09', 'main', 'Paper: results'],
+            ['2026-09-30', '10:42:20', 'region-effects', 'Region fixed effects', 'fork'],
+            ['2026-09-30', '11:38:02', 'region-effects', 'Region effects: table and figure'],
+            ['2026-10-01', '12:20:33', 'main', "Merge branch 'region-effects'", 'merge'],
+            ['2026-10-01', '14:55:48', 'main', 'Paper: region results'],
+          ].map((u) => ({ t: T(u[0], u[1]), lane: u[2], msg: u[3], how: u[4] }));
+          let ui = 0;
+          const forkFrom = { at: null }; let branchLast = null;
+          const flushUser = (t) => {
+            while (ui < USER.length && USER[ui].t <= t) {
+              const u = USER[ui++];
+              const tie = g.last();
+              let parents;
+              if (u.how === 'fork') parents = [g.lastOn('main').i];
+              if (u.how === 'merge') parents = [g.lastOn('main').i, g.lastOn('region-effects').i];
+              g.push(u.t, 'user', 'user', { lane: u.lane, tie: tie.i, msg: u.msg, parents });
+            }
+          };
+          const totalK = SESS.filter((s) => s[3] === 'knuth').reduce((a, s) => a + (T(s[0], s[2] + ':00') - T(s[0], s[1] + ':00')) / 60000, 0);
+          const totalP = SESS.filter((s) => s[3] === 'plass').reduce((a, s) => a + (T(s[0], s[2] + ':00') - T(s[0], s[1] + ':00')) / 60000, 0);
+          let doneK = 0, doneP = 0, step = 0;
+          const bump = (p) => { g.st.fs[p] = (g.st.fs[p] || 0) + 1; };
+          g.st.fs = { 'analysis.py': 1, 'prices.csv': 1, '.gitignore': 1, '.claerbout/untracked.json': 1 };
+          const lineCount = (no) => (CELLS[no - 1].kind === 'text' ? 1 : CELLS[no - 1].code.length);
+          function setKs(p) {
+            const count = Math.min(20, 2 + Math.floor(p * 18.6));
+            const cs = g.st.ks.cells;
+            for (let i = 0; i < 20; i++) {
+              const no = i + 1, c = CELLS[i];
+              if (i >= count) { cs[i] = null; continue; }
+              const done = i < count - 1;
+              const n = c.kind === 'text' ? (done ? 1 : ((step % 5) + 1) / 5) : done ? lineCount(no) : 1 + (step % lineCount(no));
+              const prev = cs[i] || {};
+              cs[i] = { n, out: c.kind === 'text' ? null : prev.out || (done ? 'ok' : null), fig: !!(c.fig && (done || prev.fig)), tv: c.kind === 'text' ? (done ? 9 : 0) : undefined };
+            }
+            if (count >= 16 && g.st.ks.pins.indexOf('statsmodels') < 0) g.st.ks.pins.push('statsmodels');
+            ['figs/ax.svg', 'figs/fig.svg', 'figs/ax2.svg'].forEach((f, k) => { if (count > [5, 14, 18][k] && !g.st.fs[f]) { g.st.fs[f] = 1; g.st.fs['.knuth-artifacts.json'] = (g.st.fs['.knuth-artifacts.json'] || 0) + 1; } });
+            if (count >= 20 && !g.st.fs['summary.csv']) g.st.fs['summary.csv'] = 1;
+            return count;
+          }
+          const setPs = (q) => { g.st.ps = PL.map((_, j) => clamp(q * PL.length * 1.05 - j, 0, 1)).map((x) => Math.round(x * 10) / 10); };
+          let rewound = false, sessIdx = 0;
+          for (const [day, a, b, app] of SESS) {
+            const t0 = T(day, a + ':00'), t1 = T(day, b + ':00'), mins = (t1 - t0) / 60000;
+            const last = sessIdx === SESS.length - 1;
+            flushUser(t0);
+            if (day === '2026-09-24' && a === '09:15') {
+              bump('prices.csv');
+              g.push(t0 + 6000, 'knuth', 'closed', { note: 'prices.csv changed while Knuth was closed (written by another program), so the record says so before the session opens.' });
+            } else {
+              if (app === 'plass') { if (!g.st.ps) setPs(0.02); bump('paper.typ'); g.push(t0 + 4000, 'plass', 'open', { doc: 'paper.typ' }); }
+              else { setKs(doneK / totalK); bump('analysis.py'); g.push(t0 + 4000, 'knuth', 'open', { doc: 'analysis.py' }); }
+            }
+            for (let m = 1; m < mins; m++) {
+              const tm = t0 + m * 60000;
+              if (app === 'knuth') {
+                doneK++;
+                if (R() < 0.62) { step++; flushUser(tm + 4000); setKs(doneK / totalK); bump('analysis.py'); g.push(tm + 4000, 'knuth', 'timer', { doc: 'analysis.py' }); }
+                if (R() < 0.24) {
+                  const count = setKs(doneK / totalK);
+                  let no = R() < 0.72 ? count : 1 + Math.floor(R() * count);
+                  while (no > 1 && CELLS[no - 1].kind === 'text') no--;
+                  const before = clone(g.st.ks);
+                  const c = g.st.ks.cells[no - 1];
+                  const err = R() < 0.07;
+                  if (c) { c.out = err ? 'err' : 'ok'; if (CELLS[no - 1].fig) c.fig = true; if (!err && c.n < lineCount(no)) c.n = lineCount(no); }
+                  const tr = tm + 15000 + Math.floor(R() * 40000);
+                  const st = knuthStats(g.st.ks, before);
+                  if (st[0] + st[1] > 0) {
+                    flushUser(tr);
+                    bump('analysis.py');
+                    g.push(tr, 'knuth', 'run', { cell: no, doc: 'analysis.py' });
+                  }
+                }
+                if (day === '2026-09-28' && hm(tm) === '10:40') { bump('analysis.py'); g.push(tm + 12000, 'knuth', 'external', { note: 'analysis.py changed on disk, not by Knuth: the hash Knuth last wrote no longer matches (an edit in another editor).' }); }
+                if (!rewound && day === '2026-09-24' && hm(tm) === '15:20') {
+                  rewound = true;
+                  const target = g.commits.filter((c) => c.lane === 'record' && c.t <= T(day, '14:52:00')).pop();
+                  bump('analysis.py');
+                  g.push(tm + 31000, 'knuth', 'rewind-from', {});
+                  g.st.ks = clone(target.ks); g.st.fs = clone(target.fs); g.st.ps = clone(target.ps);
+                  g.push(tm + 32000, 'knuth', 'rewind-to', { target: target.i });
+                }
+              } else {
+                doneP++;
+                if (R() < 0.72) { flushUser(tm + 4000); setPs(doneP / totalP); bump('paper.typ'); g.push(tm + 4000, 'plass', 'timer', { doc: 'paper.typ' }); }
+              }
+            }
+            if (!last) { bump(app === 'plass' ? 'paper.typ' : 'analysis.py'); g.push(t1 - 8000, app, 'close', { doc: app === 'plass' ? 'paper.typ' : 'analysis.py' }); }
+            sessIdx++;
+          }
+          flushUser(T('2026-10-02', '12:00:00'));
+          return {
+            id: 'long', name: 'price-experiment', path: '~/Projects', docs: ['analysis.py', 'paper.typ'], lanes: ['region-effects', 'main', 'record'],
+            commits: g.commits, gen: g, now: T('2026-10-02', '11:58:10'), dirty: null, today: T('2026-10-02', '09:10:04'),
+          };
+        }
+
+        /* ================= the view ================= */
+        const PROJ = {};
+        let Pj = null;           /* the project on screen */
+        let rec = [];            /* its record commits, in order */
+        let L = null;            /* the layout of the band */
+        const V = { scale: 6, x0: 0, hover: null, held: -1, docHeld: null, shown: null, rewound: null, fresh: new Set(), fit: 'today' };
+        const GAP = 18, TL = 74, TR = 34, FOLD = 10;
+        let marks = [], umarks = [], nowX = 0;
+
+        function setProject(p) {
+          Pj = p;
+          rec = p.commits ? p.commits.filter((c) => c.lane === 'record') : [];
+          V.hover = null; V.held = -1; V.docHeld = null; V.shown = p.docs ? p.docs[0] : null; V.rewound = null; V.fresh = new Set();
+          buildLayout();
+          paintTop();
+        }
+        function tip() { return rec[rec.length - 1]; }
+        function buildLayout() {
+          if (!Pj.commits) { L = null; return; }
+          const ts = Pj.commits.map((c) => c.t).concat([Pj.now]).sort((a, b) => a - b);
+          const segs = [];
+          let s = { t0: ts[0], t1: ts[0] };
+          for (const t of ts) { if (t - s.t1 > 20 * 60000) { segs.push(s); s = { t0: t, t1: t }; } else s.t1 = t; }
+          segs.push(s);
+          segs.forEach((sg) => { sg.t0 -= 75000; sg.t1 += 75000; });
+          L = { segs, off: [], W: 0 };
+          recomputeOff();
+        }
+        const dur = (sg) => (sg.t1 - sg.t0) / 60000;
+        function recomputeOff() {
+          let o = 0;
+          L.off = L.segs.map((sg) => { const v = o; o += dur(sg) * V.scale + GAP; return v; });
+          L.W = o - GAP;
+        }
+        function segOf(t) {
+          let lo = 0, hi = L.segs.length - 1;
+          while (lo < hi) { const mid = (lo + hi + 1) >> 1; if (L.segs[mid].t0 <= t) lo = mid; else hi = mid - 1; }
+          return lo;
+        }
+        function cx(t) { const k = segOf(t), sg = L.segs[k]; if (t > sg.t1 && k < L.segs.length - 1) return L.off[k] + dur(sg) * V.scale + GAP / 2; return L.off[k] + (clamp(t, sg.t0, sg.t1) - sg.t0) / 60000 * V.scale; }
+        const sx = (t) => TL + cx(t) - V.x0;
+        function tAt(c) {
+          for (let k = 0; k < L.segs.length; k++) {
+            const sg = L.segs[k], w = dur(sg) * V.scale;
+            if (c < L.off[k] + w + GAP / 2 || k === L.segs.length - 1) return sg.t0 + clamp((c - L.off[k]) / V.scale, 0, dur(sg)) * 60000;
+          }
+          return L.segs[0].t0;
+        }
+        function minutesBetween(ta, tb) { let m = 0; for (const sg of L.segs) m += Math.max(0, Math.min(tb, sg.t1) - Math.max(ta, sg.t0)) / 60000; return m; }
+        const TW = () => band.clientWidth - TL - TR;
+        function fitScale(ta, tb) { const g = segOf(tb) - segOf(ta); return Math.max(0.05, (TW() - g * GAP) / Math.max(1, minutesBetween(ta, tb))); }
+        function scaleLimits() { return [fitScale(L.segs[0].t0, L.segs[L.segs.length - 1].t1) * 0.92, 90]; }
+        function clampX() { V.x0 = clamp(V.x0, -10, Math.max(-10, L.W - TW() + 10)); }
+        function fitRange(ta, tb) {
+          V.scale = clamp(fitScale(ta, tb), scaleLimits()[0], 90);
+          recomputeOff();
+          V.x0 = cx(ta);
+          clampX();
+        }
+        const rangeToday = () => [Pj.today - 60000, Pj.now + 60000];
+        const rangeAll = () => [L.segs[0].t0, L.segs[L.segs.length - 1].t1];
+        /* a smooth change of view: scale on a log scale, a time held at a screen x */
+        let anim = null;
+        function animateView(toScale, anchorT, anchorPx, ms) {
+          if (anim) cancelAnimationFrame(anim);
+          const s0 = V.scale, s1 = toScale, t0 = performance.now(); ms = ms || 260;
+          const fromPx = sx(anchorT);
+          const step = (now) => {
+            const k = Math.min(1, (now - t0) / ms), e = 1 - Math.pow(1 - k, 3);
+            V.scale = Math.exp(Math.log(s0) + (Math.log(s1) - Math.log(s0)) * e);
+            recomputeOff();
+            const px = fromPx + (anchorPx - fromPx) * e;
+            V.x0 = cx(anchorT) - (px - TL);
+            clampX();
+            renderBand();
+            if (k < 1) anim = requestAnimationFrame(step); else anim = null;
+          };
+          anim = requestAnimationFrame(step);
+        }
+        function animateFit(ta, tb) {
+          const s1 = clamp(fitScale(ta, tb), scaleLimits()[0], 90);
+          const mid = ta + (tb - ta) / 2;
+          /* where the middle lands at the new scale */
+          const sSave = V.scale, xSave = V.x0;
+          V.scale = s1; recomputeOff(); V.x0 = cx(ta); clampX(); const midPx = sx(mid);
+          V.scale = sSave; recomputeOff(); V.x0 = xSave;
+          animateView(s1, mid, midPx, 320);
+        }
+        function zoomBy(f, px) {
+          const [lo, hi] = scaleLimits();
+          const s1 = clamp(V.scale * f, lo, hi);
+          if (px == null) px = V.held >= 0 ? sx(Pj.commits[V.held].t) : TL + TW() / 2;
+          px = clamp(px, TL, TL + TW());
+          const t = tAt(px - TL + V.x0);
+          animateView(s1, t, px, 200);
+        }
+
+        /* ================= the band ================= */
+        function laneYs() {
+          const ys = {};
+          Pj.lanes.forEach((ln, k) => { ys[ln] = 50 + k * 27; });
+          return ys;
+        }
+        function renderBand() {
+          const lanes = Pj.commits ? Pj.lanes : ['record'];
+          const ys = Pj.commits ? laneYs() : { record: 54 };
+          const ry = ys.record;
+          const H = Math.max(104, ry + 52);
+          if (app.style.getPropertyValue('--band') !== H + 'px') app.style.setProperty('--band', H + 'px');
+          $('#lanelabs').innerHTML = lanes.map((ln) => '<span class="lanelab' + (ln === 'record' ? ' rec' : '') + '" style="top:' + ys[ln] + 'px">' + (ln === 'record' ? 'record<small>autosave</small>' : esc(ln)) + '</span>').join('');
+          const bw = band.clientWidth, tw = bw - TL - TR, X1 = TL - 8, X2 = TL + tw + TR - 6;
+          if (!Pj.commits) { renderEmptyBand(ry, bw, tw); return; }
+          recomputeOff(); clampX();
+          const vis = (x) => x > X1 - 30 && x < X2 + 30;
+          let s = '<defs><clipPath id="clip"><rect x="' + X1 + '" y="0" width="' + (X2 - X1) + '" height="' + H + '"/></clipPath></defs><g clip-path="url(#clip)">';
+
+          /* the overview: the whole record, and the stretch in view */
+          if (L.W > tw + 2) {
+            const ox = (c) => TL + (c / L.W) * tw;
+            L.segs.forEach((sg, k) => { const a = ox(L.off[k]), b = ox(L.off[k] + dur(sg) * V.scale); s += '<rect x="' + a.toFixed(1) + '" y="5" width="' + Math.max(1, b - a).toFixed(1) + '" height="3" rx="1.5" fill="rgba(255,255,255,0.16)"/>'; });
+            const va = ox(Math.max(0, V.x0)), vb = ox(Math.min(L.W, V.x0 + tw));
+            s += '<rect x="' + va.toFixed(1) + '" y="2" width="' + Math.max(6, vb - va).toFixed(1) + '" height="9" rx="2.5" fill="rgba(255,255,255,0.05)" stroke="rgba(255,255,255,0.32)" stroke-width="1"/>';
+          }
+
+          /* the time axis: a day's name where a day begins, times between */
+          const steps = [1, 2, 5, 10, 15, 30, 60, 120, 180, 240, 360];
+          const stepM = steps.find((m) => m * V.scale >= 64) || 720;
+          let lastEnd = -1e9, prevDay = null;
+          L.segs.forEach((sg, k) => {
+            const xs = TL + L.off[k] - V.x0, xe = xs + dur(sg) * V.scale;
+            if (xe < X1 || xs > X2) { prevDay = sg.t0; return; }
+            const tFirst = Math.max(sg.t0, Pj.commits.find((c) => c.t >= sg.t0).t);
+            const mostlyOff = xs < TL - 2 && xe < TL + 76 && k < L.segs.length - 1;
+            if (!mostlyOff && (prevDay === null || !sameDay(prevDay, tFirst) || xs <= TL + 4 || lastEnd < TL)) {
+              const dx = Math.max(xs + 2, TL);
+              if (dx > lastEnd + 8 && dx < X2 - 70) { s += '<text class="day" x="' + dx.toFixed(1) + '" y="28">' + dshort(tFirst) + '</text>'; lastEnd = dx + 72; }
+            }
+            prevDay = tFirst;
+            const step = stepM * 60000;
+            for (let t = Math.ceil(sg.t0 / step) * step; t <= sg.t1; t += step) {
+              const x = sx(t);
+              if (x < TL - 4 || x > X2 - 10 || x < lastEnd + 6) continue;
+              s += '<text x="' + x.toFixed(1) + '" y="28" text-anchor="middle">' + hm(t) + '</text>';
+              s += '<line x1="' + x.toFixed(1) + '" y1="33" x2="' + x.toFixed(1) + '" y2="36" stroke="rgba(255,255,255,0.14)"/>';
+              lastEnd = x + 16;
+            }
+          });
+
+          /* closed stretches fold to a break mark */
+          for (let k = 1; k < L.segs.length; k++) {
+            const gx = TL + L.off[k] - GAP / 2 - V.x0;
+            if (!vis(gx)) continue;
+            const a = L.segs[k - 1].t1 - 75000, b = L.segs[k].t0 + 75000;
+            s += '<g><title>Nothing recorded from ' + dshort(a) + ' ' + hm(a) + ' to ' + (sameDay(a, b) ? '' : dshort(b) + ' ') + hm(b) + '</title>';
+            s += '<rect x="' + (gx - 7) + '" y="40" width="14" height="' + (ry - 30) + '" fill="transparent"/>';
+            s += '<path d="M' + (gx - 4) + ' ' + (ry + 5) + ' L' + (gx - 1) + ' ' + (ry - 5) + ' M' + (gx + 1) + ' ' + (ry + 5) + ' L' + (gx + 4) + ' ' + (ry - 5) + '" stroke="rgba(255,255,255,0.3)" stroke-width="1.2" fill="none"/>';
+            s += '</g>';
+          }
+
+          /* the record's track, one stroke per stretch of work */
+          const tipC = tip();
+          L.segs.forEach((sg, k) => {
+            const first = rec.find((c) => c.t >= sg.t0 && c.t <= sg.t1);
+            if (!first) return;
+            const lastC = rec.filter((c) => c.t <= sg.t1).pop();
+            const a = sx(first.t), b = sx(lastC.t);
+            if (b < X1 || a > X2) return;
+            s += '<line x1="' + a.toFixed(1) + '" y1="' + ry + '" x2="' + b.toFixed(1) + '" y2="' + ry + '" stroke="rgba(255,255,255,0.15)" stroke-width="2" stroke-linecap="round"/>';
+          });
+          /* not yet recorded: the tip to now */
+          nowX = sx(Pj.now);
+          const tx = sx(tipC.t);
+          if (Pj.dirty && Pj.dirty.since > tipC.t) s += '<line x1="' + tx.toFixed(1) + '" y1="' + ry + '" x2="' + nowX.toFixed(1) + '" y2="' + ry + '" stroke="rgba(255,255,255,0.42)" stroke-width="1.5" stroke-dasharray="1 3" stroke-linecap="round"/>';
+          else s += '<line x1="' + tx.toFixed(1) + '" y1="' + ry + '" x2="' + nowX.toFixed(1) + '" y2="' + ry + '" stroke="rgba(255,255,255,0.15)" stroke-width="2" stroke-linecap="round"/>';
+          /* a Plass session, a warm underline */
+          let pOpen = null;
+          rec.forEach((c) => {
+            if (c.app !== 'plass') return;
+            if (c.kind === 'open') pOpen = c.t;
+            if (c.kind === 'close' && pOpen) { const a = sx(pOpen), b = sx(c.t); if (b > X1 && a < X2) s += '<line x1="' + a.toFixed(1) + '" y1="' + (ry + 6) + '" x2="' + b.toFixed(1) + '" y2="' + (ry + 6) + '" stroke="rgba(196,173,128,0.45)" stroke-width="1.2"/>'; pOpen = null; }
+          });
+
+          /* the user's lanes: a line from a branch's first commit to its end, forks and joins as curves */
+          const uc = Pj.commits.filter((c) => c.lane !== 'record');
+          umarks = [];
+          lanes.filter((ln) => ln !== 'record').forEach((ln) => {
+            const cs = uc.filter((c) => c.lane === ln);
+            if (!cs.length) return;
+            const y = ys[ln];
+            const a = sx(cs[0].t), b = ln === 'main' ? nowX : sx(cs[cs.length - 1].t);
+            s += '<line x1="' + a.toFixed(1) + '" y1="' + y + '" x2="' + b.toFixed(1) + '" y2="' + y + '" stroke="rgba(255,255,255,0.16)" stroke-width="1.5" stroke-linecap="round"/>';
+          });
+          uc.forEach((c) => {
+            const y = ys[c.lane], x = sx(c.t);
+            /* the tie: this commit's files are the record's at that commit */
+            const tc = Pj.commits[c.tie], tX = sx(tc.t);
+            if (vis(x) || vis(tX)) {
+              const hot = V.held === c.i || V.hover === c.i;
+              const fromY = ys.record - 5, toY = ys.main !== undefined ? ys.main + 5 : y + 5;
+              const dy = c.lane === 'main' ? 0 : 0;
+              if (c.lane === 'main' || !c.parents.length) s += '<path d="M' + tX.toFixed(1) + ' ' + fromY + ' C' + tX.toFixed(1) + ' ' + ((fromY + toY) / 2 + dy) + ' ' + x.toFixed(1) + ' ' + ((fromY + toY) / 2) + ' ' + x.toFixed(1) + ' ' + toY + '" fill="none" stroke="rgba(255,255,255,' + (hot ? 0.55 : 0.24) + ')" stroke-width="1" stroke-dasharray="2 2.5"/>';
+            }
+            /* forks and joins between the user's own branches (real git parents) */
+            c.parents.forEach((pi) => {
+              const pc = Pj.commits[pi];
+              if (pc.lane === c.lane) return;
+              const px = sx(pc.t), py = ys[pc.lane];
+              if (!vis(px) && !vis(x)) return;
+              const mx = x - Math.min(26, Math.abs(x - px) / 2);
+              s += '<path d="M' + px.toFixed(1) + ' ' + py + ' L' + mx.toFixed(1) + ' ' + py + ' C' + (mx + 10).toFixed(1) + ' ' + py + ' ' + (x - 6).toFixed(1) + ' ' + y + ' ' + x.toFixed(1) + ' ' + y + '" fill="none" stroke="rgba(255,255,255,0.3)" stroke-width="1.5"/>';
+            });
+          });
+          uc.forEach((c, k) => {
+            const y = ys[c.lane], x = sx(c.t);
+            umarks.push({ x, i: c.i, lane: c.lane });
+            if (!vis(x)) return;
+            s += '<circle cx="' + x.toFixed(1) + '" cy="' + y + '" r="4.5" fill="#18181a" stroke="#d8d6d1" stroke-width="1.6"' + (V.fresh.has(c.i) ? ' class="pulse"' : '') + '/>';
+            const next = uc.slice(k + 1).find((d) => d.lane === c.lane);
+            const room = (next ? sx(next.t) : X2) - x - 22;
+            if (room > 50) {
+              const chars = Math.floor(room / 5.6);
+              const t = c.msg.length > chars ? c.msg.slice(0, Math.max(4, chars - 1)) + '…' : c.msg;
+              s += '<text class="sub" x="' + (x + 9).toFixed(1) + '" y="' + (y + 3.5) + '">' + esc(t) + '</text>';
+            }
+          });
+
+          /* the record's commits: runs as dots, timers as ticks or folded */
+          marks = [];
+          let lastLabel = -1e9;
+          const folded = { n: 0 };
+          let i = 0;
+          while (i < rec.length) {
+            const c = rec[i];
+            if (c.kind === 'timer') {
+              let j = i;
+              const isWarm = (d) => d.app === 'plass' || !!(d.doc && d.doc.endsWith('.typ'));
+              const warm = isWarm(c);
+              while (j + 1 < rec.length && rec[j + 1].kind === 'timer' && isWarm(rec[j + 1]) === warm && segOf(rec[j + 1].t) === segOf(c.t)) j++;
+              const xa = sx(c.t), xb = sx(rec[j].t);
+              for (let q = i; q <= j; q++) marks.push({ x: sx(rec[q].t), i: rec[q].i });
+              if (xb >= X1 - 10 && xa <= X2 + 10) {
+                /* fold locally: neighbours closer than FOLD px join one bar, so a
+                   pause inside a stretch of typing still shows as a gap */
+                let q = i;
+                while (q <= j) {
+                  let r = q;
+                  while (r + 1 <= j && sx(rec[r + 1].t) - sx(rec[r].t) < FOLD) r++;
+                  const qa = sx(rec[q].t), qb = sx(rec[r].t);
+                  if (r > q) {
+                    folded.n += r - q + 1;
+                    if (qb > X1 - 10 && qa < X2 + 10) s += '<rect x="' + (qa - 2).toFixed(1) + '" y="' + (ry - 2.5) + '" width="' + Math.max(4, qb - qa + 4).toFixed(1) + '" height="5" rx="2.5" fill="' + (warm ? 'rgba(196,173,128,0.42)' : 'rgba(255,255,255,0.24)') + '"/>';
+                  } else if (vis(qa)) s += '<rect x="' + (qa - 0.75).toFixed(1) + '" y="' + (ry - 4.5) + '" width="1.5" height="9" rx="0.75" fill="' + (warm ? 'rgba(196,173,128,0.7)' : 'rgba(255,255,255,0.4)') + '"/>';
+                  q = r + 1;
+                }
+              }
+              i = j + 1;
+              continue;
+            }
+            let x = sx(c.t);
+            if (c.kind === 'rewind-from' && rec[i + 1] && rec[i + 1].kind === 'rewind-to') x = Math.min(x, sx(rec[i + 1].t) - 7);
+            marks.push({ x, i: c.i });
+            if (vis(x)) {
+              const fr = V.fresh.has(c.i) ? ' class="pulse"' : '';
+              if (c.kind === 'run') {
+                const prevRun = rec.slice(Math.max(0, i - 6), i).reverse().find((d) => d.kind === 'run');
+                const gapPx = prevRun ? x - sx(prevRun.t) : 99;
+                const r = gapPx < 5 ? 2.2 : 3.4;
+                const err = c.ks.cells[c.cell - 1] && c.ks.cells[c.cell - 1].out === 'err';
+                s += err ? '<circle cx="' + x.toFixed(1) + '" cy="' + ry + '" r="' + (r - 0.4) + '" fill="#18181a" stroke="#cd6452" stroke-width="1.5"' + fr + '/>' : '<circle cx="' + x.toFixed(1) + '" cy="' + ry + '" r="' + r + '" fill="#d8d6d1"' + fr + '/>';
+                if (x - lastLabel >= 15 && V.scale > 0.9) {
+                  const on = V.held === c.i || V.hover === c.i;
+                  s += '<text class="cn' + (on ? ' on' : '') + '" x="' + x.toFixed(1) + '" y="' + (ry + 17) + '" text-anchor="middle">' + c.cell + '</text>';
+                  lastLabel = x;
+                }
+              } else if (c.kind === 'open' || c.kind === 'close') {
+                const col = c.app === 'plass' ? 'rgba(196,173,128,0.85)' : 'rgba(216,214,209,0.7)';
+                const d = c.kind === 'open' ? 'M' + x.toFixed(1) + ' ' + (ry - 8) + ' v16 M' + x.toFixed(1) + ' ' + (ry - 8) + ' h3.5' : 'M' + x.toFixed(1) + ' ' + (ry - 8) + ' v16 M' + x.toFixed(1) + ' ' + (ry + 8) + ' h-3.5';
+                s += '<path d="' + d + '" stroke="' + col + '" stroke-width="1.5" fill="none" stroke-linecap="round"/>';
+              } else if (c.kind === 'external' || c.kind === 'closed') {
+                s += '<circle cx="' + x.toFixed(1) + '" cy="' + ry + '" r="3.6" fill="#c98a1d"' + fr + '/>';
+              } else if (c.kind === 'rewind-from') {
+                s += '<circle cx="' + x.toFixed(1) + '" cy="' + ry + '" r="3.1" fill="#18181a" stroke="#9db8d6" stroke-width="1.3"' + fr + '/>';
+              } else if (c.kind === 'rewind-to') {
+                s += '<circle cx="' + x.toFixed(1) + '" cy="' + ry + '" r="4" fill="#9db8d6"' + fr + '/>';
+              }
+            }
+            i++;
+          }
+          /* rewinds: an arc under the track, back to the moment reproduced */
+          rec.forEach((c) => {
+            if (c.kind !== 'rewind-to') return;
+            const tg = Pj.commits[c.target];
+            const x2 = sx(c.t), x1 = sx(tg.t);
+            if (Math.max(x1, x2) < X1 || Math.min(x1, x2) > X2) return;
+            const toUser = tg.lane !== 'record';
+            const fr = V.fresh.has(c.i) ? ' fresh' : '';
+            if (!toUser) {
+              const yb = ry + 31, ye = ry + 22.5;
+              s += '<path class="arcpath' + fr + '" pathLength="1" d="M' + x2.toFixed(1) + ' ' + (ry + 6) + ' C' + x2.toFixed(1) + ' ' + yb + ' ' + x1.toFixed(1) + ' ' + yb + ' ' + x1.toFixed(1) + ' ' + ye + '"/>';
+              s += '<path class="arcpath' + fr + '" pathLength="1" d="M' + (x1 - 2.8).toFixed(1) + ' ' + (ye + 3.6) + ' L' + x1.toFixed(1) + ' ' + ye + ' L' + (x1 + 2.8).toFixed(1) + ' ' + (ye + 3.6) + '"/>';
+            } else {
+              const uy = ys[tg.lane];
+              s += '<path class="arcpath' + fr + '" pathLength="1" d="M' + x2.toFixed(1) + ' ' + (ry - 5) + ' C' + x2.toFixed(1) + ' ' + (uy + 14) + ' ' + x1.toFixed(1) + ' ' + (uy + 14) + ' ' + x1.toFixed(1) + ' ' + (uy + 6.5) + '"/>';
+            }
+          });
+          /* now */
+          if (vis(nowX)) {
+            s += '<line x1="' + nowX.toFixed(1) + '" y1="' + (ry - 6) + '" x2="' + nowX.toFixed(1) + '" y2="' + (ry + 6) + '" stroke="rgba(255,255,255,0.55)" stroke-width="1.5" stroke-linecap="round"/>';
+            s += '<text class="nowt" x="' + (nowX + 6).toFixed(1) + '" y="' + (ry + 3.5) + '">now</text>';
+          }
+          marks.push({ x: nowX, i: -1 });
+          marks.sort((a, b) => a.x - b.x);
+          /* the held moment */
+          if (V.held >= 0) {
+            const c = Pj.commits[V.held], x = sx(c.t), y = ys[c.lane];
+            if (vis(x)) s += '<circle cx="' + x.toFixed(1) + '" cy="' + y + '" r="7.5" fill="none" stroke="#9db8d6" stroke-width="1.5"/>';
+          }
+          if (V.hover != null && V.hover >= 0 && V.hover !== V.held) {
+            const c = Pj.commits[V.hover], x = sx(c.t), y = ys[c.lane];
+            if (vis(x)) s += '<circle cx="' + x.toFixed(1) + '" cy="' + y + '" r="6.5" fill="none" stroke="rgba(255,255,255,0.55)" stroke-width="1.2"/>';
+          }
+          s += '</g>';
+          track.innerHTML = s;
+          L.folded = folded.n;
+          paintReadout();
+          placeHeads();
+        }
+        function renderEmptyBand(ry, bw, tw) {
+          const words = Pj.bandText || 'No record yet';
+          const x2 = TL + tw;
+          track.innerHTML = '<line x1="' + TL + '" y1="' + ry + '" x2="' + x2 + '" y2="' + ry + '" stroke="rgba(255,255,255,0.12)" stroke-width="1.5" stroke-dasharray="2 4"/>' +
+            '<line x1="' + x2 + '" y1="' + (ry - 6) + '" x2="' + x2 + '" y2="' + (ry + 6) + '" stroke="rgba(255,255,255,0.45)" stroke-width="1.5" stroke-linecap="round"/>' +
+            '<text class="nowt" x="' + (x2 + 6) + '" y="' + (ry + 3.5) + '">now</text>' +
+            '<text x="' + (TL + tw / 2) + '" y="' + (ry - 12) + '" text-anchor="middle">' + words + '</text>';
+          marks = []; umarks = [];
+          readout.innerHTML = '';
+          ph.style.display = ph2.style.display = flag.style.display = pill.style.display = 'none';
+        }
+        function paintReadout() {
+          const tw = TW();
+          const ta = tAt(Math.max(0, V.x0)), tb = tAt(Math.min(L.W, V.x0 + tw));
+          const span = sameDay(ta, tb) ? dshort(ta) + ' · ' + hm(ta) + '–' + hm(tb) : dshort(ta) + ' – ' + dshort(tb);
+          const fold = L.folded > 0 ? 'timer commits folded between runs · zoom in for one tick a minute' : 'every commit drawn';
+          readout.innerHTML = '<b>' + span + '</b>  ·  ' + fold;
+        }
+
+        /* the playhead: under the pointer while it moves, blue where a moment is held */
+        function markX(i) { if (i === -1) return nowX; const m = marks.find((q) => q.i === i) || umarks.find((q) => q.i === i); return m ? m.x : sx(Pj.commits[i].t); }
+        function placeHeads() {
+          if (!Pj.commits) return;
+          const ys = laneYs(), ry = ys.record, top = 36, bottom = ry + 12;
+          const held = V.held, hov = V.hover;
+          const cur = hov != null ? hov : held;
+          const x = markX(cur);
+          const tw = TW();
+          const inView = x >= TL - 12 && x <= TL + tw + TR - 4;
+          ph.style.display = inView ? 'block' : 'none';
+          ph.style.left = x + 'px'; ph.style.top = top + 'px'; ph.style.height = (bottom - top) + 'px';
+          ph.classList.toggle('held', hov == null || hov === held);
+          if (hov != null && held !== hov) {
+            const hx = markX(held);
+            ph2.style.display = hx >= TL - 12 && hx <= TL + tw + TR ? 'block' : 'none';
+            ph2.style.left = hx + 'px'; ph2.style.top = top + 'px'; ph2.style.height = (bottom - top) + 'px';
+          } else ph2.style.display = 'none';
+          flag.style.display = inView ? 'block' : 'none';
+          flag.innerHTML = flagText(cur);
+          flag.classList.toggle('held', hov == null || hov === held);
+          const fw = flag.offsetWidth || 80;
+          flag.style.left = clamp(x, TL + fw / 2 - 30, band.clientWidth - fw / 2 - 4) + 'px';
+          /* the second click: said where the pointer is */
+          if (hov != null && hov === held && held >= 0 && canRewind(held)) {
+            const c = Pj.commits[held];
+            pill.innerHTML = '↺ Click again to rewind to ' + hms(c.t) + '<kbd>↵</kbd>';
+            pill.style.display = 'block';
+            pill.style.left = clamp(x, 120, band.clientWidth - 120) + 'px';
+            pill.style.top = (ys[c.lane] - 12) + 'px';
+          } else pill.style.display = 'none';
+        }
+        function kindWord(c) {
+          switch (c.kind) {
+            case 'run': return 'run [' + c.cell + ']';
+            case 'timer': return c.app === 'plass' ? 'plass · timer' : 'timer';
+            case 'open': return c.app + ' · session open';
+            case 'close': return c.app + ' · session close';
+            case 'external': return 'external edit';
+            case 'closed': return 'changed while closed';
+            case 'rewind-from': return 'rewind from';
+            case 'rewind-to': return 'rewind → ' + hm(Pj.commits[c.target].t);
+            case 'user': return c.lane;
+          }
+          return c.kind;
+        }
+        function flagText(i) {
+          if (i === -1) return 'now <span class="k">· ' + hm(Pj.now) + '</span>';
+          const c = Pj.commits[i];
+          return hms(c.t) + ' <span class="k">· ' + esc(kindWord(c)) + '</span>';
+        }
+
+        /* ================= the picture: the document at a commit ================= */
+        function parentOf(c) {
+          if (!c.parents || !c.parents.length) return null;
+          return Pj.commits[c.parents[0]];
+        }
+        function docAt(i) {
+          if (i === -1) {
+            if (Pj.dirty) return { ks: Pj.dirty.ks, ps: Pj.dirty.ps, fs: tip().fs };
+            const t = tip(); return { ks: t.ks, ps: t.ps, fs: t.fs };
+          }
+          const c = Pj.commits[i]; return { ks: c.ks, ps: c.ps, fs: c.fs };
+        }
+        function whichDoc(i) {
+          if (V.docHeld) return V.docHeld;
+          if (i >= 0) { const c = Pj.commits[i]; if (c.doc) return c.doc; }
+          return V.shown || Pj.docs[0];
+        }
+        function show(i, scrubbing) {
+          const doc = whichDoc(i);
+          V.shown = doc;
+          paintDocsw();
+          const cur = docAt(i);
+          let c = i >= 0 ? Pj.commits[i] : null;
+          /* now, just after a rewind: show what the rewind did */
+          if (!c && !Pj.dirty && tip().kind === 'rewind-to') c = tip();
+          const par = c ? parentOf(c) : null;
+          /* marks only for what this commit changed; a user commit compares with its own parent */
+          const pks = c && par ? par.ks : null, pps = c && par ? par.ps : null;
+          let html;
+          if (doc.endsWith('.py')) html = knuthHTML(cur.ks, pks);
+          else html = plassHTML(cur.ps, pps, c, doc);
+          page.innerHTML = html;
+          const first = $('.cellw.chg, .gone, .blk.chg', page) || $('.chg', page);
+          if (first) {
+            const pr = preview.getBoundingClientRect(), r = first.getBoundingClientRect();
+            const s = (pr.height / preview.clientHeight) || 1;
+            const y = (r.top - pr.top) / s + preview.scrollTop;
+            const h = r.height / s;
+            const want = y - Math.max(60, (preview.clientHeight - h) * 0.38);
+            if (y < preview.scrollTop + 30 || y + h > preview.scrollTop + preview.clientHeight - 30 || !scrubbing) preview.scrollTo({ top: Math.max(0, want), behavior: scrubbing ? 'auto' : 'smooth' });
+          }
+          slip.innerHTML = slipHTML(i);
+        }
+        function knuthHTML(ks, pks) {
+          const marks = !!pks;
+          let h = '';
+          const pinsNew = marks && ks.pins.length !== pks.pins.length;
+          const pinsGone = marks ? pks.pins.filter((p) => ks.pins.indexOf(p) < 0) : [];
+          h += '<div class="pkg' + (pinsNew ? ' chg' : '') + '">uv · Python 3.13 <span class="list">' + ks.pins.map((p) => (pinsNew && pks.pins.indexOf(p) < 0 ? '<span class="new">' + p + '</span>' : p)).concat(pinsGone.map((p) => '<s>' + p + '</s>')).join(', ') + '</span></div>';
+          let gone = [];
+          const flushGone = () => {
+            if (!gone.length) return;
+            const a = gone[0], b = gone[gone.length - 1];
+            h += '<div class="gone chg"><b>' + (a === b ? 'Cell ' + a : 'Cells ' + a + '–' + b) + '</b> ' + (a === b ? 'is' : 'are') + ' not in this version. ' + (a === b ? 'It was' : 'They were') + ' in the commit before, and the record keeps ' + (a === b ? 'it' : 'them') + '.</div>';
+            gone = [];
+          };
+          for (let k = 0; k < 20; k++) {
+            const cs = ks.cells[k], pc = pks ? pks.cells[k] : null, no = k + 1, cell = CELLS[k];
+            if (!cs) { if (marks && pc) gone.push(no); continue; }
+            flushGone();
+            const added = marks && !pc;
+            if (cell.kind === 'text') {
+              const pr = proseOf(no, cs), pp = pc ? proseOf(no, pc) : null;
+              const chg = marks && (!pp || pp.p !== pr.p || pp.h2 !== pr.h2);
+              h += '<div class="cellw' + (chg ? ' chg' : '') + (added ? ' added' : '') + '"><span class="cno">' + no + '</span><div class="prose">' + (pr.h2 ? '<h2>' + pr.h2 + '</h2>' : '') + '<p>' + pr.p + '</p></div></div>';
+              continue;
+            }
+            const lines = linesOf(no, cs), plines = pc ? linesOf(no, pc) : [];
+            const lineChg = lines.map((l, j) => marks && (!pc || plines[j] !== l));
+            const out = outOf(no, cs), pout = pc ? outOf(no, pc) : null;
+            const outChg = marks && !!out && (!pout || pout.text !== out.text);
+            const figChg = marks && cs.fig && !(pc && pc.fig);
+            const any = lineChg.some(Boolean) || outChg || figChg || (marks && pc && plines.length > lines.length);
+            h += '<div class="cellw' + (cell.kind === 'scratch' ? ' scratch' : '') + (cs.stale ? ' stale' : '') + (any ? ' chg' : '') + (added ? ' added' : '') + '"><span class="cno">' + no + '</span>';
+            if (cell.kind === 'scratch') h += '<div class="scratch-label">scratch</div>';
+            h += '<div class="cm"><div class="gut"><div class="ln">' + lines.map((_, j) => '<span>' + (j + 1) + '</span>').join('') + '</div></div><div class="code">' + lines.map((l, j) => '<div class="line' + (lineChg[j] ? ' chg' : '') + '">' + l + '</div>').join('') + '</div></div>';
+            if (out) h += '<div class="output' + (out.err ? ' err' : '') + (outChg ? ' chg' : '') + '">' + esc(out.text) + '</div>';
+            if (cs.fig && cell.fig) { const f = FIG[cell.fig]; h += '<div class="figure' + (figChg ? ' chg' : '') + '"><svg viewBox="' + f.vb + '"><use href="#' + f.sym + '"/></svg></div>'; }
+            h += '</div>';
+          }
+          flushGone();
+          return h;
+        }
+        function plassHTML(ps, pps, c, doc) {
+          if (!ps) {
+            const born = rec.find((d) => d.ps);
+            const when = c ? hms(c.t) : 'now';
+            return '<div class="absent"><b>' + esc(doc) + ' did not exist at ' + when + '.</b>' + (born ? 'Plass made it at ' + hms(born.t) + (sameDay(born.t, Pj.now) ? '' : ', ' + dshort(born.t)) + '.' : '') + '</div>';
+          }
+          const marks = !!pps;
+          let h = '<div class="paper">';
+          PL.forEach((b, j) => {
+            const f = ps[j] || 0;
+            if (!f) return;
+            const words = b.t.split(' ');
+            const t = words.slice(0, Math.max(1, Math.ceil(words.length * f))).join(' ');
+            const chg = marks && (pps[j] || 0) !== f;
+            h += '<div class="blk pb-' + b.k + (chg ? ' chg' : '') + '">' + esc(t) + '</div>';
+          });
+          return h + '</div>';
+        }
+
+        /* ================= the slip ================= */
+        const ICON_REW = '<svg viewBox="0 0 24 24"><path d="M3 12a9 9 0 1 0 2.64-6.36L3 8.3"/><polyline points="3 3.5 3 8.3 7.8 8.3"/></svg>';
+        function compareWithNow(i) {
+          const a = Pj.commits[i].fs, b = tip().fs;
+          const write = [], remove = [];
+          Array.from(new Set(Object.keys(a).concat(Object.keys(b)))).sort(fileOrder).forEach((p) => {
+            if (a[p] && b[p] !== a[p]) write.push(p);
+            else if (!a[p] && b[p]) remove.push(p);
+          });
+          if (Pj.dirty && write.indexOf('analysis.py') < 0 && Pj.commits[i].ks) write.unshift('analysis.py');
+          return { write, remove };
+        }
+        function canRewind(i) {
+          if (i < 0) return false;
+          if (i === tip().i && !Pj.dirty) return false;
+          const d = compareWithNow(i);
+          return d.write.length + d.remove.length > 0;
+        }
+        const nameList = (arr, max) => (arr.length <= max ? arr.join(', ') : arr.slice(0, max).join(', ') + ' and ' + (arr.length - max) + ' more');
+        function fileRow(f) {
+          const fig = FIGFILE[f.p] && f.s !== 'D' ? '<span class="th"><svg viewBox="' + FIG[FIGFILE[f.p]].vb + '" preserveAspectRatio="xMidYMid slice"><use href="#' + FIG[FIGFILE[f.p]].sym + '"/></svg></span>' : '';
+          const ad = f.ad ? '<span class="ad"><i>+' + f.ad[0] + '</i> <u>−' + f.ad[1] + '</u></span>' : '';
+          const note = f.p === '.claerbout/untracked.json' ? ' title="the listing of untracked/: each file’s size, time and hash"' : '';
+          return '<div class="f"' + note + '><span class="st ' + f.s + '">' + f.s + '</span><span class="fp">' + esc(f.p) + '</span>' + fig + ad + '</div>';
+        }
+        function msgHTML(c) {
+          if (c.lane !== 'record') return '<span class="lane">' + esc(c.lane) + '</span>' + esc(c.msg);
+          const m = c.msg.match(/^(\w+): (.*)$/);
+          if (!m) return esc(c.msg);
+          let rest = esc(m[2]);
+          if (c.kind === 'run') rest = rest.replace(/\[(\d+)\]/, '<span class="go" data-cell="$1">[$1]</span>');
+          if (c.kind === 'rewind-to') rest = rest.replace(/([0-9a-f]{7})$/, '<span class="go" data-hold="' + c.target + '">$1</span>');
+          if (c.kind === 'rewind-from') rest = rest.replace(/([0-9a-f]{7})$/, '<span class="go" data-hold="' + c.parents[0] + '">$1</span>');
+          return '<span class="' + (m[1] === 'plass' ? 'warm' : 'app') + '">' + m[1] + ':</span> ' + rest;
+        }
+        function whyHTML(c) {
+          const t = Pj.commits;
+          switch (c.kind) {
+            case 'open': return c.note ? '<p class="why">' + esc(c.note) + '</p>' : (c.parents.length ? '<p class="why">The first ' + c.app + ' window on this project opened, and something had changed since the last commit.</p>' : '<p class="why">The first commit. The folder was in no repository, so the record made one and took in every file.</p>');
+            case 'close': return '<p class="why">The last ' + c.app + ' window on this project closed.</p>';
+            case 'timer': {
+              const d = c.doc;
+              const other = (c.app === 'knuth' && d && d.endsWith('.typ')) ? ' Knuth’s timer ticked first; the change is Plass’s, in ' + d + '.' : '';
+              return '<p class="why">A minute with something changed.' + other + '</p>';
+            }
+            case 'run': {
+              const cs = c.ks.cells[c.cell - 1];
+              if (cs && cs.out === 'err') return '<p class="why">Cell ' + c.cell + ' ran and stopped with an error; the error is saved under it, in the file.</p>';
+              return '<p class="why">Cell ' + c.cell + ' ran; what it wrote landed in the folder.</p>';
+            }
+            case 'external': case 'closed': return '<p class="why amber">' + esc(c.note) + '</p>';
+            case 'rewind-from': return '<p class="why">What you had just before a rewind, kept so the rewind can be undone.</p>';
+            case 'rewind-to': { const g = t[c.target]; return '<p class="why">The files as they were at <span class="go" data-hold="' + g.i + '">' + hms(g.t) + (sameDay(g.t, c.t) ? '' : ' ' + dshort(g.t)) + '</span> (' + esc(kindWord(g)) + '), written back. The path goes on from here.</p>'; }
+            case 'user': {
+              const tie = t[c.tie];
+              const merge = c.parents.length > 1 ? ' A merge: two parents.' : '';
+              return '<p class="why">Your commit on ' + esc(c.lane) + '. Its files are the record’s at <span class="go" data-hold="' + tie.i + '">' + hms(tie.t) + '</span>, the dashed tie.' + merge + '</p>';
+            }
+          }
+          return '';
+        }
+        function slipHTML(i) {
+          let h = '';
+          if (V.rewound && (i === -1 || i === tip().i)) h += rewoundHTML();
+          if (i === -1) return h + nowHTML();
+          const c = Pj.commits[i];
+          const t = c.t;
+          h += '<div class="sl">';
+          h += '<div class="when">' + hms(t) + '</div>';
+          h += '<div class="day">' + dlong(t) + ' · ' + ago(t, Pj.now) + '</div>';
+          h += '<div class="msg">' + msgHTML(c) + '</div>';
+          h += whyHTML(c);
+          if (c.files && c.files.length) {
+            h += '<div class="cap">' + (c.lane === 'record' ? 'In this commit' : c.parents.length ? 'In this commit' : 'The first commit on ' + esc(c.lane)) + '</div><div class="files">' + c.files.slice(0, 7).map(fileRow).join('') + (c.files.length > 7 ? '<div class="f soft"><span class="st"></span><span class="fp">and ' + (c.files.length - 7) + ' more</span></div>' : '') + '</div>';
+          }
+          const isTip = c.i === tip().i;
+          if (isTip) {
+            h += '<div class="cap">Rewind</div><p class="soft">This is the record’s last commit' + (Pj.dirty ? '. You have changed analysis.py since (' + hm(Pj.dirty.since) + '); a rewind here would put those changes back as they were at ' + hms(c.t) + '.' : ': the files are as they are now.') + '</p>';
+            if (Pj.dirty) h += '<button class="btn" data-rewind="' + c.i + '">' + ICON_REW + 'Rewind to ' + hms(c.t) + '</button>';
+          } else if (canRewind(c.i)) {
+            const d = compareWithNow(c.i);
+            const mainTip = Pj.commits.filter((x) => x.lane === 'main').pop();
+            h += '<div class="cap">A rewind to here</div><dl class="rw">';
+            h += '<dt>first</dt><dd class="sans">commits what you have now, so it can be undone</dd>';
+            if (d.write.length) h += '<dt>writes</dt><dd>' + esc(nameList(d.write, 4)) + '</dd>';
+            if (d.remove.length) h += '<dt>removes</dt><dd>' + esc(nameList(d.remove, 4)) + '</dd>';
+            h += '<dt>leaves</dt><dd class="sans">' + (mainTip ? 'main, HEAD and the index (at ' + mainTip.sha + ')' : 'HEAD and the index') + '; untracked/, which the record lists but does not hold</dd>';
+            if (d.remove.indexOf('writeup.typ') >= 0 || d.remove.indexOf('paper.typ') >= 0) h += '<dt></dt><dd class="sans">The write-up did not exist then. If Plass has it open, close it there first.</dd>';
+            h += '</dl>';
+            h += '<button class="btn" data-rewind="' + c.i + '">' + ICON_REW + 'Rewind to ' + hms(c.t) + '</button>';
+            h += '<div class="hint">' + (V.held === c.i ? 'or click the moment again, or <kbd>↵</kbd>' : 'click it on the path to hold it') + '</div>';
+          } else {
+            h += '<div class="cap">Rewind</div><p class="soft">The files here are the same as now; there is nothing to rewind.</p>';
+          }
+          h += '<div class="meta">' + c.sha + (c.parents.length ? ' · parent' + (c.parents.length > 1 ? 's ' : ' ') + c.parents.map((p) => Pj.commits[p].sha).join(', ') : ' · root') + ' · ' + (c.lane === 'record' ? 'claerbout-autosave' : esc(c.lane)) + '</div>';
+          h += '</div>';
+          return h;
+        }
+        function nowHTML() {
+          const t = tip();
+          let h = '<div class="sl"><div class="when">Now <small>' + hm(Pj.now) + '</small></div><div class="day">' + dlong(Pj.now) + ' · the project as it is</div>';
+          h += '<p class="soft" style="margin-top:10px">Last commit <span class="go" data-hold="' + t.i + '">' + hms(t.t) + '</span>, <span style="font-family:var(--mono);font-size:12px">' + esc(t.msg) + '</span>.' + (Pj.dirty ? ' Changes since ' + hm(Pj.dirty.since) + ' are not in the record yet; they land within the minute (the dotted stretch).' : '') + '</p>';
+          h += '<div class="cap">The path below</div><p class="soft">Point along it to see the project as it was at each commit. Click a commit to hold it there; click it again to rewind to it.</p>';
+          h += '<p class="soft"><kbd>←</kbd> <kbd>→</kbd> one commit · <kbd>⌥</kbd> for the next run · <kbd>+</kbd> <kbd>−</kbd> zoom · <kbd>Esc</kbd> now</p></div>';
+          return h;
+        }
+        function rewoundHTML() {
+          const r = V.rewound, g = Pj.commits[r.target], from = Pj.commits[r.from];
+          let h = '<div class="sl rewound"><div class="lead">Rewound to ' + hms(g.t) + ' · ' + esc(kindWord(g)) + '</div>';
+          h += '<p class="soft">The files are as they were then; Knuth reloaded analysis.py, and cells whose code changed are marked stale, since the session kept running.</p>';
+          if (r.removed.length) h += '<p class="soft">' + esc(nameList(r.removed, 3)) + ' did not exist then, so ' + (r.removed.length > 1 ? 'they are' : 'it is') + ' out of the folder. The record keeps ' + (r.removed.length > 1 ? 'them' : 'it') + '.</p>';
+          h += '<p class="soft">What you had is kept at <span class="go" data-hold="' + from.i + '">' + hms(from.t) + '</span>.</p>';
+          h += '<button class="btn quiet" data-rewind="' + from.i + '">' + ICON_REW + 'Go back to ' + hms(from.t) + '</button></div>';
+          return h;
+        }
+
+        /* ================= the top bar ================= */
+        function paintTop() {
+          $('#pj-name').textContent = Pj.name;
+          $('#pj-path').textContent = Pj.path;
+          if (Pj.commits) {
+            const n = rec.length, first = rec[0];
+            const since = sameDay(first.t, Pj.now) ? hm(first.t) : (Pj.now - first.t < 6 * 86400000 ? DAYS[new Date(first.t).getDay()] + ' ' + hm(first.t) : dshort(first.t));
+            $('#pj-rec').innerHTML = 'record <b>claerbout-autosave</b> · ' + n + ' commits since ' + since;
+            $('#rb-doc').dataset.label = 'Back to ' + Pj.docs[0];
+          } else {
+            $('#pj-rec').innerHTML = Pj.recText;
+          }
+          ['#rb-in', '#rb-out', '#rb-fit', '#rb-now'].forEach((s) => { $(s).disabled = !Pj.commits; });
+          paintDocsw();
+        }
+        function paintDocsw() {
+          if (!Pj.docs || !Pj.commits) { docsw.hidden = true; return; }
+          docsw.hidden = false;
+          docsw.innerHTML = Pj.docs.map((d) => '<button data-doc="' + d + '" class="' + (d === V.shown ? 'on' : '') + (V.docHeld === d ? ' held' : '') + '" title="' + (V.docHeld === d ? 'Held: the room shows this document at every commit. Click to follow commits again.' : 'The room shows the document a commit changed. Click to hold this one.') + '">' + d + '</button>').join('');
+        }
+        docsw.addEventListener('click', (e) => {
+          const b = e.target.closest('button[data-doc]');
+          if (!b) return;
+          V.docHeld = V.docHeld === b.dataset.doc ? null : b.dataset.doc;
+          if (V.docHeld) V.shown = V.docHeld;
+          show(V.hover != null ? V.hover : V.held);
+        });
+
+        /* ================= pointing, holding, rewinding ================= */
+        function local(e) {
+          const r = band.getBoundingClientRect();
+          const s = r.width / band.clientWidth || 1;
+          return { x: (e.clientX - r.left) / s, y: (e.clientY - r.top) / s };
+        }
+        function snap(x, y) {
+          const ys = laneYs();
+          for (const ln of Pj.lanes) {
+            if (ln === 'record' || Math.abs(y - ys[ln]) > 13) continue;
+            let best = null;
+            umarks.forEach((m) => { if (m.lane === ln && Math.abs(m.x - x) < 22 && (!best || Math.abs(m.x - x) < Math.abs(best.x - x))) best = m; });
+            if (best) return best.i;
+          }
+          if (!marks.length) return null;
+          let lo = 0, hi = marks.length - 1;
+          while (hi - lo > 1) { const mid = (lo + hi) >> 1; if (marks[mid].x < x) lo = mid; else hi = mid; }
+          const m = Math.abs(marks[lo].x - x) <= Math.abs(marks[hi].x - x) ? marks[lo] : marks[hi];
+          return m.i;
+        }
+        let rafPending = null;
+        function hoverTo(i) {
+          if (i === V.hover) return;
+          V.hover = i;
+          if (rafPending) return;
+          rafPending = requestAnimationFrame(() => {
+            rafPending = null;
+            body.classList.add('scrubbing');
+            renderBand();
+            show(V.hover != null ? V.hover : V.held, true);
+          });
+        }
+        function clearHover() {
+          if (V.hover == null) return;
+          V.hover = null;
+          body.classList.remove('scrubbing');
+          renderBand();
+          show(V.held, true);
+        }
+        let drag = null;
+        band.addEventListener('pointerdown', (e) => {
+          if (!Pj.commits || demo) return;
+          const p = local(e);
+          if (p.y < 14 && L.W > TW() + 2) { drag = { x: p.x, x0: V.x0 }; band.setPointerCapture(e.pointerId); e.preventDefault(); }
+        });
+        band.addEventListener('pointermove', (e) => {
+          if (!Pj.commits || demo) return;
+          const p = local(e);
+          if (drag) { V.x0 = drag.x0 + (p.x - drag.x) * (L.W / TW()); clampX(); renderBand(); return; }
+          if (p.y < 14) return;
+          hoverTo(snap(p.x, p.y));
+        });
+        band.addEventListener('pointerup', (e) => { if (drag) { drag = null; band.releasePointerCapture(e.pointerId); } });
+        band.addEventListener('pointerleave', () => { if (!demo && !drag) clearHover(); });
+        band.addEventListener('click', (e) => {
+          if (!Pj.commits || demo) return;
+          const p = local(e);
+          if (p.y < 14) return;
+          const i = snap(p.x, p.y);
+          if (i == null) return;
+          if (i === V.held && i >= 0) { if (canRewind(i)) rewindTo(i); return; }
+          hold(i);
+        });
+        band.addEventListener('wheel', (e) => {
+          if (!Pj.commits) return;
+          e.preventDefault();
+          const p = local(e);
+          if (Math.abs(e.deltaX) > Math.abs(e.deltaY) && !e.ctrlKey) { V.x0 += e.deltaX; clampX(); renderBand(); return; }
+          const f = Math.exp(-e.deltaY * (e.ctrlKey ? 0.012 : 0.0028));
+          const [lo, hi] = scaleLimits();
+          const t = tAt(clamp(p.x, TL, TL + TW()) - TL + V.x0);
+          V.scale = clamp(V.scale * f, lo, hi);
+          recomputeOff();
+          V.x0 = cx(t) - (clamp(p.x, TL, TL + TW()) - TL);
+          clampX();
+          renderBand();
+        }, { passive: false });
+        function hold(i) {
+          V.held = i;
+          renderBand();
+          show(V.hover != null ? V.hover : V.held);
+        }
+        slip.addEventListener('click', (e) => {
+          const r = e.target.closest('[data-rewind]');
+          if (r) { rewindTo(+r.dataset.rewind); return; }
+          const g = e.target.closest('[data-hold]');
+          if (g) { const i = +g.dataset.hold; hold(i); ensureVisible(i); return; }
+          const c = e.target.closest('[data-cell]');
+          if (c) { const el = $$('.cellw', page).find((w) => $('.cno', w) && $('.cno', w).textContent === c.dataset.cell); if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' }); }
+        });
+        function ensureVisible(i) {
+          const x = markX(i);
+          if (x < TL + 20 || x > TL + TW() - 20) { V.x0 += x - (TL + TW() / 2); clampX(); renderBand(); }
+        }
+
+        /* the rewind: a step forward that reproduces an older state */
+        function rewindTo(i) {
+          const target = Pj.commits[i];
+          if (!target) return;
+          const g = Pj.gen;
+          const before = tip();
+          const removed = compareWithNow(i).remove;
+          let t = Pj.now;
+          let from = before;
+          V.fresh = new Set();
+          if (Pj.dirty) {
+            g.st.ks = clone(Pj.dirty.ks); g.st.ps = clone(Pj.dirty.ps); g.st.fs = clone(before.fs); g.st.fs['analysis.py']++;
+            from = g.push(t, 'knuth', 'rewind-from', { doc: 'analysis.py' });
+            V.fresh.add(from.i);
+            t += 1000;
+          }
+          g.st.ks = clone(target.ks); g.st.ps = clone(target.ps); g.st.fs = clone(target.fs);
+          /* the record's own versions: a file written back is a new write of old content */
+          const to = g.push(t, 'knuth', 'rewind-to', { target: i, doc: 'analysis.py' });
+          V.fresh.add(to.i);
+          Pj.now = t + 9000;
+          Pj.dirty = null;
+          rec = Pj.commits.filter((c) => c.lane === 'record');
+          V.rewound = { target: i, from: from.i, removed };
+          V.held = -1; V.hover = null;
+          const keepToday = V.fit === 'today';
+          const s = V.scale, x0 = V.x0;
+          buildLayout();
+          V.scale = s; recomputeOff(); V.x0 = x0;
+          if (keepToday) { const [a, b] = rangeToday(); fitRange(a, b); }
+          ensureVisible(-1);
+          renderBand();
+          show(-1);
+          paintTop();
+          setTimeout(() => { V.fresh = new Set(); }, 1500);
+        }
+
+        /* keys */
+        document.addEventListener('keydown', (e) => {
+          if (!Pj || !Pj.commits || e.target.closest('#states')) return;
+          const recIdx = (i) => (i === -1 ? rec.length : rec.findIndex((c) => c.i === i));
+          if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') {
+            e.preventDefault();
+            let k = V.held >= 0 && Pj.commits[V.held].lane !== 'record' ? recIdx(Pj.commits[V.held].tie) : recIdx(V.held);
+            const dir = e.key === 'ArrowLeft' ? -1 : 1;
+            do { k += dir; } while (e.altKey && k >= 0 && k < rec.length && rec[k].kind === 'timer');
+            if (k >= rec.length) { hold(-1); ensureVisible(-1); return; }
+            k = clamp(k, 0, rec.length - 1);
+            hold(rec[k].i); ensureVisible(rec[k].i);
+          } else if (e.key === 'Enter') { if (canRewind(V.held)) rewindTo(V.held); }
+          else if (e.key === 'Escape') { hold(-1); ensureVisible(-1); }
+          else if (e.key === '+' || e.key === '=') zoomBy(1.8);
+          else if (e.key === '-' || e.key === '_') zoomBy(1 / 1.8);
+          else if (e.key === '0') fitToggle();
+        });
+        function fitToggle() {
+          V.fit = V.fit === 'today' ? 'all' : 'today';
+          const [a, b] = V.fit === 'today' ? rangeToday() : rangeAll();
+          animateFit(a, b);
+        }
+        $('#rb-in').addEventListener('click', () => zoomBy(1.8));
+        $('#rb-out').addEventListener('click', () => zoomBy(1 / 1.8));
+        $('#rb-fit').addEventListener('click', fitToggle);
+        $('#rb-now').addEventListener('click', () => { hold(-1); ensureVisible(-1); });
+
+        /* ================= the states (mockup chrome) ================= */
+        const LEG = (d, t) => '<svg viewBox="0 0 22 14">' + d + '</svg><span>' + t + '</span>';
+        const LEGEND = '<div class="legend">' +
+          LEG('<line x1="2" y1="7" x2="20" y2="7" stroke="rgba(255,255,255,.15)" stroke-width="2"/><circle cx="11" cy="7" r="3.4" fill="#d8d6d1"/>', 'cell run, its cell number under it') +
+          LEG('<circle cx="11" cy="7" r="3" fill="#18181a" stroke="#cd6452" stroke-width="1.5"/>', 'a run that stopped with an error') +
+          LEG('<rect x="4" y="2.5" width="1.5" height="9" fill="rgba(255,255,255,.4)"/><rect x="10" y="2.5" width="1.5" height="9" fill="rgba(255,255,255,.4)"/><rect x="16" y="2.5" width="1.5" height="9" fill="rgba(255,255,255,.4)"/>', 'timer commits, one a minute') +
+          LEG('<rect x="3" y="4.5" width="16" height="5" rx="2.5" fill="rgba(255,255,255,.24)"/>', 'timer commits folded (zoom in)') +
+          LEG('<rect x="3" y="4.5" width="16" height="5" rx="2.5" fill="rgba(196,173,128,.42)"/>', 'the same, changing a Plass document') +
+          LEG('<path d="M8 3 v8 M8 3 h3.5" stroke="#d8d6d1" stroke-width="1.5" fill="none"/><path d="M15 3 v8 M15 11 h-3.5" stroke="#d8d6d1" stroke-width="1.5" fill="none"/>', 'session open, session close') +
+          LEG('<circle cx="11" cy="7" r="3.5" fill="#c98a1d"/>', 'changed outside the apps') +
+          LEG('<path d="M18 3 C18 13 5 13 5 4" fill="none" stroke="rgba(157,184,214,.7)" stroke-width="1.2"/><circle cx="18" cy="3" r="2.6" fill="#9db8d6"/>', 'a rewind, pointing back') +
+          LEG('<circle cx="11" cy="7" r="4" fill="#18181a" stroke="#d8d6d1" stroke-width="1.5"/>', 'your commit on a branch; dashed tie to the record') +
+          LEG('<path d="M3 7 L5 3 M6 11 L8 7" stroke="rgba(255,255,255,.4)" stroke-width="1.2"/><line x1="11" y1="7" x2="20" y2="7" stroke="rgba(255,255,255,.15)" stroke-width="2"/>', 'nothing recorded (a night, lunch): folded') +
+          '</div>';
+        const CAPT = {
+          rest: '<p><b>At rest.</b> The window opens on now: the room is the project as it is, and the band is today’s record, Thursday afternoon folded off to the left (the overview at the top of the band shows it; <b>0</b> or the frame tile shows the whole record). At this zoom timer commits between runs fold into short bars; the runs stand out with their cell numbers. The dotted stretch at the end is work not yet recorded.</p><p>Point along the band: the room follows the playhead, the change bars mark what each commit changed, and the slip says when, what and which files. Click a commit to hold it.</p>' + LEGEND,
+          scrub: '<p><b>Scrub.</b> The pointer walks the morning. Every commit is a frame, folded or not: watch cells appear line by line on the timers, outputs and figures land on the runs, and the room switch to the write-up when Plass’s commits come by.</p>' + LEGEND,
+          held: '<p><b>A moment held.</b> One click on run [14] at 10:26:40 holds it: the playhead turns blue, the room keeps that version (the new four-panel figure marked; analysis.py itself did not change, only figs/fig.svg and the artifacts list), and the slip lists what a rewind would write and remove, against now. Point at the held node and the band says it plainly: click again to rewind. A stray click only holds; it never rewinds.</p>',
+          rewound: '<p><b>After a rewind.</b> The record never resets. It committed what you had (<i>rewind from</i>, the hollow node, since analysis.py had unsaved typing), wrote the files of 10:26:40 back into the folder without touching main, HEAD or the index, and committed that (<i>rewind to</i>, the blue node). The arc under the track points to the moment reproduced. The slip offers the way back, which is just another rewind.</p>',
+          main: '<p><b>main beside the record.</b> The record is a single chain (each commit’s only parent is the record’s tip), so it never forks from main in git’s sense. main is drawn as its own lane above, from the moment it was born; each of your commits is tied, dashed, to the record commit whose files it took. Clicking main’s node previews and rewinds to exactly what you committed.</p>',
+          plass: '<p><b>A Plass commit.</b> The record is per project, not per app, so Plass’s commits run on the same track (warm). The room follows the document a commit changed: here writeup.typ, on paper. Some of those changes were committed by Knuth’s timer, which ticked first: the message names the app whose timer committed, the room shows what changed. Click a name in the top bar to hold one document instead.</p>',
+          long: '<p><b>A long record.</b> price-experiment: two weeks, thirteen sessions, over a thousand commits. Nights and lunches fold to break marks, so time runs along the path but empty time takes no room. At this zoom whole sessions are short capsules; runs become dots too close to number. main and a branch, region-effects, fork and join as git has them; their commits are tied to the record. An amber dot on Thursday 24 marks prices.csv changed while Knuth was closed, and a blue arc that afternoon is an old rewind.</p><p>Scroll or pinch over the band to zoom around the pointer; drag the box in the overview to pan.</p>',
+          day: '<p><b>One day.</b> Zoomed to Wednesday 30 September. The runs carry their numbers again, the timers fold between them, and region-effects’ commits sit on their own lane, forked from main’s last commit (Tuesday’s “Paper: results”) and merged back on Thursday.</p>',
+          minutes: '<p><b>Minutes.</b> Zoomed far enough that every timer commit is its own tick, a minute apart. This is the zoom at which scrubbing reads like a replay: a line typed per tick.</p>',
+          unsaved: '<p><b>Not saved yet.</b> A new document has no folder, so no project and no record. The window says why, and where the record will begin.</p>',
+          refused: '<p><b>In Downloads.</b> The record never starts a project in the home folder’s standard folders, a cloud root or a temporary folder (README, “The project”). The window names the rule and the fix.</p>',
+        };
+        let demo = null;
+        function stopDemo() { if (demo) { cancelAnimationFrame(demo); demo = null; } fakeptr.style.display = 'none'; }
+        function useProject(id) {
+          if (id === 'week-3') PROJ['week-3'] = buildMorning();
+          else if (id === 'long') PROJ.long = PROJ.long || buildLong();
+          setProject(PROJ[id]);
+          emptyEl.hidden = true; preview.hidden = false; slip.hidden = false;
+        }
+        function useEmpty(kind) {
+          const E = {
+            unsaved: { name: 'Untitled.py', path: 'not saved', recText: 'no record', band: 'No record yet: the document has no folder', lead: 'Nothing is recorded yet.', body: '<p>Untitled.py has not been saved, so it has no folder and no project. Save it into a folder of its own, say</p><span class="path">~/Projects/ECON_0150/week-4/analysis.py</span><p>and the record begins with that session: a commit on every cell run and every minute something changed, from then on, beside whatever git history the folder has.</p>' },
+            refused: { name: 'analysis.py', path: '~/Downloads', recText: 'no record here', band: 'No record here', lead: 'This folder gets no record.', body: '<p>analysis.py is in Downloads. The record never starts a project in the home folder or its standard folders (Desktop, Documents, Downloads …), in a cloud-synced root or in a temporary folder; a folder <i>below</i> one of those is fine.</p><span class="path">~/Downloads/analysis.py  →  ~/Projects/week-3/analysis.py</span><p>Move it into a folder of its own and the record starts the next time it opens.</p>' },
+          }[kind];
+          Pj = { name: E.name, path: E.path, recText: E.recText, bandText: E.band, lanes: ['record'] };
+          rec = []; L = null;
+          paintTop();
+          preview.hidden = true; slip.hidden = true; emptyEl.hidden = false;
+          emptyEl.innerHTML = '<div class="card"><p class="lead">' + E.lead + '</p>' + E.body + '</div>';
+          renderBand();
+        }
+        const STATES = {
+          rest: () => { useProject('week-3'); V.fit = 'today'; fitRange(...rangeToday()); renderBand(); show(-1); },
+          scrub: () => { useProject('week-3'); V.fit = 'today'; fitRange(...rangeToday()); renderBand(); show(-1); playScrub(); },
+          held: () => { useProject('week-3'); V.fit = 'today'; fitRange(...rangeToday()); const i = Pj.held; V.held = i; V.hover = i; renderBand(); show(i); },
+          rewound: () => { useProject('week-3'); V.fit = 'today'; fitRange(...rangeToday()); renderBand(); rewindTo(Pj.held); V.fresh = new Set([Pj.commits.length - 1, Pj.commits.length - 2]); renderBand(); setTimeout(() => { V.fresh = new Set(); }, 1500); },
+          main: () => { useProject('week-3'); V.fit = 'today'; fitRange(T('2026-10-02', '09:44:00'), Pj.now + 60000); V.held = Pj.u2; renderBand(); show(Pj.u2); },
+          plass: () => { useProject('week-3'); V.fit = 'today'; fitRange(T('2026-10-02', '10:33:00'), T('2026-10-02', '11:12:00')); const i = Pj.commits.find((c) => c.msg === 'knuth: timer' && c.doc === 'writeup.typ' && c.t > T('2026-10-02', '10:52:00')).i; V.held = i; renderBand(); show(i); },
+          long: () => { useProject('long'); V.fit = 'all'; fitRange(...rangeAll()); renderBand(); show(-1); },
+          day: () => { useProject('long'); V.fit = 'all'; fitRange(T('2026-09-28', '09:20:00'), T('2026-09-30', '11:48:00')); fitRange(T('2026-09-30', '09:00:00'), T('2026-09-30', '11:46:00')); const i = Pj.commits.find((c) => c.lane === 'region-effects').i; V.held = i; renderBand(); show(i); },
+          minutes: () => { useProject('long'); V.fit = 'all'; fitRange(T('2026-09-30', '10:20:00'), T('2026-09-30', '10:56:00')); const i = Pj.commits.find((c) => c.kind === 'run' && c.t > T('2026-09-30', '10:36:00')).i; V.held = i; renderBand(); show(i); },
+          unsaved: () => useEmpty('unsaved'),
+          refused: () => useEmpty('refused'),
+        };
+        function go(name) {
+          stopDemo();
+          $$('#states [data-st]').forEach((b) => b.classList.toggle('on', b.dataset.st === name));
+          $('#capt').innerHTML = CAPT[name] || '';
+          body.classList.remove('scrubbing');
+          preview.scrollTop = 0;
+          STATES[name]();
+        }
+        function playScrub() {
+          const from = rec.find((c) => c.t >= Pj.today), xs = sx(from.t) - 6, xe = nowX + 2;
+          const ry = laneYs().record;
+          const t0 = performance.now(), ms = 11000;
+          fakeptr.style.display = 'block';
+          const step = (now) => {
+            const k = Math.min(1, (now - t0) / ms);
+            const e = k < 0.5 ? 2 * k * k : 1 - Math.pow(-2 * k + 2, 2) / 2;
+            const x = xs + (xe - xs) * e;
+            fakeptr.style.left = x + 'px'; fakeptr.style.top = (ry + 4) + 'px';
+            const i = snap(x, ry);
+            if (i !== V.hover) { V.hover = i; body.classList.add('scrubbing'); renderBand(); show(i, true); }
+            if (k < 1) demo = requestAnimationFrame(step);
+            else { demo = null; setTimeout(() => { fakeptr.style.display = 'none'; V.hover = null; body.classList.remove('scrubbing'); renderBand(); show(-1); }, 900); }
+          };
+          demo = requestAnimationFrame(step);
+        }
+        $$('#states [data-st]').forEach((b) => b.addEventListener('click', () => go(b.dataset.st)));
+
+        /* the window's size */
+        const WIN = { fill: null, 1440: [1440, 900, '1440 × 900 · a laptop, full screen'], 1100: [1100, 800, '1100 × 800 · Knuth’s default window'] };
+        let win = '1440';
+        function setWin(k) {
+          win = k;
+          $$('#states [data-win]').forEach((b) => b.classList.toggle('on', b.dataset.win === k));
+          if (!WIN[k]) { body.classList.remove('sized'); app.style.removeProperty('--w'); app.style.removeProperty('--h'); }
+          else { body.classList.add('sized'); app.style.setProperty('--w', WIN[k][0] + 'px'); app.style.setProperty('--h', WIN[k][1] + 'px'); $('#sizelabel').textContent = WIN[k][2]; }
+          scaleApp();
+          relayout();
+        }
+        function scaleApp() {
+          if (!WIN[win]) return;
+          const panel = $('#states').classList.contains('min') ? 0 : 300;
+          const availW = innerWidth - panel;
+          const s = Math.min(1, (availW - 24) / WIN[win][0], (innerHeight - 50) / WIN[win][1]);
+          app.style.setProperty('--s', s.toFixed(4));
+          app.style.setProperty('--cx', panel + availW / 2 + 'px');
+          $('#sizelabel').style.setProperty('--cx', panel + availW / 2 + 'px');
+        }
+        function relayout() {
+          if (!Pj) return;
+          if (!Pj.commits) { renderBand(); return; }
+          const tw = TW();
+          const ta = tAt(Math.max(0, V.x0)), tb = tAt(Math.min(L.W, V.x0 + (relayout.lastTW || tw)));
+          relayout.lastTW = tw;
+          fitRange(ta, tb);
+          renderBand();
+        }
+        $$('#states [data-win]').forEach((b) => b.addEventListener('click', () => setWin(b.dataset.win)));
+        $('#st-squint').addEventListener('click', (e) => { body.classList.toggle('squint'); e.currentTarget.classList.toggle('on'); });
+        $('#states header').addEventListener('click', () => { $('#states').classList.toggle('min'); scaleApp(); });
+        window.addEventListener('resize', () => { scaleApp(); relayout(); });
+
+        /* start */
+        setWin(innerWidth > 900 ? '1440' : 'fill');
+        go('rest');
+        relayout.lastTW = TW();
+      })();
+    </script>
+  </body>
+</html>
