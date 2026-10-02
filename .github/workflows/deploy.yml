@@ -208,7 +208,7 @@ jobs:
           else
             echo "::warning::Knuth.app did not build and the previous app was not all found; knuth.tayweid.io/install may fail until it does."
           fi
-      - uses: actions/configure-pages@983d7736d9b0ae728b81ab479565c72886d7745b # v5
+      - uses: actions/configure-pages@45bfe0192ca1faeb007ade9deae92b16b8254a0d # v6.0.0
         with:
           # Create/enable the Pages site from the workflow itself — the
           # Settings->Pages UI state has been unreliable for this repo.
