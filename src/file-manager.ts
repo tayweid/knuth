@@ -203,6 +203,9 @@ export class FileManager {
   pendingHandle: FileSystemFileHandle | null = null;
   readonly supportsFS = typeof window.showOpenFilePicker === 'function';
   private saveTimer = 0;
+  /** The autosave under way, so a second call joins it and `settled`
+   *  can wait for it. */
+  private flushing: Promise<void> | null = null;
   private stashTimer = 0;
   /** Bumped on every edit: a save is clean only if none arrived while it
    *  was in flight, whatever the engine did to the text meanwhile. */
@@ -298,10 +301,25 @@ export class FileManager {
     }
     if (this.handle || this.path) {
       clearTimeout(this.saveTimer);
-      this.saveTimer = window.setTimeout(() => void this.flush(), 1200);
+      this.saveTimer = window.setTimeout(() => {
+        this.saveTimer = 0;
+        void this.flush();
+      }, 1200);
     }
     clearTimeout(this.stashTimer);
     this.stashTimer = window.setTimeout(() => this.stash(), 400);
+  }
+
+  /** Resolves once the disk holds the document: a scheduled autosave has
+   *  run and no write is in flight. For whoever acts on the saved file —
+   *  the shell's autosave record is told of a cell's run only after this,
+   *  so its commit holds what the run produced (main.ts). Bounded: a
+   *  write that cannot land (no permission yet) is not waited on forever. */
+  async settled(): Promise<void> {
+    for (let i = 0; i < 60 && (this.saveTimer || this.flushing); i++) {
+      if (this.flushing) await this.flushing;
+      else await new Promise((resolve) => setTimeout(resolve, 100));
+    }
   }
 
   /** Snapshot to sessionStorage: same lifetime as the kernel session —
@@ -406,7 +424,17 @@ export class FileManager {
 
   private writeBlockedNotified = false;
 
-  private async flush() {
+  /** The document to disk, once: a call during a write joins that write. */
+  private flush(): Promise<void> {
+    if (!this.flushing) {
+      this.flushing = this.flushNow().finally(() => {
+        this.flushing = null;
+      });
+    }
+    return this.flushing;
+  }
+
+  private async flushNow() {
     if (!this.dirty) return;
     if (this.path) {
       await this.flushPath();
