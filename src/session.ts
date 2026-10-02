@@ -12,9 +12,11 @@
 //
 //   The chip. Once a receipt has flown, a small chip stays at the cell's
 //   right corner (the ledger's folded tab): a glyph for what the run made
-//   (a figure, a table, names) and a count. Hover opens the receipt again,
-//   a click holds it, a click elsewhere or Esc puts it away. Amber when the
-//   cell is stale, faded after a restart. It never takes the column's width.
+//   (a figure, a table, names) and a count. Hover opens the receipt again
+//   past it, where the margin holds a card without moving the column; a
+//   click holds it (the column sliding for it as for a run's); a click
+//   elsewhere or Esc puts it away. Amber when the cell is stale, faded
+//   after a restart. It never takes the column's width.
 //
 //   The Session card. The pill at the bar's right end holds the kernel's
 //   status and the session's names in cell order; a click drops the card
@@ -34,6 +36,7 @@ import { icon } from './icons.ts';
 import { clearSafeSvgImages, createSafeSvgImage } from './safe-svg.ts';
 import { Viewer, isTabular } from './viewers.ts';
 import {
+  briefValue,
   chipCount,
   chipKind,
   folderLine,
@@ -55,6 +58,19 @@ type Tab = 'session' | 'data' | 'figures';
 /** fresh: a run's, about to fly; hover: a chip's, read-only; held: kept in
  *  place (a click, p, its pin, or a chip's click) until it is put away. */
 type CardKind = 'fresh' | 'hover' | 'held';
+/** Where a receipt card stands: over the chips' lane, 6 px from the column
+ *  (a run's card and one kept from it, its chip hidden meanwhile; a chip's
+ *  click where the margin past the chip is short), or past the chip with
+ *  the column where it stands (a chip's hover, or its click where that
+ *  fits). */
+type Place = 'lane' | 'past';
+interface Card {
+  id: string;
+  kind: CardKind;
+  place: Place;
+  /** A run's card, or one kept from it: it says "this run". */
+  fromRun: boolean;
+}
 type FigureRef = { name: string } | { cell: string };
 
 /** How long a fresh receipt stays when nothing else puts it away. */
@@ -65,6 +81,10 @@ const DWELL_AFTER_LOOK_MS = 2000;
 export const FLY_MS = 460;
 /** The column's slide, on the pin or for a receipt (peek-v2's 0.36 s). */
 export const SLIDE_MS = 360;
+/** A column that slid for a receipt goes home this long after the last
+ *  card has gone, unless another run comes first (stepping through cells
+ *  slides it once, not per run; session.ts, cardGone). */
+export const RETURN_MS = 1200;
 /** The chips' lane beside the column (6 + the chip + 6). */
 const CHIP_LANE = 46;
 /** The column (#sheet's 52rem), and the floor it narrows to while the
@@ -89,8 +109,14 @@ const CARD_SLIM = 270;
 const CARD_MIN = 200;
 const CARD_FLOOR = 160;
 /** A value whose preview says it in this many characters shows in a slim
- *  card in place of its type ("n 1200", not "n int"). */
+ *  card in place of its type ("n 1200", not "n int"); a float, to six
+ *  significant digits (briefValue). */
 const SHORT_PREVIEW = 16;
+/** A receipt card lists this many names; a run that bound more says how
+ *  many more, and the Session card has them all. */
+const RECEIPT_ROWS = 8;
+/** A chip's title names this many. */
+const CHIP_TITLE_NAMES = 12;
 /** A table this small shows whole in the Session tab's band. */
 const MINI_ROWS = 6;
 const MINI_COLS = 6;
@@ -134,10 +160,42 @@ function isTextEntry(target: Element | null): boolean {
   );
 }
 
-/** A value its preview says in a few characters: a number, a short string,
- *  a short list. */
+/** A value its preview says in a few characters: a number (a float to six
+ *  significant digits), a short string, a short list. */
 function isShort(v: NamespaceVar): boolean {
-  return !isTabular(v) && !v.figure && v.preview.length <= SHORT_PREVIEW && !v.preview.includes('\n');
+  const brief = briefValue(v);
+  return !isTabular(v) && !v.figure && brief.length <= SHORT_PREVIEW && !brief.includes('\n');
+}
+
+/** A value's preview where a narrow row shows it: the brief form first,
+ *  which a narrow card shows in place of the full one (CSS), when they
+ *  differ (a float to six significant digits). */
+function valueCell(v: NamespaceVar, tag: 'td' | 'span'): HTMLElement {
+  const cell = el(tag, 'pv');
+  const brief = briefValue(v);
+  if (brief === v.preview) cell.textContent = v.preview;
+  else cell.append(el('span', 'brief', brief), el('span', 'full', v.preview));
+  return cell;
+}
+
+/** A short value's tooltip: its type, and its whole value when the row
+ *  shows it rounded. */
+function valueTitle(name: string, v: NamespaceVar): string {
+  return `${name}: ${typeLabel(v)}${briefValue(v) !== v.preview ? ` · ${v.preview}` : ''}`;
+}
+
+/** The time, as a fraction of the slide's, at which the slide's curve —
+ *  cubic-bezier(.2, .7, .2, 1), #sheet.slide's — has gone `p` of the way. */
+function slideTime(p: number): number {
+  const at = (s: number, a: number, b: number) => 3 * (1 - s) ** 2 * s * a + 3 * (1 - s) * s * s * b + s ** 3;
+  let lo = 0;
+  let hi = 1;
+  for (let i = 0; i < 24; i++) {
+    const s = (lo + hi) / 2;
+    if (at(s, 0.7, 1) < p) lo = s;
+    else hi = s;
+  }
+  return at(hi, 0.2, 0.2);
 }
 
 function readStore(store: () => Storage, key: string): string | null {
@@ -252,7 +310,7 @@ export class Session {
   private docked: boolean;
   private floating = false;
   private tab: Tab = 'session';
-  private card: { id: string; kind: CardKind } | null = null;
+  private card: Card | null = null;
   /** Docked: the cell whose receipt the band shows in place of the last
    *  run's (a chip hovered, or clicked: held), and the tab to go back to
    *  when a hover ends. */
@@ -277,6 +335,9 @@ export class Session {
   private slideTimer = 0;
   private rideTimer = 0;
   private returnTimer = 0;
+  /** The lean a column that slid for a receipt keeps once the card has
+   *  gone, while receipts may still come (cardGone). */
+  private linger = 0;
 
   private readonly pill: HTMLButtonElement;
   private readonly names: HTMLElement;
@@ -416,6 +477,10 @@ export class Session {
     } else {
       this.paintChip(run.id);
       if (this.docked) this.landedAt = performance.now();
+      // No card for this run (silent, failed, a batch): a column still
+      // slid for the last one goes home. A late card's run waits for the
+      // snapshot (settled).
+      if (!late) this.cardGone();
     }
     if (receipt.figures.length || receipt.named.length) this.follow(run.id, receipt);
     this.paintPill();
@@ -424,10 +489,14 @@ export class Session {
     void this.kernel.namespace().then((vars) => this.settled(receipt, before, vars, late, endedAt));
   }
 
-  /** A run is starting: a fresh receipt still up flies home first. */
+  /** A run is starting: a fresh receipt still up flies home first. A
+   *  column that slid for a receipt stays slid for this run's: its card
+   *  stands where the last one did, and if it makes none the column goes
+   *  home then (ran, settled). */
   runStarting(_id: string): void {
-    if (this.card?.kind === 'fresh') this.tuck();
-    else if (this.card?.kind === 'hover') this.hideCard();
+    if (this.card?.kind === 'fresh') this.tuck(true);
+    else if (this.card?.kind === 'hover') this.hideCard(false, true);
+    else if (!this.card) this.cardGone(true);
   }
 
   /** The kernel's state moved (main paints #kernel-status): the names show
@@ -515,16 +584,55 @@ export class Session {
     const inCells = !document.body.dataset.view;
     if (this.card) {
       const row = this.docView.cellRow(this.card.id);
-      if (!row || !row.isConnected || !inCells || this.docked) this.dropCard();
+      if (!row || !row.isConnected || !inCells || this.docked) {
+        this.dropCard();
+        this.cardGone();
+      }
     }
-    clearTimeout(this.returnTimer);
     const f = this.frame();
     const board = this.docked && inCells ? boardAt(f) : null;
-    const fit = this.card ? this.fitCard(f, this.card.kind) : null;
+    let fit = this.card ? this.fitCard(f, this.card.place) : null;
+    if (this.card && !fit) {
+      // Past the chip no longer fits (the window narrowed): a kept card
+      // stands as a run's does, a hover card goes.
+      if (this.card.kind === 'held') fit = this.fitCard(f, (this.card.place = 'lane'));
+      else {
+        this.dropCard();
+        this.cardGone();
+      }
+    }
+    // With no card, a column that slid for one keeps its lean until it is
+    // sent home (cardGone).
+    const lean = fit ? fit.lean : this.docked ? 0 : this.linger;
     const from = fit && slide ? this.sheet.getBoundingClientRect().right : null;
-    const sliding = this.setColumn(board?.need ?? 0, fit?.lean ?? 0, board?.floor ?? 0, slide);
+    const sliding = this.setColumn(board?.need ?? 0, lean, board?.floor ?? 0, slide);
     if (this.card && fit) this.placeCard(f, fit, sliding ? from : null);
     this.placeSessionCard(f, board);
+  }
+
+  /** The receipt card has gone (flown, put away, or never came): a column
+   *  that slid for it stays where it is while receipts may keep coming,
+   *  and then slides home. `forRun`: a run is starting, or Shift-Enter is
+   *  stepping to the next cell — its card stands where this one did, a run
+   *  that makes none sends the column home itself (ran, settled), and if
+   *  no run comes it goes after as long as a receipt stays (DWELL_MS).
+   *  Otherwise (typing, Esc, a click, the dwell) it goes RETURN_MS after.
+   *  Stepping through cells slides it once, when the first card needs it,
+   *  and back once you stop. */
+  private cardGone(forRun = false) {
+    clearTimeout(this.returnTimer);
+    this.linger = this.card || this.docked ? 0 : this.column.lean;
+    if (this.linger > 0) this.returnTimer = window.setTimeout(() => this.goHome(), forRun ? DWELL_MS : RETURN_MS);
+  }
+
+  private goHome() {
+    // Never out from under the pointer: a chip it rests on stays put.
+    if (document.querySelector('.rchip:hover')) {
+      this.returnTimer = window.setTimeout(() => this.goHome(), 300);
+      return;
+    }
+    this.linger = 0;
+    this.layout(true);
   }
 
   /** Tell #sheet where to stand; true when it will slide there. */
@@ -547,22 +655,31 @@ export class Session {
   }
 
   /** The receipt card beside the column, in the viewport: as wide as the
-   *  margin gives, up to 300. A margin under 200 slides the column left by
-   *  the difference (as far as it is centred) for the card's stay; still
-   *  short once it has slid all the way, the card takes what there is down
-   *  to 160. Only a window too narrow even for that (under about 1075 px)
-   *  lays it, 160 wide, at the room's right edge over the column's. */
-  private fitCard(f: Frame, kind: CardKind): { left: number; width: number; lean: number; tie: number | null } {
+   *  margin gives, up to 300.
+   *
+   *  Over the lane ('lane': a run's card): a margin under 200 slides the
+   *  column left by the difference (as far as it is centred) for the
+   *  card's stay; still short once it has slid all the way, the card takes
+   *  what there is down to 160. Only a window too narrow even for that
+   *  (under about 1075 px) lays it, 160 wide, at the room's right edge over
+   *  the column's.
+   *
+   *  Past the chip ('past': a chip's hover): the column stays where it
+   *  stands, and a margin that leaves the card less than 160 gives no card
+   *  (null). */
+  private fitCard(f: Frame, place: Place): { left: number; width: number; lean: number; tie: number | null } | null {
     const docLeft = f.box.left - f.scroll;
     const edge = f.box.right - CARD_GAP;
     const at = (tie: number, lean: number) => {
       const left = docLeft + columnAt(f, f.width, 0, lean).right + tie;
       return { left, width: Math.min(CARD_MAX, edge - left), lean, tie: tie as number | null };
     };
-    for (const tie of kind === 'fresh' ? [CARD_TIE] : [CHIP_LANE, CARD_TIE]) {
-      const fit = at(tie, 0);
-      if (fit.width >= CARD_MIN) return fit;
+    if (place === 'past') {
+      const past = at(CHIP_LANE, this.column.lean);
+      return past.width >= CARD_FLOOR ? past : null;
     }
+    const fit = at(CARD_TIE, 0);
+    if (fit.width >= CARD_MIN) return fit;
     const slid = at(CARD_TIE, CARD_TIE + CARD_MIN + CARD_GAP - f.padR - f.sb);
     if (slid.width >= CARD_FLOOR) return slid;
     const width = Math.min(CARD_FLOOR, f.box.width - 2 * CARD_GAP);
@@ -657,6 +774,9 @@ export class Session {
     } else if (current) {
       this.paintChip(receipt.id);
     }
+    // A run that waited for the snapshot and still makes no card: a column
+    // slid for the last one goes home.
+    if (late && !this.card && this.last === receipt.id) this.cardGone();
     this.paintPill();
     this.paintCard();
     void this.data.refresh(vars);
@@ -670,12 +790,19 @@ export class Session {
     if (vars.length) this.fresh = false;
   }
 
+  /** A receipt card: a run's (fresh, over the lane), a chip's hover (past
+   *  the chip, only where that leaves the column where it is), or a chip's
+   *  click (held: past the chip where it fits, else as a run's). */
   private showCard(id: string, kind: CardKind) {
     if (this.docked) return; // docked, a receipt shows in the band
+    const past = kind !== 'fresh' && !!this.fitCard(this.frame(), 'past');
+    if (kind === 'hover' && !past) return; // the chip's title names what it bound
     if (this.card?.kind === 'fresh' && this.card.id !== id) this.tuck();
     this.flightEnd?.();
+    // The column stays where it is for this card (or slides once for it).
+    clearTimeout(this.returnTimer);
     const previous = this.card?.id;
-    this.card = { id, kind };
+    this.card = { id, kind, place: past ? 'past' : 'lane', fromRun: kind === 'fresh' };
     clearTimeout(this.dwell);
     this.renderReceiptCard();
     this.receiptEl.hidden = false;
@@ -697,7 +824,7 @@ export class Session {
     if (!receipt) return;
     this.receiptEl.dataset.kind = this.card.kind;
     this.receiptEl.dataset.cell = this.card.id;
-    this.receiptEl.append(this.receiptView(receipt, this.card.kind));
+    this.receiptEl.append(this.receiptView(receipt, this.card.kind, this.card.fromRun));
   }
 
   /** What keeps a run's card, as it can be done now: `p` only when the
@@ -721,11 +848,11 @@ export class Session {
    *  pill, along a curve, shrinking, seen all the way in; the pill's names
    *  update as it arrives, the chip takes its place at the cell, and the
    *  column, if it slid for the card, slides back. */
-  private tuck() {
+  private tuck(forRun = false) {
     if (!this.card) return;
     const { id, kind } = this.card;
     if (kind !== 'fresh') {
-      this.hideCard();
+      this.hideCard(false, forRun);
       return;
     }
     this.card = null;
@@ -741,18 +868,15 @@ export class Session {
     };
     const card = this.receiptEl;
     if (reducedMotion() || !card.animate || card.hidden) {
-      this.hideCard(true);
+      this.hideCard(true, forRun);
       land();
       return;
     }
     card.classList.remove('riding');
     const from = card.getBoundingClientRect();
-    // The column, if it slid for the card, goes back once the card has
-    // lifted clear of it.
-    if (this.column.lean > 0) {
-      clearTimeout(this.returnTimer);
-      this.returnTimer = window.setTimeout(() => this.layout(true), FLY_MS * 0.3);
-    }
+    // The column, if it slid for the card, stays while receipts keep
+    // coming, and goes home well after the card has flown.
+    this.cardGone(forRun);
     const target = (this.names.getClientRects().length && this.names.getBoundingClientRect().width > 0 ? this.names : this.pill).getBoundingClientRect();
     const dx = target.left - from.left;
     const dy = target.top - from.top;
@@ -793,15 +917,17 @@ export class Session {
       document.body.classList.remove('session-flying');
       land();
       flight.cancel();
-      if (!this.card) this.hideCard(true);
+      // The column was seen to when the flight began.
+      if (!this.card) this.dropCard(true);
     };
     this.flightEnd = done;
     flight.onfinish = done;
     flight.oncancel = done;
   }
 
-  /** A click on it, p, or its pin: the receipt stays where it is until
-   *  closed. */
+  /** A click on it, p, or its pin: the receipt stays where it is — the
+   *  same place, the same width, a run's still over its hidden chip —
+   *  until closed. */
   private holdCard() {
     if (!this.card || this.card.kind === 'held') return;
     const wasFresh = this.card.kind === 'fresh';
@@ -837,11 +963,11 @@ export class Session {
   }
 
   /** Put the card away without the flight (a chip's, a held one, a cell
-   *  gone); the column, if it slid for the card, slides back. */
-  private hideCard(quiet = false) {
-    const had = !!this.card || this.column.lean > 0;
+   *  gone); the column, if it slid for the card, goes home as after a
+   *  flight (cardGone). */
+  private hideCard(quiet = false, forRun = false) {
     this.dropCard(quiet);
-    if (had) this.layout(true);
+    this.cardGone(forRun);
   }
 
   // ---------- the chips ----------
@@ -850,14 +976,27 @@ export class Session {
     for (const id of this.receipts.keys()) this.paintChip(id);
   }
 
+  /** The chip's tooltip: the names its run bound (the first dozen), and
+   *  what hover and a click do where the chip is now. */
+  private chipTitle(receipt: Receipt, hover: boolean): string {
+    const named = receipt.rows.map((r) => r.name);
+    const listed = named.length > CHIP_TITLE_NAMES
+      ? `${named.slice(0, CHIP_TITLE_NAMES).join(', ')} and ${named.length - CHIP_TITLE_NAMES} more`
+      : named.join(', ');
+    const does = hover ? 'hover for the receipt, click to keep it' : 'click for the receipt';
+    return `${receipt.past ? 'Before the restart: ' : ''}${named.length ? listed : 'a figure'} — ${does}`;
+  }
+
   /** The chip at a cell's right corner: what its last run made, and how
-   *  many. Hidden while that run's fresh receipt is still up. */
+   *  many (99 and a raised + past that). Hidden while a card of that run
+   *  stands over the lane (its fresh receipt, or the receipt kept from
+   *  it). */
   private paintChip(id: string, row: HTMLElement | null = this.docView.cellRow(id)) {
     if (!row) return;
     let chip = row.querySelector<HTMLButtonElement>(':scope > .rchip');
     const receipt = this.receipts.get(id);
     const kind = receipt ? chipKind(receipt) : null;
-    if (!receipt || !kind || (this.card?.id === id && this.card.kind === 'fresh')) {
+    if (!receipt || !kind || (this.card?.id === id && this.card.place === 'lane')) {
       chip?.remove();
       return;
     }
@@ -873,7 +1012,16 @@ export class Session {
           return;
         }
         if (this.card?.id === id) return;
-        if (this.card?.kind === 'held') return;
+        // Hover never moves the column: where the margin past the chip
+        // cannot hold a card, there is none (the title names what the run
+        // bound, and a click opens the receipt).
+        const fits = !!this.fitCard(this.frame(), 'past');
+        const receipt = this.receipts.get(id);
+        if (receipt && chip) {
+          chip.dataset.hover = fits ? '1' : '0';
+          chip.title = this.chipTitle(receipt, fits);
+        }
+        if (!fits || this.card?.kind === 'held') return;
         this.hoverTimer = window.setTimeout(() => {
           if (this.card?.kind === 'fresh') this.tuck();
           this.showCard(id, 'hover');
@@ -897,18 +1045,22 @@ export class Session {
           return;
         }
         if (this.card?.id === id && this.card.kind === 'held') this.hideCard();
-        else {
-          if (this.card?.id !== id) this.showCard(id, 'hover');
-          this.holdCard();
-        }
+        // Held where it stands: past the chip where the margin holds it (a
+        // hover card stays put), else as a run's card, the column sliding
+        // for it.
+        else if (this.card?.id === id && this.card.kind === 'hover') this.holdCard();
+        else this.showCard(id, 'held');
       });
       row.append(chip);
     }
     const on = this.card?.id === id || this.band?.id === id;
+    const count = chipCount(receipt);
     chip.className = `rchip kind-${kind}${receipt.past ? ' past' : ''}${on ? ' on' : ''}`;
-    chip.replaceChildren(kind === 'figure' ? printMark() : glyph(kind === 'table' ? 'table' : 'braces'), el('span', 'n', String(chipCount(receipt))));
-    const named = receipt.rows.map((r) => r.name);
-    chip.title = `${receipt.past ? 'Before the restart: ' : ''}${named.length ? named.join(', ') : 'a figure'} — hover for the receipt, click to keep it`;
+    // A three-digit count would push past the lane: 99, the + raised into
+    // the chip's corner.
+    chip.replaceChildren(kind === 'figure' ? printMark() : glyph(kind === 'table' ? 'table' : 'braces'), el('span', count > 99 ? 'n over' : 'n', String(Math.min(count, 99))));
+    // What hover does is known once the pointer has come (mouseenter).
+    chip.title = this.chipTitle(receipt, chip.dataset.hover !== '0');
     chip.setAttribute('aria-label', `Receipt of the last run: ${chip.title}`);
   }
 
@@ -1055,6 +1207,16 @@ export class Session {
     else this.openFloating();
   }
 
+  /** "+392 more · in the Session card": the receipt goes home (a run's
+   *  flies into the pill) and the card drops from the pill on its Session
+   *  tab, every name listed. */
+  private openSessionTab() {
+    if (this.card?.kind === 'fresh') this.tuck();
+    else this.hideCard();
+    if (this.tab !== 'session') this.showTab('session');
+    if (!this.visible) this.openFloating();
+  }
+
   private openFloating() {
     if (this.away) return;
     this.floating = true;
@@ -1105,14 +1267,26 @@ export class Session {
       this.hideCard();
       this.setDocked(true);
       this.floating = false;
+      clearTimeout(this.returnTimer);
+      this.linger = 0;
+      const from = this.sheet.getBoundingClientRect().right;
       this.paintCard();
       this.layout(true);
       if (!reducedMotion()) {
+        // The board fades in once the sliding column has cleared the place
+        // it stands — when the column's right edge passes the board's left
+        // on the slide's own curve — never over the column mid-slide.
+        const boardLeft = this.cardEl.getBoundingClientRect().left;
+        const to = boardLeft - CHIP_LANE;
+        const delay = from > boardLeft && from > to ? Math.round(slideTime((from - boardLeft) / (from - to)) * SLIDE_MS) : 0;
         this.cardEl.animate(
           [{ opacity: 0, transform: 'translateY(-10px) scale(0.98)' }, { opacity: 1, transform: 'none' }],
-          { duration: 220, easing: 'cubic-bezier(.2,.7,.2,1)' },
+          { duration: 220, delay, fill: 'backwards', easing: 'cubic-bezier(.2,.7,.2,1)' },
         );
       }
+      // Under the floor the room scrolls sideways: bring the card's
+      // controls (the modes, ✕) into view, where it was just pinned.
+      if (this.column.floor > 0) this.room.scrollTo({ left: this.room.scrollWidth, behavior: reducedMotion() ? 'auto' : 'smooth' });
       this.paintPill();
       return;
     }
@@ -1205,7 +1379,7 @@ export class Session {
       if (isShort(v)) row.classList.add('short');
       const label = el('b', '', name);
       const type = el('span', 'ty', typeLabel(v) + (v.scratch ? ' · scratch' : ''));
-      const preview = el('span', 'pv', v.preview);
+      const preview = valueCell(v, 'span');
       const owner = this.owner.get(name);
       const number = owner ? this.docView.cellNumber(owner) : null;
       const where = el('span', 'cl', number === null ? (owner ? 'deleted cell' : '') : `cell ${number}`);
@@ -1220,7 +1394,7 @@ export class Session {
       if (opens) {
         row.title = isTabular(v) ? 'Open in the data viewer' : 'Show the figure';
         row.addEventListener('click', () => (isTabular(v) ? void this.openTable(name) : void this.openFigure({ name })));
-      } else row.title = `${name}: ${typeLabel(v)}`;
+      } else row.title = valueTitle(name, v);
       list.append(row);
     }
     pane.append(list);
@@ -1367,14 +1541,15 @@ export class Session {
     return number === null ? '–' : String(number);
   }
 
-  private receiptView(receipt: Receipt, context: CardKind): HTMLElement {
+  private receiptView(receipt: Receipt, context: CardKind, fromRun: boolean): HTMLElement {
     const box = el('div', 'rv');
     if (receipt.past) box.classList.add('past');
     const isLast = this.last === receipt.id;
     const head = el('div', 'r-head');
     head.append(el('i', `r-dot${isLast ? '' : ' grey'}`));
-    // "Cell 2 · this run": the second half gives way on a slim card.
-    const when = receipt.past ? 'before the restart' : context === 'fresh' ? 'this run' : isLast ? 'last run' : 'earlier';
+    // "Cell 2 · this run": the second half gives way on a slim card. A
+    // run's card kept in place still says "this run".
+    const when = receipt.past ? 'before the restart' : fromRun && isLast ? 'this run' : isLast ? 'last run' : 'earlier';
     const what = el('span', 't', `Cell ${this.cellName(receipt.id)}`);
     what.append(el('span', 'sub', ` · ${when}`));
     if (!receipt.ok) what.append(' · failed');
@@ -1399,7 +1574,10 @@ export class Session {
     if (receipt.rows.length) {
       const table = el('table', 'r-vars');
       const body = el('tbody');
-      for (const row of receipt.rows) {
+      // A run that bound hundreds of names (a loop of globals) lists the
+      // first few; the rest are a click away, in the Session card.
+      const shown = receipt.rows.length > RECEIPT_ROWS + 1 ? receipt.rows.slice(0, RECEIPT_ROWS) : receipt.rows;
+      for (const row of shown) {
         const tr = el('tr');
         const opens = isTabular(row.v) || !!row.v.figure;
         if (opens) tr.classList.add('viewable');
@@ -1409,15 +1587,23 @@ export class Session {
         if (isShort(row.v)) tr.classList.add('short');
         const mark = el('td', `m${row.mark === '+' ? ' new' : ''}`, row.mark);
         mark.title = row.mark === '+' ? 'new: first bound by this run' : row.inPlace ? 'changed in place by this run' : 'rebound by this run';
-        tr.append(mark, el('td', 'n', row.name), el('td', 'ty', typeLabel(row.v)), el('td', 'pv', row.v.preview));
+        tr.append(mark, el('td', 'n', row.name), el('td', 'ty', typeLabel(row.v)), valueCell(row.v, 'td'));
         if (opens) {
           tr.title = isTabular(row.v) ? 'Open in the data viewer' : 'Show the figure';
           tr.addEventListener('click', () => (isTabular(row.v) ? void this.openTable(row.name) : void this.openFigure({ name: row.name }, true)));
-        } else tr.title = `${row.name}: ${typeLabel(row.v)}`;
+        } else tr.title = valueTitle(row.name, row.v);
         body.append(tr);
       }
       table.append(body);
       box.append(table);
+      if (shown.length < receipt.rows.length) {
+        const more = el('button', 'r-more');
+        more.type = 'button';
+        more.append(el('b', '', `+${receipt.rows.length - shown.length} more`), ' · in the Session card');
+        more.title = 'Every name this run bound, in the Session card';
+        more.addEventListener('click', () => this.openSessionTab());
+        box.append(more);
+      }
     } else if (!receipt.figures.length) {
       box.append(el('div', 'r-none', receipt.ok ? 'This run bound nothing new.' : 'The run stopped before it bound anything.'));
     }
@@ -1464,7 +1650,10 @@ export class Session {
 
     if (receipt.rows.length) {
       const list = el('div', 'b-rows');
-      for (const row of receipt.rows) {
+      // As on the receipt card: the first few, and how many more — the
+      // whole session is listed just below.
+      const shown = receipt.rows.length > RECEIPT_ROWS + 1 ? receipt.rows.slice(0, RECEIPT_ROWS) : receipt.rows;
+      for (const row of shown) {
         const line = el('div', 'b-row');
         const opens = isTabular(row.v) || !!row.v.figure;
         if (opens) line.classList.add('viewable');
@@ -1485,6 +1674,14 @@ export class Session {
         list.append(value);
       }
       box.append(list);
+      if (shown.length < receipt.rows.length) {
+        const more = el('button', 'r-more');
+        more.type = 'button';
+        more.append(el('b', '', `+${receipt.rows.length - shown.length} more`), ' · in the session, below');
+        more.title = 'Every name in the session, listed below';
+        more.addEventListener('click', () => this.panes.session.querySelector('.s-sec')?.scrollIntoView({ block: 'start', behavior: reducedMotion() ? 'auto' : 'smooth' }));
+        box.append(more);
+      }
     } else if (!receipt.figures.length) {
       box.append(el('div', 'r-none', receipt.ok ? 'This run bound nothing new.' : 'The run stopped before it bound anything.'));
     }
@@ -1572,7 +1769,11 @@ export class Session {
       const shifted = e.shiftKey && !e.metaKey && !e.ctrlKey && e.key === 'Enter';
       if (typing || shifted) {
         this.carriedAt = performance.now();
-        if (this.card?.kind === 'fresh') this.tuck();
+        // Shift-Enter steps: a code cell runs (runStarting), a text cell
+        // hands on to the next — either way the column waits for the next
+        // card rather than going home between them.
+        if (this.card?.kind === 'fresh') this.tuck(shifted);
+        else if (shifted && !this.card) this.cardGone(true);
       }
     }, { capture: true });
 

@@ -1,4 +1,4 @@
-import{n as e,t}from"./index-B6N76qRe.js";var n=/^\s*#\s*[%!]\s*pip\s+install\s+(.+?)\s*$/;function r(e){let t=[];for(let r of e.split(`
+import{n as e,t}from"./index-CMF0I9kd.js";var n=/^\s*#\s*[%!]\s*pip\s+install\s+(.+?)\s*$/;function r(e){let t=[];for(let r of e.split(`
 `)){let e=n.exec(r);if(e)for(let n of e[1].split(/\s+/))n&&!n.startsWith(`-`)&&!t.includes(n)&&t.push(n)}return t}var i=`from .session import Session
 
 __all__ = ["Session"]
@@ -1263,6 +1263,16 @@ def _persistable(value):
     return value, True
 
 
+def _is_numpy_scalar(value):
+    """A numpy scalar (np.float64(0.5), np.int64(3), np.bool_(True)): a
+    zero-dimensional numpy value with an item()."""
+    return (
+        type(value).__module__ == "numpy"
+        and getattr(value, "ndim", None) == 0
+        and hasattr(value, "item")
+    )
+
+
 def _target_names(target):
     if isinstance(target, ast.Name):
         return [target.id]
@@ -1454,7 +1464,13 @@ class Session:
             except Exception:
                 pass
         try:
-            preview = repr(value)
+            # A numpy scalar by its value (-0.4088817904210866, not
+            # np.float64(-0.4088817904210866)), as values.json has it
+            # (_persistable): the receipt's slim rows show values.
+            if _is_numpy_scalar(value):
+                preview = repr(value.item())
+            else:
+                preview = repr(value)
         except Exception:
             preview = "<unrepresentable>"
         entry["preview"] = preview[:80] + ("…" if len(preview) > 80 else "")

@@ -1,7 +1,8 @@
 // The session (src/session.ts, docs/SESSION.md): a run's receipt beside the
 // cell that flies up into the pill, the chip it leaves at the cell's corner,
 // and the Session card from the pill — floating, docked beside the column
-// (which slides left for it), its three modes and its Data and Figures tabs. The mock engine answers a run the way the real
+// (which slides left for it), its three modes and its Data and Figures
+// tabs. The mock engine answers a run the way the real
 // one does: a done event whose `bound` lists what the cell assigned, a
 // figures event for a cell that plots, and a namespace that keeps them.
 import { expect, test, type Locator, type Page } from '@playwright/test';
@@ -20,6 +21,8 @@ test.beforeEach(async ({ page }) => {
       elasticity: { type: 'Series', length: 3, preview: 'price 0.5 NaN 1.0 -0.495 1.5 -1.073' },
       ax: { type: 'Axes', preview: "<Axes: xlabel='price'>", figure: true },
       tmp: { type: 'Series', length: 3, preview: 'price 0.5 NaN', scratch: true },
+      // A numpy scalar, as the engine previews it: by its value.
+      est: { type: 'float64', shape: [], preview: '-0.4088817904210866', saved: true },
     };
     class MockWebSocket extends EventTarget {
       static readonly CONNECTING = 0;
@@ -191,6 +194,8 @@ test('a run leaves its receipt beside the cell, and Esc flies it up into the pil
   await expect(receipt.locator('.r-vars .ty').first()).toHaveText('DataFrame 250×2');
   // Focus is on ▶, not in the text: p would keep it, and the hint says so.
   await expect(receipt.locator('.r-hint')).toHaveText('type or esc ↗ · p keeps it');
+  // Measured once it has eased in.
+  await receipt.evaluate((element) => Promise.all(element.getAnimations().map((a) => a.finished)));
   // Beside the cell, right of the column, its top on the cell's first line:
   // it never lies over the column.
   const card = await box(page, '#receipt');
@@ -431,7 +436,7 @@ test('the slide rule: the column gives the docked card only what it lacks, narro
     expect(g.sideways, at).toBe(false);
     if (whole) expect(g.sheet.width, at).toBe(832);
     else {
-      // Under about 1290 px the column narrows, down to 640 at the least.
+      // Under about 1275 px the column narrows, down to 640 at the least.
       expect(g.sheet.width, at).toBeLessThan(832);
       expect(g.sheet.width, at).toBeGreaterThanOrEqual(640);
     }
@@ -447,7 +452,8 @@ test('the slide rule: the column gives the docked card only what it lacks, narro
   }
 
   // Below what the floor allows, the room scrolls sideways with the card
-  // past the column's right edge, rather than the card lie over it.
+  // past the column's right edge, rather than the card lie over it; the
+  // pin scrolls it there, the card's controls in view.
   await boot(page, 1000, 760);
   await page.locator('#toggle-panel').click();
   await page.locator('#session [data-mode="pinned"]').click();
@@ -455,25 +461,33 @@ test('the slide rule: the column gives the docked card only what it lacks, narro
   expect(narrow.sheet.width).toBe(640);
   expect(narrow.session.left).toBeGreaterThanOrEqual(narrow.sheet.right + 45);
   expect(narrow.sideways).toBe(true);
-  await page.locator('#layout').evaluate((element) => { element.scrollLeft = element.scrollWidth; });
-  const scrolled = await layout(page);
-  expect(scrolled.session.right).toBeLessThanOrEqual(scrolled.room.right - 9);
-  expect(scrolled.session.left).toBeGreaterThanOrEqual(scrolled.sheet.right + 45);
+  expect(narrow.session.right).toBeLessThanOrEqual(narrow.room.right - 9);
+  const close = await box(page, '#session .s-close');
+  expect(close.right).toBeLessThanOrEqual(narrow.room.right);
 });
 
-test('the slide is animated over 0.36 s on the pin', async ({ page }) => {
-  await boot(page);
-  await page.locator('#toggle-panel').click();
-  await page.locator('#session [data-mode="pinned"]').click();
-  const sliding = await page.locator('#sheet').evaluate((element) => ({
-    on: element.classList.contains('slide'),
-    duration: getComputedStyle(element).transitionDuration,
-    property: getComputedStyle(element).transitionProperty,
-  }));
-  expect(sliding.on).toBe(true);
-  expect(sliding.property).toContain('margin-left');
-  expect(sliding.duration).toContain('0.36s');
-  await expect(page.locator('#sheet')).not.toHaveClass(/slide/);
+test('the slide is animated over 0.36 s on the pin, the card fading in once the column has cleared its place', async ({ page }) => {
+  for (const width of [1500, 1100]) {
+    await boot(page, width, 760);
+    await page.locator('#toggle-panel').click();
+    await page.locator('#session [data-mode="pinned"]').click();
+    const sliding = await page.locator('#sheet').evaluate((element) => ({
+      on: element.classList.contains('slide'),
+      duration: getComputedStyle(element).transitionDuration,
+      property: getComputedStyle(element).transitionProperty,
+    }));
+    expect(sliding.on).toBe(true);
+    expect(sliding.property).toContain('margin-left');
+    expect(sliding.duration).toContain('0.36s');
+    // The card's fade waits for the column's right edge to pass its left.
+    const delay = await page.locator('#session').evaluate((element) =>
+      Number(element.getAnimations().at(-1)?.effect?.getTiming().delay ?? -1));
+    expect(delay, `at ${width}`).toBeGreaterThan(40);
+    expect(delay, `at ${width}`).toBeLessThan(360);
+    await expect(page.locator('#sheet')).not.toHaveClass(/slide/);
+    await page.locator('#session [data-mode="peek"]').click();
+    await page.locator('#session .s-close').click();
+  }
 });
 
 test('Silent: no card and no motion; the chip and the pill update quietly', async ({ page }) => {
@@ -572,18 +586,189 @@ test('the receipt never lies over the column: its width follows the margin, and 
       expect(Math.abs(g.sheet.left - g.contentLeft), at).toBeLessThan(1);
       await expect(page.locator('#receipt'), at).toHaveClass(/slim/);
     }
-    // It flies, and the column comes back.
+    // It flies, and the column comes back once no other card follows.
     await page.keyboard.press('Escape');
     await expect(page.locator('#receipt')).toBeHidden();
-    expect((await layout(page)).sheet, at).toEqual(before.sheet);
+    await expect.poll(async () => (await layout(page)).sheet, { message: at }).toEqual(before.sheet);
   }
-  // A chip's card stands past its chip, and slides the column too.
+  // A chip's click where the margin past the chip is short: the card
+  // stands as a run's does, over the lane, and the column slides for it.
   const chip = cell(page, 0).locator('.rchip');
   await chip.click();
   await expect(page.locator('#receipt')).toHaveAttribute('data-kind', 'held');
   const held = await layout(page);
   expect(held.receipt.left).toBeGreaterThanOrEqual(held.sheet.right);
   await page.keyboard.press('Escape');
+});
+
+/** Every left edge #sheet takes, frame by frame, from now until `stop`. */
+async function traceColumn(page: Page) {
+  await page.evaluate(() => {
+    const probe = window as typeof window & { __lefts?: number[]; __tracing?: boolean };
+    probe.__lefts = [];
+    probe.__tracing = true;
+    const sheet = document.getElementById('sheet')!;
+    const tick = () => {
+      if (!probe.__tracing) return;
+      probe.__lefts!.push(Math.round(sheet.getBoundingClientRect().left));
+      requestAnimationFrame(tick);
+    };
+    tick();
+  });
+  return async () => page.evaluate(() => {
+    const probe = window as typeof window & { __lefts?: number[]; __tracing?: boolean };
+    probe.__tracing = false;
+    return [...new Set(probe.__lefts)];
+  });
+}
+
+test('stepping through cells at 1100 slides the column once, not per run, and it comes home when the cards stop', async ({ page }) => {
+  await boot(page, 1100, 760);
+  const before = await layout(page);
+  await run(page, 0);
+  await expect(page.locator('#receipt')).toHaveClass(/show/);
+  await expect(page.locator('#sheet')).not.toHaveClass(/slide/);
+  const slid = (await layout(page)).sheet.left;
+  expect(Math.abs(slid - before.contentLeft)).toBeLessThan(1);
+  // Two more runs, each putting the last card away (the click on ▶) and
+  // bringing its own: the column never moves.
+  const stop = await traceColumn(page);
+  for (const i of [1, 3]) {
+    await run(page, i);
+    const id = await cell(page, i).getAttribute('data-cell');
+    await expect(page.locator('#receipt')).toHaveAttribute('data-cell', id!);
+    await expect(page.locator('#receipt')).toHaveClass(/show/);
+    await page.waitForTimeout(300);
+  }
+  expect(await stop()).toEqual([Math.round(slid)]);
+  // Once the cards stop, it comes home — after the flight, not during it.
+  const stopped = Date.now();
+  await page.keyboard.press('Escape');
+  await expect.poll(async () => (await layout(page)).sheet.left).toBeCloseTo(before.sheet.left, 0);
+  expect(Date.now() - stopped).toBeGreaterThan(900);
+});
+
+test('a chip\'s hover never moves the column; where the margin holds no card the chip\'s click opens it', async ({ page }) => {
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  await boot(page, 1100, 760);
+  const before = await layout(page);
+  await runAndFile(page, 0);
+  await expect.poll(async () => (await layout(page)).sheet.left).toBeCloseTo(before.sheet.left, 0);
+  const chip = cell(page, 0).locator('.rchip');
+  const stop = await traceColumn(page);
+  await chip.hover();
+  await page.waitForTimeout(500);
+  await expect(page.locator('#receipt')).toBeHidden();
+  expect(await stop()).toEqual([Math.round(before.sheet.left)]);
+  await expect(chip).toHaveAttribute('title', /^prices, n — click for the receipt$/);
+  // The click: held, as a run's card, the column sliding for it.
+  await chip.click();
+  await expect(page.locator('#receipt')).toHaveAttribute('data-kind', 'held');
+  const held = await layout(page);
+  expect(held.receipt.left).toBeGreaterThanOrEqual(held.sheet.right);
+  await page.keyboard.press('Escape');
+  await expect(page.locator('#receipt')).toBeHidden();
+
+  // At 1470 the margin past the chip holds a card: hover opens it there,
+  // and the column stays.
+  await boot(page, 1470, 820);
+  const wide = await layout(page);
+  await runAndFile(page, 0);
+  await chip.hover();
+  await expect(page.locator('#receipt')).toHaveAttribute('data-kind', 'hover');
+  const g = await layout(page);
+  expect(g.sheet).toEqual(wide.sheet);
+  expect(g.receipt.left).toBeGreaterThanOrEqual((await boxOf(chip)).right);
+});
+
+test('a click that keeps a run\'s receipt leaves it where it is, as wide, its chip still hidden', async ({ page }) => {
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  for (const width of [1470, 1100]) {
+    await boot(page, width, 760);
+    await cell(page, 3).locator('.cm-content').click();
+    await page.keyboard.press('ControlOrMeta+Enter');
+    const receipt = page.locator('#receipt');
+    await expect(receipt).toHaveClass(/show/);
+    const fresh = await layout(page);
+    const slim = await receipt.evaluate((element) => element.classList.contains('slim'));
+    await receipt.locator('.r-head .t').click();
+    await expect(receipt).toHaveAttribute('data-kind', 'held');
+    const kept = await layout(page);
+    const at = `at ${width}`;
+    expect(kept.receipt.left, at).toBe(fresh.receipt.left);
+    expect(kept.receipt.width, at).toBe(fresh.receipt.width);
+    expect(kept.receipt.top, at).toBe(fresh.receipt.top);
+    expect(kept.sheet, at).toEqual(fresh.sheet);
+    expect(await receipt.evaluate((element) => element.classList.contains('slim')), at).toBe(slim);
+    await expect(receipt.locator('.r-head .t'), at).toHaveText('Cell 4 · this run');
+    await expect(cell(page, 3).locator('.rchip'), at).toHaveCount(0);
+    await page.keyboard.press('Escape');
+    await expect(cell(page, 3).locator('.rchip'), at).toBeVisible();
+  }
+});
+
+test('a numpy scalar shows its value on a slim card, to six digits, whole in the tooltip', async ({ page }) => {
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  await boot(page, 1100, 760);
+  await cell(page, 3).locator('.cm-content').click();
+  await page.keyboard.press('ControlOrMeta+a');
+  await page.keyboard.type('est = 0');
+  await page.keyboard.press('ControlOrMeta+Enter');
+  const receipt = page.locator('#receipt');
+  await expect(receipt).toHaveClass(/slim/);
+  const row = receipt.locator('tr', { hasText: 'est' });
+  await expect(row.locator('.pv')).toHaveText('-0.408882', { useInnerText: true });
+  await expect(row.locator('.ty')).toBeHidden();
+  await expect(row).toHaveAttribute('title', 'est: float64 · -0.4088817904210866');
+  // A wide card shows it whole.
+  await page.keyboard.press('Escape');
+  await page.setViewportSize({ width: 1500, height: 760 });
+  await cell(page, 3).locator('.run').click();
+  await expect(receipt).not.toHaveClass(/slim/);
+  await expect(receipt.locator('tr', { hasText: 'est' }).locator('.pv')).toHaveText('-0.4088817904210866', { useInnerText: true });
+});
+
+test('a run that binds hundreds of names lists eight, says how many more, and the Session card has them; its chip reads 99+', async ({ page }) => {
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  await page.addInitScript(() => {
+    const lines = Array.from({ length: 120 }, (_, i) => `v${String(i).padStart(3, '0')} = ${i}`);
+    sessionStorage.setItem('knuth-doc', JSON.stringify({
+      name: 'many.py',
+      dirty: false,
+      text: ['# %%', 'prices = read_csv("prices.csv")', '', '# %%', ...lines, ''].join('\n'),
+    }));
+  });
+  await boot(page, 1470, 820);
+  await run(page, 1);
+  const receipt = page.locator('#receipt');
+  await expect(receipt).toHaveClass(/show/);
+  await expect(receipt.locator('.r-vars tr')).toHaveCount(8);
+  await expect(receipt.locator('.r-more')).toHaveText('+112 more · in the Session card');
+  // The whole card in the room, its hint in view.
+  const card = await box(page, '#receipt');
+  expect(card.bottom).toBeLessThanOrEqual((await box(page, '#layout')).bottom);
+  await expect(receipt.locator('.r-hint')).toBeVisible();
+  await receipt.locator('.r-more').click();
+  await expect(receipt).toBeHidden();
+  await expect(page.locator('#session')).toHaveClass(/floating/);
+  await expect(page.locator('#session [data-tab="session"]')).toHaveAttribute('aria-selected', 'true');
+  await expect(page.locator('#session .s-list .s-row')).toHaveCount(120);
+  await page.keyboard.press('Escape');
+  // The chip: 99 and a raised +, as narrow as two digits, so the docked
+  // card past the lane never covers it.
+  const chip = cell(page, 1).locator('.rchip');
+  await expect(chip).toHaveText('99');
+  await expect(chip.locator('.n')).toHaveClass(/over/);
+  await page.locator('#session-pill').click();
+  await page.locator('#session [data-mode="pinned"]').click();
+  await expect(page.locator('#session')).toHaveClass(/docked/);
+  const at = await boxOf(chip);
+  const board = await box(page, '#session');
+  expect(at.right).toBeLessThanOrEqual(board.left - 1);
+  expect(at.width).toBeLessThanOrEqual(38.5);
+  // The docked band lists the first eight too; the rest are the list below.
+  await expect(page.locator('#session .rv.band .b-row')).toHaveCount(8);
+  await expect(page.locator('#session .rv.band .r-more')).toHaveText('+112 more · in the session, below');
 });
 
 test('a slim card shows a short value in place of its kind, which stays in the tooltip', async ({ page }) => {

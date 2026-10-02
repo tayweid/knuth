@@ -958,7 +958,7 @@ body[data-view='source'] #view-toggle {
      548 px. Docked, the Session card raises it (--board-floor,
      session.ts) to the column's 640 px floor, the chips' lane and the
      card: below that the room scrolls sideways rather than the card lie
-     over the column (a window under about 1080 px). */
+     over the column (a window under about 1085 px). */
   min-width: max(calc(640px - var(--rail) - var(--edge)), var(--board-floor, 0px));
   overflow-y: auto;
   /* Never sideways: everything in the room wraps (editors, outputs), and
@@ -1673,8 +1673,37 @@ body[data-view='source'] .cell .run-num { visibility: visible; }
   width: 100%;
   overflow: hidden;
   text-overflow: ellipsis;
-  padding-right: 0.75rem;
+  padding-right: 0.6rem;
 }
+/* Tighter cells, so a float's six digits sit whole beside a ten-letter
+   name ("elasticity -0.408882") on the default window's 186 px card. */
+.slim .rv .r-vars td { padding-left: 0.25rem; padding-right: 0.25rem; }
+.slim .rv .r-vars td:first-child { padding-left: 0.6rem; }
+.slim .rv .r-vars .m { padding-right: 0; }
+.slim .rv .r-vars .pv { padding-right: 0.5rem; }
+/* A float to six digits on a slim card, whole on a wide one; the whole
+   value is in the row's tooltip either way (session.ts, valueCell). */
+.rv .r-vars .pv .brief,
+.slim .rv .r-vars .pv .full { display: none; }
+.slim .rv .r-vars .pv .brief { display: inline; }
+
+/* A run that bound more names than the card lists: how many more, and a
+   way to them in the Session card. */
+.rv .r-more {
+  display: block;
+  width: 100%;
+  border: 0;
+  border-top: 1px solid rgba(255, 255, 255, 0.045);
+  background: transparent;
+  padding: 0.3rem 0.75rem 0.25rem;
+  text-align: left;
+  font: 11.5px/1.5 var(--sans);
+  color: var(--room-ink-soft);
+  cursor: pointer;
+}
+.rv .r-more b { font: 600 12px var(--mono); color: #9db8d6; }
+.rv .r-more:hover { color: var(--room-ink); background: rgba(255, 255, 255, 0.05); }
+.rv .r-more:focus-visible { outline: 2px solid #9db8d6; outline-offset: -2px; }
 
 .rv .r-none { padding: 0.55rem 0.75rem 0.25rem; font: 12.5px var(--sans); color: var(--room-ink-soft); }
 .rv .r-also,
@@ -1711,9 +1740,13 @@ body[data-view='source'] .cell .run-num { visibility: visible; }
   z-index: 4;
   display: inline-flex;
   align-items: center;
-  gap: 5px;
+  /* Tight enough that two digits leave the lane's gap to a docked card
+     (session.ts's CHIP_LANE: the 6 px tie, the chip, a few px): 38 px at
+     the most, a count over 99 reading 99 with the + raised into the
+     corner. */
+  gap: 3px;
   height: 22px;
-  padding: 0 6px;
+  padding: 0 4px;
   border: 1px solid rgba(255, 255, 255, 0.1);
   border-radius: 6px;
   background: #333238;
@@ -1734,6 +1767,15 @@ body[data-view='source'] .cell .run-num { visibility: visible; }
   border-top: 1px solid rgba(255, 255, 255, 0.12);
 }
 
+.rchip .n.over { position: relative; }
+.rchip .n.over::after {
+  content: '+';
+  position: absolute;
+  left: calc(100% - 0.5px);
+  top: -3px;
+  font-size: 7.5px;
+  line-height: 1;
+}
 .rchip .g { display: inline-flex; }
 .rchip .g .ico { width: 12px; height: 12px; display: block; }
 .rchip .pm {
@@ -1943,6 +1985,11 @@ body[data-view='source'] .cell .run-num { visibility: visible; }
 #session.narrow .s-row { grid-template-columns: 14px auto minmax(0, 1fr) auto; }
 #session.narrow .s-row:not(.short) .pv,
 #session.narrow .s-row.short .ty { display: none; }
+/* A float shows to six digits where the row is narrow, whole otherwise
+   (session.ts, valueCell). */
+.s-row .pv .brief,
+#session.narrow .s-row .pv .full { display: none; }
+#session.narrow .s-row .pv .brief { display: inline; }
 #session.narrow .s-row .ty { overflow: hidden; text-overflow: ellipsis; }
 
 .s-empty { padding: 18px 16px 10px; }

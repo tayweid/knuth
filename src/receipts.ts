@@ -140,6 +140,20 @@ export function kindGlyph(v: NamespaceVar): string {
   return 'object';
 }
 
+/** A float's preview ("-0.4088817904210866", a numpy scalar's too, which
+ *  the kernel previews by value) to six significant digits ("-0.408882"),
+ *  as a narrow row shows it; anything else as its preview. */
+export function briefValue(v: NamespaceVar): string {
+  if (!/^float(16|32|64|128)?$|^longdouble$/.test(v.type)) return v.preview;
+  if (!/^[-+]?(\d+\.?\d*|\.\d+)(e[-+]?\d+)?$/i.test(v.preview)) return v.preview;
+  const x = Number(v.preview);
+  if (!Number.isFinite(x)) return v.preview;
+  // toPrecision's form without its trailing zeros: 3.25000 → 3.25,
+  // 1.00000e-7 → 1e-7.
+  const brief = x.toPrecision(6).replace(/(\.\d*?)0+(?=e|$)/, '$1').replace(/\.(?=e|$)/, '');
+  return brief.length < v.preview.length ? brief : v.preview;
+}
+
 /** "Series 3", "DataFrame 1200×2", "int": a name's kind in words. */
 export function typeLabel(v: NamespaceVar): string {
   const shape = shapeLabel(v);

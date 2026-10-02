@@ -4,6 +4,7 @@
 import assert from 'node:assert/strict';
 import type { NamespaceVar } from './kernel/kernel.ts';
 import {
+  briefValue,
   chipCount,
   chipKind,
   folderLine,
@@ -95,5 +96,16 @@ assert.equal(typeLabel(v('n', 'int', '3')), 'int');
 assert.equal(took(12.4), '12 ms');
 assert.equal(took(380), '0.38 s');
 assert.equal(took(12_345), '12.3 s');
+
+// A float where a narrow row shows it: six significant digits, no trailing
+// zeros; a short one, an int, a string or a float's oddities as they are.
+assert.equal(briefValue(v('elasticity', 'float64', '-0.4088817904210866')), '-0.408882');
+assert.equal(briefValue(v('total', 'float', '3.25')), '3.25');
+assert.equal(briefValue(v('tiny', 'float', '1.234567891e-07')), '1.23457e-7');
+assert.equal(briefValue(v('big', 'float32', '123456789.0')), '1.23457e+8');
+assert.equal(briefValue(v('third', 'float', '0.3333333333333333')), '0.333333');
+assert.equal(briefValue(v('nan', 'float64', 'nan')), 'nan');
+assert.equal(briefValue(v('n', 'int', '12345678901234567890')), '12345678901234567890');
+assert.equal(briefValue(v('label', 'str', "'0.4088817904210866'")), "'0.4088817904210866'");
 
 console.log('receipts: ok');

@@ -765,9 +765,10 @@ export class DocumentView {
     working: (on: boolean) => void,
   ) => void;
 
-  /** A run completed, cleanly or not: the cell's number in the document
-   *  (1-based; 0 is the preamble) and whether it finished cleanly. The
-   *  shell's autosave record is told (shell.ts, reportCellRun). */
+  /** A run completed, cleanly or not: the cell's number as the receipt
+   *  counts it (cellNumber: the code cells only, 1-based; 0 is the
+   *  preamble) and whether it finished cleanly. The shell's autosave
+   *  record is told (shell.ts, reportCellRun). */
   onRunDone?: (cell: number, ok: boolean) => void;
 
   /** Run one code cell; resolves true when it finished cleanly. */
@@ -851,7 +852,7 @@ export class DocumentView {
       named: outcome.ok ? named : [],
       batch,
     });
-    this.onRunDone?.(v.isPreamble ? 0 : this.views.indexOf(v) + 1, outcome.ok);
+    this.onRunDone?.(this.cellNumber(v.id) ?? 0, outcome.ok);
     if (!outcome.ok && outcome.traceback) {
       this.onRunFailed?.(outcome.traceback, () => this.runCell(v), (on) => {
         v.working = on;

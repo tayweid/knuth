@@ -168,6 +168,30 @@ def test_done_carries_what_the_run_bound(monkeypatch):
     assert events[-1]["type"] == "error" and "bound" not in events[-1], events
 
 
+def test_numpy_scalars_preview_by_value(monkeypatch):
+    # The receipt's slim rows show a short value in place of its type: a
+    # numpy scalar (the usual elasticity out of pandas) previews by its
+    # value, as values.json has it, not as np.float64(…).
+    monkeypatch.delenv("KNUTH_DOCUMENT", raising=False)
+    s = Session()
+    events = _run_in_process(
+        s, 1,
+        "import numpy as np\n"
+        "elasticity = np.float64(-0.4088817904210866)\n"
+        "k = np.int64(7)\n"
+        "flag = np.bool_(True)\n"
+        "arr = np.arange(3)\n",
+    )
+    by_name = {entry["name"]: entry for entry in events[-1]["bound"]}
+    assert by_name["elasticity"]["type"] == "float64", by_name
+    assert by_name["elasticity"]["preview"] == "-0.4088817904210866", by_name
+    assert by_name["k"]["preview"] == "7" and by_name["flag"]["preview"] == "True", by_name
+    # An array is not a scalar: its repr stays.
+    assert by_name["arr"]["preview"] == "array([0, 1, 2])", by_name
+    snapshot = {v["name"]: v for v in s.snapshot()}
+    assert snapshot["elasticity"]["preview"] == "-0.4088817904210866", snapshot
+
+
 def test_done_bound_is_capped(monkeypatch):
     monkeypatch.delenv("KNUTH_DOCUMENT", raising=False)
     from knuth.session import MAX_BOUND
