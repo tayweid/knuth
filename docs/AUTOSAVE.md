@@ -140,7 +140,9 @@ What landed, of the Decided section:
   sent at completion found the tree unchanged and the timer took the
   change a minute later, which the first smoke run showed. Runs that
   complete while those writes settle (a run-all) are reported together,
-  `cell run [1, 2, 3]`. The timer is one minute per open project, not per
+  `cell run [1, 2, 3]`, and since 2026-10-02 as `cell run [3] (error)`
+  when any of them raised (an interrupt too), which the history view
+  rings in red. The timer is one minute per open project, not per
   window, and a tick while a commit is under way is dropped, never
   queued; `session open` and `session close` bracket the first and last
   window on a project; one job at a time per project. Quitting closes
@@ -194,7 +196,9 @@ What landed, of the Decided section:
   hidden home folders, a repository at home, links, secrets in any case
   and in `untracked/`, a sparse clone, git's `PATH`, a missing filter and
   a failure said once); its fixture smoke checks
-  the `session open` commit; Knuth's `src/shell.test.ts` pins the notice;
+  the `session open` commit; Knuth's `src/shell.test.ts` pins the notice,
+  its error form, and the answers to a rewind's `save` and `reload`, and
+  `tests/browser/history.spec.ts` drives them against a mock shell;
   Plass's `src/claerbout.test.ts` pins the document report; Knuth's smoke
   (`smoke.autosave` in `app/knuth.json`) asserts `knuth: session open` and
   `knuth: cell run [1]` on the document's folder, Plass's `app/smoke.mjs`
@@ -223,7 +227,12 @@ What stays open, and why:
   the first window opens, not an analysis plan.
 - **Key scanning:** only file names are excluded; a key pasted into a
   notebook is recorded, and the record is permanent.
-- **The replay viewer.**
+- **The replay viewer.** Built as the shell's history view, with a
+  rewind (`docs/mockups/history.md`, "Built"), on the shell's main and
+  unreleased until its next tag. Knuth's side landed 2026-10-02: it
+  answers the rewind's `save` (written through ⌘S's write, the autosave
+  held until the reload) and `reload` (re-read in place, the session
+  kept, every cell stale), and File → History… opens the view.
 - Smaller: a run in the browser tab (no shell) is not recorded; a nested
   repository inside the project is recorded as a gitlink, not its
   contents; the manifest and the `.gitignore` line show in the user's own
