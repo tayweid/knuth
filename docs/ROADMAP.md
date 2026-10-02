@@ -45,11 +45,17 @@ question that still needs one.
   carry on; a chip at the cell's corner that reopens it on hover; and the
   Session card from the pill (Session, Data, Figures), floating, or docked
   beside the column by its pin. Modes Peek, Silent and Pinned in the
-  card's header. The column is never moved or narrowed. OPEN, per
-  SESSION.md: a narrow room (the card lies over the room's right edge,
-  and so over the column's last ~180 px at 1100), no keyboard pin from
-  inside a cell, the receipt's previews at 1500, chips lost when the
-  document reloads from disk, and round two's unbuilt parts.
+  card's header. Second pass the same day, on the reviewers' findings:
+  docking slides the column left by only what the card lacks (peek-v2's
+  rule; it narrows under about 1275 px, to a 640 px floor), the receipt
+  card follows the room's margin and slides the column for its stay, so
+  neither lies over the column, a click keeps a receipt, a chip's
+  receipt shows in the docked card's band, and main's 44 px bar is
+  merged. OPEN, per SESSION.md: the receipt under about 1075 px (over
+  the column's edge), the column's see-saw when cells run one after
+  another on a narrow window, the room scrolling sideways when docked
+  under about 1085 px, chips lost when the document reloads from disk,
+  and round two's unbuilt parts.
 
 - **Autosave: a git track of every edit** — PLANNED 2026-09-27, spec in
   AUTOSAVE.md (Claerbout-wide, Plass and Knuth alike). Every project
