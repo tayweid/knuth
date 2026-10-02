@@ -21,6 +21,21 @@ MAX_VALUE_JSON = 10_000
 MAX_TABLE_LIMIT = 500
 MAX_TABLE_COLS = 200
 
+# A run's receipt (Session.bound): entries on its done event, at most. A
+# cell binding more (a long unpacking, a loop of defs) is rare; the page
+# reads the rest from the snapshot it takes after every run.
+MAX_BOUND = 64
+
+
+def _listed(name, value):
+    """Whether the variable explorer lists a namespace entry: underscore
+    names are private and modules are not values."""
+    return (
+        isinstance(name, str)
+        and not name.startswith("_")
+        and not isinstance(value, types.ModuleType)
+    )
+
 
 def _persistable(value):
     """(value, ok): JSON-safe mirror of a namespace value, or ok=False.
@@ -42,42 +57,55 @@ def _persistable(value):
     return value, True
 
 
+def _is_numpy_scalar(value):
+    """A numpy scalar (np.float64(0.5), np.int64(3), np.bool_(True)): a
+    zero-dimensional numpy value with an item()."""
+    return (
+        type(value).__module__ == "numpy"
+        and getattr(value, "ndim", None) == 0
+        and hasattr(value, "item")
+    )
+
+
 def _target_names(target):
     if isinstance(target, ast.Name):
-        return {target.id}
+        return [target.id]
     if isinstance(target, (ast.Tuple, ast.List)):
-        names = set()
+        names = []
         for elt in target.elts:
-            names |= _target_names(elt)
+            names += _target_names(elt)
         return names
     if isinstance(target, ast.Starred):
         return _target_names(target.value)
-    return set()
+    return []
 
 
 def _assigned_names(tree):
-    """Top-level names a cell binds — how scratch state is told apart from
-    program state in the shared v1 namespace."""
-    names = set()
+    """Top-level names a cell binds, in the order the cell binds them, once
+    each — how scratch state is told apart from program state in the
+    shared v1 namespace, which figures a run touched, and what a run's
+    receipt lists (the order is the cell's, so the page can show them as
+    written)."""
+    names = []
     for node in tree.body:
         if isinstance(node, ast.Assign):
             for target in node.targets:
-                names |= _target_names(target)
+                names += _target_names(target)
         elif isinstance(node, (ast.AugAssign, ast.AnnAssign, ast.For, ast.AsyncFor)):
-            names |= _target_names(node.target)
+            names += _target_names(node.target)
         elif isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
-            names.add(node.name)
+            names.append(node.name)
         elif isinstance(node, ast.Import):
             for alias in node.names:
-                names.add((alias.asname or alias.name).split(".")[0])
+                names.append((alias.asname or alias.name).split(".")[0])
         elif isinstance(node, ast.ImportFrom):
             for alias in node.names:
-                names.add(alias.asname or alias.name)
+                names.append(alias.asname or alias.name)
         elif isinstance(node, (ast.With, ast.AsyncWith)):
             for item in node.items:
                 if item.optional_vars is not None:
-                    names |= _target_names(item.optional_vars)
-    return names
+                    names += _target_names(item.optional_vars)
+    return list(dict.fromkeys(names))
 
 
 def capture_open_figures(max_figures=None):
@@ -141,14 +169,15 @@ class Session:
         # the session, excluded from persistence, badged in the explorer.
         # A program cell binding the same name reclaims it.
         self.scratch_names = set()
-        # Names bound by the most recent run — how figure receipts know
-        # which cell touched which figure.
-        self.last_assigned = set()
+        # Names bound by the most recent run, in the cell's order — how
+        # figure receipts know which cell touched which figure, and what
+        # the run's done event reports as bound.
+        self.last_assigned = []
 
     def reset(self):
         self.namespace = {"__name__": "__main__"}
         self.scratch_names = set()
-        self.last_assigned = set()
+        self.last_assigned = []
 
     def run(self, code, scratch=False):
         """Execute a cell. Returns (ok, payload): payload is the repr of the
@@ -162,9 +191,9 @@ class Session:
         assigned = _assigned_names(tree)
         self.last_assigned = assigned
         if scratch:
-            self.scratch_names |= assigned
+            self.scratch_names.update(assigned)
         else:
-            self.scratch_names -= assigned
+            self.scratch_names.difference_update(assigned)
 
         last = None
         if tree.body and isinstance(tree.body[-1], ast.Expr):
@@ -187,34 +216,68 @@ class Session:
         """Namespace summary for the variable explorer and persistence layer:
         [{name, type, shape?|length?, preview}], underscore names and modules
         excluded."""
+        return [
+            self._entry(name, value)
+            for name, value in self.namespace.items()
+            if _listed(name, value)
+        ]
+
+    def bound(self, names):
+        """What a run bound, for the page's receipt of it: the snapshot's
+        entry for each of `names` (the run's assigned names, in the cell's
+        order) still in the namespace and listed by snapshot(), plus
+        `saved` on a value values.json mirrors. At most MAX_BOUND entries:
+        the page reads the rest from its next snapshot."""
         out = []
-        for name, value in self.namespace.items():
-            if (
-                not isinstance(name, str)
-                or name.startswith("_")
-                or isinstance(value, types.ModuleType)
-            ):
+        for name in names:
+            if len(out) >= MAX_BOUND:
+                break
+            if name not in self.namespace:
                 continue
-            entry = {"name": name, "type": type(value).__name__}
-            shape = getattr(value, "shape", None)
-            if isinstance(shape, tuple):
-                entry["shape"] = list(shape)
-            elif hasattr(value, "__len__"):
-                try:
-                    entry["length"] = len(value)
-                except Exception:
-                    pass
-            try:
-                preview = repr(value)
-            except Exception:
-                preview = "<unrepresentable>"
-            entry["preview"] = preview[:80] + ("…" if len(preview) > 80 else "")
-            if name in self.scratch_names:
-                entry["scratch"] = True
-            if _owning_figure(value) is not None:
-                entry["figure"] = True
+            value = self.namespace[name]
+            if not _listed(name, value):
+                continue
+            entry = self._entry(name, value)
+            if (
+                name not in self.scratch_names
+                and "figure" not in entry
+                and _persistable(value)[1]
+            ):
+                entry["saved"] = True
             out.append(entry)
         return out
+
+    def _entry(self, name, value):
+        entry = {"name": name, "type": type(value).__name__}
+        shape = getattr(value, "shape", None)
+        if isinstance(shape, tuple):
+            entry["shape"] = list(shape)
+        elif hasattr(value, "__len__"):
+            try:
+                entry["length"] = len(value)
+            except Exception:
+                pass
+        try:
+            # A numpy scalar by its value, not np.float64(-0.40888…): the
+            # receipt's slim rows show values. Numbers and dates by numpy's
+            # own str (a float64 as repr(float) has it, np.float32(0.1) as
+            # 0.1, 2024-01-01T00:00:00.000000000, NaT), since item() turns
+            # a nanosecond datetime64 into an int and NaT into None; the
+            # rest (strings, bytes, objects) by their Python value's repr,
+            # quoted as Python shows them.
+            if _is_numpy_scalar(value):
+                kind = getattr(getattr(value, "dtype", None), "kind", "")
+                preview = str(value) if kind in ("b", "i", "u", "f", "c", "m", "M") else repr(value.item())
+            else:
+                preview = repr(value)
+        except Exception:
+            preview = "<unrepresentable>"
+        entry["preview"] = preview[:80] + ("…" if len(preview) > 80 else "")
+        if name in self.scratch_names:
+            entry["scratch"] = True
+        if _owning_figure(value) is not None:
+            entry["figure"] = True
+        return entry
 
     def table(self, name, offset=0, limit=100):
         """A window into a tabular variable for the data viewer:

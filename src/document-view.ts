@@ -53,7 +53,7 @@ import {
   setOutput,
   outputText,
 } from './format/percent.ts';
-import type { Kernel } from './kernel/kernel.ts';
+import type { Kernel, NamespaceVar } from './kernel/kernel.ts';
 import { findHeader, headerPackages } from './header.ts';
 import { GridView, GridHistory } from './grid.ts';
 import { icon } from './icons.ts';
@@ -104,8 +104,27 @@ function truncate(text: string, limitReached = false): string {
   return kept.join('\n');
 }
 
+/** One finished run, for the session's receipt of it (session.ts): which
+ *  cell, how long, whether it finished cleanly, what the kernel says it
+ *  bound, the figures it drew and their figs/ names, and whether it was
+ *  one of a Run all / Run stale (a batch never unfolds a receipt card). */
+export interface RunInfo {
+  id: string;
+  ms: number;
+  ok: boolean;
+  scratch: boolean;
+  bound?: NamespaceVar[];
+  figures: string[];
+  named: string[];
+  batch: boolean;
+}
+
 interface CellView {
   cell: Cell;
+  /** The cell's identity for the session's receipts and chips: minted
+   *  once per Cell object (a kind switch keeps the view, a delete-restore
+   *  the Cell), so a receipt finds its cell again. */
+  id: string;
   /** Wrapper: insert strip + the cell row. */
   root: HTMLElement;
   row: HTMLElement;
@@ -277,6 +296,13 @@ export class DocumentView {
   private lastFocused: CellView | null = null;
   /** Esc arms a brief chord: the next key can switch the cell's kind. */
   private armed: { v: CellView; until: number } | null = null;
+  /** Cell identities (CellView.id), by the Cell they belong to. */
+  private ids = new WeakMap<Cell, string>();
+  private nextId = 1;
+  /** Inside a Run all / Run stale. */
+  private batch = false;
+  /** When the last run's outcome came (runCell's receipt time). */
+  private lastRunEnd = 0;
 
   constructor(
     private container: HTMLElement,
@@ -284,8 +310,9 @@ export class DocumentView {
     private onChange: () => void,
     /** A program cell finished cleanly — namespace/artifacts moved. */
     private onProgramRun?: () => void,
-    /** Any code cell finished (ok or not) — the session may have changed. */
-    private onRun?: () => void,
+    /** Any code cell finished (ok or not) — the session may have changed;
+     *  what the run did, for its receipt. */
+    private onRun?: (run: RunInfo) => void,
     /** A structural change happened that the editors' own history cannot
      *  undo (cell deleted, plain file converted to cells); calling
      *  `restore` reverses it. `message` names the ⌘Z on offer. */
@@ -490,6 +517,7 @@ export class DocumentView {
       this.plainFile && this.gridDelimiter !== null;
     this.gridMode = this.gridOffered;
     this.render();
+    this.onDocument?.();
   }
 
   /** Replace the preamble alone — a header the engine grew — without
@@ -650,19 +678,85 @@ export class DocumentView {
   }
 
   async runAllProgram() {
-    for (const v of this.allRunnable()) {
-      if (v.cell.kind !== 'program') continue;
-      const outcome = await this.runCell(v);
-      if (!outcome) break; // error or interrupt: stop the replay
+    this.batch = true;
+    try {
+      for (const v of this.allRunnable()) {
+        if (v.cell.kind !== 'program') continue;
+        const outcome = await this.runCell(v);
+        if (!outcome) break; // error or interrupt: stop the replay
+      }
+    } finally {
+      this.batch = false;
     }
   }
 
   async runStale() {
-    for (const v of this.allRunnable()) {
-      if (v.cell.kind !== 'program' || !v.stale) continue;
-      const outcome = await this.runCell(v);
-      if (!outcome) break;
+    this.batch = true;
+    try {
+      for (const v of this.allRunnable()) {
+        if (v.cell.kind !== 'program' || !v.stale) continue;
+        const outcome = await this.runCell(v);
+        if (!outcome) break;
+      }
+    } finally {
+      this.batch = false;
     }
+  }
+
+  // ---------- cells by identity (the session's receipts and chips) ----------
+
+  /** Every runnable cell's id, in document order (cell zero first). */
+  cellIds(): string[] {
+    return this.allRunnable().map((v) => v.id);
+  }
+
+  /** A code cell's number as the person counts them: the code cells
+   *  only, 1-based, the text cells between them uncounted (no number is
+   *  drawn on the page, so a student counts the cells that run); 0 is cell
+   *  zero, the preamble. Null for a text cell or once the cell is gone. */
+  cellNumber(id: string): number | null {
+    if (this.preambleView?.id === id) return 0;
+    let n = 0;
+    for (const v of this.views) {
+      if (v.cell.kind !== 'text') n += 1;
+      if (v.id === id) return v.cell.kind === 'text' ? null : n;
+    }
+    return null;
+  }
+
+  /** The cell's row (.cell), where its chip lives, or null once it is gone
+   *  or not on screen (source and grid views). */
+  cellRow(id: string): HTMLElement | null {
+    return this.allRunnable().find((v) => v.id === id)?.row ?? null;
+  }
+
+  /** Bring a cell into view and put the cursor in it. */
+  goToCell(id: string) {
+    const v = this.allRunnable().find((view) => view.id === id);
+    if (!v) return;
+    v.row.scrollIntoView({ block: 'center', behavior: 'smooth' });
+    this.focusCell(v);
+  }
+
+  /** A run is starting in a cell (the session puts the last receipt away). */
+  onRunStart?: (id: string) => void;
+  /** A cell's row was built (render, insert, restore): the session hangs
+   *  its chip there. */
+  decorate?: (id: string, row: HTMLElement) => void;
+  /** A different document (or the same one fresh from disk): every cell is
+   *  a new Cell, so no receipt finds its cell again. */
+  onDocument?: () => void;
+
+  private idFor(cell: Cell, isPreamble: boolean): string {
+    // Cell zero is rebuilt from the preamble on every render: one id for
+    // it in cell view; the source view's whole-file editor is no cell.
+    if (isPreamble) return this.sourceMode ? 'source' : 'c0';
+    let id = this.ids.get(cell);
+    if (!id) {
+      id = `c${this.nextId++}`;
+      this.ids.set(cell, id);
+    }
+    return id;
   }
 
   /** A run failed: its traceback, a way to run the cell again, and a way
@@ -675,12 +769,18 @@ export class DocumentView {
 
   /** A run completed, cleanly or not: the cell's number in the document
    *  (1-based; 0 is the preamble) and whether it finished cleanly. The
-   *  shell's autosave record is told (shell.ts, reportCellRun). */
+   *  shell's autosave record is told (shell.ts, reportCellRun). The
+   *  document's number, text cells counted, not the receipt's
+   *  (cellNumber): the shell's history view numbers every `# %%` block,
+   *  and names the cell a run's commit lit by it. */
   onRunDone?: (cell: number, ok: boolean) => void;
 
   /** Run one code cell; resolves true when it finished cleanly. */
   private async runCell(v: CellView): Promise<boolean> {
     if (v.cell.kind === 'text' || v.running) return false;
+    this.onRunStart?.(v.id);
+    const batch = this.batch;
+    const started = performance.now();
     v.running = true;
     v.working = false;
     this.refreshRunControl(v);
@@ -701,6 +801,7 @@ export class DocumentView {
       if (chunk.length > available) outputLimitReached = true;
     };
     let named: string[] = [];
+    let drawn: string[] = [];
     const outcome = await this.kernel.run(
       v.cell.kind === 'scratch' ? scratchCode(v.cell) : cellCode(v.cell),
       {
@@ -711,6 +812,7 @@ export class DocumentView {
         onFigures: (svgs, n) => {
           this.renderFigures(v, svgs);
           named = n;
+          drawn = svgs;
         },
       },
       {
@@ -720,6 +822,11 @@ export class DocumentView {
         preamble: this.doc.preamble.join('\n'),
       },
     );
+    // The run's own time: the kernel takes runs in order, so one queued
+    // behind another started when that one ended, not when it was asked.
+    const ended = performance.now();
+    const ms = ended - Math.max(started, this.lastRunEnd);
+    this.lastRunEnd = ended;
     if (outcome.ok && outcome.result !== null) {
       appendOutput((text === '' || text.endsWith('\n') ? '' : '\n') + outcome.result);
     }
@@ -744,7 +851,16 @@ export class DocumentView {
     this.refreshRunControl(v);
     if (!v.isPreamble) this.onChange();
     if (outcome.ok && v.cell.kind === 'program') this.onProgramRun?.();
-    this.onRun?.();
+    this.onRun?.({
+      id: v.id,
+      ms,
+      ok: outcome.ok,
+      scratch: v.cell.kind === 'scratch',
+      bound: outcome.bound,
+      figures: drawn,
+      named: outcome.ok ? named : [],
+      batch,
+    });
     this.onRunDone?.(v.isPreamble ? 0 : this.views.indexOf(v) + 1, outcome.ok);
     if (!outcome.ok && outcome.traceback) {
       this.onRunFailed?.(outcome.traceback, () => this.runCell(v), (on) => {
@@ -895,6 +1011,7 @@ export class DocumentView {
 
     const v: CellView = {
       cell,
+      id: this.idFor(cell, isPreamble),
       root,
       row,
       body,
@@ -917,10 +1034,12 @@ export class DocumentView {
     this.hydrateOutputs(v);
 
     row.append(body);
+    root.dataset.cell = v.id;
     // No insert strip above the preamble: nothing can precede cell zero.
     if (isPreamble) root.append(row);
     else root.append(this.buildZone(v), row);
     if (isPreamble && !this.sourceMode) this.foldPackages(v);
+    if (!this.sourceMode) this.decorate?.(v.id, row);
     return v;
   }
 

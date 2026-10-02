@@ -33,24 +33,43 @@ question that still needs one.
   Claerbout shell (Electron, the `claerbout` package), with Windows for next semester
   still to do.
 
-- **Floating session panes** — PLANNED 2026-09-27 (Taylor). The side
-  panel's three parts (variables, figures, the data viewer; panel.ts)
-  become three rounded boxes floating off the document's right edge,
-  mostly tucked out of sight by default. When one changes (a new
-  variable, a new figure) it grows and eases partway into view, then
-  settles back. A click brings it fully out and it stays out; a click
-  back in a cell tucks it away again. On a wider window the boxes show
-  as much as the right margin allows, so a wide screen sees them whole
-  without a click. The panel button then cycles three modes: **hidden**,
-  **floating** (the default, as above), and **docked** (the full panel
-  beside the document, as today), offered only when the window is wide
-  enough for it. OPEN: how far "partway" is, how long a change keeps a
-  box forward, and whether the mode is remembered per window or once.
-  A design session on 2026-10-02 (docs/mockups/session-panes.md, five
-  mockups judged three ways) recommends a different shape instead: the
-  session as an inline ledger beside each cell, with the floating boxes
-  ruled out by drawing them well. Taylor decides; this entry is rewritten
-  when the direction is accepted.
+- **The session: receipts, chips and the Session card** — BUILT
+  2026-10-02 on `ux/session`, record and defaults in SESSION.md. It
+  replaces the side panel and the floating boxes this entry planned on
+  2026-09-27, after two rounds of mockups (docs/mockups/session-panes*.md)
+  and Taylor's choice from them: peek-v2's receipt and flight, ledger-v2's
+  chips, and the session "pinned open on the side". One data structure,
+  the receipt (what a run bound, drew and wrote to the folder; the
+  kernel's `done` event now carries `bound`), under three surfaces: a card
+  beside the cell that flies up into the session pill in the bar when you
+  carry on; a chip at the cell's corner that reopens it on hover; and the
+  Session card from the pill (Session, Data, Figures), floating, or docked
+  beside the column by its pin. Modes Peek, Silent and Pinned in the
+  card's header. Second pass the same day, on the reviewers' findings:
+  docking slides the column left by only what the card lacks (peek-v2's
+  rule; it narrows under about 1275 px, to a 640 px floor), the receipt
+  card follows the room's margin and slides the column for its stay, so
+  neither lies over the column, a click keeps a receipt, a chip's
+  receipt shows in the docked card's band, and main's 44 px bar is
+  merged. Third pass, on the verifier's findings: on a narrow window the
+  column slides once while cards keep coming and goes home 1.2 s after
+  the last (it swung 88 px on every Shift-Enter at 1100), a chip's hover
+  never moves it, a kept card stays where it was, numpy values show (to
+  six digits in a slim row), a receipt of hundreds of names lists eight,
+  and chips stay inside the lane (99 and a raised +). Fourth pass, on the
+  next verifier's: runs queued behind a busy kernel credit each cell with
+  its own names and time each run alone, the column goes home at a pause
+  in typing and waits for a run still going, the pin's fade waits for
+  the chips, 1300 no longer twitches 2 px, source view by keyboard leaves
+  no lean behind, numpy dates and float32s preview right, the receipt's
+  buttons keep the caret in the cell, and the autosave record numbers
+  cells as main and the history view do (every `# %%` block), the
+  receipt still counting code cells. OPEN, per SESSION.md: the receipt
+  under about 1075 px (over the column's edge), the column's one return
+  at a pause in typing, the room scrolling sideways when docked under
+  about 1085 px, chips lost when the document reloads from disk, no
+  hover card under about 1305 px, no snapshot per run for runs queued
+  together, and round two's unbuilt parts.
 
 - **Autosave: a git track of every edit** — PLANNED 2026-09-27, spec in
   AUTOSAVE.md (Claerbout-wide, Plass and Knuth alike). Every project
@@ -184,7 +203,7 @@ and sockets. The browser side is thinner:
   (Plass's text menu, with Get Knuth, Install and the update where they
   apply), the name pill with Plass's save dot and the folder, and the
   kernel's status; the cell and run tools on a 48 px rail, resting dim
-  where they cannot act, the session panel's toggle and the view switch
+  where they cannot act, the Session toggle and the view switch
   pinned at its foot; the room a rounded panel inside an 8 px edge, the
   column untouched, main's floor. `app/knuth.json` asks for the hidden
   title bar (no `followZoom`). OPEN: Taylor's look at it (the list at

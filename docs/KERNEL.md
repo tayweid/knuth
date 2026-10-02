@@ -94,7 +94,11 @@ same interface, not an architectural rewrite. Deferring it costs nothing.
   upgrade; the page is served from the same origin as the socket, so no
   capability or pairing token exists (SAME_ORIGIN.md). After attachment,
   `run{id, code}` →
-  `stream{id, text, which}`* → `done{id, result?}` | `error{id, traceback}`.
+  `stream{id, text, which}`* → `done{id, result?, bound?}` | `error{id, traceback}`.
+  `bound` (2026-10-02, optional, so no version bump) is the run's receipt:
+  a namespace entry for each name the cell bound, in the cell's order, with
+  `saved` on a value values.json mirrors (docs/SESSION.md). An engine that
+  omits it leaves the page to its snapshot diff.
   `restart`, `namespace`, `artifacts`, `table`, and `figure` also carry a
   request ID echoed by their response; `interrupt` is intentionally one-way.
   Every inbound request and outbound browser event is shape-validated. An

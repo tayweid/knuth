@@ -147,7 +147,11 @@ test('boots against the kernel protocol and renders a normal figure', async ({ p
   await page.goto('/');
 
   await expect(page.locator('#kernel-status')).toHaveText('Python');
-  const chart = page.getByText('chart', { exact: true });
+  // The session's names are in the pill; the Session card drops from it,
+  // and a figure's name opens the Figures tab (session.ts).
+  await expect(page.locator('#session-pill .sp-names')).toHaveText('chart');
+  await page.locator('#session-pill').click();
+  const chart = page.locator('#session .s-row', { hasText: 'chart' });
   await expect(chart).toBeVisible();
   await chart.click();
 
@@ -232,7 +236,8 @@ test('renders malicious SVG as a sanitized inert image', async ({ page }) => {
   });
 
   await page.goto('/');
-  await page.getByText('chart', { exact: true }).click();
+  await page.locator('#session-pill').click();
+  await page.locator('#session .s-row', { hasText: 'chart' }).click();
 
   const figure = page.locator('.viewer .figure img');
   await expect(figure).toBeVisible();
@@ -343,7 +348,7 @@ test('a script opens as edge-to-edge source, and cell view is a deliberate toggl
   await expect(page.locator('#kernel-status')).toHaveText('Python');
 
   await expect(page.locator('body')).toHaveAttribute('data-view', 'source');
-  const hidden = ['.run', '.insert-zone', '#panel'];
+  const hidden = ['.run', '.insert-zone', '#session', '.rchip'];
   for (const gone of hidden) {
     await expect(page.locator(gone).first(), `${gone} is noise on a source file`)
       .toBeHidden();

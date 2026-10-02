@@ -24,7 +24,7 @@ import { DocumentView, plainLanguageFor } from './document-view.ts';
 import { delimiterFor } from './format/csv.ts';
 import { serializeDocument } from './format/percent.ts';
 import { DEFAULT_DOC_NAME, FileManager, basename, dirname } from './file-manager.ts';
-import { SessionPanel } from './panel.ts';
+import { Session } from './session.ts';
 import { menus } from './menu.ts';
 import { icon } from './icons.ts';
 import { Onboarding } from './onboarding.ts';
@@ -39,21 +39,23 @@ function labeled(id: string, glyph: string, label: string, title: string, classN
 // holds the document's way in and out beside the traffic lights — the File
 // tile, whose text menu holds New, Open, Recent, Save and, where they
 // apply, Get Knuth, Install and the app's update (below); the name pill
-// with the save mark and the folder — and, at the right, the kernel's
-// status. In Knuth.app the bar is the window's title bar (styles.css).
+// with the save mark and the folder — and, at the right, the session pill
+// (session.ts, docs/SESSION.md): the kernel's status, then the session's
+// names in cell order. In Knuth.app the bar is the window's title bar
+// (styles.css).
 const toolbar = document.getElementById('toolbar')!;
 toolbar.setAttribute('aria-label', 'Document');
 toolbar.innerHTML = `
   ${labeled('file-tile', icon('open'), 'File', 'File — new, open, recent, save', 'tb-btn tb-tile')}
   <div class="doc-pod" id="doc-pod"><span class="name" id="file-name" title="Click to rename">${DEFAULT_DOC_NAME}</span><span class="doc-mark" id="doc-mark" aria-hidden="true"></span><span class="doc-folder" id="doc-folder" hidden><span dir="ltr"></span></span></div>
   <div class="tb-end">
-    <span id="kernel-status">connecting…</span>
+    <button type="button" id="session-pill"><span id="kernel-status">connecting…</span><span class="sp-sep" aria-hidden="true"></span><span class="sp-mark" aria-hidden="true">${icon('braces')}</span><span class="sp-names"></span></button>
   </div>
 `;
 
 // The rail down the left: the cell and run tools in their groups under a
-// hairline, scrolling as one when the window is short, and the session
-// panel's toggle pinned at the foot with the view switch, as Zen pins its
+// hairline, scrolling as one when the window is short, and the Session
+// card's toggle pinned at the foot with the view switch, as Zen pins its
 // bottom icons. The captions are longer words than the old bar's, since
 // there is room beside a tile; the titles are unchanged. The view switch
 // is the same spot in every view, so the way in and the way out are one
@@ -77,7 +79,7 @@ rail.innerHTML = `
     </div>
   </div>
   <div class="tb-rail-foot">
-    ${labeled('toggle-panel', icon('panel'), 'Session panel', 'Show/hide the session panes')}
+    ${labeled('toggle-panel', icon('panel'), 'Session', 'Show/hide the Session card: its names, data and figures')}
     <button type="button" class="tb-btn" id="view-toggle" title="${VIEW_TITLE}">${icon('source')}<span class="lbl lbl-cells">Cells</span><span class="lbl lbl-grid">Grid</span><span class="lbl lbl-source">Source</span></button>
   </div>
 `;
@@ -113,7 +115,7 @@ rail.addEventListener('focusin', (e) => placeRailCaption(e.target));
 // Plass's rule: a tool that cannot act rests, dim, rather than going away,
 // so the strip reads as the rail in every view. Source and grid views (a
 // plain file is always in source view) rest the cell and run tiles and
-// the session panel's; the view switch rests only when there is no other
+// the Session card's; the view switch rests only when there is no other
 // view to switch to — a script without # %% markers, a plain file.
 // aria-disabled rather than disabled: Tab walks the same tiles in every
 // view. A click on a resting tile does nothing, and its caption stays
@@ -567,6 +569,9 @@ if (shell) {
 
 let hadSession = false;
 let kernelState: Parameters<typeof onboarding.setState>[0] = 'connecting';
+/** Built once the document view is (below); the kernel's callbacks may
+ *  run before then. */
+let session: Session | undefined;
 const kernel = makeKernel((state, resumed) => {
   kernelState = state;
   onboarding.setState(state);
@@ -579,10 +584,11 @@ const kernel = makeKernel((state, resumed) => {
     } else if (!resumed && hadSession) {
       // Genuinely fresh process behind us (restart, grace expired, …).
       docView.markAllStale();
+      session?.restarted();
       toast('Kernel session reset');
     }
     hadSession = true;
-    void panel.refresh();
+    void session?.refresh();
   } else if (state === 'down') {
     status.textContent = 'Python engine unavailable';
     status.title = 'Run: knuth app';
@@ -603,19 +609,7 @@ const kernel = makeKernel((state, resumed) => {
     status.textContent = 'connecting…';
     status.className = '';
   }
-});
-
-status.tabIndex = 0;
-status.setAttribute('role', 'button');
-function activateKernelStatus() {
-  if (kernelState !== 'ready') onboarding.show();
-}
-status.addEventListener('click', activateKernelStatus);
-status.addEventListener('keydown', (event) => {
-  if (event.key === 'Enter' || event.key === ' ') {
-    event.preventDefault();
-    activateKernelStatus();
-  }
+  session?.statusChanged();
 });
 
 let fileManager: FileManager;
@@ -784,14 +778,6 @@ function attachProjectFolder() {
   });
 }
 
-const panel = new SessionPanel($('panel'), kernel);
-if (localStorage.getItem('knuth-panel') === '0') $('panel').hidden = true;
-// The rail's panel tile is lit while the panel shows.
-function paintPanelToggle() {
-  $('toggle-panel').setAttribute('aria-pressed', String(!$('panel').hidden));
-}
-paintPanelToggle();
-
 // Structural changes the editors' own history cannot undo (deleted cell,
 // plain file converted to cells) get one immediate Cmd-Z lifeline,
 // wherever focus is.
@@ -822,7 +808,7 @@ const docView = new DocumentView(
   kernel,
   () => fileManager?.noteChange(),
   syncArtifacts,
-  () => void panel.refresh(),
+  (run) => session?.ran(run),
   (restore, message) => {
     pendingRestore = restore;
     clearTimeout(restoreTimer);
@@ -831,6 +817,19 @@ const docView = new DocumentView(
   },
   loadFigureFromDir,
 );
+
+// The session (session.ts, docs/SESSION.md): every run's receipt, beside
+// the cell and then up into the pill; a chip at each cell that made
+// something; the Session card from the pill. Built after docView, which
+// it reads cells from (and which reports runs to it).
+session = new Session(kernel, docView, $('toggle-panel') as HTMLButtonElement, {
+  ready: () => kernelState === 'ready',
+  showOnboarding: () => onboarding.show(),
+  hasFolder: () => !!(fileManager?.path || (fileManager?.root && fileManager.inShell) || fileManager?.dir),
+});
+docView.onRunStart = (id) => session?.runStarting(id);
+docView.decorate = (id, row) => session?.decorate(id, row);
+docView.onDocument = () => session?.documentChanged();
 
 // A cell that could not import a module (ENVIRONMENT.md). A package uv
 // already has on this Mac goes into the document's environment at once,
@@ -945,7 +944,7 @@ async function afterInstall(result: { restart?: boolean }, cell: FailedCell) {
     // spinner carries straight on into the run).
     await cell.rerun();
   }
-  void panel.refresh();
+  void session?.refresh();
 }
 
 function repaintName() {
@@ -1006,7 +1005,7 @@ fileManager = new FileManager({
     if (!restoring && kernel.isReady) {
       void kernel
         .restart(fileManager?.root ?? undefined, fileManager?.path ?? null)
-        .then(() => void panel.refresh());
+        .then(() => void session?.refresh());
     }
   },
   onPathChanged: (path) => {
@@ -1155,16 +1154,9 @@ $('stop').addEventListener('click', () => kernel.interrupt());
 $('restart').addEventListener('click', () => {
   void kernel.restart().then(() => {
     docView.markAllStale();
-    void panel.refresh();
+    session?.restarted();
     toast('Fresh session');
   });
-});
-$('toggle-panel').addEventListener('click', () => {
-  const el = $('panel');
-  el.hidden = !el.hidden;
-  localStorage.setItem('knuth-panel', el.hidden ? '0' : '1');
-  paintPanelToggle();
-  if (!el.hidden) void panel.refresh();
 });
 
 window.addEventListener(

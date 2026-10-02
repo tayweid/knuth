@@ -1,15 +1,18 @@
-// The session panes (RStudio-quality half of the architecture): a
-// variable explorer and a data viewer that look into the LIVE session
+// The data and figure viewers (RStudio-quality half of the architecture),
+// moved from the old side panel (panel.ts) into the Session card's Data
+// and Figures tabs (session.ts): they look into the LIVE session
 // namespace, not the document. Tabular variables (DataFrame, Series,
-// 2-D ndarray) open in the viewer; data arrives in windows of 100 rows
-// and the full object never leaves the kernel.
+// 2-D ndarray) open in the data viewer; data arrives in windows of 100
+// rows and the full object never leaves the kernel. Figures render
+// through safe-svg (sanitized, an inert image), by name from the kernel
+// or, for a run's unnamed figure, from the SVG the run drew.
 
 import type { Kernel, NamespaceVar, TableWindow } from './kernel/kernel.ts';
 import { clearSafeSvgImages, createSafeSvgImage } from './safe-svg.ts';
 
 const PAGE = 100;
 
-function isTabular(v: NamespaceVar): boolean {
+export function isTabular(v: NamespaceVar): boolean {
   return (
     v.type === 'DataFrame' ||
     v.type === 'Series' ||
@@ -17,66 +20,35 @@ function isTabular(v: NamespaceVar): boolean {
   );
 }
 
-function shapeLabel(v: NamespaceVar): string {
+export function shapeLabel(v: NamespaceVar): string {
   if (v.shape) return v.shape.join('×');
   if (v.length !== undefined) return String(v.length);
   return '';
 }
 
-export class SessionPanel {
-  private varsBody: HTMLElement;
-  private viewer: HTMLElement;
+/** One viewer in one element: the Data tab's (a table, paging) or the
+ *  Figures tab's (a figure). `onClose` is told when its ✕ closes it. */
+export class Viewer {
   private current: { name: string; rows: number; total: number } | null = null;
   private currentFigure: string | null = null;
 
   constructor(
-    private root: HTMLElement,
+    private viewer: HTMLElement,
     private kernel: Kernel,
+    private onClose?: () => void,
   ) {
-    root.innerHTML = `
-      <div class="pane vars">
-        <div class="pane-title">Session</div>
-        <table class="vars-table"><tbody></tbody></table>
-        <div class="pane-empty" hidden>nothing in the session yet</div>
-      </div>
-      <div class="pane viewer" hidden></div>
-    `;
-    this.varsBody = root.querySelector('.vars-table tbody')!;
-    this.viewer = root.querySelector<HTMLElement>('.pane.viewer')!;
+    viewer.classList.add('viewer');
+    viewer.hidden = true;
   }
 
-  /** Re-read the namespace; refresh (or close) the open data view. */
-  async refresh(): Promise<void> {
-    const vars = await this.kernel.namespace();
-    this.varsBody.textContent = '';
-    this.root.querySelector<HTMLElement>('.pane-empty')!.hidden = vars.length > 0;
+  /** What is open: a table or a named figure, by name. */
+  get showing(): string | null {
+    return this.current?.name ?? this.currentFigure;
+  }
 
-    for (const v of vars) {
-      const tr = document.createElement('tr');
-      const name = document.createElement('td');
-      name.className = 'v-name';
-      name.textContent = v.name;
-      const type = document.createElement('td');
-      type.className = 'v-type';
-      type.textContent =
-        v.type + (shapeLabel(v) ? ` ${shapeLabel(v)}` : '') + (v.scratch ? ' · scratch' : '');
-      if (v.scratch) tr.classList.add('scratch');
-      const preview = document.createElement('td');
-      preview.className = 'v-preview';
-      preview.textContent = v.preview;
-      tr.append(name, type, preview);
-      if (isTabular(v)) {
-        tr.className = 'viewable';
-        tr.title = 'Open in the data viewer';
-        tr.addEventListener('click', () => void this.open(v.name));
-      } else if (v.figure) {
-        tr.className = 'viewable';
-        tr.title = 'Show the figure';
-        tr.addEventListener('click', () => void this.openFigure(v.name));
-      }
-      this.varsBody.append(tr);
-    }
-
+  /** The namespace moved (a run): refresh (or close) the open view — a
+   *  rebound table re-reads its first page, a name gone closes it. */
+  async refresh(vars: NamespaceVar[]): Promise<void> {
     if (this.current) {
       const still = vars.find((v) => v.name === this.current!.name && isTabular(v));
       if (still) await this.open(this.current.name);
@@ -86,6 +58,35 @@ export class SessionPanel {
       if (still) await this.openFigure(this.currentFigure);
       else this.closeViewer();
     }
+  }
+
+  /** A run's own figures, as it drew them (the receipt's SVGs): for a
+   *  figure no name holds, which the kernel cannot render again. */
+  showDrawn(svgs: string[], label: string): void {
+    this.current = null;
+    this.currentFigure = null;
+    clearSafeSvgImages(this.viewer);
+    const head = document.createElement('div');
+    head.className = 'pane-title viewer-head';
+    const title = document.createElement('span');
+    title.textContent = label;
+    head.append(title);
+    const scroller = document.createElement('div');
+    scroller.className = 'viewer-scroll';
+    for (const svg of svgs) {
+      const image = createSafeSvgImage(svg, label);
+      if (!image) continue;
+      const card = document.createElement('div');
+      card.className = 'figure';
+      card.append(image);
+      scroller.append(card);
+    }
+    this.viewer.hidden = false;
+    this.viewer.append(head, scroller);
+  }
+
+  close(): void {
+    this.closeViewer();
   }
 
   /** RStudio-style plot pane: the figure behind a named variable. */
@@ -112,7 +113,7 @@ export class SessionPanel {
     const close = document.createElement('button');
     close.textContent = '✕';
     close.title = 'Close viewer';
-    close.addEventListener('click', () => this.closeViewer());
+    close.addEventListener('click', () => this.closeViewer(true));
     head.append(title, close);
 
     const scroller = document.createElement('div');
@@ -161,7 +162,7 @@ export class SessionPanel {
       const close = document.createElement('button');
       close.textContent = '✕';
       close.title = 'Close viewer';
-      close.addEventListener('click', () => this.closeViewer());
+      close.addEventListener('click', () => this.closeViewer(true));
       head.append(title, close);
 
       scroller = document.createElement('div');
@@ -214,10 +215,11 @@ export class SessionPanel {
     }
   }
 
-  private closeViewer(): void {
+  private closeViewer(asked = false): void {
     this.current = null;
     this.currentFigure = null;
     this.viewer.hidden = true;
     clearSafeSvgImages(this.viewer);
+    if (asked) this.onClose?.();
   }
 }

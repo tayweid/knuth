@@ -86,6 +86,9 @@ export interface RunOutcome {
   result: string | null;
   /** Formatted traceback (or connection failure reason) when not ok. */
   traceback: string | null;
+  /** What the run bound, in the cell's order (the done event's receipt);
+   *  absent from an older engine and on a failed run. */
+  bound?: NamespaceVar[];
 }
 
 export interface Kernel {
@@ -358,7 +361,7 @@ export class SidecarKernel implements Kernel {
         break;
       }
       case 'done': {
-        this.runs.get(msg.id)?.resolve({ ok: true, result: msg.result, traceback: null });
+        this.runs.get(msg.id)?.resolve({ ok: true, result: msg.result, traceback: null, bound: msg.bound });
         this.runs.delete(msg.id);
         break;
       }

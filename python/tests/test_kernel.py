@@ -118,6 +118,104 @@ def test_session():
     assert not ok and "NameError" in tb, tb
 
 
+def _run_in_process(session, run_id, code, scratch=False):
+    """One run through the kernel's own dispatcher, its events collected."""
+    events = []
+    state = {"id": None, "stream_bytes": 0}
+    kernel_module.handle_request(
+        {"type": "run", "id": run_id, "code": code, "scratch": scratch},
+        session,
+        state,
+        events.append,
+    )
+    return events
+
+
+def test_done_carries_what_the_run_bound(monkeypatch):
+    # The receipt (docs/SESSION.md): the done event lists what the cell
+    # bound, in the cell's order, with kinds and short previews, and
+    # `saved` on what values.json mirrors.
+    monkeypatch.delenv("KNUTH_DOCUMENT", raising=False)
+    s = Session()
+    events = _run_in_process(
+        s, 1,
+        "import math\nn, words = 3, ['a', 'b']\ndef f():\n    return n\nlabel = 'x' * 200\nn",
+    )
+    done = events[-1]
+    assert done["type"] == "done" and done["result"] == "3", events
+    bound = done["bound"]
+    # Modules and underscore names are not values: math is not listed.
+    assert [entry["name"] for entry in bound] == ["n", "words", "f", "label"], bound
+    by_name = {entry["name"]: entry for entry in bound}
+    assert by_name["n"] == {"name": "n", "type": "int", "preview": "3", "saved": True}
+    assert by_name["words"]["length"] == 2 and by_name["words"]["saved"] is True
+    # A function is bound but never saved; a long repr is cut short.
+    assert by_name["f"]["type"] == "function" and "saved" not in by_name["f"]
+    assert len(by_name["label"]["preview"]) == 81 and by_name["label"]["preview"].endswith("…")
+
+    # Rebinding reports the name again; an unchanged session name does not.
+    events = _run_in_process(s, 2, "n = n + 1")
+    assert [entry["name"] for entry in events[-1]["bound"]] == ["n"], events
+    assert events[-1]["bound"][0]["preview"] == "4"
+
+    # A scratch run's names are marked scratch and never saved.
+    events = _run_in_process(s, 3, "tmp = n * 2", scratch=True)
+    assert events[-1]["bound"] == [{"name": "tmp", "type": "int", "preview": "8", "scratch": True}], events
+
+    # A failed run carries no receipt: its assigned names are the AST's,
+    # not what was bound before the error.
+    events = _run_in_process(s, 4, "z = 1\n1/0")
+    assert events[-1]["type"] == "error" and "bound" not in events[-1], events
+
+
+def test_numpy_scalars_preview_by_value(monkeypatch):
+    # The receipt's slim rows show a short value in place of its type: a
+    # numpy scalar (the usual elasticity out of pandas) previews by its
+    # value, as values.json has it, not as np.float64(…).
+    monkeypatch.delenv("KNUTH_DOCUMENT", raising=False)
+    s = Session()
+    events = _run_in_process(
+        s, 1,
+        "import numpy as np\n"
+        "elasticity = np.float64(-0.4088817904210866)\n"
+        "k = np.int64(7)\n"
+        "flag = np.bool_(True)\n"
+        "arr = np.arange(3)\n"
+        "narrow = np.float32(0.1)\n"
+        "when = np.datetime64('2024-01-01T00:00', 'ns')\n"
+        "never = np.datetime64('NaT', 'ns')\n"
+        "word = np.str_('abc')\n",
+    )
+    by_name = {entry["name"]: entry for entry in events[-1]["bound"]}
+    assert by_name["elasticity"]["type"] == "float64", by_name
+    assert by_name["elasticity"]["preview"] == "-0.4088817904210866", by_name
+    assert by_name["k"]["preview"] == "7" and by_name["flag"]["preview"] == "True", by_name
+    # Numbers and dates by numpy's own str: item() would widen the float32
+    # (0.10000000149011612), turn the nanosecond date into an int and NaT
+    # into None. A string keeps Python's quotes.
+    assert by_name["narrow"]["preview"] == "0.1", by_name
+    assert by_name["when"]["type"] == "datetime64", by_name
+    assert by_name["when"]["preview"] == "2024-01-01T00:00:00.000000000", by_name
+    assert by_name["never"]["preview"] == "NaT", by_name
+    assert by_name["word"]["preview"] == "'abc'", by_name
+    # An array is not a scalar: its repr stays.
+    assert by_name["arr"]["preview"] == "array([0, 1, 2])", by_name
+    snapshot = {v["name"]: v for v in s.snapshot()}
+    assert snapshot["elasticity"]["preview"] == "-0.4088817904210866", snapshot
+
+
+def test_done_bound_is_capped(monkeypatch):
+    monkeypatch.delenv("KNUTH_DOCUMENT", raising=False)
+    from knuth.session import MAX_BOUND
+
+    s = Session()
+    names = [f"v{i}" for i in range(MAX_BOUND + 10)]
+    code = ", ".join(names) + " = " + ", ".join(str(i) for i in range(len(names)))
+    events = _run_in_process(s, 1, code)
+    bound = events[-1]["bound"]
+    assert len(bound) == MAX_BOUND and bound[0]["name"] == "v0", bound[:2]
+
+
 def free_port():
     with socket.socket() as sock:
         sock.bind(("127.0.0.1", 0))

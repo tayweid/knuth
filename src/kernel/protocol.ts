@@ -18,6 +18,8 @@ export interface NamespaceVar {
   scratch?: boolean;
   /** A figure (or artist with one) sits behind this name. */
   figure?: boolean;
+  /** On a run's `bound` entries only: values.json mirrors this value. */
+  saved?: boolean;
 }
 
 export interface FigureResult {
@@ -164,7 +166,9 @@ export type ServerEvent =
   | { type: 'ready'; resumed?: boolean; id?: number }
   | { type: 'stream'; id: number; which: StreamWhich; text: string }
   | { type: 'figures'; id: number; svgs: string[]; named: string[] }
-  | { type: 'done'; id: number; result: string | null }
+  // `bound`: the run's receipt — an entry per name the cell bound, in its
+  // order (docs/SESSION.md). Optional: an older engine omits it.
+  | { type: 'done'; id: number; result: string | null; bound?: NamespaceVar[] }
   | { type: 'error'; id: number; traceback: string }
   | { type: 'namespace'; id: number; vars: NamespaceVar[] }
   | { type: 'artifacts'; id: number; values: Record<string, unknown>; figures: Record<string, string> }
@@ -211,7 +215,15 @@ function isNamespaceVar(value: unknown): value is NamespaceVar {
   )) return false;
   if (value.length !== undefined && !isRequestId(value.length)) return false;
   if (value.scratch !== undefined && typeof value.scratch !== 'boolean') return false;
+  if (value.saved !== undefined && typeof value.saved !== 'boolean') return false;
   return value.figure === undefined || typeof value.figure === 'boolean';
+}
+
+/** A run's `bound` list, validated (the Pyodide kernel reads its events
+ *  without parseServerEvent, so both kernels share this): the entries, or
+ *  undefined when absent or malformed — the page then diffs its snapshot. */
+export function parseBound(value: unknown): NamespaceVar[] | undefined {
+  return Array.isArray(value) && value.every(isNamespaceVar) ? value : undefined;
 }
 
 function isStringRecord(value: unknown): value is Record<string, string> {
@@ -247,7 +259,8 @@ export function parseServerEvent(value: unknown): ServerEvent | null {
       return isRequestId(event.id) && isStringArray(event.svgs) && isStringArray(event.named)
         ? event as ServerEvent : null;
     case 'done':
-      return isRequestId(event.id) && (event.result === null || typeof event.result === 'string')
+      return isRequestId(event.id) && (event.result === null || typeof event.result === 'string') &&
+        (event.bound === undefined || parseBound(event.bound) !== undefined)
         ? event as ServerEvent : null;
     case 'error':
       return isRequestId(event.id) && typeof event.traceback === 'string'

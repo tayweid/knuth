@@ -20,6 +20,18 @@ export const ICONS: Record<string, string> = {
   stop: '<rect x="6.5" y="6.5" width="11" height="11" rx="1.5"/>',
   restart: '<polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"/>',
   panel: '<rect x="3" y="3" width="18" height="18" rx="2"/><line x1="15" y1="3" x2="15" y2="21"/>',
+  // The session (session.ts): the pill's mark, the pin, and the kinds a
+  // name can be — the round-two mockups' glyphs (docs/mockups).
+  braces:
+    '<path d="M8.5 3H7.5a2 2 0 0 0-2 2v4.5a2 2 0 0 1-2 2.5 2 2 0 0 1 2 2.5V19a2 2 0 0 0 2 2h1"/><path d="M15.5 3h1a2 2 0 0 1 2 2v4.5a2 2 0 0 0 2 2.5 2 2 0 0 0-2 2.5V19a2 2 0 0 1-2 2h-1"/>',
+  pin: '<line x1="12" y1="15.5" x2="12" y2="22"/><path d="M8 2.5h8l-1.2 6.5 3 3.5H6.2l3-3.5z"/>',
+  table: '<rect x="3" y="5" width="18" height="14" rx="2"/><line x1="3" y1="10" x2="21" y2="10"/><line x1="3" y1="14.5" x2="21" y2="14.5"/><line x1="10" y1="5" x2="10" y2="19"/>',
+  series: '<rect x="8" y="3" width="8" height="18" rx="1.5"/><line x1="8" y1="9" x2="16" y2="9"/><line x1="8" y1="15" x2="16" y2="15"/>',
+  figure: '<path d="M3 3v18h18"/><polyline points="7 16 11 10 14.5 13 20 6"/>',
+  value: '<circle cx="12" cy="12" r="3.4"/>',
+  list: '<line x1="9" y1="7" x2="20" y2="7"/><line x1="9" y1="12" x2="20" y2="12"/><line x1="9" y1="17" x2="20" y2="17"/><line x1="4" y1="7" x2="5" y2="7"/><line x1="4" y1="12" x2="5" y2="12"/><line x1="4" y1="17" x2="5" y2="17"/>',
+  fn: '<path d="M16 4h-2a3 3 0 0 0-3 3v13"/><line x1="7.5" y1="10.5" x2="15" y2="10.5"/>',
+  object: '<rect x="4.5" y="4.5" width="15" height="15" rx="3.5"/><circle cx="12" cy="12" r="1.6"/>',
 };
 
 export function icon(name: string): string {

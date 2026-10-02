@@ -119,11 +119,11 @@ test('the frame is Zen\'s: a dark edge all round a rounded room, a 44 px rail, t
   const room = await box(page, '#layout');
   expect(room).toEqual({ left: 44, top: bar.bottom, right: look.width - 8, bottom: look.height - 8 });
   expect((await box(page, '#view-toggle')).bottom).toBe(room.bottom);
-  // The pills are 30 px in the 44 px bar, and the status pill ends where
-  // the room does.
-  const status = await box(page, '#kernel-status');
-  expect(status.bottom - status.top).toBe(30);
-  expect(status.right).toBe(room.right);
+  // The pills are 30 px in the 44 px bar, and the session pill (the
+  // kernel's status inside it) ends where the room does.
+  const pill = await box(page, '#session-pill');
+  expect(pill.bottom - pill.top).toBe(30);
+  expect(pill.right).toBe(room.right);
   expect((await box(page, '#doc-pod')).bottom - (await box(page, '#doc-pod')).top).toBe(30);
 
   // In a tab there is no lights' room: the File tile stands over the rail's
@@ -137,7 +137,7 @@ test('the frame is Zen\'s: a dark edge all round a rounded room, a 44 px rail, t
   // The rail scrolls, so it is no drag region.
   expect(await appRegion(page, '#toolbar')).toBe('drag');
   expect(await appRegion(page, '#rail')).not.toBe('drag');
-  for (const selector of ['#doc-pod', '#file-name', '#file-tile', '.tb-end', '#kernel-status']) {
+  for (const selector of ['#doc-pod', '#file-name', '#file-tile', '.tb-end', '#session-pill', '#kernel-status']) {
     expect(await appRegion(page, selector), selector).toBe('no-drag');
   }
   // The menus drop into the bar's band: theirs, too.
@@ -153,7 +153,7 @@ test('the controls are where the frame puts them, with every id the tests and th
   for (const id of ['cells-pod', 'add-code', 'add-scratch', 'add-text', 'run-pod', 'run-stale', 'run-all', 'stop', 'restart', 'toggle-panel', 'view-toggle']) {
     await expect(page.locator(`#rail #${id}`), id).toHaveCount(1);
   }
-  for (const id of ['doc-pod', 'file-tile', 'file-name', 'doc-mark', 'doc-folder', 'kernel-status']) {
+  for (const id of ['doc-pod', 'file-tile', 'file-name', 'doc-mark', 'doc-folder', 'session-pill', 'kernel-status']) {
     await expect(page.locator(`#toolbar #${id}`), id).toHaveCount(1);
   }
   // Get Knuth, Install and the update are File menu items, as in Plass.
@@ -161,14 +161,15 @@ test('the controls are where the frame puts them, with every id the tests and th
     await expect(page.locator(`#tb-menu-file #${id}`), id).toHaveCount(1);
   }
   // The status holds its words and nothing else (the shell's smoke compares
-  // its text exactly), and the name its name.
+  // its text exactly), inside the session pill, and the name its name.
   expect(await page.locator('#kernel-status').evaluate((element) => element.textContent)).toBe('Python');
+  await expect(page.locator('#session-pill #kernel-status')).toHaveCount(1);
   await expect(page.locator('#file-name')).toHaveText('Knuth.py');
   // No folder for a document that has none.
   await expect(page.locator('#doc-folder')).toBeHidden();
 });
 
-test('the column keeps its width and centres in the room, with the panel shown or hidden', async ({ page }) => {
+test('the column centres in the room, the Session card closed or floating; docked, it slides left with its width', async ({ page }) => {
   const centred = () => page.evaluate(() => {
     const doc = document.getElementById('doc')!;
     const sheet = document.getElementById('sheet')!.getBoundingClientRect();
@@ -177,19 +178,28 @@ test('the column keeps its width and centres in the room, with the panel shown o
     const content = doc.clientWidth - parseFloat(style.paddingLeft) - parseFloat(style.paddingRight);
     return { width: sheet.width, offset: Math.abs(sheet.left + sheet.width / 2 - (left + content / 2)), content };
   });
+  await page.emulateMedia({ reducedMotion: 'reduce' });
   await boot(page, 1500, 900);
-  await expect(page.locator('#panel')).toBeVisible();
-  const shown = await centred();
-  expect(shown.width).toBe(832);
-  expect(shown.offset).toBeLessThan(1);
+  await expect(page.locator('#session')).toBeHidden();
+  const closed = await centred();
+  expect(closed.width).toBe(832);
+  expect(closed.offset).toBeLessThan(1);
+  // Floating, the card lies over the room: the column stays.
   await page.locator('#toggle-panel').click();
-  await expect(page.locator('#panel')).toBeHidden();
-  const hidden = await centred();
-  expect(hidden.width).toBe(832);
-  expect(hidden.offset).toBeLessThan(1);
-  // Narrower than the column plus the panel: the column fills what there is.
-  await page.setViewportSize({ width: 1100, height: 760 });
-  await page.locator('#toggle-panel').click();
+  await expect(page.locator('#session')).toHaveClass(/floating/);
+  expect(await centred()).toEqual(closed);
+  // Docked, the column slides left by what the card lacks, its width kept
+  // (session.spec.ts has the rule at each width).
+  await page.locator('#session [data-mode="pinned"]').click();
+  await expect(page.locator('#session')).toHaveClass(/docked/);
+  const docked = await centred();
+  expect(docked.width).toBe(832);
+  expect(docked.offset).toBeGreaterThan(50);
+  await page.locator('#session [data-mode="peek"]').click();
+  expect(await centred()).toEqual(closed);
+  // Narrower than the column and its margins: the column fills what there
+  // is.
+  await page.setViewportSize({ width: 900, height: 760 });
   const narrow = await centred();
   expect(narrow.width).toBe(narrow.content);
   // The column starts 24 px under the room's top edge (the bar no longer
@@ -197,20 +207,24 @@ test('the column keeps its width and centres in the room, with the panel shown o
   expect(await page.locator('#doc').evaluate((element) => getComputedStyle(element).paddingTop)).toBe('24px');
 });
 
-test('the session panel\'s tile is lit while the panel shows', async ({ page }) => {
+test('the Session tile is lit while the Session card shows', async ({ page }) => {
   await boot(page);
   const tile = page.locator('#toggle-panel');
-  await expect(page.locator('#panel')).toBeVisible();
-  await expect(tile).toHaveAttribute('aria-pressed', 'true');
-  const lit = await tile.evaluate((element) => getComputedStyle(element).backgroundColor);
-  expect(lit).toBe('rgb(46, 46, 50)');
-  await tile.click();
-  await expect(page.locator('#panel')).toBeHidden();
+  await expect(page.locator('#session')).toBeHidden();
   await expect(tile).toHaveAttribute('aria-pressed', 'false');
-  // Remembered, and painted at boot.
+  await tile.click();
+  await expect(page.locator('#session')).toBeVisible();
+  await expect(tile).toHaveAttribute('aria-pressed', 'true');
+  await page.mouse.move(600, 400);
+  await expect.poll(() => tile.evaluate((element) => getComputedStyle(element).backgroundColor)).toBe('rgb(46, 46, 50)');
+  // Docked, it is remembered for the window, and painted at boot.
+  await page.locator('#session [data-mode="pinned"]').click();
   await page.reload();
   await expect(page.locator('#kernel-status')).toHaveText('Python');
-  await expect(page.locator('#panel')).toBeHidden();
+  await expect(page.locator('#session')).toBeVisible();
+  await expect(tile).toHaveAttribute('aria-pressed', 'true');
+  await tile.click();
+  await expect(page.locator('#session')).toBeHidden();
   await expect(tile).toHaveAttribute('aria-pressed', 'false');
 });
 
@@ -372,7 +386,7 @@ test('a long folder gives way from its start; the name and the save mark never d
         endShows: path.right <= rect('doc-folder').right + 0.5,
         text: folder.textContent,
         title: folder.title,
-        clear: rect('doc-pod').right <= rect('kernel-status').left,
+        clear: rect('doc-pod').right <= rect('session-pill').left,
       };
     });
     expect(pill, `at ${width}`).toEqual({
@@ -420,7 +434,8 @@ test('source view keeps the frame: the bar and the switch lit, the room One Dark
   // A click on a resting tile does nothing (forced: Playwright itself
   // waits for an aria-disabled control to wake).
   await page.locator('#toggle-panel').click({ force: true });
-  await expect(page.locator('#toggle-panel')).toHaveAttribute('aria-pressed', 'true');
+  await expect(page.locator('#toggle-panel')).toHaveAttribute('aria-pressed', 'false');
+  await expect(page.locator('#session')).toBeHidden();
   const look = await page.evaluate(() => ({
     room: getComputedStyle(document.getElementById('layout')!).backgroundColor,
     frame: getComputedStyle(document.body).backgroundColor,
@@ -493,7 +508,7 @@ test('the toast sits on the room\'s axis', async ({ page }) => {
   expect(room.bottom - at.bottom).toBe(12);
 });
 
-test('a short window cuts the cell tools under a fade and keeps the panel tile and the switch whole', async ({ page }) => {
+test('a short window cuts the cell tools under a fade and keeps the Session tile and the switch whole', async ({ page }) => {
   await boot(page);
   const cue = () => page.evaluate(() => {
     const groups = document.querySelector('.tb-rail-groups')!;
@@ -527,7 +542,8 @@ test('a short window cuts the cell tools under a fade and keeps the panel tile a
 });
 
 test('below the layout floor the room scrolls sideways, and the bar and the rail stay put', async ({ page }) => {
-  await boot(page, 700, 600);
+  // Under main's 640 px floor (with the Session card closed).
+  await boot(page, 600, 600);
   const scroll = await page.evaluate(() => {
     const layout = document.getElementById('layout')!;
     return {
@@ -538,22 +554,34 @@ test('below the layout floor the room scrolls sideways, and the bar and the rail
   expect(scroll).toEqual({ room: true, page: false });
   await page.locator('#layout').evaluate((element) => { element.scrollLeft = 200; });
   expect((await box(page, '#rail .tb-btn')).left).toBe(6);
-  expect((await box(page, '#kernel-status')).right).toBe(700 - 8);
+  expect((await box(page, '#session-pill')).right).toBe(600 - 8);
 });
 
-test('the floor is main\'s: with the panel shown the room fits a 990 px window and scrolls sideways below it', async ({ page }) => {
+test('the floor is main\'s 640 px; the docked card raises it, so the card never lies over the column', async ({ page }) => {
   const sideways = () => page.locator('#layout').evaluate((element) => element.scrollWidth > element.clientWidth);
+  const column = () => page.locator('#sheet').evaluate((element) => element.getBoundingClientRect().width);
+  await page.emulateMedia({ reducedMotion: 'reduce' });
   await boot(page, 990, 700);
-  await expect(page.locator('#panel')).toBeVisible();
   expect(await sideways()).toBe(false);
-  // The column at the floor.
-  expect(await page.locator('#sheet').evaluate((element) => element.getBoundingClientRect().width)).toBe(548);
-  await page.setViewportSize({ width: 989, height: 700 });
-  await expect.poll(sideways).toBe(true);
-  // Without the panel, 640, as before the frame.
+  expect(await column()).toBe(832);
+  // Docked at 990 the column narrows to its 640 px floor, and the chips'
+  // lane and the card need more than the room has: the room scrolls
+  // sideways, the card past the column's edge.
   await page.locator('#toggle-panel').click();
+  await page.locator('#session [data-mode="pinned"]').click();
+  await expect(page.locator('#session')).toHaveClass(/docked/);
+  expect(await column()).toBe(640);
+  expect(await sideways()).toBe(true);
+  const beside = await page.evaluate(() =>
+    document.getElementById('session')!.getBoundingClientRect().left - document.getElementById('sheet')!.getBoundingClientRect().right);
+  expect(beside).toBeGreaterThanOrEqual(45);
+  // Floating, main's floor again.
+  await page.locator('#session [data-mode="peek"]').click();
+  await expect.poll(sideways).toBe(false);
   await page.setViewportSize({ width: 640, height: 700 });
   await expect.poll(sideways).toBe(false);
+  // The column at the floor.
+  expect(await column()).toBe(548);
   await page.setViewportSize({ width: 639, height: 700 });
   await expect.poll(sideways).toBe(true);
 });

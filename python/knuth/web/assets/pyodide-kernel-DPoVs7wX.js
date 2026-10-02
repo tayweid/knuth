@@ -1,8 +1,8 @@
-import{t as e}from"./index-nUTibmYV.js";var t=/^\s*#\s*[%!]\s*pip\s+install\s+(.+?)\s*$/;function n(e){let n=[];for(let r of e.split(`
-`)){let e=t.exec(r);if(e)for(let t of e[1].split(/\s+/))t&&!t.startsWith(`-`)&&!n.includes(t)&&n.push(t)}return n}var r=`from .session import Session
+import{n as e,t}from"./index-C4G3g5Db.js";var n=/^\s*#\s*[%!]\s*pip\s+install\s+(.+?)\s*$/;function r(e){let t=[];for(let r of e.split(`
+`)){let e=n.exec(r);if(e)for(let n of e[1].split(/\s+/))n&&!n.startsWith(`-`)&&!t.includes(n)&&t.push(n)}return t}var i=`from .session import Session
 
 __all__ = ["Session"]
-`,i=`"""Safe names and ownership metadata for generated project artifacts."""
+`,a=`"""Safe names and ownership metadata for generated project artifacts."""
 
 import json
 import unicodedata
@@ -69,7 +69,7 @@ def owned_figure_names(raw):
             return set()
         names.add(name)
     return names
-`,a=`"""Code completion against the live session: what fits at the cursor.
+`,o=`"""Code completion against the live session: what fits at the cursor.
 
 Jedi when it is importable — what IPython, Jupyter and Spyder use; it reads
 the live namespace (\`jedi.Interpreter\`), so after \`df.\` it knows \`df\` is a
@@ -166,7 +166,7 @@ def _kind(value):
     if callable(value):
         return "function"
     return "instance"
-`,o=`"""Writing the folder contract: values.json, figs/<name>.svg, and the
+`,s=`"""Writing the folder contract: values.json, figs/<name>.svg, and the
 ownership manifest, atomically and in one place.
 
 Two producers share this: \`knuth run\` (runner.py) regenerates the contract
@@ -261,7 +261,7 @@ def write_contract(root, values, figures, extra=()):
         for temporary, _ in staged:
             temporary.unlink(missing_ok=True)
         staged_manifest.unlink(missing_ok=True)
-`,s=`"""The document's environment: a PEP 723 header, built and run by uv.
+`,c=`"""The document's environment: a PEP 723 header, built and run by uv.
 
 The header is the truth (ENVIRONMENT.md). This module reads it, creates it
 for a new document, asks uv for the environment it describes, and makes the
@@ -901,7 +901,7 @@ def ensure_tools():
     except (OSError, subprocess.SubprocessError):
         return False
     return result.returncode == 0
-`,c=`"""Import Jupyter notebooks: .ipynb in, percent-format .py out.
+`,l=`"""Import Jupyter notebooks: .ipynb in, percent-format .py out.
 
 One-way by design (DESIGN.md: the document is a plain .py file), and
 implemented once, in Python — the app converts through the server's
@@ -1025,7 +1025,7 @@ def import_files(files, echo=print):
         note = f", {commented} line(s) commented out" if commented else ""
         echo(f"{path.name} -> {target.name} ({len(doc.cells)} cells{note})")
     return 1 if failed else 0
-`,l=`"""Named resource limits at Knuth's browser/kernel trust boundaries.
+`,u=`"""Named resource limits at Knuth's browser/kernel trust boundaries.
 
 These defaults are intentionally generous for interactive analysis while
 bounding unauthenticated frames, live subprocesses, and data retained by the
@@ -1061,7 +1061,7 @@ MAX_TABLE_RESPONSE_BYTES = 8 * 1024 * 1024
 # and how long a path it will consider at all.
 MAX_DOCUMENT_BYTES = 8 * 1024 * 1024
 MAX_PATH_CHARS = 4096
-`,u=`"""Percent-format (.py) document model — Python port of src/format/percent.ts,
+`,d=`"""Percent-format (.py) document model — Python port of src/format/percent.ts,
 same semantics, kept honest by round-tripping the same corpus in tests.
 
 Cells open with "# %%" ("#%%" tolerated, marker preserved verbatim);
@@ -1204,7 +1204,7 @@ def set_output(cell, text):
     cell.output = [
         OUTPUT_PREFIX if line == "" else f"{OUTPUT_PREFIX} {line}" for line in text.split("\\n")
     ]
-`,d=`"""The live session: a persistent namespace that runs cells REPL-style.
+`,f=`"""The live session: a persistent namespace that runs cells REPL-style.
 
 Used in-process by \`knuth run\` (Milestone 5) and by the kernel subprocess
 behind the WebSocket server (this milestone). Holds no I/O of its own —
@@ -1227,6 +1227,21 @@ MAX_VALUE_JSON = 10_000
 MAX_TABLE_LIMIT = 500
 MAX_TABLE_COLS = 200
 
+# A run's receipt (Session.bound): entries on its done event, at most. A
+# cell binding more (a long unpacking, a loop of defs) is rare; the page
+# reads the rest from the snapshot it takes after every run.
+MAX_BOUND = 64
+
+
+def _listed(name, value):
+    """Whether the variable explorer lists a namespace entry: underscore
+    names are private and modules are not values."""
+    return (
+        isinstance(name, str)
+        and not name.startswith("_")
+        and not isinstance(value, types.ModuleType)
+    )
+
 
 def _persistable(value):
     """(value, ok): JSON-safe mirror of a namespace value, or ok=False.
@@ -1248,42 +1263,55 @@ def _persistable(value):
     return value, True
 
 
+def _is_numpy_scalar(value):
+    """A numpy scalar (np.float64(0.5), np.int64(3), np.bool_(True)): a
+    zero-dimensional numpy value with an item()."""
+    return (
+        type(value).__module__ == "numpy"
+        and getattr(value, "ndim", None) == 0
+        and hasattr(value, "item")
+    )
+
+
 def _target_names(target):
     if isinstance(target, ast.Name):
-        return {target.id}
+        return [target.id]
     if isinstance(target, (ast.Tuple, ast.List)):
-        names = set()
+        names = []
         for elt in target.elts:
-            names |= _target_names(elt)
+            names += _target_names(elt)
         return names
     if isinstance(target, ast.Starred):
         return _target_names(target.value)
-    return set()
+    return []
 
 
 def _assigned_names(tree):
-    """Top-level names a cell binds — how scratch state is told apart from
-    program state in the shared v1 namespace."""
-    names = set()
+    """Top-level names a cell binds, in the order the cell binds them, once
+    each — how scratch state is told apart from program state in the
+    shared v1 namespace, which figures a run touched, and what a run's
+    receipt lists (the order is the cell's, so the page can show them as
+    written)."""
+    names = []
     for node in tree.body:
         if isinstance(node, ast.Assign):
             for target in node.targets:
-                names |= _target_names(target)
+                names += _target_names(target)
         elif isinstance(node, (ast.AugAssign, ast.AnnAssign, ast.For, ast.AsyncFor)):
-            names |= _target_names(node.target)
+            names += _target_names(node.target)
         elif isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
-            names.add(node.name)
+            names.append(node.name)
         elif isinstance(node, ast.Import):
             for alias in node.names:
-                names.add((alias.asname or alias.name).split(".")[0])
+                names.append((alias.asname or alias.name).split(".")[0])
         elif isinstance(node, ast.ImportFrom):
             for alias in node.names:
-                names.add(alias.asname or alias.name)
+                names.append(alias.asname or alias.name)
         elif isinstance(node, (ast.With, ast.AsyncWith)):
             for item in node.items:
                 if item.optional_vars is not None:
-                    names |= _target_names(item.optional_vars)
-    return names
+                    names += _target_names(item.optional_vars)
+    return list(dict.fromkeys(names))
 
 
 def capture_open_figures(max_figures=None):
@@ -1347,14 +1375,15 @@ class Session:
         # the session, excluded from persistence, badged in the explorer.
         # A program cell binding the same name reclaims it.
         self.scratch_names = set()
-        # Names bound by the most recent run — how figure receipts know
-        # which cell touched which figure.
-        self.last_assigned = set()
+        # Names bound by the most recent run, in the cell's order — how
+        # figure receipts know which cell touched which figure, and what
+        # the run's done event reports as bound.
+        self.last_assigned = []
 
     def reset(self):
         self.namespace = {"__name__": "__main__"}
         self.scratch_names = set()
-        self.last_assigned = set()
+        self.last_assigned = []
 
     def run(self, code, scratch=False):
         """Execute a cell. Returns (ok, payload): payload is the repr of the
@@ -1368,9 +1397,9 @@ class Session:
         assigned = _assigned_names(tree)
         self.last_assigned = assigned
         if scratch:
-            self.scratch_names |= assigned
+            self.scratch_names.update(assigned)
         else:
-            self.scratch_names -= assigned
+            self.scratch_names.difference_update(assigned)
 
         last = None
         if tree.body and isinstance(tree.body[-1], ast.Expr):
@@ -1393,34 +1422,68 @@ class Session:
         """Namespace summary for the variable explorer and persistence layer:
         [{name, type, shape?|length?, preview}], underscore names and modules
         excluded."""
+        return [
+            self._entry(name, value)
+            for name, value in self.namespace.items()
+            if _listed(name, value)
+        ]
+
+    def bound(self, names):
+        """What a run bound, for the page's receipt of it: the snapshot's
+        entry for each of \`names\` (the run's assigned names, in the cell's
+        order) still in the namespace and listed by snapshot(), plus
+        \`saved\` on a value values.json mirrors. At most MAX_BOUND entries:
+        the page reads the rest from its next snapshot."""
         out = []
-        for name, value in self.namespace.items():
-            if (
-                not isinstance(name, str)
-                or name.startswith("_")
-                or isinstance(value, types.ModuleType)
-            ):
+        for name in names:
+            if len(out) >= MAX_BOUND:
+                break
+            if name not in self.namespace:
                 continue
-            entry = {"name": name, "type": type(value).__name__}
-            shape = getattr(value, "shape", None)
-            if isinstance(shape, tuple):
-                entry["shape"] = list(shape)
-            elif hasattr(value, "__len__"):
-                try:
-                    entry["length"] = len(value)
-                except Exception:
-                    pass
-            try:
-                preview = repr(value)
-            except Exception:
-                preview = "<unrepresentable>"
-            entry["preview"] = preview[:80] + ("…" if len(preview) > 80 else "")
-            if name in self.scratch_names:
-                entry["scratch"] = True
-            if _owning_figure(value) is not None:
-                entry["figure"] = True
+            value = self.namespace[name]
+            if not _listed(name, value):
+                continue
+            entry = self._entry(name, value)
+            if (
+                name not in self.scratch_names
+                and "figure" not in entry
+                and _persistable(value)[1]
+            ):
+                entry["saved"] = True
             out.append(entry)
         return out
+
+    def _entry(self, name, value):
+        entry = {"name": name, "type": type(value).__name__}
+        shape = getattr(value, "shape", None)
+        if isinstance(shape, tuple):
+            entry["shape"] = list(shape)
+        elif hasattr(value, "__len__"):
+            try:
+                entry["length"] = len(value)
+            except Exception:
+                pass
+        try:
+            # A numpy scalar by its value, not np.float64(-0.40888…): the
+            # receipt's slim rows show values. Numbers and dates by numpy's
+            # own str (a float64 as repr(float) has it, np.float32(0.1) as
+            # 0.1, 2024-01-01T00:00:00.000000000, NaT), since item() turns
+            # a nanosecond datetime64 into an int and NaT into None; the
+            # rest (strings, bytes, objects) by their Python value's repr,
+            # quoted as Python shows them.
+            if _is_numpy_scalar(value):
+                kind = getattr(getattr(value, "dtype", None), "kind", "")
+                preview = str(value) if kind in ("b", "i", "u", "f", "c", "m", "M") else repr(value.item())
+            else:
+                preview = repr(value)
+        except Exception:
+            preview = "<unrepresentable>"
+        entry["preview"] = preview[:80] + ("…" if len(preview) > 80 else "")
+        if name in self.scratch_names:
+            entry["scratch"] = True
+        if _owning_figure(value) is not None:
+            entry["figure"] = True
+        return entry
 
     def table(self, name, offset=0, limit=100):
         """A window into a tabular variable for the data viewer:
@@ -1552,14 +1615,14 @@ class Session:
         while tb is not None and tb.tb_frame.f_code.co_filename != "<cell>":
             tb = tb.tb_next
         return "".join(traceback.format_exception(type(e), e, tb))
-`,f=`"""Kernel subprocess: line-delimited JSON on stdin/stdout around a Session.
+`,p=`"""Kernel subprocess: line-delimited JSON on stdin/stdout around a Session.
 
 Run as \`python -m knuth.kernel\` by the server, never directly by users.
 User code's stdout/stderr are redirected into \`stream\` events; the real
 stdout carries only protocol events. SIGINT lands here as KeyboardInterrupt:
 during a run it surfaces as an \`error\` event, while idle it is swallowed.
 
-Events out: ready | stream{id,which,text} | done{id,result} |
+Events out: ready | stream{id,which,text} | done{id,result,bound} |
             error{id,traceback} | namespace{id,vars} | persisted{id,...} |
             dependency{id,state,module,distribution} | header{id,path,lines}
 Commands in: run{id,code} | namespace{id} | artifacts{id} | persist{id} | ...
@@ -1748,6 +1811,11 @@ def handle_request(msg, session, state, emit):
             event = {"type": "done", "id": msg["id"], "result": result}
             if truncated:
                 event["truncated"] = True
+            # The receipt (the page's src/receipts.ts): what the run bound,
+            # with kinds and short previews, so it can be shown without a
+            # round trip. Only on success: a failed run's assigned names
+            # are the AST's, not what got bound before the error.
+            event["bound"] = session.bound(session.last_assigned)
             emit(event)
             document = os.environ.get(env.DOCUMENT_VAR)
             if document and not msg.get("scratch"):
@@ -1867,7 +1935,7 @@ def main():
 
 if __name__ == "__main__":
     main()
-`,p=`https://cdn.jsdelivr.net/pyodide/v0.28.3/full/`,m=`
+`,m=`https://cdn.jsdelivr.net/pyodide/v0.28.3/full/`,h=`
 import json, sys
 import knuth.kernel as kernel_module
 from knuth.kernel import Session, _StreamOut, handle_request
@@ -1942,4 +2010,4 @@ def knuth_convert(raw):
     except ValueError as error:
         return json.dumps({"error": str(error)})
     return json.dumps({"text": serialize_document(doc), "commented": commented})
-`,h=class{onStatus;listeners;pyodide=null;micropip=null;installed=new Set;lastPreamble=null;ready;closed=!1;booted=!1;root=null;nextId=1;runs=new Map;waiters=new Map;constructor(e,t={}){this.onStatus=e,this.listeners=t,this.onStatus?.(`connecting`),this.ready=this.boot().then(()=>{this.booted=!0,this.onStatus?.(`ready`,!1)},e=>{console.error(`Pyodide failed to start`,e),this.onStatus?.(`kernel_failed`)})}async boot(){let{loadPyodide:t}=await e(async()=>{let{loadPyodide:e}=await import(`${p}pyodide.mjs`);return{loadPyodide:e}},[],import.meta.url),n=await t({indexURL:p});n.FS.mkdirTree(`/lib/knuth`);let h=[[`__init__.py`,r],[`artifacts.py`,i],[`complete.py`,a],[`contract.py`,o],[`env.py`,s],[`ipynb.py`,c],[`limits.py`,l],[`percent.py`,u],[`session.py`,d],[`kernel.py`,f]];for(let[e,t]of h)n.FS.writeFile(`/lib/knuth/${e}`,t,{encoding:`utf8`});n.runPython(`import sys; sys.path.insert(0, "/lib")`),n.globals.set(`_knuth_emit`,e=>this.receive(e)),n.runPython(m);try{await n.loadPackage(`micropip`),this.micropip=n.pyimport(`micropip`)}catch(e){console.warn(`micropip is unavailable; PyPI packages cannot be installed`,e)}this.pyodide=n}async providePackages(e,t,r){let i=this.pyodide;try{await i.loadPackagesFromImports(e)}catch(e){console.warn(`Could not preload packages for this cell`,e)}if(!this.micropip)return;for(let r of n(e))await this.micropipInstall(r,t);let a=[];try{i.globals.set(`_knuth_code`,e),a=JSON.parse(String(i.runPython(`knuth_missing_imports(_knuth_code)`)))}catch(e){console.warn(`Could not inspect imports`,e)}for(let e of a)await this.micropipInstall(e,t)}async provideHeader(e,t,n){if(!this.micropip||e===this.lastPreamble)return;this.lastPreamble=e;let r=this.pyodide,i;try{r.globals.set(`_knuth_preamble`,e),i=JSON.parse(String(r.runPython(`knuth_header_requirements(_knuth_preamble)`)))}catch(e){console.warn(`Could not read the document header`,e);return}i.error&&n?.onStream?.(`stderr`,`${i.error}\n`);for(let e of i.dependencies??[])await this.micropipInstall(e,t)}async micropipInstall(e,t){if(this.installed.has(e))return;let n=this.pyodide,r=e.split(/[<>=!~\[; ]/)[0];this.listeners.onDependency?.({id:t,state:`installing`,module:r,distribution:e});let i;try{n.globals.set(`_knuth_requirement`,e),i=String(await n.runPythonAsync(`await knuth_install(_knuth_requirement)`))}catch(e){i=String(e?.message||e)}if(!i){this.installed.add(e),this.listeners.onDependency?.({id:t,state:`installed`,module:r,distribution:e});return}this.listeners.onDependency?.({id:t,state:`failed`,module:r,distribution:e,error:`${i} (packages with compiled code need Python installed on this computer)`})}get isReady(){return this.booted&&!this.closed}receive(e){let t;try{t=JSON.parse(e)}catch{return}let n=typeof t.id==`number`?t.id:null;if(t.type===`stream`&&n!==null){this.runs.get(n)?.handlers?.onStream?.(t.which,String(t.text??``));return}if(t.type===`figures`&&n!==null){this.runs.get(n)?.handlers?.onFigures?.(t.svgs??[],t.named??[]);return}if(t.type===`done`&&n!==null){this.runs.get(n)?.resolve({ok:!0,result:t.result??null,traceback:null}),this.runs.delete(n);return}if(t.type===`error`&&n!==null){this.runs.get(n)?.resolve({ok:!1,result:null,traceback:String(t.traceback??`error`)}),this.runs.delete(n);return}n!==null&&this.waiters.has(n)&&(this.waiters.get(n)(t),this.waiters.delete(n))}async send(e){if(await this.ready,this.closed||!this.pyodide)return;let t=this.pyodide;t.globals.set(`_knuth_request`,JSON.stringify(e)),await t.runPythonAsync(`knuth_handle(_knuth_request)`)}async ask(e,t,n){if(await this.ready,this.closed||!this.pyodide)return n;let r=this.nextId++;return new Promise(i=>{this.waiters.set(r,e=>i(e.type===`protocol_error`?n:t(e))),this.send({...e,id:r}).catch(()=>{this.waiters.delete(r),i(n)})})}async run(e,t,n){if(await this.ready,this.closed||!this.pyodide)return{ok:!1,result:null,traceback:`Python is not running`};let r=this.nextId++;return n?.preamble!==void 0&&await this.provideHeader(n.preamble,r,t),await this.providePackages(e,r,t),new Promise(i=>{this.runs.set(r,{handlers:t,resolve:i}),this.send({type:`run`,id:r,code:e,scratch:n?.scratch??!1}).catch(e=>{this.runs.delete(r),i({ok:!1,result:null,traceback:String(e)})})})}interrupt(){console.warn(`Interrupt is not available in the browser preview.`)}async restart(e,t){if(await this.ready,this.closed||!this.pyodide)return;this.lastPreamble=null;let n=this.nextId++;await new Promise(e=>{this.waiters.set(n,()=>e()),this.send({type:`restart`,id:n}).catch(()=>e())}),this.onStatus?.(`ready`,!1)}jediLoading=null;async complete(e,t){return await this.ready,this.closed||!this.pyodide?null:(this.jediLoading??=this.pyodide.loadPackage(`jedi`).catch(()=>void 0),this.ask({type:`complete`,code:e,offset:t},e=>({start:Number(e.start??t),items:e.items??[]}),null))}namespace(){return this.ask({type:`namespace`},e=>e.vars??[],[])}artifacts(){return this.ask({type:`artifacts`},e=>({values:e.values??{},figures:e.figures??{}}),null)}table(e,t=0,n=100){return this.ask({type:`table`,name:e,offset:t,limit:n},e=>e,null)}figure(e){return this.ask({type:`figure`,name:e},e=>e,null)}async convert(e){if(await this.ready,this.closed||!this.pyodide)return null;this.pyodide.globals.set(`_knuth_notebook`,e);try{let e=await this.pyodide.runPythonAsync(`knuth_convert(_knuth_notebook)`);return JSON.parse(String(e))}catch(e){return{error:String(e)}}}async openPath(e){return null}async savePath(e,t){return null}async statPath(e){return null}async renamePath(e,t){return null}async persist(){return null}close(){this.closed=!0}};export{h as PyodideKernel};
+`,g=class{onStatus;listeners;pyodide=null;micropip=null;installed=new Set;lastPreamble=null;ready;closed=!1;booted=!1;root=null;nextId=1;runs=new Map;waiters=new Map;constructor(e,t={}){this.onStatus=e,this.listeners=t,this.onStatus?.(`connecting`),this.ready=this.boot().then(()=>{this.booted=!0,this.onStatus?.(`ready`,!1)},e=>{console.error(`Pyodide failed to start`,e),this.onStatus?.(`kernel_failed`)})}async boot(){let{loadPyodide:e}=await t(async()=>{let{loadPyodide:e}=await import(`${m}pyodide.mjs`);return{loadPyodide:e}},[],import.meta.url),n=await e({indexURL:m});n.FS.mkdirTree(`/lib/knuth`);let r=[[`__init__.py`,i],[`artifacts.py`,a],[`complete.py`,o],[`contract.py`,s],[`env.py`,c],[`ipynb.py`,l],[`limits.py`,u],[`percent.py`,d],[`session.py`,f],[`kernel.py`,p]];for(let[e,t]of r)n.FS.writeFile(`/lib/knuth/${e}`,t,{encoding:`utf8`});n.runPython(`import sys; sys.path.insert(0, "/lib")`),n.globals.set(`_knuth_emit`,e=>this.receive(e)),n.runPython(h);try{await n.loadPackage(`micropip`),this.micropip=n.pyimport(`micropip`)}catch(e){console.warn(`micropip is unavailable; PyPI packages cannot be installed`,e)}this.pyodide=n}async providePackages(e,t,n){let i=this.pyodide;try{await i.loadPackagesFromImports(e)}catch(e){console.warn(`Could not preload packages for this cell`,e)}if(!this.micropip)return;for(let n of r(e))await this.micropipInstall(n,t);let a=[];try{i.globals.set(`_knuth_code`,e),a=JSON.parse(String(i.runPython(`knuth_missing_imports(_knuth_code)`)))}catch(e){console.warn(`Could not inspect imports`,e)}for(let e of a)await this.micropipInstall(e,t)}async provideHeader(e,t,n){if(!this.micropip||e===this.lastPreamble)return;this.lastPreamble=e;let r=this.pyodide,i;try{r.globals.set(`_knuth_preamble`,e),i=JSON.parse(String(r.runPython(`knuth_header_requirements(_knuth_preamble)`)))}catch(e){console.warn(`Could not read the document header`,e);return}i.error&&n?.onStream?.(`stderr`,`${i.error}\n`);for(let e of i.dependencies??[])await this.micropipInstall(e,t)}async micropipInstall(e,t){if(this.installed.has(e))return;let n=this.pyodide,r=e.split(/[<>=!~\[; ]/)[0];this.listeners.onDependency?.({id:t,state:`installing`,module:r,distribution:e});let i;try{n.globals.set(`_knuth_requirement`,e),i=String(await n.runPythonAsync(`await knuth_install(_knuth_requirement)`))}catch(e){i=String(e?.message||e)}if(!i){this.installed.add(e),this.listeners.onDependency?.({id:t,state:`installed`,module:r,distribution:e});return}this.listeners.onDependency?.({id:t,state:`failed`,module:r,distribution:e,error:`${i} (packages with compiled code need Python installed on this computer)`})}get isReady(){return this.booted&&!this.closed}receive(t){let n;try{n=JSON.parse(t)}catch{return}let r=typeof n.id==`number`?n.id:null;if(n.type===`stream`&&r!==null){this.runs.get(r)?.handlers?.onStream?.(n.which,String(n.text??``));return}if(n.type===`figures`&&r!==null){this.runs.get(r)?.handlers?.onFigures?.(n.svgs??[],n.named??[]);return}if(n.type===`done`&&r!==null){this.runs.get(r)?.resolve({ok:!0,result:n.result??null,traceback:null,bound:e(n.bound)}),this.runs.delete(r);return}if(n.type===`error`&&r!==null){this.runs.get(r)?.resolve({ok:!1,result:null,traceback:String(n.traceback??`error`)}),this.runs.delete(r);return}r!==null&&this.waiters.has(r)&&(this.waiters.get(r)(n),this.waiters.delete(r))}async send(e){if(await this.ready,this.closed||!this.pyodide)return;let t=this.pyodide;t.globals.set(`_knuth_request`,JSON.stringify(e)),await t.runPythonAsync(`knuth_handle(_knuth_request)`)}async ask(e,t,n){if(await this.ready,this.closed||!this.pyodide)return n;let r=this.nextId++;return new Promise(i=>{this.waiters.set(r,e=>i(e.type===`protocol_error`?n:t(e))),this.send({...e,id:r}).catch(()=>{this.waiters.delete(r),i(n)})})}async run(e,t,n){if(await this.ready,this.closed||!this.pyodide)return{ok:!1,result:null,traceback:`Python is not running`};let r=this.nextId++;return n?.preamble!==void 0&&await this.provideHeader(n.preamble,r,t),await this.providePackages(e,r,t),new Promise(i=>{this.runs.set(r,{handlers:t,resolve:i}),this.send({type:`run`,id:r,code:e,scratch:n?.scratch??!1}).catch(e=>{this.runs.delete(r),i({ok:!1,result:null,traceback:String(e)})})})}interrupt(){console.warn(`Interrupt is not available in the browser preview.`)}async restart(e,t){if(await this.ready,this.closed||!this.pyodide)return;this.lastPreamble=null;let n=this.nextId++;await new Promise(e=>{this.waiters.set(n,()=>e()),this.send({type:`restart`,id:n}).catch(()=>e())}),this.onStatus?.(`ready`,!1)}jediLoading=null;async complete(e,t){return await this.ready,this.closed||!this.pyodide?null:(this.jediLoading??=this.pyodide.loadPackage(`jedi`).catch(()=>void 0),this.ask({type:`complete`,code:e,offset:t},e=>({start:Number(e.start??t),items:e.items??[]}),null))}namespace(){return this.ask({type:`namespace`},e=>e.vars??[],[])}artifacts(){return this.ask({type:`artifacts`},e=>({values:e.values??{},figures:e.figures??{}}),null)}table(e,t=0,n=100){return this.ask({type:`table`,name:e,offset:t,limit:n},e=>e,null)}figure(e){return this.ask({type:`figure`,name:e},e=>e,null)}async convert(e){if(await this.ready,this.closed||!this.pyodide)return null;this.pyodide.globals.set(`_knuth_notebook`,e);try{let e=await this.pyodide.runPythonAsync(`knuth_convert(_knuth_notebook)`);return JSON.parse(String(e))}catch(e){return{error:String(e)}}}async openPath(e){return null}async savePath(e,t){return null}async statPath(e){return null}async renamePath(e,t){return null}async persist(){return null}close(){this.closed=!0}};export{g as PyodideKernel};
