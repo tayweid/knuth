@@ -164,3 +164,11 @@ and sockets. The browser side is thinner:
 - Tables in the folder contract (DESIGN.md Q1 — parked).
 - Plass line-breaker port for text-cell typography (DESIGN.md Q6 revisit).
 - Themes, export niceties. (External-change reload shipped 2026-08-22.)
+- **Knuth in Zen's shape** — a static draft, 2026-09-30, at
+  `docs/mockups/rail-layout.html`: a near-black frame, a top bar carrying
+  the traffic lights and the document's name where Zen keeps the address,
+  a flat rail of large rounded icon buttons on the left, the document as
+  an inset rounded panel. Colors and glyphs inside the panel are Knuth's
+  own; the frame's are Zen's. Open it in a browser. OPEN: whether this is
+  the app's shape (the shell's `titleBarStyle: 'hiddenInset'` is what the
+  top bar assumes), and what the rail holds.

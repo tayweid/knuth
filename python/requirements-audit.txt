@@ -1,3 +1,5 @@
-# Audit the oldest runtime dependency version Knuth promises to support.
-# Current releases are covered by Dependabot and the resolved-package audit.
-websockets==13.0
+# Audit the oldest runtime dependency version Knuth promises to support
+# (pyproject.toml's floor; CI's ubuntu leg tests it). Current releases are
+# covered by Dependabot and the resolved-package audit. Dependabot will
+# propose the latest here; decline it, this pin is the floor on purpose.
+websockets==14.0

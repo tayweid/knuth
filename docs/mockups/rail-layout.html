@@ -1,0 +1,188 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <title>Knuth rail layout</title>
+    <style>
+      /* A static draft of Knuth in Zen's shape: a near-black frame, a top
+         bar carrying the traffic lights, the window controls and the
+         document's name where Zen keeps the address, a flat rail of large
+         rounded icon buttons on the left (the active one on a lighter
+         tile), and the document as an inset rounded panel. Colors and
+         glyphs inside the panel are Knuth's own (src/styles.css,
+         src/icons.ts); the frame's are Zen's. */
+      :root {
+        --frame: #111112;
+        --frame-ink: #d5d3cf;
+        --frame-ink-soft: #7d7b78;
+        --tile: #29292c;
+        --tile-hover: #202023;
+        --pill: #1e1e21;
+        --bg: #2b2a2d;
+        --sheet: #ffffff;
+        --ink: #1a1a1a;
+        --ink-soft: #6b6b6b;
+        --line: #e4e2dd;
+        --wash: #f6f5f2;
+        --amber: #c98a1d;
+        --room-pane: #232226;
+        --room-line: rgba(255, 255, 255, 0.07);
+        --room-ink: #d8d6d1;
+        --room-ink-soft: #8f8d88;
+        --serif: 'STIX Two Text', 'Charter', 'Georgia', serif;
+        --mono: ui-monospace, 'SF Mono', 'Menlo', 'Consolas', monospace;
+        --sans: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Helvetica Neue', sans-serif;
+        --rail: 80px;
+        --topbar: 66px;
+        --inset: 8px;
+      }
+      * { box-sizing: border-box; }
+      html, body { margin: 0; height: 100%; background: var(--frame); color: var(--frame-ink); font: 15px/1.55 var(--sans); }
+      svg { width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+
+      /* ---------- the top bar ---------- */
+      #topbar {
+        position: fixed; top: 0; left: 0; right: 0; height: var(--topbar);
+        display: flex; align-items: center; gap: 10px; padding: 0 18px 0 18px;
+        -webkit-app-region: drag; /* Electron: titleBarStyle 'hiddenInset' */
+      }
+      .lights { display: flex; gap: 8px; margin-right: 12px; }
+      .lights i { width: 13px; height: 13px; border-radius: 50%; display: block; background: #3a3a3c; }
+      .ctl { display: inline-flex; align-items: center; justify-content: center; width: 34px; height: 34px; border-radius: 9px; color: var(--frame-ink); border: 0; background: transparent; -webkit-app-region: no-drag; }
+      .ctl:hover { background: var(--tile-hover); }
+      .ctl.dim { color: var(--frame-ink-soft); }
+      /* The address pill, holding the document instead of a URL. */
+      #docpill {
+        flex: 1; height: 42px; margin: 0 14px 0 10px; border-radius: 12px; background: var(--pill);
+        display: flex; align-items: center; gap: 12px; padding: 0 16px; -webkit-app-region: no-drag;
+      }
+      #docpill .file { color: var(--frame-ink-soft); }
+      #docpill .name { font: 16px/1 var(--serif); letter-spacing: 0.06em; color: var(--frame-ink); cursor: text; }
+      #docpill .name:hover { color: #fff; }
+      #docpill .dirty { color: var(--amber); font-size: 9px; margin-left: -6px; }
+      #docpill .path { color: var(--frame-ink-soft); font: 12.5px var(--sans); margin-left: 4px; }
+      #docpill .spacer { flex: 1; }
+      #docpill .python { display: inline-flex; align-items: center; gap: 7px; font: 12px var(--sans); color: var(--frame-ink-soft); }
+      #docpill .python i { width: 8px; height: 8px; border-radius: 50%; background: #4caf7d; display: block; }
+      .avatar { width: 26px; height: 26px; border-radius: 50%; background: #2d7dbb; margin-left: 6px; }
+
+      /* ---------- the rail ---------- */
+      #rail {
+        position: fixed; top: var(--topbar); bottom: 0; left: 0; width: var(--rail);
+        display: flex; flex-direction: column; align-items: center; gap: 14px; padding: 6px 0 22px;
+      }
+      .rb {
+        position: relative; display: inline-flex; align-items: center; justify-content: center;
+        width: 50px; height: 50px; border: 0; border-radius: 14px; background: transparent;
+        color: var(--frame-ink); cursor: pointer;
+      }
+      .rb:hover { background: var(--tile-hover); }
+      .rb.on { background: var(--tile); }
+      .rb.solid svg { fill: currentColor; stroke: none; }
+      .rb.small { width: 44px; height: 44px; }
+      .rb.small svg { width: 17px; height: 17px; }
+      .rb.dim { color: var(--frame-ink-soft); }
+      .group { display: flex; flex-direction: column; align-items: center; gap: 6px; }
+      .rule { width: 26px; height: 1px; background: rgba(255, 255, 255, 0.1); }
+      /* The label, on hover, to the right. */
+      .rb::after {
+        content: attr(data-label); position: absolute; left: calc(100% + 12px); top: 50%; transform: translateY(-50%);
+        background: #0a0a0b; color: var(--frame-ink); font: 12.5px var(--sans); white-space: nowrap;
+        padding: 5px 10px; border-radius: 8px; border: 1px solid rgba(255, 255, 255, 0.08);
+        opacity: 0; pointer-events: none; transition: opacity 0.12s; z-index: 5;
+      }
+      .rb:hover::after { opacity: 1; }
+      .grow { flex: 1; }
+
+      /* ---------- the inset panel: Knuth's room ---------- */
+      #room {
+        position: absolute; top: var(--topbar); left: var(--rail); right: var(--inset); bottom: var(--inset);
+        border-radius: 12px; background: var(--bg); overflow: hidden; display: flex;
+        box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.05);
+      }
+      #doc { flex: 1; overflow: auto; padding: 22px 30px 40px 30px; }
+      #sheet { background: var(--sheet); border-radius: 8px; min-height: 100%; padding: 30px 36px; max-width: 880px; margin: 0 auto; }
+      .cell { display: grid; grid-template-columns: 22px 1fr; gap: 10px; margin: 0 0 18px; }
+      .gutter { color: #b9b7b2; padding-top: 2px; }
+      .gutter svg { width: 12px; height: 12px; fill: currentColor; stroke: none; }
+      .cell.active .gutter { color: #3aa16c; }
+      pre { margin: 0; font: 13.5px/1.6 var(--mono); color: var(--ink); white-space: pre-wrap; }
+      .out { margin-top: 8px; padding: 8px 10px; background: var(--wash); border-left: 2px solid var(--line); font: 13px/1.5 var(--mono); color: var(--ink-soft); }
+      .md { font: 15.5px/1.6 var(--serif); color: var(--ink); }
+      .md h2 { font: 600 20px/1.3 var(--serif); margin: 0 0 6px; }
+      #panel { width: 340px; background: var(--room-pane); border-left: 1px solid var(--room-line); color: var(--room-ink); padding: 18px 20px; font: 13px/1.5 var(--sans); }
+      #panel h3 { margin: 0 0 8px; font: 500 10.5px var(--sans); letter-spacing: 0.12em; color: var(--room-ink-soft); text-transform: uppercase; }
+      #panel .kv { display: grid; grid-template-columns: 1fr auto; gap: 4px 12px; font: 13px var(--mono); }
+      #panel .kv span:nth-child(2n) { color: var(--room-ink-soft); }
+    </style>
+  </head>
+  <body>
+    <div id="topbar">
+      <div class="lights"><i></i><i></i><i></i></div>
+      <button class="ctl" title="Session panes"><svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="3"/><line x1="9" y1="4" x2="9" y2="20"/></svg></button>
+      <button class="ctl dim" title="Back"><svg viewBox="0 0 24 24"><line x1="19" y1="12" x2="5" y2="12"/><polyline points="12 19 5 12 12 5"/></svg></button>
+      <button class="ctl dim" title="Forward"><svg viewBox="0 0 24 24"><line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/></svg></button>
+      <button class="ctl" title="Run all"><svg viewBox="0 0 24 24"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"/></svg></button>
+      <div id="docpill">
+        <span class="file"><svg viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg></span>
+        <span class="name" title="Click to rename">analysis.py</span><span class="dirty">●</span>
+        <span class="path">~/Projects/ECON_0150/week-3</span>
+        <span class="spacer"></span>
+        <span class="python"><i></i>uv · Python 3.13</span>
+      </div>
+      <button class="ctl" title="Session"><svg viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="2"/><line x1="15" y1="3" x2="15" y2="21"/></svg></button>
+      <div class="avatar"></div>
+    </div>
+
+    <nav id="rail" aria-label="Toolbar">
+      <button class="rb on" data-label="analysis.py"><svg viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg></button>
+      <button class="rb dim" data-label="Open…"><svg viewBox="0 0 24 24"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg></button>
+      <div class="rule"></div>
+      <div class="group">
+        <button class="rb small" data-label="Code cell"><svg viewBox="0 0 24 24"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg></button>
+        <button class="rb small" data-label="Scratch cell"><svg viewBox="0 0 24 24"><rect x="4" y="4" width="16" height="16" rx="2" stroke-dasharray="3.4 2.8"/><line x1="9" y1="12" x2="15" y2="12"/></svg></button>
+        <button class="rb small" data-label="Text cell"><svg viewBox="0 0 24 24"><polyline points="4 7 4 4 20 4 20 7"/><line x1="9" y1="20" x2="15" y2="20"/><line x1="12" y1="4" x2="12" y2="20"/></svg></button>
+      </div>
+      <div class="rule"></div>
+      <div class="group">
+        <button class="rb small solid" data-label="Run stale"><svg viewBox="0 0 24 24"><polygon points="7 4.5 19 12 7 19.5"/></svg></button>
+        <button class="rb small solid" data-label="Run all"><svg viewBox="0 0 24 24"><polygon points="3.5 5 11 12 3.5 19"/><polygon points="13 5 20.5 12 13 19"/></svg></button>
+        <button class="rb small" data-label="Stop"><svg viewBox="0 0 24 24"><rect x="6.5" y="6.5" width="11" height="11" rx="1.5"/></svg></button>
+        <button class="rb small" data-label="Restart session"><svg viewBox="0 0 24 24"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"/></svg></button>
+      </div>
+      <div class="grow"></div>
+      <button class="rb small dim" data-label="Get Knuth"><svg viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg></button>
+      <button class="rb small dim" data-label="New document"><svg viewBox="0 0 24 24"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg></button>
+    </nav>
+
+    <main id="room">
+      <div id="doc">
+        <div id="sheet">
+          <div class="cell">
+            <div class="gutter"><svg viewBox="0 0 12 12"><polygon points="2 1 11 6 2 11"/></svg></div>
+            <div><pre>import pandas as pd
+prices = pd.read_csv('data.csv')
+prices.describe()</pre>
+              <div class="out">       price     quantity
+count  1200.0      1200.0
+mean     0.91       410.2</div>
+            </div>
+          </div>
+          <div class="cell">
+            <div class="gutter"></div>
+            <div class="md"><h2>Demand at three prices</h2>Each row of the table is one buyer’s answer. The curve below joins the three medians.</div>
+          </div>
+          <div class="cell active">
+            <div class="gutter"><svg viewBox="0 0 12 12"><polygon points="2 1 11 6 2 11"/></svg></div>
+            <div><pre>demand = prices.groupby('price').quantity.median()
+demand.plot(marker='o')</pre></div>
+          </div>
+        </div>
+      </div>
+      <aside id="panel">
+        <h3>Session</h3>
+        <div class="kv"><span>prices</span><span>DataFrame 1200×2</span><span>demand</span><span>Series 3</span></div>
+      </aside>
+    </main>
+  </body>
+</html>
