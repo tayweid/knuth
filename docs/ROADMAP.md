@@ -51,11 +51,17 @@ question that still needs one.
   card follows the room's margin and slides the column for its stay, so
   neither lies over the column, a click keeps a receipt, a chip's
   receipt shows in the docked card's band, and main's 44 px bar is
-  merged. OPEN, per SESSION.md: the receipt under about 1075 px (over
-  the column's edge), the column's see-saw when cells run one after
-  another on a narrow window, the room scrolling sideways when docked
-  under about 1085 px, chips lost when the document reloads from disk,
-  and round two's unbuilt parts.
+  merged. Third pass, on the verifier's findings: on a narrow window the
+  column slides once while cards keep coming and goes home 1.2 s after
+  the last (it swung 88 px on every Shift-Enter at 1100), a chip's hover
+  never moves it, a kept card stays where it was, numpy values show (to
+  six digits in a slim row), a receipt of hundreds of names lists eight,
+  chips stay inside the lane (99 and a raised +), and the autosave
+  record's cell numbers are the receipt's. OPEN, per SESSION.md: the
+  receipt under about 1075 px (over the column's edge), the column's one
+  return under the text being typed, the room scrolling sideways when
+  docked under about 1085 px, chips lost when the document reloads from
+  disk, no hover card under about 1305 px, and round two's unbuilt parts.
 
 - **Autosave: a git track of every edit** — PLANNED 2026-09-27, spec in
   AUTOSAVE.md (Claerbout-wide, Plass and Knuth alike). Every project
