@@ -178,13 +178,17 @@ and sockets. The browser side is thinner:
 - Themes, export niceties. (External-change reload shipped 2026-08-22.)
 - **Knuth in Zen's shape** — a static draft, 2026-09-30, at
   `docs/mockups/rail-layout.html`; the first built draft, 2026-10-02, on
-  the branch `ux/zen` (`docs/ZEN-DRAFT.md`, with screenshots): Plass's
-  frame and values — the bar beside the traffic lights holding File, the
-  name pill with the folder, and the I/O with the kernel's status; the
-  cell and run tools on a 48 px rail, the session panel's toggle and the
-  view switch pinned at its foot; the room a rounded panel inside an 8 px
-  edge, the column untouched. `app/knuth.json` asks for the hidden title
-  bar (no `followZoom`). OPEN: Taylor's look at it (the list at the end
-  of ZEN-DRAFT.md: source and grid views keeping the frame, File on a
-  click, the folder in the pill); the bar beside the lights needs shell
-  v0.2.1 tagged and pinned.
+  the branch `ux/zen` (`docs/ZEN-DRAFT.md`, with screenshots), and a
+  second pass the same day on the reviewers' findings: Plass's frame,
+  values and behaviour — the bar beside the traffic lights holding File
+  (Plass's text menu, with Get Knuth, Install and the update where they
+  apply), the name pill with Plass's save dot and the folder, and the
+  kernel's status; the cell and run tools on a 48 px rail, resting dim
+  where they cannot act, the session panel's toggle and the view switch
+  pinned at its foot; the room a rounded panel inside an 8 px edge, the
+  column untouched, main's floor. `app/knuth.json` asks for the hidden
+  title bar (no `followZoom`). OPEN: Taylor's look at it (the list at
+  the end of ZEN-DRAFT.md: source and grid views keeping the frame, the
+  resting tiles' 40 % against Plass's 25 %, the switch's glyph, the
+  hosted demo's door now a File item); the bar beside the lights needs
+  shell v0.2.1 tagged and pinned.
