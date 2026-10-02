@@ -349,3 +349,16 @@ the bar 60, the File tile 6 px in; the setup window's 60 px drag strip).
     (above).
 16. Plass's open questions about the frame (its shade, the rail at 48 vs
     44) apply here too, and an answer there should move both.
+
+## The bar's height, 2026-10-02 afternoon
+
+Taylor, running the merged apps: the bars "seem taller than they were
+originally", and the height they liked is the panes mockup's, "equal in
+height to the width of the sidebar" (`session-panes-v2-peek-v2.html`: a
+40 px bar over a 44 px rail, 28 px pills, 32 px tiles). Both bars had
+been 60 px, the old toolbar's height, which as a solid dark band without a
+title bar above it read heavier than the old glass did. Now: the bar is
+44 px, the rail's width (a 32 px tile with 6 px either side; the room's
+edge stays 8 px), the pills 30 px with 9 px corners, the bar's tiles
+32 px, and the traffic lights at {x: 14, y: 15} so their band is the bar
+(2·15 + 14 = 44). Plass takes the same numbers.

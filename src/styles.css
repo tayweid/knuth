@@ -93,12 +93,16 @@
      publishes as the Window Controls Overlay (in CSS px, so a zoom step
      keeps the bar's row on the lights); 60 px in a tab, the PWA and
      fullscreen. */
-  --topbar: env(titlebar-area-height, 60px);
+  --topbar: env(titlebar-area-height, 44px);
   /* The frame's one width: the window's edge round the room, and the gap
      either side of a rail tile. */
   --edge: 8px;
+  /* The rail: a tile with 6 px either side, 44 px, the bar's height too
+     (Taylor, 2026-10-02: the bar as tall as the rail is wide, the panes
+     mockup's proportions). */
   --rail-tile: 32px;
-  --rail: calc(var(--rail-tile) + 2 * var(--edge));
+  --rail-gap: 6px;
+  --rail: calc(var(--rail-tile) + 2 * var(--rail-gap));
   /* The room's axis, where the toast sits: the middle between the rail
      and the room's right edge. */
   --axis: calc((var(--rail) + 100vw - var(--edge)) / 2);
@@ -172,11 +176,11 @@ body {
   flex: 0 1 auto;
   min-width: 0;
   max-width: min(560px, 50vw);
-  height: 42px;
-  padding: 0 12px;
+  height: 30px;
+  padding: 0 10px;
   background: var(--pill);
   border: 1px solid rgba(255, 255, 255, 0.08);
-  border-radius: 12px;
+  border-radius: 9px;
 }
 
 /* The document slug: small serif, letterspaced, quiet (Plass's galley).
@@ -265,15 +269,15 @@ body {
    its menu is open. */
 #toolbar .tb-tile {
   flex: none;
-  width: 36px;
-  min-width: 36px;
-  height: 36px;
+  width: 32px;
+  min-width: 32px;
+  height: 32px;
   padding: 0;
-  border-radius: 10px;
+  border-radius: 9px;
   color: rgba(240, 238, 233, 0.62);
 }
 
-#toolbar .tb-tile .ico { width: 20px; height: 20px; }
+#toolbar .tb-tile .ico { width: 18px; height: 18px; }
 
 #toolbar .tb-tile:hover,
 #toolbar .tb-tile:focus-visible {
@@ -464,14 +468,14 @@ body {
    not ready. (Where the session pill of the panes design will grow.) */
 #kernel-status {
   display: inline-block;
-  height: 42px;
-  padding: 0 14px;
-  font: 12px/40px var(--sans);
+  height: 30px;
+  padding: 0 12px;
+  font: 12px/28px var(--sans);
   color: var(--glass-ink-soft);
   white-space: nowrap;
   background: var(--pill);
   border: 1px solid rgba(255, 255, 255, 0.08);
-  border-radius: 12px;
+  border-radius: 9px;
 }
 
 #kernel-status.ok::before { content: '● '; color: #6ea576; }

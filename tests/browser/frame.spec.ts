@@ -112,7 +112,7 @@ test('the frame is Zen\'s: a dark edge all round a rounded room, a 48 px rail, t
   const bar = await box(page, '#toolbar');
   expect(bar.left).toBe(0);
   expect(bar.right).toBe(look.width);
-  expect(bar.bottom).toBe(60);
+  expect(bar.bottom).toBe(44);
   expect(await box(page, '#rail')).toEqual({ left: 0, top: bar.bottom, right: 48, bottom: look.height });
   const first = await box(page, '#rail .tb-btn');
   expect(first).toEqual({ left: 8, top: bar.bottom, right: 40, bottom: bar.bottom + 32 });
@@ -122,9 +122,9 @@ test('the frame is Zen\'s: a dark edge all round a rounded room, a 48 px rail, t
   // The pills are 42 px in the 60 px bar, and the status pill ends where
   // the room does.
   const status = await box(page, '#kernel-status');
-  expect(status.bottom - status.top).toBe(42);
+  expect(status.bottom - status.top).toBe(30);
   expect(status.right).toBe(room.right);
-  expect((await box(page, '#doc-pod')).bottom - (await box(page, '#doc-pod')).top).toBe(42);
+  expect((await box(page, '#doc-pod')).bottom - (await box(page, '#doc-pod')).top).toBe(30);
 
   // In a tab there is no lights' room: the File tile stands over the rail's
   // column of tiles.
