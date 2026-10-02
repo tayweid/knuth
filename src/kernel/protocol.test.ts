@@ -3,7 +3,7 @@
 // layer itself, so a server-side reshape of any event fails a test instead
 // of shipping.
 import assert from 'node:assert/strict';
-import { parseServerEvent } from './protocol.ts';
+import { parseBound, parseServerEvent } from './protocol.ts';
 
 const ok = (event: unknown) =>
   assert.deepEqual(parseServerEvent(event), event, `accepted: ${JSON.stringify(event)}`);
@@ -164,6 +164,22 @@ bad({ type: 'installed', id: 6, ok: true, restart: 'yes' });
 // An unsaved document's header: no path, nothing on disk to adopt.
 ok({ type: 'header', id: 4, path: null, lines: ['# /// script', '# ///'], modified: null });
 bad({ type: 'header', id: 4, path: 3, lines: [], modified: null });
+
+// A run's receipt: done carries what the cell bound (docs/SESSION.md),
+// optional so an older engine still validates.
+ok({ type: 'done', id: 3, result: null, bound: [] });
+ok({ type: 'done', id: 3, result: '42', bound: [
+  { name: 'n', type: 'int', preview: '42', saved: true },
+  { name: 'df', type: 'DataFrame', shape: [2, 2], preview: '<DataFrame>' },
+  { name: 'tmp', type: 'Series', length: 3, preview: '…', scratch: true },
+  { name: 'ax', type: 'Axes', preview: '<Axes>', figure: true },
+] });
+bad({ type: 'done', id: 3, result: null, bound: 'n' });
+bad({ type: 'done', id: 3, result: null, bound: [{ name: 'n', type: 'int' }] });
+bad({ type: 'done', id: 3, result: null, bound: [{ name: 'n', type: 'int', preview: '1', saved: 'yes' }] });
+assert.equal(parseBound(undefined), undefined);
+assert.equal(parseBound([{ name: 3 }]), undefined);
+assert.deepEqual(parseBound([{ name: 'n', type: 'int', preview: '1' }]), [{ name: 'n', type: 'int', preview: '1' }]);
 
 // Completions at the cursor.
 ok({ type: 'completions', id: 7, start: 3, items: [{ label: 'describe', type: 'function' }] });

@@ -5,7 +5,7 @@ User code's stdout/stderr are redirected into `stream` events; the real
 stdout carries only protocol events. SIGINT lands here as KeyboardInterrupt:
 during a run it surfaces as an `error` event, while idle it is swallowed.
 
-Events out: ready | stream{id,which,text} | done{id,result} |
+Events out: ready | stream{id,which,text} | done{id,result,bound} |
             error{id,traceback} | namespace{id,vars} | persisted{id,...} |
             dependency{id,state,module,distribution} | header{id,path,lines}
 Commands in: run{id,code} | namespace{id} | artifacts{id} | persist{id} | ...
@@ -194,6 +194,11 @@ def handle_request(msg, session, state, emit):
             event = {"type": "done", "id": msg["id"], "result": result}
             if truncated:
                 event["truncated"] = True
+            # The receipt (the page's src/receipts.ts): what the run bound,
+            # with kinds and short previews, so it can be shown without a
+            # round trip. Only on success: a failed run's assigned names
+            # are the AST's, not what got bound before the error.
+            event["bound"] = session.bound(session.last_assigned)
             emit(event)
             document = os.environ.get(env.DOCUMENT_VAR)
             if document and not msg.get("scratch"):

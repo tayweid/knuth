@@ -44,6 +44,7 @@ import type {
 } from './kernel.ts';
 
 import { pipDirectives } from './pip-lines.ts';
+import { parseBound } from './protocol.ts';
 
 import initSource from '../../python/knuth/__init__.py?raw';
 import artifactsSource from '../../python/knuth/artifacts.py?raw';
@@ -331,6 +332,7 @@ export class PyodideKernel implements Kernel {
         ok: true,
         result: (event.result as string | null) ?? null,
         traceback: null,
+        bound: parseBound(event.bound),
       });
       this.runs.delete(id);
       return;
