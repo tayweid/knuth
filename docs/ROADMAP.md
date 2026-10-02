@@ -46,6 +46,11 @@ question that still needs one.
   beside the document, as today), offered only when the window is wide
   enough for it. OPEN: how far "partway" is, how long a change keeps a
   box forward, and whether the mode is remembered per window or once.
+  A design session on 2026-10-02 (docs/mockups/session-panes.md, five
+  mockups judged three ways) recommends a different shape instead: the
+  session as an inline ledger beside each cell, with the floating boxes
+  ruled out by drawing them well. Taylor decides; this entry is rewritten
+  when the direction is accepted.
 
 - **Autosave: a git track of every edit** — PLANNED 2026-09-27, spec in
   AUTOSAVE.md (Claerbout-wide, Plass and Knuth alike). Every project
