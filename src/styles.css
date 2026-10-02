@@ -97,6 +97,15 @@
   /* The frame's one width: the window's edge round the room, and the gap
      either side of a rail tile. */
   --edge: 8px;
+  /* The frame at the room's right: the edge, or, while the column runs
+     past the room, the gutter the scroll rail lives in (scroll-rail.ts
+     puts .has-rail on this element; Plass's variables). One variable, so
+     the room, the onboarding over it, the floor and --axis below read the
+     same right margin; the window's bottom edge stays --edge, and the bar
+     keeps its own (the session pill does not move when the rail comes and
+     goes). */
+  --gutter: 20px;
+  --edge-right: var(--edge);
   /* The rail: a tile with 6 px either side, 44 px, the bar's height too
      (Taylor, 2026-10-02: the bar as tall as the rail is wide, the panes
      mockup's proportions). */
@@ -105,7 +114,11 @@
   --rail: calc(var(--rail-tile) + 2 * var(--rail-gap));
   /* The room's axis, where the toast sits: the middle between the rail
      and the room's right edge. */
-  --axis: calc((var(--rail) + 100vw - var(--edge)) / 2);
+  --axis: calc((var(--rail) + 100vw - var(--edge-right)) / 2);
+}
+
+:root.has-rail {
+  --edge-right: var(--gutter);
 }
 
 * { box-sizing: border-box; }
@@ -595,7 +608,7 @@ body {
    status, which opens this) and the rail stay usable. */
 #onboarding {
   position: fixed;
-  inset: var(--topbar) var(--edge) var(--edge) var(--rail);
+  inset: var(--topbar) var(--edge-right) var(--edge) var(--rail);
   z-index: 9;
   display: grid;
   place-items: start center;
@@ -610,7 +623,7 @@ body {
 #onboarding[hidden] { display: none; }
 
 .onboarding-card {
-  width: min(680px, calc(100vw - var(--rail) - var(--edge) - 3rem));
+  width: min(680px, calc(100vw - var(--rail) - var(--edge-right) - 3rem));
   min-width: 560px;
   background: #201f23;
   border: 1px solid var(--glass-border);
@@ -923,12 +936,334 @@ body[data-view='source'] #view-toggle {
   transform: translateY(-50%);
 }
 
+/* ---------- the scroll rail ---------- */
+
+/* The scroll rail (scroll-rail.ts, rail-marks.ts): the whole document, top
+   to bottom, in a 20 px gutter between the room's right edge and the
+   window's, on the frame and outside the room, as the history view's
+   strip lives beside its river. Plass's rail (plass/src/style.css, the
+   gutter mockup Taylor chose there), the same values, with Knuth's marks:
+   headings, code cells' ticks, figures and tables, the errored and the
+   running cell, the cursor's cell. Its track is exactly the room's height
+   (the bar's bottom to the frame's edge above the window's bottom), so at
+   the top of the document the band's top is level with the room's top
+   and at the end its bottom with the room's bottom. Everything on it is
+   placed by a fraction of the room's scroll height: --f on a mark
+   (written when the column settles); the band, the visible span, is moved
+   by a transform on its own layer (written in a frame after a scroll, on
+   the band alone: a variable on the rail would be inherited by every mark
+   and restyle them all on every frame of a scroll). There only while the
+   column runs past the room, in the cell view. */
+#scrollrail {
+  position: fixed;
+  top: var(--topbar);
+  bottom: var(--edge);
+  right: 0;
+  width: var(--gutter);
+  z-index: 12;
+  user-select: none;
+  -webkit-user-select: none;
+  touch-action: none;
+}
+
+:root:not(.has-rail) #scrollrail,
+:root:not(.has-rail) #sr-label {
+  display: none;
+}
+
+.sr-track {
+  position: absolute;
+  inset: 0;
+}
+
+/* The visible span: the history strip's band (white 5 % over a 16 %
+   edge, rounded), as wide as the gutter less 3 px a side, never under
+   10 px tall and never past the track (its height and offset written by
+   scroll-rail.ts). Faint at rest: the rail's first job is where you are,
+   and the room draws no other scrollbar. */
+.sr-band {
+  position: absolute;
+  left: 3px;
+  right: 3px;
+  top: 0;
+  height: 100%;
+  will-change: transform;
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.035);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.08);
+  transition: background 0.3s, box-shadow 0.3s;
+  pointer-events: none;
+}
+
+/* Lit while the document moves (a wheel, a jump: 0.9 s) and while the
+   pointer is in the gutter; lighter still while it is being dragged. */
+#scrollrail.moving .sr-band,
+#scrollrail.awake .sr-band {
+  background: rgba(255, 255, 255, 0.075);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.17);
+}
+
+#scrollrail.dragging .sr-band {
+  background: rgba(255, 255, 255, 0.11);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.24);
+  transition: none;
+}
+
+/* The marks: real buttons (one tab stop, arrows between them, Return
+   jumps), placed by their fraction of the document, shown at rest, a step
+   quieter outside the band so it reads as a window onto them (a mark
+   inside the band carries .in: scroll-rail.ts sets it on those that cross
+   the band's edges, usually none in a frame). The rail does its own
+   hit-testing by the nearest mark, so a 3 px dot has the gutter's full
+   width and 7 px either side. */
+.sr-mark {
+  position: absolute;
+  z-index: 1;
+  top: calc(var(--f) * 100%);
+  left: 50%;
+  padding: 0;
+  border: 0;
+  transform: translate(-50%, -50%);
+  opacity: 0.6;
+  pointer-events: none;
+  /* The hover's grow and whiten. The band passing a mark changes it at
+     once: an opacity or a colour eased there, on the few that cross in a
+     frame, cost frames of the scroll (the main thread's paint). */
+  transition: transform 0.12s, background 0.12s, box-shadow 0.12s;
+}
+
+.sr-mark.in {
+  opacity: 1;
+}
+
+.sr-mark:focus {
+  outline: none;
+}
+
+/* Headings: dots sized by level, a # heading (the title), ##, ### and
+   deeper. */
+.sr-title {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: rgba(240, 238, 233, 0.86);
+}
+
+.sr-section {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: rgba(240, 238, 233, 0.72);
+}
+
+.sr-subsection {
+  width: 3px;
+  height: 3px;
+  border-radius: 50%;
+  background: rgba(240, 238, 233, 0.56);
+}
+
+/* Code cells: a faint tick at each cell's top, half the band's width, so
+   the rail reads as the notebook's rhythm under the headings. On a long
+   notebook a tick within 4 px of the last one drawn is not drawn (.thin;
+   still a target). Red when its last run raised (the readout's red), and
+   a step larger; pulsing in the run control's green while it runs. Both
+   at full strength in or out of the band, and never thinned. */
+.sr-code {
+  width: 7px;
+  height: 1px;
+  border-radius: 0.5px;
+  background: rgba(240, 238, 233, 0.5);
+}
+
+.sr-code.thin:not(.hot) {
+  visibility: hidden;
+}
+
+.sr-code.error,
+.sr-code.running {
+  width: 9px;
+  height: 2px;
+  border-radius: 1px;
+  opacity: 1;
+  visibility: visible;
+}
+
+.sr-code.error {
+  background: #cd6452;
+}
+
+.sr-code.running {
+  background: #6ea576;
+  animation: sr-pulse 1.1s ease-in-out infinite;
+}
+
+@keyframes sr-pulse {
+  50% { opacity: 0.3; }
+}
+
+/* Figures and tables: tiny squares, a figure filled, a table open (the
+   history strip's square for your own commits), as in Plass. */
+.sr-figure {
+  width: 5px;
+  height: 5px;
+  border-radius: 1px;
+  background: rgba(216, 214, 209, 0.6);
+}
+
+.sr-table {
+  width: 5px;
+  height: 5px;
+  border-radius: 1px;
+  background: none;
+  box-shadow: inset 0 0 0 1.2px rgba(216, 214, 209, 0.7);
+}
+
+/* The cursor's cell: a bar in the frame's focus blue at the cell's top,
+   the one blue mark. Under the cell's own tick or dot (z-index), and wider
+   than them, so it shows either side of a red tick rather than hide it:
+   Plass's caret is 8 px, which would vanish under the 9 px red tick of
+   the cell you are fixing (open for Taylor in docs/ZEN-DRAFT.md, The
+   scroll rail; this width is the one switch). */
+.sr-caret {
+  z-index: 0;
+  width: 12px;
+  height: 2px;
+  border-radius: 1px;
+  background: #9db8d6;
+  opacity: 1;
+}
+
+.sr-mark.hot {
+  opacity: 1;
+  transform: translate(-50%, -50%) scale(1.45);
+  background: #fff;
+}
+
+.sr-table.hot {
+  background: none;
+  box-shadow: inset 0 0 0 1.2px #fff;
+}
+
+.sr-caret.hot {
+  background: #c4d7ec;
+}
+
+.sr-code.error.hot {
+  background: #e08a7b;
+}
+
+.sr-mark:focus-visible {
+  box-shadow: 0 0 0 1.5px var(--frame), 0 0 0 3px #9db8d6;
+}
+
+/* Where a click on empty track would land: a faint line across it. */
+.sr-ghost {
+  position: absolute;
+  left: 3px;
+  right: 3px;
+  height: 1px;
+  margin-top: -0.5px;
+  background: rgba(255, 255, 255, 0.4);
+  opacity: 0;
+  pointer-events: none;
+}
+
+.sr-ghost.show {
+  opacity: 1;
+}
+
+/* The label: the menus' dark glass, a size up for a heading's own words,
+   which are set in the bar's serif; a cell's line or a table's names in
+   the code's mono, an error in the readout's red. It hangs to the rail's
+   left over the room's right margin, level with the mark, fixed to the
+   window (scroll-rail.ts keeps it inside the window's top and bottom; at
+   50vw wide at most it never reaches the left). */
+#sr-label {
+  position: fixed;
+  right: calc(var(--gutter) + 7px);
+  top: 0;
+  z-index: 60;
+  display: flex;
+  align-items: baseline;
+  gap: 7px;
+  max-width: min(360px, 50vw);
+  padding: 3px 9px 4px;
+  border-radius: 6px;
+  background: rgba(27, 26, 30, 0.94);
+  backdrop-filter: blur(12px);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.3);
+  color: rgba(240, 238, 233, 0.92);
+  font: 13px/1.35 var(--serif);
+  white-space: nowrap;
+  transform: translateY(-50%);
+  opacity: 0;
+  transition: opacity 0.12s;
+  pointer-events: none;
+}
+
+#sr-label.show {
+  opacity: 1;
+}
+
+#sr-label .k {
+  flex: none;
+  font: 11px/1 var(--sans);
+  color: rgba(240, 238, 233, 0.5);
+  font-variant-numeric: tabular-nums;
+}
+
+#sr-label .t {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+#sr-label.code .t {
+  font: 12px/1.35 var(--mono);
+  color: #c8c6c0;
+}
+
+#sr-label .t.err,
+#sr-label.code .t.err {
+  color: #e08a7b;
+}
+
+#sr-label .p {
+  flex: none;
+  font: 10.5px/1 var(--sans);
+  color: rgba(240, 238, 233, 0.42);
+  font-variant-numeric: tabular-nums;
+}
+
+/* A place on empty track: the caption's own size. */
+#sr-label.quiet {
+  font: 11px/1.35 var(--sans);
+  padding: 2px 8px;
+  border-radius: 5px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .sr-band,
+  .sr-mark,
+  #sr-label {
+    transition: none;
+  }
+  .sr-code.running {
+    animation: none;
+  }
+}
+
 /* ---------- the room ---------- */
 
 /* Zen's inset panel, under the bar and right of the rail, rounded at all
    four corners, a shade lighter than the frame, which shows as one thin
    edge of it all round: the bar's band below its pills, the rail's beside
-   its tiles, --edge at the window's right and bottom. The document column
+   its tiles, --edge at the window's right and bottom — at the right, the
+   20 px gutter of the scroll rail instead while the column runs past the
+   room (--edge-right; the room is then 12 px narrower, its other edges
+   where they were). The document column
    centres in it (#sheet); the session's cards stand beside it
    (session.ts), and the docked Session card slides it left by only what
    the card lacks. Below the layout floor the room scrolls sideways
@@ -937,7 +1272,7 @@ body[data-view='source'] #view-toggle {
    and the bar and the rail stay put. */
 #layout {
   position: fixed;
-  inset: var(--topbar) var(--edge) var(--edge) var(--rail);
+  inset: var(--topbar) var(--edge-right) var(--edge) var(--rail);
   display: flex;
   align-items: stretch;
   border-radius: 12px;
@@ -955,12 +1290,20 @@ body[data-view='source'] #view-toggle {
   /* The floor: the window main had, 640 px, less what the frame takes —
      the rail and the right edge — so the room scrolls sideways at the
      same window width as before the frame; the column bottoms out at
-     548 px. Docked, the Session card raises it (--board-floor,
-     session.ts) to the column's 640 px floor, the chips' lane and the
-     card: below that the room scrolls sideways rather than the card lie
-     over the column (a window under about 1085 px). */
-  min-width: max(calc(640px - var(--rail) - var(--edge)), var(--board-floor, 0px));
+     548 px (536 while the scroll rail's gutter takes its 12 px: the
+     window's 640 stays the floor). Docked, the Session card raises it
+     (--board-floor, session.ts, which reads the room's box) to the
+     column's 640 px floor, the chips' lane and the card: below that the
+     room scrolls sideways rather than the card lie over the column (a
+     window under about 1085 px, 1097 with the gutter). */
+  min-width: max(calc(640px - var(--rail) - var(--edge-right)), var(--board-floor, 0px));
   overflow-y: auto;
+  /* No scrollbar of its own in the cell view: the scroll rail beside the
+     room is the map of a column that runs past it, and a column that fits
+     needs none (only the 40vh under it scrolls). Never one that comes and
+     goes with the rail, either, which would widen the column as the
+     gutter narrows the room. The source view's editor keeps its own. */
+  scrollbar-width: none;
   /* Never sideways: everything in the room wraps (editors, outputs), and
      wide receipts scroll inside their own boxes. Without this, anything
      poking past the edge — the .cell::after hover bridge, mainly — turns
@@ -2066,7 +2409,7 @@ body[data-view='source'] .cell .run-num { visibility: visible; }
   font-size: 13px;
   z-index: 20;
   width: max-content;
-  max-width: min(40rem, calc(100vw - var(--rail) - var(--edge) - 2rem));
+  max-width: min(40rem, calc(100vw - var(--rail) - var(--edge-right) - 2rem));
   text-align: center;
   overflow-wrap: anywhere;
 }
@@ -2135,6 +2478,7 @@ body[data-view='source'] #layout {
 body[data-view='source'] #doc {
   padding: 0 0 40vh;
   min-width: 0;
+  scrollbar-width: auto;
 }
 
 body[data-view='source'] .cell {

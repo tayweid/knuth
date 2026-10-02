@@ -119,6 +119,26 @@ export interface RunInfo {
   batch: boolean;
 }
 
+/** A cell as the scroll rail reads it (DocumentView.railCells). */
+export interface RailCell {
+  id: string;
+  kind: Cell['kind'];
+  /** cellNumber's: code cells only, 1-based, 0 for cell zero; null for a
+   *  text cell. */
+  number: number | null;
+  row: HTMLElement;
+  editor: HTMLElement | null;
+  prose: HTMLElement | null;
+  /** The code's first line with something on it ('' for none), asked
+   *  when a label shows. */
+  firstLine: () => string;
+  figures: HTMLElement[];
+  /** The readout under the cell, when it shows one. */
+  output: HTMLElement | null;
+  error: boolean;
+  running: boolean;
+}
+
 interface CellView {
   cell: Cell;
   /** The cell's identity for the session's receipts and chips: minted
@@ -728,6 +748,51 @@ export class DocumentView {
    *  or not on screen (source and grid views). */
   cellRow(id: string): HTMLElement | null {
     return this.allRunnable().find((v) => v.id === id)?.row ?? null;
+  }
+
+  /** The cells as the scroll rail maps them (rail-marks.ts), in document
+   *  order, cell zero first: each one's row, its number as cellNumber
+   *  counts it, its code's first line, its prose (for the headings), the
+   *  figures and the readout under it, and whether its last run raised or
+   *  it is running.
+   *  Read when the column settles and when a run starts or ends, never on
+   *  a keystroke. Empty in source and grid views, which show no cells. */
+  railCells(): RailCell[] {
+    if (this.sourceMode || this.gridMode) return [];
+    let n = 0;
+    return this.allRunnable().map((v) => {
+      const code = v.cell.kind !== 'text';
+      const shown = !v.outEl.hidden;
+      return {
+        id: v.id,
+        kind: v.cell.kind,
+        number: v.isPreamble ? 0 : code ? ++n : null,
+        row: v.row,
+        editor: v.editor?.dom ?? null,
+        prose: v.prose?.dom ?? null,
+        firstLine: () => {
+          const doc = v.editor?.state.doc;
+          for (let i = 1; doc && i <= doc.lines; i++) {
+            const line = doc.line(i).text;
+            if (line.trim() !== '') return line.trim();
+          }
+          return '';
+        },
+        figures: v.figsEl.hidden ? [] : ([...v.figsEl.children] as HTMLElement[]),
+        output: shown ? v.outEl : null,
+        // A cell re-run after it raised keeps the readout's red until the
+        // run ends (runCell): while it runs it is running, not raised.
+        error: shown && !v.running && v.outEl.classList.contains('error'),
+        running: v.running,
+      };
+    });
+  }
+
+  /** The cell the cursor is in, or was last in (a click elsewhere leaves
+   *  it there, as the caret stays in a page), by id; null once it is gone. */
+  get focusedId(): string | null {
+    const v = this.lastFocused;
+    return v && this.allRunnable().includes(v) ? v.id : null;
   }
 
   /** Bring a cell into view and put the cursor in it. */

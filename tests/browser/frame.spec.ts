@@ -2,7 +2,11 @@
 // shape, with Plass's values (plass/tests/frame.spec.ts). A dark grey
 // frame — the bar across the top, the rail down the left, an 8 px edge
 // round the rest — holds the room, a rounded panel where the document
-// column keeps its width and centres. The bar is the window's title bar in
+// column keeps its width and centres. The documents here fit the room, so
+// its right edge is the 8 px edge throughout; while a column runs past the
+// room the edge at the right is the scroll rail's 20 px gutter instead
+// (rail.spec.ts has those numbers: the room 12 px narrower, the floor
+// still a 640 px window). The bar is the window's title bar in
 // Knuth.app, so its empty part is a drag region and its controls are not;
 // the zoom step and the traffic lights themselves are the shell's
 // (claerbout/smoke.mjs checks the overlay), which a tab cannot show.
@@ -107,7 +111,8 @@ test('the frame is Zen\'s: a dark edge all round a rounded room, a 44 px rail, t
   // The bar spans the window (its title bar, in Knuth.app); the rail runs
   // under it down the left edge, 32 px tiles with 6 px either side, 44 px
   // like the bar; the room starts where they end and keeps the frame's 8 px to the
-  // window's right and bottom. The first tile is level with the room's top
+  // window's right and bottom (at the right, the scroll rail's 20 px gutter
+  // instead while a column runs past the room: rail.spec.ts). The first tile is level with the room's top
   // edge, the view switch with its bottom.
   const bar = await box(page, '#toolbar');
   expect(bar.left).toBe(0);
