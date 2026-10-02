@@ -28,7 +28,8 @@ import { SessionPanel } from './panel.ts';
 import { menus } from './menu.ts';
 import { icon } from './icons.ts';
 import { Onboarding } from './onboarding.ts';
-import { reportCellRun, shell, type ShellMessage } from './shell.ts';
+import { keepPlace } from './place.ts';
+import { answerRewinds, historyNote, reportCellRun, shell, type ShellMessage } from './shell.ts';
 
 function labeled(id: string, glyph: string, label: string, title: string, className = 'tb-btn'): string {
   return `<button type="button" class="${className}" id="${id}" title="${title}">${glyph}<span class="lbl">${label}</span></button>`;
@@ -207,6 +208,13 @@ menu.item(fileMenu, 'New window', () => void window.open(location.pathname, '_bl
 menu.item(fileMenu, 'Open…', () => void fileManager.open(), { title: 'Open… (⌘O)', shortcut: '⌘O' });
 menu.item(fileMenu, 'Recent documents', () => {}, { title: 'Your documents', submenu: recentMenu });
 menu.item(fileMenu, 'Save', () => void fileManager.save(), { title: 'Save (⌘S)', shortcut: '⌘S' });
+// The project's autosave record as a path, with a rewind: the shell's own
+// window (its View › History…, on the same ⇧⌘H), so only inside Knuth.app.
+menu.item(fileMenu, 'History…', () => void openHistory(), {
+  id: 'open-history',
+  title: 'History… (⇧⌘H) — this project’s autosave record, and a rewind to any point on it',
+  shortcut: '⇧⌘H',
+}).hidden = !shell;
 const ioRule = menu.divider(fileMenu);
 const getItem = menu.item(fileMenu, 'Get Knuth for your Mac', () => {}, {
   id: 'get-app',
@@ -257,6 +265,12 @@ function askShell<T>(message: ShellMessage): Promise<T | null> {
 }
 function askShellPath(message: ShellMessage): Promise<string | null> {
   return shell ? shell.pickPath(message) : Promise.resolve(null);
+}
+/** File → History…: the shell opens the view for this window's project,
+ *  or says why there is none (shell.ts, historyNote). */
+async function openHistory() {
+  const note = historyNote(await askShell<{ opened?: boolean; reason?: string; detail?: string }>({ type: 'history', action: 'open' }));
+  if (note) toast(note);
 }
 // Page failures reach the shell's log, which is what "Show Log" opens when
 // someone asks why the window is blank.
@@ -834,19 +848,25 @@ const addedQuietly = new Set<string>();
 // document (noteChange's autosave, 1.2 s) and the project contract
 // (syncArtifacts' persist, 300 ms) — so the commit holds what the run
 // produced; runs completing while those settle (a run-all) are reported
-// together, `cell run [1, 2, 3]`. Nothing in a browser tab.
+// together, `cell run [1, 2, 3]`, and `cell run [3] (error)` when one of
+// them raised, which the history view rings in red. Nothing in a browser
+// tab.
 const ranCells: number[] = [];
+let ranRaised = false;
 let runReport: Promise<void> | null = null;
-docView.onRunDone = (cell) => {
+docView.onRunDone = (cell, ok) => {
   if (!shell) return;
   ranCells.push(cell);
+  if (!ok) ranRaised = true;
   if (runReport) return;
   runReport = (async () => {
     try {
       await Promise.all([fileManager.settled(), artifactsSettled]);
     } finally {
       runReport = null;
-      reportCellRun(shell, ranCells.splice(0));
+      const raised = ranRaised;
+      ranRaised = false;
+      reportCellRun(shell, ranCells.splice(0), raised);
     }
   })();
 };
@@ -1007,10 +1027,15 @@ fileManager = new FileManager({
   },
   onDiskChange: (doc) => {
     // Same document, fresh from disk (knuth run receipts, an outside
-    // editor): replace in place and keep the session — restarting on
-    // every external save would kill exploration state mid-thought.
+    // editor, a rewind): replace in place and keep the session — restarting
+    // on every external save would kill exploration state mid-thought —
+    // and the place: the view, the scroll and the focused cell (place.ts).
+    const restore = keepPlace($('doc'), $('sheet'));
+    const source = docView.isSource;
     docView.setDoc(doc);
+    if (source && !docView.isSource) docView.setSource(true);
     if (fileManager.dir || fileManager.root) docView.hydrateAll();
+    restore();
   },
   // A header that changed under a running document: only the preamble
   // moves, so the cell that is running keeps its live output.
@@ -1069,6 +1094,26 @@ void (async () => {
     });
   }
 })();
+
+// A rewind in the shell's history view (shell.ts, answerRewinds): asked
+// to save, the document is written through ⌘S's write (ok: false, with
+// why, refuses the rewind: a document with no file, a write that failed)
+// and the autosave holds until the rewind is over, so it cannot write back
+// over the file being restored; told to reload a path that is this document's,
+// it is re-read through the shell and replaced in place. The session is
+// not rewound: its names stay, and every cell is stale.
+if (shell) {
+  answerRewinds(shell, {
+    path: () => fileManager.path,
+    save: () => fileManager.saveForRewind(),
+    release: () => fileManager.release(),
+    reload: async (rewound) => {
+      const error = await fileManager.reloadFromDisk();
+      docView.markAllStale();
+      toast(error ? `${rewound}, but ${fileManager.name} could not be read: ${error}` : `${rewound}; the session is as it was, so every cell is stale`);
+    },
+  });
+}
 
 // File → Recent documents: the one inherently dynamic list, loaded each
 // time it opens, in place of the File menu with a way back (Plass's Recent

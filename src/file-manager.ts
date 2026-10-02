@@ -122,6 +122,11 @@ const PY_TYPE: FilePickerType[] = [
 
 const NEW_DOC = '# %%\n';
 
+/** The longest a rewind holds the autosave when its reload never comes
+ *  (refused after the save, or a shell that stopped): the record's own
+ *  commits before and after the write take seconds on a large project. */
+const HOLD_MS = 30_000;
+
 // The engine's inbound frame cap (limits.py MAX_INBOUND_MESSAGE_BYTES,
 // minus envelope slack): an oversized frame closes the socket instead of
 // answering, so the refusal has to happen here, politely.
@@ -213,6 +218,13 @@ export class FileManager {
   /** lastModified of the disk version this document reflects (read or
    *  written by us) — the watcher's baseline for "someone else wrote". */
   private diskModified = 0;
+  /** A rewind in the shell's history view is under way (`saveForRewind`
+   *  until `reloadFromDisk` or `release`, at most HOLD_MS): edits still
+   *  mark the document dirty, but nothing writes it, so the autosave
+   *  cannot put back the file the rewind is restoring, and the change
+   *  poll waits for the rewind's own reload. */
+  private held = false;
+  private heldTimer = 0;
 
   constructor(private hooks: FileHooks) {
     document.addEventListener('visibilitychange', () => {
@@ -232,7 +244,7 @@ export class FileManager {
    *  disk anyway (last writer wins, the same rule two autosaving windows
    *  already live by). */
   private async pollDisk() {
-    if (this.dirty) return;
+    if (this.dirty || this.held) return;
     if (this.path) {
       await this.pollPath();
       return;
@@ -277,7 +289,7 @@ export class FileManager {
     if (stat.modified === this.diskModified) return;
     const fresh = await this.hooks.openPath?.(this.path);
     if (!fresh || fresh.error || typeof fresh.text !== 'string') return;
-    if (this.dirty) return; // typed meanwhile: the autosave wins
+    if (this.dirty || this.held) return; // typed meanwhile: the autosave wins; a rewind: its reload
     this.diskModified = fresh.modified ?? stat.modified;
     if (fresh.text === serializeDocument(this.hooks.getDoc())) return;
     this.hooks.onDiskChange?.(parseDocument(fresh.text));
@@ -299,15 +311,69 @@ export class FileManager {
       this.dirty = true;
       this.hooks.onState();
     }
-    if (this.handle || this.path) {
-      clearTimeout(this.saveTimer);
-      this.saveTimer = window.setTimeout(() => {
-        this.saveTimer = 0;
-        void this.flush();
-      }, 1200);
-    }
+    this.scheduleFlush();
     clearTimeout(this.stashTimer);
     this.stashTimer = window.setTimeout(() => this.stash(), 400);
+  }
+
+  private scheduleFlush() {
+    if ((!this.handle && !this.path) || this.held) return;
+    clearTimeout(this.saveTimer);
+    this.saveTimer = window.setTimeout(() => {
+      this.saveTimer = 0;
+      void this.flush();
+    }, 1200);
+  }
+
+  /** A rewind's `save` (the shell's history view; main.ts): the document
+   *  written now through ⌘S's write, and the autosave held until the
+   *  rewind's reload. Null once the disk holds the document, at once when
+   *  nothing was unsaved; else why not, which refuses the rewind. Never
+   *  asks where: a document with no file says so. */
+  async saveForRewind(): Promise<string | null> {
+    if (!this.path) return `${this.name} is not saved to a file yet`;
+    this.held = true;
+    clearTimeout(this.heldTimer);
+    this.heldTimer = window.setTimeout(() => this.release(), HOLD_MS);
+    clearTimeout(this.saveTimer);
+    this.saveTimer = 0;
+    if (this.flushing) await this.flushing;
+    if (!this.dirty) return null;
+    return this.flushPath();
+  }
+
+  /** The rewind is over: edits made meanwhile are written as usual. */
+  release() {
+    if (!this.held) return;
+    this.held = false;
+    clearTimeout(this.heldTimer);
+    if (this.dirty) this.scheduleFlush();
+  }
+
+  /** A rewind's reload: the document re-read from disk and replaced in
+   *  place (onDiskChange), whatever was typed since its save — the rewind
+   *  restored this file, and the record keeps what it replaced ("rewind
+   *  from"). Null once it is in, else why not. */
+  async reloadFromDisk(): Promise<string | null> {
+    if (!this.path || !this.hooks.openPath) {
+      this.release();
+      return 'it has no file';
+    }
+    if (this.flushing) await this.flushing;
+    const fresh = await this.hooks.openPath(this.path);
+    if (!fresh || fresh.error || typeof fresh.text !== 'string') {
+      this.release();
+      return fresh?.error ?? 'the engine is not running';
+    }
+    clearTimeout(this.saveTimer);
+    this.saveTimer = 0;
+    this.diskModified = fresh.modified ?? 0;
+    this.dirty = false;
+    this.release();
+    if (fresh.text !== serializeDocument(this.hooks.getDoc())) this.hooks.onDiskChange?.(parseDocument(fresh.text));
+    this.hooks.onState();
+    this.stash();
+    return null;
   }
 
   /** Resolves once the disk holds the document: a scheduled autosave has
@@ -424,8 +490,10 @@ export class FileManager {
 
   private writeBlockedNotified = false;
 
-  /** The document to disk, once: a call during a write joins that write. */
+  /** The document to disk, once: a call during a write joins that write.
+   *  Nothing while a rewind holds the autosave. */
   private flush(): Promise<void> {
+    if (this.held) return Promise.resolve();
     if (!this.flushing) {
       this.flushing = this.flushNow().finally(() => {
         this.flushing = null;
@@ -463,18 +531,20 @@ export class FileManager {
 
   private saveFailedNotified = false;
 
-  private async flushPath() {
-    if (!this.path || !this.hooks.savePath) return;
+  /** Null once the disk holds what was on screen when it began, else why
+   *  not (a rewind's save answers with it). */
+  private async flushPath(): Promise<string | null> {
+    if (!this.path || !this.hooks.savePath) return 'it has no file';
     const text = serializeDocument(this.hooks.getDoc());
     const before = this.changes;
     const saved = await this.hooks.savePath(this.path, text);
-    if (!saved) return; // no engine yet: the next change retries
+    if (!saved) return 'the engine is not running'; // the next change retries
     if (saved.error) {
       if (!this.saveFailedNotified) {
         this.saveFailedNotified = true;
         this.hooks.message(`Could not save: ${saved.error}`);
       }
-      return;
+      return saved.error;
     }
     this.saveFailedNotified = false;
     if (typeof saved.modified === 'number') this.diskModified = saved.modified;
@@ -488,6 +558,7 @@ export class FileManager {
       this.dirty = false;
       this.hooks.onState();
     }
+    return null;
   }
 
   /** The engine rewrote the document's PEP 723 header on disk (a package
