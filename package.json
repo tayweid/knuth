@@ -34,7 +34,7 @@
     "@replit/codemirror-indentation-markers": "^6.5.3",
     "claerbout": "https://github.com/tayweid/claerbout/archive/refs/tags/v0.1.7.tar.gz",
     "codemirror": "^6.0.2",
-    "dompurify": "^3.4.13",
+    "dompurify": "^3.4.14",
     "katex": "^0.18.4",
     "markdown-it": "^15.0.0",
     "prosemirror-commands": "1.7.2",
