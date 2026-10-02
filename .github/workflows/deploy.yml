@@ -67,7 +67,8 @@ jobs:
   # site as app/Knuth-<arch>.zip, without Electron's framework: the install
   # line completes it before moving it into place, and the same app from
   # the page's download button (app/Knuth.app.zip) completes itself on its
-  # first launch (APP.md). Nothing is
+  # first launch (APP.md); app/latest.json beside them is what an installed
+  # app checks for an update. Nothing is
   # committed; every deploy is the app's release. A failure here never
   # holds the site back: the deploy then republishes the app that is
   # already live.
@@ -110,6 +111,13 @@ jobs:
           mkdir "$RUNNER_TEMP/download"
           ditto -x -k published/app/Knuth.app.zip "$RUNNER_TEMP/download"
           CLAERBOUT_SIBLINGS=/nonexistent node node_modules/claerbout/smoke.mjs --config app/knuth.json browser "$RUNNER_TEMP/download/Knuth.app"
+      # The installed app updating itself (shell 0.2.0): the same app
+      # packaged again under another build id into a site folder of its
+      # own, and the installed one asked, through its page, to take it.
+      - name: Smoke-test the app updating itself
+        run: |
+          CLAERBOUT_BUILD=next node node_modules/claerbout/package.mjs --config app/knuth.json --web dist --arch arm64 --zip "$RUNNER_TEMP/next/app"
+          node node_modules/claerbout/smoke.mjs --config app/knuth.json update "$RUNNER_TEMP/Knuth.app" "$RUNNER_TEMP/next"
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: app
@@ -196,14 +204,14 @@ jobs:
         run: |
           mkdir -p site/app
           kept=0
-          for zip in Knuth-arm64.zip Knuth-x64.zip Knuth.app.zip; do
-            if curl -fsSL -o "site/app/$zip" "https://knuth.tayweid.io/app/$zip"; then
+          for file in Knuth-arm64.zip Knuth-x64.zip Knuth.app.zip latest.json; do
+            if curl -fsSL -o "site/app/$file" "https://knuth.tayweid.io/app/$file"; then
               kept=$((kept + 1))
             else
-              rm -f "site/app/$zip"
+              rm -f "site/app/$file"
             fi
           done
-          if [ "$kept" -eq 3 ]; then
+          if [ "$kept" -eq 4 ]; then
             echo "::warning::Knuth.app did not build; the site keeps serving the previous app."
           else
             echo "::warning::Knuth.app did not build and the previous app was not all found; knuth.tayweid.io/install may fail until it does."
