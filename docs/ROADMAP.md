@@ -177,10 +177,14 @@ and sockets. The browser side is thinner:
 - Plass line-breaker port for text-cell typography (DESIGN.md Q6 revisit).
 - Themes, export niceties. (External-change reload shipped 2026-08-22.)
 - **Knuth in Zen's shape** — a static draft, 2026-09-30, at
-  `docs/mockups/rail-layout.html`: a near-black frame, a top bar carrying
-  the traffic lights and the document's name where Zen keeps the address,
-  a flat rail of large rounded icon buttons on the left, the document as
-  an inset rounded panel. Colors and glyphs inside the panel are Knuth's
-  own; the frame's are Zen's. Open it in a browser. OPEN: whether this is
-  the app's shape (the shell's `titleBarStyle: 'hiddenInset'` is what the
-  top bar assumes), and what the rail holds.
+  `docs/mockups/rail-layout.html`; the first built draft, 2026-10-02, on
+  the branch `ux/zen` (`docs/ZEN-DRAFT.md`, with screenshots): Plass's
+  frame and values — the bar beside the traffic lights holding File, the
+  name pill with the folder, and the I/O with the kernel's status; the
+  cell and run tools on a 48 px rail, the session panel's toggle and the
+  view switch pinned at its foot; the room a rounded panel inside an 8 px
+  edge, the column untouched. `app/knuth.json` asks for the hidden title
+  bar (no `followZoom`). OPEN: Taylor's look at it (the list at the end
+  of ZEN-DRAFT.md: source and grid views keeping the frame, File on a
+  click, the folder in the pill); the bar beside the lights needs shell
+  v0.2.1 tagged and pinned.
