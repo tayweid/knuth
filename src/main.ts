@@ -25,6 +25,8 @@ import { delimiterFor } from './format/csv.ts';
 import { serializeDocument } from './format/percent.ts';
 import { DEFAULT_DOC_NAME, FileManager, basename, dirname } from './file-manager.ts';
 import { Session } from './session.ts';
+import { attachScrollRail } from './scroll-rail.ts';
+import { cellMarks } from './rail-marks.ts';
 import { menus } from './menu.ts';
 import { icon } from './icons.ts';
 import { Onboarding } from './onboarding.ts';
@@ -827,9 +829,24 @@ session = new Session(kernel, docView, $('toggle-panel') as HTMLButtonElement, {
   showOnboarding: () => onboarding.show(),
   hasFolder: () => !!(fileManager?.path || (fileManager?.root && fileManager.inShell) || fileManager?.dir),
 });
-docView.onRunStart = (id) => session?.runStarting(id);
 docView.decorate = (id, row) => session?.decorate(id, row);
 docView.onDocument = () => session?.documentChanged();
+
+// The scroll rail in the frame's gutter (scroll-rail.ts, Plass's rail, with
+// Knuth's marks from rail-marks.ts): the cells and what the session says a
+// run left. It watches the column's size itself; a run starting or ending
+// changes a tick's colour without a size, so the runs tell it (onRunDone,
+// below), as does the cursor moving to another cell and the view switch.
+// Typing writes nothing to it.
+const scrollRail = attachScrollRail(cellMarks(docView, (id) => session?.tables(id) ?? []), $('doc'), $('sheet'));
+docView.onRunStart = (id) => {
+  session?.runStarting(id);
+  scrollRail.cells();
+};
+$('sheet').addEventListener('focusin', () => scrollRail.selection());
+const railAway = () => scrollRail.mode(Boolean(document.body.dataset.view));
+new MutationObserver(railAway).observe(document.body, { attributes: true, attributeFilter: ['data-view'] });
+railAway();
 
 // A cell that could not import a module (ENVIRONMENT.md). A package uv
 // already has on this Mac goes into the document's environment at once,
@@ -854,6 +871,7 @@ const ranCells: number[] = [];
 let ranRaised = false;
 let runReport: Promise<void> | null = null;
 docView.onRunDone = (cell, ok) => {
+  scrollRail.cells();
   if (!shell) return;
   ranCells.push(cell);
   if (!ok) ranRaised = true;

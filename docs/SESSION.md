@@ -129,6 +129,13 @@ Peek or Silent is remembered (localStorage `knuth-receipts`); Pinned is
 remembered per window (sessionStorage `knuth-session-pinned`, with the
 last choice in localStorage as a new window's start).
 
+**With the scroll rail** (docs/ZEN-DRAFT.md, *The scroll rail*): the rail
+is in the frame's gutter outside the room, and the docked card slides the
+column inside it, so the two never meet; its rule reads the room's box,
+which is 12 px narrower while the rail shows (at 1100 × 760 the column
+644 px beside the 320 px card, 656 without the rail; the room scrolls
+sideways under a window of about 1097 px rather than 1085).
+
 **The kernel change.** `Session.bound(names)` (python/knuth/session.py)
 returns the snapshot's entry for each name the run assigned, in the
 cell's order (`_assigned_names` now keeps it), with `saved` on a value

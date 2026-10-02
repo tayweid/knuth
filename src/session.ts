@@ -583,6 +583,16 @@ export class Session {
     this.paintChip(id, row);
   }
 
+  /** The tables a cell's last run left, by name: a DataFrame or a 2-D
+   *  array, what a name's row draws the table glyph for (kindGlyph; a
+   *  Series is a column, and counting it put a table on nearly every
+   *  pandas cell), which the scroll rail marks (rail-marks.ts). A
+   *  restart's past receipts still count: the readout is still there. */
+  tables(id: string): string[] {
+    const receipt = this.receipts.get(id);
+    return receipt ? receipt.rows.filter((row) => kindGlyph(row.v) === 'table').map((row) => row.name) : [];
+  }
+
   // ---------- the column, the receipt card and the Session card, laid out ----------
 
   private frame(): Frame {
