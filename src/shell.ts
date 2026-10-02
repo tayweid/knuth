@@ -12,13 +12,19 @@
 // Dialogs answer {path} (null when cancelled); file requests answer like
 // the engine's files.py replies, so one file manager serves both. Events
 // are the shell telling the page something unasked: `setup` ({kind:
-// 'progress' | 'failed', text}) on the first-launch screen.
+// 'progress' | 'failed', text}) on the first-launch screen, and `update`
+// ({state, text?, latest?, current?}) as the app checks its site for a
+// newer build and installs one (`update` requests: a check, answered
+// {state: 'current' | 'available' | 'development' | 'unsupported' |
+// 'failed', …}; with action 'install', the install, followed by events
+// 'downloading' … 'ready', or 'failed').
 //
 // A plain browser tab has no shell: `shell` is null and the page keeps the
 // File System Access flow.
 
 export interface ShellMessage {
-  type: 'open' | 'saveAs' | 'read' | 'write' | 'stat' | 'rename' | 'remove' | 'choose' | 'status' | 'error' | 'ready';
+  type: 'open' | 'saveAs' | 'read' | 'write' | 'stat' | 'rename' | 'remove' | 'choose' | 'status' | 'error' | 'ready' | 'update';
+  action?: 'install';
   path?: string;
   text?: string;
   name?: string;
@@ -27,7 +33,16 @@ export interface ShellMessage {
   message?: string;
 }
 
-export type ShellEvent = 'setup';
+export type ShellEvent = 'setup' | 'update';
+
+/** A step of the app updating itself, as the shell reports it. */
+export interface UpdateStep {
+  state: string;
+  text?: string;
+  percent?: number | null;
+  latest?: { version?: string | null; build?: string; built?: string | null };
+  current?: { version?: string | null; build?: string | null; built?: string | null };
+}
 
 export interface Shell {
   /** Ask the shell and wait for its answer; null when it has none. */
@@ -36,6 +51,8 @@ export interface Shell {
   notify(message: ShellMessage): void;
   /** The native dialogs: an absolute path, or null if cancelled. */
   pickPath(message: ShellMessage): Promise<string | null>;
+  /** The shell's unasked events; returns the unsubscribe. */
+  on(event: ShellEvent, listener: (detail: unknown) => void): () => void;
 }
 
 export interface ClaerboutBridge {
@@ -67,6 +84,7 @@ export function connectShell(host: ShellHost): Shell | null {
     request,
     notify: (message) => void request(message),
     pickPath: withPath(request),
+    on: (event, listener) => bridge.on(event, listener),
   };
 }
 

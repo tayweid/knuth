@@ -368,7 +368,7 @@ body:not([data-plain='true']):has(#panel:not([hidden])) #toolbar {
 }
 #kernel-status.bad::before { content: '● '; color: #cd6452; }
 
-#install-app {
+#install-app, #update-app {
   font: 11px/1 var(--sans);
   color: var(--glass-ink);
   background: rgba(255, 255, 255, 0.08);
@@ -378,8 +378,9 @@ body:not([data-plain='true']):has(#panel:not([hidden])) #toolbar {
   cursor: pointer;
 }
 
-#install-app:hover { background: rgba(255, 255, 255, 0.15); }
-#install-app[hidden] { display: none; }
+#install-app:hover, #update-app:hover { background: rgba(255, 255, 255, 0.15); }
+#install-app[hidden], #update-app[hidden] { display: none; }
+#update-app:disabled { cursor: default; opacity: 0.7; }
 
 /* ---------- first-run engine and PWA onboarding ---------- */
 

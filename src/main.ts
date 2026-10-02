@@ -83,6 +83,7 @@ toolbar.innerHTML = `
   <div class="tb-pod tb-group">
     ${labeled('toggle-panel', icon('panel'), 'Session', 'Show/hide the session panes')}
     <button type="button" id="install-app" hidden>Install</button>
+    <button type="button" id="update-app" hidden>Update</button>
     ${labeled('get-app', icon('download'), 'Get Knuth', 'Get Knuth for your Mac — this page runs Python in the tab; the app runs it on your computer, on your files')}
     <span id="kernel-status">connecting…</span>
   </div>
@@ -351,6 +352,51 @@ const APP_LINE = 'curl -fsSL https://knuth.tayweid.io/install | bash';
 const ENGINE_LINE =
   'python3 -m pip install --upgrade --force-reinstall "knuth @ https://github.com/tayweid/knuth/archive/refs/heads/main.zip#subdirectory=python"';
 if (servedLocally || shell) $('get-app').hidden = true;
+
+// Knuth.app updating itself (the shell's update.js; also Knuth menu → Check
+// for Updates…). The shell looks at the site after launch and tells every
+// window of a newer build: the button appears. A click has the shell
+// download that build, swap it in and relaunch, with the steps in the
+// toast; this window is reopened on its document.
+const updateButton = $('update-app') as HTMLButtonElement;
+if (shell) {
+  const host = shell;
+  const showUpdate = (label: string, enabled: boolean) => {
+    updateButton.hidden = false;
+    updateButton.disabled = !enabled;
+    updateButton.textContent = label;
+  };
+  host.on('update', (detail) => {
+    const step = (detail ?? {}) as import('./shell.ts').UpdateStep;
+    switch (step.state) {
+      case 'available':
+        showUpdate('Update', true);
+        updateButton.title = `A new Knuth is available${step.latest?.built ? ` (built ${step.latest.built.slice(0, 10)})` : ''} — install it and relaunch`;
+        break;
+      case 'downloading':
+      case 'unpacking':
+      case 'completing':
+      case 'installing':
+        showUpdate('Updating…', false);
+        progress(step.text ?? 'Updating Knuth…');
+        break;
+      case 'ready':
+        showUpdate('Relaunching…', false);
+        progress(step.text ?? 'Knuth relaunches now…');
+        break;
+      case 'failed':
+        showUpdate('Update', true);
+        toast(`Could not update Knuth: ${step.text ?? 'unknown error'}`);
+        break;
+      default:
+        break;
+    }
+  });
+  updateButton.addEventListener('click', () => {
+    showUpdate('Updating…', false);
+    host.notify({ type: 'update', action: 'install' });
+  });
+}
 
 let hadSession = false;
 let kernelState: Parameters<typeof onboarding.setState>[0] = 'connecting';

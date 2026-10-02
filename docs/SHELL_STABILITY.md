@@ -133,15 +133,29 @@ ID and publish that signed framework as the one Claerbout apps download,
 in place of Electron's GitHub release; identical bytes across apps keep
 cloning working. A spike should test exactly that. OPEN until then.
 
-### 7. An update path for the download button — reopened with item 6
+### 7. An update path for the download button — DONE 2026-10-01 (shell 0.2.0)
 
-The install line updates in place; the download button re-downloads and
-meets Gatekeeper again each release. Smallest form: the installed
-version beside the download on the page, and Check for Updates… in the
-Knuth menu opening the site. Right form: the app completes and swaps in
-a new framework-less zip itself, which is the install line's step run by
-the app on itself. Decide with the signing answer, since a self-updating
-app and notarization interact.
+Taken in its right form, ahead of the signing answer, because nothing
+is signed yet and so nothing interacts: the app runs the install line's
+step on itself. `package.mjs --zip` writes `latest.json` beside the zips
+(the build id: the deploy's commit; the time; the zip checksums) and
+stamps the same build into the bundle; the shell's `update.js` compares
+the two on request (Knuth menu → Check for Updates…, or the page's
+`update` request) and quietly after launch, and installs by downloading
+the zip, checking it against the site's checksum and its signature,
+completing it with its own `complete.sh` (a clone of the running app's
+framework when Electron is unchanged), swapping the bundles with two
+renames and relaunching into the new one with the documents reopened; the
+replaced bundle is removed by the next launch. The page shows an Update
+button once the shell has found a newer build (`src/main.ts`, the shell's
+`update` events). `curl … | bash -s -- --check` is the same comparison
+from a terminal. Tested by the shell's `npm test` (the fixture updating
+itself between two build ids) and, for Knuth, by hand on this Mac. What
+item 6 adds when it comes: a notarized download, and this path keeps
+working as long as the signed framework is the one `complete.sh` clones.
+
+The install line updates in place as before, and the download button
+re-downloads and meets Gatekeeper again each release.
 
 ### 8. The framework check covers the whole framework — low priority
 
