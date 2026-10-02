@@ -595,6 +595,67 @@ states card and the sample data, talking to the shell.
 - Knuth's `src/shell.test.ts` and Plass's `src/claerbout.test.ts`: the
   `flush` → `flushed` handshake and the reload.
 
+## Built (2026-10-02)
+
+The view is in the shell, on claerbout's main and unreleased (it ships
+with the next tag): `history.js` (the graph, a commit, a blob, the
+preview and the rewind, all of it runnable under `node --test`),
+`history/history.html` (the page), and the hooks in `main.js` (the
+`_claerbout/` address, View › History… on ⇧⌘H, the History window's
+requests, the two-second look, presence). claerbout's README, under "The
+history view", is the protocol as built. Two passes: the first built it
+to this spec (claerbout `12cca33`, `6ef9af3`), and two reviewers (one on
+the rewind's safety in scratch repositories, one on the page against the
+recommended mockup) sent it back once (`b19873e`).
+
+Where the build differs from the spec above:
+
+- **`save` and `saved`, not `flush` and `flushed`,** and no read-only
+  hold. A window that answers `{ok: false}` refuses the rewind; one that
+  does not answer within 3 seconds is passed over and named: the card
+  says in amber that it was not saved first and must be reopened, since
+  a page that does not answer `save` does not answer `reload` either.
+- **One log, not `--all`:** the user's branches with every record left
+  out, and this working tree's record by name.
+- **The full sha in "rewind to"** (open question 3); the page shows
+  seven.
+- **A fourth refusal, `invalid`.** Every path the target holds is checked
+  before anything is recorded or touched (no `..`, no absolute path, no
+  `.git` in any case or HFS+ spelling, nothing under a link or a nested
+  repository of the same commit), then by git's own `read-tree`. The
+  record never makes such a path, so a commit holding one is refused
+  whole.
+- **Removals first.** A file that became a folder, or a folder that
+  became a file, is written once its removal clears the way, so "rewind
+  to" holds the target's tree. Every removal and write walks from the
+  root with `lstat` and goes through no link.
+- **`.gitignore`:** the record prepares again as soon as the write step
+  ends, finished or not, not at "rewind to"; a `.gitignore` that is a
+  link in the target is left alone.
+- **Paths compared as the volume compares names:** `Untracked/` is
+  `untracked/` on a Mac.
+- **The guards' reasons are sentences** ("a merge is in progress on
+  main"), in the log and in the page alike.
+
+What the apps still owe (the shell side is ready for each):
+
+- **Answering `save` and `reload`.** On `save {id, reason: 'rewind'}`,
+  write the open document if it has changes and answer `{type: 'saved',
+  id}` (or `ok: false, error` when it could not). On `reload {id, paths,
+  reason: 'rewind', to, app?}`, re-read the document if its path is in
+  `paths`: Knuth keeping its session and marking every cell stale
+  (`markAllStale`), Plass reloading the paper. Until then every rewind
+  waits 3 seconds at the save step and its card says to reopen the
+  document.
+- **A History button:** `{type: 'history', action: 'open', at?}`, from a
+  rail button in Knuth and an item in Plass's File menu, hidden when the
+  shell answers `null` (an older shell).
+- **The error notice** (open question 2): Knuth sends `cell run [4]
+  (error)` when a reported cell raised, so the river draws a red ring.
+
+And before either app sees any of it: the claerbout tag, then each
+app's pin moved to it.
+
 ## What the recommended mockup shows
 
 Open `history-recommended.html` by double-clicking it. The states card at

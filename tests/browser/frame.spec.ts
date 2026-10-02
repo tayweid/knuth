@@ -87,7 +87,7 @@ const appRegion = (page: Page, selector: string) =>
     return 'none';
   });
 
-test('the frame is Zen\'s: a dark edge all round a rounded room, a 48 px rail, the bar a drag region with its controls the page\'s', async ({ page }) => {
+test('the frame is Zen\'s: a dark edge all round a rounded room, a 44 px rail, the bar a drag region with its controls the page\'s', async ({ page }) => {
   await boot(page);
   const look = await page.evaluate(() => {
     const layout = document.getElementById('layout')!;
@@ -105,26 +105,26 @@ test('the frame is Zen\'s: a dark edge all round a rounded room, a 48 px rail, t
   expect(look.radius).toBe('12px');
 
   // The bar spans the window (its title bar, in Knuth.app); the rail runs
-  // under it down the left edge, 32 px tiles with the frame's 8 px either
-  // side; the room starts where they end and keeps the same 8 px to the
+  // under it down the left edge, 32 px tiles with 6 px either side, 44 px
+  // like the bar; the room starts where they end and keeps the frame's 8 px to the
   // window's right and bottom. The first tile is level with the room's top
   // edge, the view switch with its bottom.
   const bar = await box(page, '#toolbar');
   expect(bar.left).toBe(0);
   expect(bar.right).toBe(look.width);
-  expect(bar.bottom).toBe(60);
-  expect(await box(page, '#rail')).toEqual({ left: 0, top: bar.bottom, right: 48, bottom: look.height });
+  expect(bar.bottom).toBe(44);
+  expect(await box(page, '#rail')).toEqual({ left: 0, top: bar.bottom, right: 44, bottom: look.height });
   const first = await box(page, '#rail .tb-btn');
-  expect(first).toEqual({ left: 8, top: bar.bottom, right: 40, bottom: bar.bottom + 32 });
+  expect(first).toEqual({ left: 6, top: bar.bottom, right: 38, bottom: bar.bottom + 32 });
   const room = await box(page, '#layout');
-  expect(room).toEqual({ left: 48, top: bar.bottom, right: look.width - 8, bottom: look.height - 8 });
+  expect(room).toEqual({ left: 44, top: bar.bottom, right: look.width - 8, bottom: look.height - 8 });
   expect((await box(page, '#view-toggle')).bottom).toBe(room.bottom);
-  // The pills are 42 px in the 60 px bar, and the session pill (the
+  // The pills are 30 px in the 44 px bar, and the session pill (the
   // kernel's status inside it) ends where the room does.
   const pill = await box(page, '#session-pill');
-  expect(pill.bottom - pill.top).toBe(42);
+  expect(pill.bottom - pill.top).toBe(30);
   expect(pill.right).toBe(room.right);
-  expect((await box(page, '#doc-pod')).bottom - (await box(page, '#doc-pod')).top).toBe(42);
+  expect((await box(page, '#doc-pod')).bottom - (await box(page, '#doc-pod')).top).toBe(30);
 
   // In a tab there is no lights' room: the File tile stands over the rail's
   // column of tiles.
@@ -553,7 +553,7 @@ test('below the layout floor the room scrolls sideways, and the bar and the rail
   });
   expect(scroll).toEqual({ room: true, page: false });
   await page.locator('#layout').evaluate((element) => { element.scrollLeft = 200; });
-  expect((await box(page, '#rail .tb-btn')).left).toBe(8);
+  expect((await box(page, '#rail .tb-btn')).left).toBe(6);
   expect((await box(page, '#session-pill')).right).toBe(600 - 8);
 });
 
@@ -580,6 +580,8 @@ test('the floor is main\'s 640 px; the docked card raises it, so the card never 
   await expect.poll(sideways).toBe(false);
   await page.setViewportSize({ width: 640, height: 700 });
   await expect.poll(sideways).toBe(false);
+  // The column at the floor.
+  expect(await column()).toBe(548);
   await page.setViewportSize({ width: 639, height: 700 });
   await expect.poll(sideways).toBe(true);
 });

@@ -638,7 +638,7 @@ test('a click anywhere on a fresh receipt keeps it, and the hint says click whil
 
 test('the pill hides the least recently bound names, never those a receipt brings home', async ({ page }) => {
   await page.emulateMedia({ reducedMotion: 'reduce' });
-  await boot(page, 760, 700);
+  await boot(page, 680, 700);
   await page.locator('#run-all').click();
   await expect(cell(page, 3).locator('.rchip')).toBeVisible();
   // Cell 1 again (prices and n, rebound): its names come home.

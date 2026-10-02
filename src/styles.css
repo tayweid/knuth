@@ -93,12 +93,16 @@
      publishes as the Window Controls Overlay (in CSS px, so a zoom step
      keeps the bar's row on the lights); 60 px in a tab, the PWA and
      fullscreen. */
-  --topbar: env(titlebar-area-height, 60px);
+  --topbar: env(titlebar-area-height, 44px);
   /* The frame's one width: the window's edge round the room, and the gap
      either side of a rail tile. */
   --edge: 8px;
+  /* The rail: a tile with 6 px either side, 44 px, the bar's height too
+     (Taylor, 2026-10-02: the bar as tall as the rail is wide, the panes
+     mockup's proportions). */
   --rail-tile: 32px;
-  --rail: calc(var(--rail-tile) + 2 * var(--edge));
+  --rail-gap: 6px;
+  --rail: calc(var(--rail-tile) + 2 * var(--rail-gap));
   /* The room's axis, where the toast sits: the middle between the rail
      and the room's right edge. */
   --axis: calc((var(--rail) + 100vw - var(--edge)) / 2);
@@ -173,11 +177,11 @@ body {
   flex: 0 1 auto;
   min-width: 0;
   max-width: min(560px, 50vw);
-  height: 42px;
-  padding: 0 12px;
+  height: 30px;
+  padding: 0 10px;
   background: var(--pill);
   border: 1px solid rgba(255, 255, 255, 0.08);
-  border-radius: 12px;
+  border-radius: 9px;
 }
 
 /* The document slug: small serif, letterspaced, quiet (Plass's galley).
@@ -268,15 +272,15 @@ body {
    its menu is open. */
 #toolbar .tb-tile {
   flex: none;
-  width: 36px;
-  min-width: 36px;
-  height: 36px;
+  width: 32px;
+  min-width: 32px;
+  height: 32px;
   padding: 0;
-  border-radius: 10px;
+  border-radius: 9px;
   color: rgba(240, 238, 233, 0.62);
 }
 
-#toolbar .tb-tile .ico { width: 20px; height: 20px; }
+#toolbar .tb-tile .ico { width: 18px; height: 18px; }
 
 #toolbar .tb-tile:hover,
 #toolbar .tb-tile:focus-visible {
@@ -473,13 +477,13 @@ body {
   gap: 9px;
   min-width: 0;
   max-width: min(46vw, 680px);
-  height: 42px;
-  padding: 0 14px;
+  height: 30px;
+  padding: 0 12px;
   font: 12px/1 var(--sans);
   color: var(--glass-ink-soft);
   background: var(--pill);
   border: 1px solid rgba(255, 255, 255, 0.08);
-  border-radius: 12px;
+  border-radius: 9px;
   cursor: pointer;
   transition: background 0.15s, color 0.15s;
 }
@@ -950,11 +954,11 @@ body[data-view='source'] #view-toggle {
   flex: 1;
   /* The floor: the window main had, 640 px, less what the frame takes —
      the rail and the right edge — so the room scrolls sideways at the
-     same window width as before the frame. Docked, the Session card
-     raises it (--board-floor, session.ts) to the column's 640 px floor,
-     the chips' lane and the card: below that the room scrolls sideways
-     rather than the card lie over the column (a window under about
-     1085 px). */
+     same window width as before the frame; the column bottoms out at
+     548 px. Docked, the Session card raises it (--board-floor,
+     session.ts) to the column's 640 px floor, the chips' lane and the
+     card: below that the room scrolls sideways rather than the card lie
+     over the column (a window under about 1080 px). */
   min-width: max(calc(640px - var(--rail) - var(--edge)), var(--board-floor, 0px));
   overflow-y: auto;
   /* Never sideways: everything in the room wraps (editors, outputs), and

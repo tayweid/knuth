@@ -80,11 +80,12 @@ since one system is the point.
   its text), so the rail's foot no longer repeats the Code cell's `<>`
   at its top.
 - **Main's floor.** `#doc`'s min-width is main's 640 px less what the
-  frame takes (the rail and the right edge): 584. With the panel shown
-  the room fits a 990 px window again (the first draft needed 1046), so
+  frame takes (the rail and the right edge): 584 then, 588 with the 44 px
+  rail. With the panel shown the room fits a 990 px window again (the
+  first draft needed 1046), so
   the default 1100 × 760 window survives one ⌘+ without the room
   scrolling sideways or the panel running past the room's edge; the
-  column bottoms out at 544 px instead of 600.
+  column bottoms out at 548 px (544 with the 48 px rail) instead of 600.
 
 ## Running it
 
@@ -137,7 +138,8 @@ fullscreen, where the File tile stands over the rail's column):
 
 The rest of the bar is empty: drag region.
 
-**The rail** (`nav#rail`, 48 px; not a drag region, since it scrolls),
+**The rail** (`nav#rail`, 48 px in the first drafts, 44 since the afternoon's
+bar change below; not a drag region, since it scrolls),
 top to bottom, in the old bar's groups under a hairline:
 
 - *Cells* (`#cells-pod`): Code cell, Scratch cell, Text cell.
@@ -349,3 +351,16 @@ the bar 60, the File tile 6 px in; the setup window's 60 px drag strip).
     (above).
 16. Plass's open questions about the frame (its shade, the rail at 48 vs
     44) apply here too, and an answer there should move both.
+
+## The bar's height, 2026-10-02 afternoon
+
+Taylor, running the merged apps: the bars "seem taller than they were
+originally", and the height they liked is the panes mockup's, "equal in
+height to the width of the sidebar" (`session-panes-v2-peek-v2.html`: a
+40 px bar over a 44 px rail, 28 px pills, 32 px tiles). Both bars had
+been 60 px, the old toolbar's height, which as a solid dark band without a
+title bar above it read heavier than the old glass did. Now: the bar is
+44 px, the rail's width (a 32 px tile with 6 px either side; the room's
+edge stays 8 px), the pills 30 px with 9 px corners, the bar's tiles
+32 px, and the traffic lights at {x: 14, y: 15} so their band is the bar
+(2·15 + 14 = 44). Plass takes the same numbers.
