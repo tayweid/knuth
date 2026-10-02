@@ -1663,6 +1663,11 @@ body[data-view='source'] .cell .run-num { visibility: visible; }
 #session.narrow .rv .sub,
 .slim .rv .r-vars tr:not(.short) .pv,
 .slim .rv .r-vars tr.short .ty { display: none; }
+/* The head keeps "Cell 3" whole: tighter gaps, smaller buttons; the
+   thumbnail smaller beside its name. */
+.slim .rv .r-head { gap: 5px; padding-left: 10px; letter-spacing: 0.1em; }
+.slim .rv .hb { width: 20px; }
+.slim .rv .r-fig .thumb { width: 72px; }
 .slim .rv .r-vars tr:not(.short) .ty {
   max-width: 0;
   width: 100%;
