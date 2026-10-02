@@ -141,7 +141,9 @@ to open a windowed table view (100 rows per fetch, 200-column cap, sticky
 headers, "More" paging — the full object never leaves the kernel;
 `Session.table()` serves string-rendered windows over the `table`
 protocol message). Toggle with the toolbar "Session" button; state
-persists in localStorage.
+persists in localStorage. (Since 2026-10-02 the explorer is the Session
+card and the viewers its Data and Figures tabs, `src/viewers.ts`, with a
+receipt for every run: SESSION.md.)
 
 ## Later (tracked, not scheduled)
 
