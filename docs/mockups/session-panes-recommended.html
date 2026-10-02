@@ -1,0 +1,1060 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <title>Knuth — the session as a ledger beside the cells (recommended)</title>
+    <style>
+      /* RECOMMENDED DIRECTION (design session of 2026-10-02; see
+         session-panes.md). The session lives BESIDE THE CELLS, not beside
+         the document: a narrow ledger in the right margin of the cell
+         column, one small card per cell that bound something, aligned with
+         the cell's first line (the run chip) and scrolling with it. The
+         column of cells never moves and never narrows.
+
+         Grafted from the other four mockups:
+         - peek-overlay: the 5px dot in the run chip after a run (blue on the
+           last run, grey on earlier ones). On a narrow window it is the
+           ledger's whole affordance: hover shows the cell's card as a
+           popover, click pins it. And the receipt marks: + first bound here,
+           ~ rebound; the time the run took.
+         - floating-edge: a Session tab tucked at the room's right edge when
+           the cards are folded, carrying the count; it opens the whole
+           namespace sorted.
+         - bottom-shelf: the large viewer has three plain-word tabs,
+           Session · Data · Figures, with a chip picker on Data.
+         - zen-rail: a card you have not looked at since its run keeps a blue
+           rule until the pointer finds it, instead of fading on a timer; the
+           popover is the frame's own material; figures are captioned by name
+           and cell.
+         - The viewer is a card hung at the room's right edge that stays
+           while you click and type (peek-overlay's pin rule); ⤢ makes it
+           large over the dimmed frame for a projector.
+
+         The frame is Taylor's rail-layout.html (Zen's shape); everything
+         inside the room is the live app's dark bench (src/styles.css,
+         src/icons.ts). Open by double-click; the bar at the bottom switches
+         the states. */
+      :root {
+        --frame: #111112;
+        --frame-ink: #d5d3cf;
+        --frame-ink-soft: #7d7b78;
+        --tile: #29292c;
+        --tile-hover: #202023;
+        --pill: #1e1e21;
+        --bg: #2b2a2d;
+        --sheet: #ffffff;
+        --ink: #1a1a1a;
+        --ink-soft: #6b6b6b;
+        --line: #e4e2dd;
+        --wash: #f6f5f2;
+        --accent: #305c8a;
+        --error: #a94438;
+        --amber: #c98a1d;
+        --room-pane: #232226;
+        --room-line: rgba(255, 255, 255, 0.07);
+        --room-ink: #d8d6d1;
+        --room-ink-soft: #8f8d88;
+        --blue: #9db8d6;
+        --serif: 'STIX Two Text', 'Charter', 'Georgia', serif;
+        --prose: 'CMU Serif', 'Computer Modern Serif', 'Georgia', serif;
+        --mono: ui-monospace, 'SF Mono', 'Menlo', 'Consolas', monospace;
+        --sans: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Helvetica Neue', sans-serif;
+        --rail: 80px;
+        --topbar: 66px;
+        --inset: 8px;
+      }
+      * { box-sizing: border-box; }
+      html, body { margin: 0; height: 100%; background: var(--frame); overflow: hidden; }
+      body { color: var(--frame-ink); font: 15px/1.55 var(--sans); } /* on body only: the sheet's 52rem is 832px, as in the app */
+      button { font: inherit; }
+      #topbar svg, #rail svg { width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+
+      /* ---------- the top bar (rail-layout.html) ---------- */
+      #topbar {
+        position: fixed; top: 0; left: 0; right: 0; height: var(--topbar);
+        display: flex; align-items: center; gap: 10px; padding: 0 18px 0 18px;
+        -webkit-app-region: drag;
+      }
+      .lights { display: flex; gap: 8px; margin-right: 12px; }
+      .lights i { width: 13px; height: 13px; border-radius: 50%; display: block; background: #3a3a3c; }
+      .ctl { position: relative; display: inline-flex; align-items: center; justify-content: center; width: 34px; height: 34px; border-radius: 9px; color: var(--frame-ink); border: 0; background: transparent; -webkit-app-region: no-drag; cursor: pointer; }
+      .ctl:hover { background: var(--tile-hover); }
+      .ctl.on { background: var(--tile); }
+      .ctl.dim { color: var(--frame-ink-soft); }
+      .ctl[data-label]::after {
+        content: attr(data-label); position: absolute; top: calc(100% + 8px); left: 50%; transform: translateX(-50%);
+        background: #0a0a0b; color: var(--frame-ink); font: 12.5px var(--sans); white-space: nowrap;
+        padding: 5px 10px; border-radius: 8px; border: 1px solid rgba(255, 255, 255, 0.08);
+        opacity: 0; pointer-events: none; transition: opacity 0.12s; z-index: 5;
+      }
+      .ctl:hover::after { opacity: 1; }
+      #docpill {
+        flex: 1; height: 42px; margin: 0 14px 0 10px; border-radius: 12px; background: var(--pill);
+        display: flex; align-items: center; gap: 12px; padding: 0 16px; -webkit-app-region: no-drag;
+      }
+      #docpill .file { color: var(--frame-ink-soft); display: inline-flex; }
+      #docpill .name { font: 16px/1 var(--serif); letter-spacing: 0.06em; color: var(--frame-ink); cursor: text; white-space: nowrap; }
+      #docpill .name:hover { color: #fff; }
+      #docpill .dirty { color: var(--amber); font-size: 9px; margin-left: -6px; }
+      #docpill .path { color: var(--frame-ink-soft); font: 12.5px var(--sans); margin-left: 4px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+      #docpill .spacer { flex: 1; }
+      #docpill .python { display: inline-flex; align-items: center; gap: 7px; font: 12px var(--sans); color: var(--frame-ink-soft); white-space: nowrap; }
+      #docpill .python i { width: 8px; height: 8px; border-radius: 50%; background: #4caf7d; display: block; }
+      .avatar { width: 26px; height: 26px; border-radius: 50%; background: #2d7dbb; margin-left: 6px; }
+
+      /* ---------- the rail (rail-layout.html) ---------- */
+      #rail {
+        position: fixed; top: var(--topbar); bottom: 0; left: 0; width: var(--rail);
+        display: flex; flex-direction: column; align-items: center; gap: 14px; padding: 6px 0 22px;
+      }
+      .rb {
+        position: relative; display: inline-flex; align-items: center; justify-content: center;
+        width: 50px; height: 50px; border: 0; border-radius: 14px; background: transparent;
+        color: var(--frame-ink); cursor: pointer;
+      }
+      .rb:hover { background: var(--tile-hover); }
+      .rb.on { background: var(--tile); }
+      .rb.solid svg { fill: currentColor; stroke: none; }
+      .rb.small { width: 44px; height: 44px; }
+      .rb.small svg { width: 17px; height: 17px; }
+      .rb.dim { color: var(--frame-ink-soft); }
+      .group { display: flex; flex-direction: column; align-items: center; gap: 6px; }
+      .rule { width: 26px; height: 1px; background: rgba(255, 255, 255, 0.1); }
+      .rb::after {
+        content: attr(data-label); position: absolute; left: calc(100% + 12px); top: 50%; transform: translateY(-50%);
+        background: #0a0a0b; color: var(--frame-ink); font: 12.5px var(--sans); white-space: nowrap;
+        padding: 5px 10px; border-radius: 8px; border: 1px solid rgba(255, 255, 255, 0.08);
+        opacity: 0; pointer-events: none; transition: opacity 0.12s; z-index: 5;
+      }
+      .rb:hover::after { opacity: 1; }
+      .grow { flex: 1; }
+
+      /* ---------- the room: Knuth's bench, inset ---------- */
+      #room {
+        position: absolute; top: var(--topbar); left: var(--rail); right: var(--inset); bottom: var(--inset);
+        border-radius: 12px; background: var(--bg); overflow: hidden; display: flex; color: var(--room-ink);
+        box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.05);
+      }
+      /* The document column, as in the app: the sheet centres in it; the
+         ledger lives in whatever right margin that leaves. The container
+         lets the ledger measure the margin in cqw. */
+      #doc {
+        flex: 1; min-width: 0; overflow-y: auto; overflow-x: hidden;
+        padding: 22px 24px 40vh 16px;
+        container-type: inline-size; container-name: doc;
+      }
+      #page { position: relative; max-width: 52rem; margin: 0 auto; }
+      #sheet { min-width: 0; }
+
+      /* cell zero: the packages fold */
+      .pkg {
+        display: flex; align-items: center; gap: 8px; width: 100%; margin: 0 0 6px; padding: 6px 12px;
+        border: 1px dashed rgba(255, 255, 255, 0.12); border-radius: 10px; background: transparent;
+        color: var(--room-ink-soft); font: 12px var(--sans); cursor: pointer; text-align: left;
+      }
+      .pkg:hover { color: var(--room-ink); border-color: rgba(255, 255, 255, 0.2); }
+      .pkg .list { font: 11.5px var(--mono); }
+
+      /* ---------- cells: the column that stays as it is ---------- */
+      .cell-wrap { position: relative; }
+      .cell { display: flex; padding: 0.2rem 0; position: relative; }
+      .cell .body { flex: 1; min-width: 0; }
+
+      /* insert strips: a hairline and a pill, invisible until the cursor enters the gap */
+      .insert-zone { position: relative; height: 22px; opacity: 0; transition: opacity 0.12s; }
+      .insert-zone:hover { opacity: 1; }
+      .insert-zone::before { content: ''; position: absolute; left: 2.2rem; right: 0; top: 50%; border-top: 1px solid rgba(157, 184, 214, 0.25); }
+      .insert-actions {
+        position: absolute; top: 50%; left: calc(2.2rem + (100% - 2.2rem) / 2); transform: translate(-50%, -50%);
+        display: flex; gap: 0; padding: 2px 5px; border-radius: 999px;
+        background: color-mix(in srgb, #3a3840 94%, transparent); backdrop-filter: blur(14px);
+        border: 1px solid rgba(255, 255, 255, 0.14); box-shadow: 0 5px 18px rgba(0, 0, 0, 0.45);
+      }
+      .insert-actions button { width: 24px; height: 18px; border: 0; border-radius: 5px; background: transparent; color: rgba(240, 238, 233, 0.75); display: inline-flex; align-items: center; justify-content: center; cursor: pointer; padding: 0; }
+      .insert-actions button:hover { color: #fff; background: rgba(255, 255, 255, 0.12); }
+      .insert-actions svg { width: 13px; height: 13px; fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; }
+
+      /* the code card: One Dark, the gutter as apparatus, the run chip in it */
+      .cm {
+        display: flex; background: #282c34; color: #abb2bf;
+        border: 1px solid rgba(255, 255, 255, 0.07); border-radius: 8px; overflow: hidden;
+        font: 13.5px/18.9px var(--mono); transition: border-color 0.15s;
+      }
+      .cm:hover { border-color: rgba(255, 255, 255, 0.12); }
+      .cell-wrap.linked .cm { border-color: rgba(157, 184, 214, 0.45); }
+      .gut {
+        position: relative; display: flex; flex: 0 0 auto; padding: 0.5rem 0;
+        background: rgba(255, 255, 255, 0.022); border-right: 1px solid rgba(255, 255, 255, 0.06);
+        color: rgba(240, 238, 233, 0.28);
+      }
+      .cell.stale .gut { border-right-color: var(--amber); }
+      .ln { display: flex; flex-direction: column; min-width: 2.25rem; text-align: right; padding: 0 0.35rem 0 0.3rem; }
+      .ln span { height: 18.9px; }
+      .ln span:first-child { visibility: hidden; }
+      .fold { width: 12px; }
+      .run {
+        position: absolute; left: 0; right: 0; top: 0; height: min(calc(0.5rem + 37.8px), 100%);
+        border: 0; padding: 0; background: #2b2f37; color: #6ea576; cursor: pointer;
+        border-top-left-radius: 7px; border-bottom-left-radius: 7px; font-size: 13px; z-index: 3; transition: color 0.12s;
+      }
+      .run::before {
+        content: '▶'; position: absolute; left: 0; right: 0; top: 0; height: calc(1rem + 18.9px);
+        display: flex; align-items: center; justify-content: center;
+        border-bottom: 1px solid rgba(255, 255, 255, 0.08); transition: background 0.12s;
+      }
+      .run:hover { color: #8fc79a; }
+      .run:hover::before { background: rgba(255, 255, 255, 0.045); }
+      .cell.running .run::before { content: ''; }
+      .cell.running .run::after {
+        content: ''; position: absolute; left: 50%; top: calc((1rem + 18.9px) / 2); width: 11px; height: 11px; margin: -6px 0 0 -6px;
+        border: 1.6px solid rgba(110, 165, 118, 0.3); border-top-color: #6ea576; border-radius: 50%; animation: turn 0.8s linear infinite;
+      }
+      .cell.running .run:hover::before { content: '■'; }
+      .cell.running .run:hover::after { display: none; }
+      .cell.running .run:hover { color: #cd6452; }
+      /* Grafted from peek-overlay. After a run, a 5px dot sits at the right
+         of the ▶ band, in the fold column the chip already covers (so a
+         one-line cell has it too). Blue on the cell that ran last, number-
+         grey on earlier runs: a signal in the apparatus, like the amber stale
+         rule, not a button that wants pressing. In the narrow window it is
+         the ledger's whole affordance. */
+      .run .dot {
+        position: absolute; right: 4px; top: calc((1rem + 18.9px) / 2 - 2.5px); width: 5px; height: 5px; border-radius: 50%;
+        background: rgba(240, 238, 233, 0.28); display: none; z-index: 4; cursor: pointer; transition: background 0.12s, transform 0.12s;
+      }
+      .cell.ran .run .dot { display: block; }
+      .cell.ran-last .run .dot { background: var(--blue); box-shadow: 0 0 0 3px rgba(157, 184, 214, 0.12); }
+      .run .dot:hover, .cell-wrap.linked .run .dot { background: #fff; transform: scale(1.3); }
+      .cell.running .run .dot { display: none; }
+      @keyframes turn { to { transform: rotate(360deg); } }
+      .code { flex: 1; min-width: 0; padding: 0.5rem 0; margin-left: 0.15rem; }
+      .line { padding: 0 0.75rem; white-space: pre-wrap; }
+      .k { color: #c678dd; } .p { color: #e06c75; } .s { color: #98c379; } .n { color: #d19a66; } .c { color: #5c6370; } .o { color: #56b6c2; }
+
+      .cell.kind-scratch .cm { border-style: dashed; background: transparent; }
+      .cell.kind-scratch .gut { background: transparent; }
+      .cell.kind-scratch .run { background: var(--bg); }
+      .scratch-label { font-size: 10px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--room-ink-soft); margin-bottom: 0.15rem; }
+
+      /* text cells: prose straight on the room */
+      .prose { position: relative; font: 18px/1.55 var(--prose); color: var(--room-ink); padding: 4px 0.75rem; }
+      .prose h2 { font-size: 1.35em; font-weight: 400; color: #f0eee9; margin: 0.9em 0 0.35em; }
+      .prose p { margin: 0.6em 0; }
+      .prose em { font-style: italic; }
+      .prose::before, .prose::after { content: ''; position: absolute; left: calc(0.75rem + 1px); width: 28px; height: 2px; border-radius: 1px; background: rgba(255, 255, 255, 0.16); opacity: 0; transition: opacity 0.12s; }
+      .prose::before { top: 0; } .prose::after { bottom: 0; }
+      .prose:hover::before, .prose:hover::after { opacity: 1; }
+
+      /* figures: the one lit object on the bench */
+      .cell-figures { display: flex; flex-direction: column; gap: 0.5rem; margin: 0.45rem 0 0; }
+      .figure { background: #fff; border-radius: 6px; padding: 0.5rem; align-self: flex-start; max-width: 100%; overflow: hidden; box-shadow: 0 1px 3px rgba(0, 0, 0, 0.4); }
+      .figure svg { display: block; width: 460px; max-width: 100%; height: auto; }
+
+      /* outputs: quiet readout */
+      .output { margin: 0.35rem 0 0; padding: 0.45rem 0.75rem; background: transparent; border-left: 3px solid rgba(255, 255, 255, 0.14); font: 12.5px/1.5 var(--mono); white-space: pre-wrap; color: #b5b3ae; }
+      .output.error { border-left-color: #cd6452; color: #cd6452; }
+
+      /* ---------- the ledger: the session, beside the cells ---------- */
+      #ledger {
+        position: absolute; top: 0; left: calc(100% + 24px);
+        width: clamp(150px, calc((100cqw - 100%) / 2 - 32px), 224px);
+        z-index: 3; font: 11.5px/1.45 var(--mono); color: var(--room-ink);
+      }
+      body.noledger #ledger { display: none; }
+      .lhead { position: absolute; top: 0; left: 0; right: 0; padding: 8px 0 6px 11px; font: 10.5px var(--sans); letter-spacing: 0.14em; text-transform: uppercase; color: var(--room-ink-soft); white-space: nowrap; }
+      .lhead b { font-weight: 400; opacity: 0.7; }
+      .lhead { cursor: pointer; transition: color 0.15s; }
+      .lhead:hover { color: var(--room-ink); }
+
+      .lcard {
+        position: absolute; left: 0; right: 0;
+        background: rgba(255, 255, 255, 0.022); border: 1px solid rgba(255, 255, 255, 0.06); border-radius: 8px;
+        padding: 8px 8px 7px 10px; transition: border-color 0.18s, top 0.18s;
+      }
+      .lcard:hover, .lcard.linked { border-color: rgba(157, 184, 214, 0.4); }
+      /* the tie: a hairline from the card back toward its cell, at the run chip's height */
+      .lcard::before { content: ''; position: absolute; left: -25px; width: 20px; top: 16px; border-top: 1px solid rgba(255, 255, 255, 0.09); transition: border-color 0.18s; }
+      .lcard:hover::before, .lcard.linked::before { border-top-color: rgba(157, 184, 214, 0.45); }
+      .lcard.stale::before { border-top-color: var(--amber); }
+      .lrow { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0 7px; padding: 1px 4px; margin: 0 -4px; border-radius: 4px; }
+      .lrow .g { align-self: center; width: 12px; height: 12px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; color: rgba(240, 238, 233, 0.38); flex: 0 0 auto; }
+      .lrow b { font-weight: 600; color: var(--room-ink); white-space: nowrap; }
+      .lrow span { color: var(--room-ink-soft); white-space: nowrap; }
+      .lrow.viewable { cursor: pointer; }
+      .lrow.viewable:hover { background: rgba(255, 255, 255, 0.06); }
+      .lrow.viewable b { color: var(--blue); }
+      .lrow.scratch b { font-weight: 400; font-style: italic; }
+      .lrow.gone { opacity: 0.42; }
+      .lrow.gone b { text-decoration: line-through; text-decoration-color: rgba(255, 255, 255, 0.4); }
+      .lrow .note { margin-left: auto; font: 10px var(--sans); letter-spacing: 0.06em; text-transform: uppercase; color: var(--room-ink-soft); }
+      .lcard.stale .note.stale { color: var(--amber); }
+      /* Grafted from peek-overlay's receipt: a mark says what the run did
+         to the name (+ first bound here, ~ rebound: it existed from an
+         earlier cell), and the time the run took sits at the right of the
+         first row, shown only when the pointer is on the card or its cell. */
+      .lrow .m { flex: 0 0 auto; width: 1ch; font-weight: 600; color: var(--room-ink-soft); }
+      .lrow .m.new { color: #6ea576; }
+      .note.took { text-transform: none; letter-spacing: 0.02em; opacity: 0; transition: opacity 0.15s; }
+      .lcard:hover .note.took, .lcard.linked .note.took { opacity: 0.85; }
+      /* Grafted from zen-rail: a card you have not looked at since its run
+         keeps a blue rule until the pointer finds it (or its cell), instead
+         of fading on a timer. */
+      .lcard.unseen { box-shadow: inset 2px 0 0 rgba(157, 184, 214, 0.65); }
+      .lthumb { display: block; margin: 6px 0 2px; background: #fff; border-radius: 4px; padding: 3px; box-shadow: 0 1px 3px rgba(0, 0, 0, 0.4); cursor: pointer; transition: transform 0.12s; }
+      .lthumb:hover { transform: translateY(-1px); box-shadow: 0 3px 8px rgba(0, 0, 0, 0.45); }
+      .lthumb svg { display: block; width: 100%; height: auto; }
+      .lcard.stale .lthumb { opacity: 0.75; }
+
+      /* a run that changes state: the card eases in from the margin, lit, then settles */
+      @keyframes lcard-in { from { opacity: 0; transform: translateX(14px); } to { opacity: 1; transform: none; } }
+      @keyframes lcard-settle {
+        0% { border-color: rgba(157, 184, 214, 0.7); box-shadow: 0 0 0 3px rgba(157, 184, 214, 0.16); }
+        100% { border-color: rgba(255, 255, 255, 0.06); box-shadow: 0 0 0 3px rgba(157, 184, 214, 0); }
+      }
+      .lcard.fresh { animation: lcard-in 0.24s ease-out both, lcard-settle 2s ease-out 0.2s both; }
+
+      /* ---------- narrow window: dots in the gutter, cards on call ----------
+         Grafted from peek-overlay and zen-rail. When the margin cannot hold
+         a card the ledger folds away and the run chips' dots carry it: hover
+         a dot and the cell's card appears as a popover beside the cell, in
+         the frame's own material, leaning over the column's right edge;
+         click the dot to pin it. A run eases the card in for a breath, then
+         folds it back to the dot. The Session count moves to a tab at the
+         room's right edge. */
+      body.spine #ledger { left: auto; right: calc(-1 * ((100cqw - 100%) / 2) + 8px); width: 232px; }
+      body.spine .lhead { display: none; }
+      body.spine .lcard {
+        display: none; left: auto; right: 0; width: 232px; padding: 9px 10px 8px 11px;
+        background: #18181a; border-color: rgba(255, 255, 255, 0.1); border-radius: 10px;
+        box-shadow: 0 10px 30px rgba(0, 0, 0, 0.45); z-index: 6;
+      }
+      body.spine .lcard.peek, body.spine .lcard.pinned { display: block; }
+      body.spine .lcard::before { content: none; }
+      body.spine .lcard.pinned { border-color: rgba(157, 184, 214, 0.4); }
+      body.spine .lcard.unseen { box-shadow: 0 10px 30px rgba(0, 0, 0, 0.45), inset 2px 0 0 rgba(157, 184, 214, 0.65); }
+
+      /* the Session tab (floating-edge's tucked tab): hangs off the room's
+         right edge while the cards are folded, carrying the count; a run
+         whose cell is off screen nudges it. */
+      #stab {
+        position: absolute; right: 0; top: 22px; width: 44px; height: 44px; z-index: 7;
+        display: none; align-items: center; justify-content: center; padding: 0; border: 1px solid rgba(255, 255, 255, 0.08); border-right: 0;
+        border-radius: 10px 0 0 10px; background: var(--room-pane); color: var(--room-ink-soft); cursor: pointer;
+        transition: color 0.15s, transform 0.18s ease;
+      }
+      body.spine #stab { display: flex; }
+      #stab:hover { color: var(--room-ink); transform: translateX(-4px); }
+      #stab svg { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; }
+      #stab .n { position: absolute; top: 6px; left: 26px; font: 600 9.5px/1 var(--mono); color: var(--room-ink-soft); background: var(--room-pane); padding: 1px 2px; border-radius: 4px; }
+      #stab.unseen .n { color: var(--blue); }
+      #stab::after {
+        content: 'Session · ' attr(data-count) ' names'; position: absolute; right: calc(100% + 10px); top: 50%; transform: translateY(-50%);
+        background: #0a0a0b; color: var(--frame-ink); font: 12.5px var(--sans); white-space: nowrap;
+        padding: 5px 10px; border-radius: 8px; border: 1px solid rgba(255, 255, 255, 0.08);
+        opacity: 0; pointer-events: none; transition: opacity 0.12s;
+      }
+      #stab:hover::after { opacity: 1; }
+      @keyframes stab-nudge { 0%, 100% { transform: none; } 30% { transform: translateX(-10px); } 60% { transform: translateX(-10px); } }
+      #stab.nudge { animation: stab-nudge 1.1s ease; }
+
+      /* ---------- the viewer: beside the column, or large ----------
+         Grafted from peek-overlay's pin rule: a viewer is something you look
+         at while you work, so by default it is a card hung at the room's
+         right edge that stays while you click and type in the column (✕ or
+         Esc closes it; its width is the free margin when that holds it,
+         360px over the column's edge when it does not). ⤢ makes it large
+         over the dimmed frame, the projector view; ⤡ brings it back. Three
+         plain-word tabs (bottom-shelf): Session, the whole namespace sorted;
+         Data, with a chip to pick the table; Figures, newest first. */
+      #overlay { position: fixed; inset: 0; z-index: 50; pointer-events: none; }
+      #overlay[hidden] { display: none; }
+      #overlay.large { pointer-events: auto; background: rgba(17, 17, 18, 0.62); backdrop-filter: blur(6px); display: flex; align-items: center; justify-content: center; padding: 40px; }
+      @keyframes pop { from { opacity: 0; transform: translateY(8px) scale(0.985); } to { opacity: 1; transform: none; } }
+      @keyframes slide { from { opacity: 0; transform: translateX(12px); } to { opacity: 1; transform: none; } }
+      .big {
+        position: absolute; top: calc(var(--topbar) + 22px); right: calc(var(--inset) + 12px);
+        max-height: calc(100vh - var(--topbar) - var(--inset) - 44px);
+        width: clamp(360px, calc((100vw - var(--rail) - var(--inset) - 40px - 52rem) / 2 - 20px), 720px);
+        display: flex; flex-direction: column; pointer-events: auto;
+        background: var(--room-pane); border: 1px solid rgba(255, 255, 255, 0.09); border-radius: 12px; overflow: hidden;
+        box-shadow: 0 24px 70px rgba(0, 0, 0, 0.55); animation: slide 0.18s ease-out; color: var(--room-ink);
+      }
+      #overlay.large .big { position: static; width: min(880px, 100%); max-height: calc(100vh - 80px); animation: pop 0.18s ease-out; }
+      .big .head { display: flex; align-items: center; gap: 2px; padding: 0.45rem 0.6rem 0.45rem 0.55rem; background: rgba(255, 255, 255, 0.018); border-bottom: 1px solid var(--room-line); }
+      .big .tab { border: 0; background: transparent; color: var(--room-ink-soft); font: 10.5px var(--sans); letter-spacing: 0.14em; text-transform: uppercase; padding: 5px 9px; border-radius: 6px; cursor: pointer; }
+      .big .tab:hover { color: var(--room-ink); }
+      .big .tab.on { color: var(--room-ink); background: rgba(255, 255, 255, 0.07); }
+      .big .head .spacer { flex: 1; }
+      .big .head .x, .big .head .size { border: 0; background: none; color: var(--room-ink-soft); font-size: 14px; cursor: pointer; padding: 0 5px; display: inline-flex; align-items: center; }
+      .big .head .x:hover, .big .head .size:hover { color: var(--room-ink); }
+      .big .head .size svg { width: 14px; height: 14px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; display: block; }
+      .big .sub { display: flex; align-items: center; gap: 10px; min-width: 0; padding: 0.5rem 0.9rem; border-bottom: 1px solid var(--room-line); font: 12px var(--mono); color: var(--room-ink-soft); }
+      .big .sub .name { font: 600 13px var(--mono); color: var(--room-ink); }
+      .big .sub .from { margin-left: auto; min-width: 0; font: 11.5px var(--mono); color: var(--room-ink-soft); cursor: pointer; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+      .big .sub .from:hover { color: var(--blue); }
+      .big .sub .from i { font-style: normal; font-family: var(--sans); font-size: 11px; margin-right: 6px; opacity: 0.8; }
+      .big .sub .took { font: 11px var(--sans); white-space: nowrap; }
+      .big .pick { display: flex; flex-wrap: wrap; gap: 6px; padding: 8px 12px 6px; }
+      .big .pick button { font: 12px var(--mono); border: 1px solid var(--room-line); border-radius: 999px; background: transparent; color: var(--room-ink-soft); padding: 0.2rem 0.65rem; cursor: pointer; }
+      .big .pick button:hover { color: var(--room-ink); }
+      .big .pick button.on { color: var(--room-ink); background: rgba(255, 255, 255, 0.08); border-color: transparent; }
+      .big .scroll { flex: 1; min-height: 0; overflow: auto; }
+      .data-table { border-collapse: collapse; font: 12px/1.45 var(--mono); color: var(--room-ink); }
+      .data-table th, .data-table td { padding: 0.16rem 0.55rem; border-bottom: 1px solid rgba(255, 255, 255, 0.045); white-space: nowrap; text-align: right; }
+      .data-table thead th { position: sticky; top: 0; background: #232226; color: var(--room-ink-soft); font-weight: 600; z-index: 1; }
+      .data-table thead th:first-child { text-align: left; font-weight: 400; }
+      .data-table tbody th { color: var(--room-ink-soft); font-weight: 400; text-align: left; }
+      .data-table td:first-of-type { padding-left: 0.9rem; }
+      .big .foot { padding: 0.45rem 0.9rem; font-size: 12px; color: var(--room-ink-soft); border-top: 1px solid var(--room-line); }
+      .big .foot button { font: 12px/1 var(--sans); border: 1px solid var(--room-line); border-radius: 999px; background: transparent; color: var(--room-ink); padding: 0.25rem 0.7rem; cursor: pointer; }
+      .big .foot button:hover { background: rgba(255, 255, 255, 0.07); }
+      .big .figure { margin: 0; }
+      .big .figure svg { display: block; width: 720px; max-width: 100%; height: auto; }
+      /* the Session tab: today's vars-table (src/styles.css), sorted, plus
+         the cell that bound each name; a blue dot on what you have not
+         looked at since it changed */
+      .vars-table { width: 100%; border-collapse: collapse; font: 12.5px/1.5 var(--mono); }
+      .vars-table td { padding: 0.25rem 0.5rem; vertical-align: top; }
+      .vars-table tr + tr td { border-top: 1px solid rgba(255, 255, 255, 0.045); }
+      .vars-table td:first-child { padding-left: 0.9rem; }
+      .vars-table td:last-child { padding-right: 0.9rem; }
+      .vars-table .v-name { font-weight: 600; white-space: nowrap; color: var(--room-ink); }
+      .vars-table .v-type { color: var(--room-ink-soft); white-space: nowrap; width: 100%; }
+      .vars-table .v-cell { color: var(--room-ink-soft); font: 11px/1.7 var(--sans); white-space: nowrap; text-align: right; cursor: pointer; }
+      .vars-table .v-cell:hover { color: var(--blue); }
+      .vars-table .v-cell.stale { color: var(--amber); }
+      .vars-table tr.scratch .v-name { font-weight: 400; font-style: italic; }
+      .vars-table tr.viewable { cursor: pointer; }
+      .vars-table tr.viewable:hover { background: rgba(255, 255, 255, 0.05); }
+      .vars-table tr.viewable .v-name { color: var(--blue); }
+      .vars-table .v-dot { display: inline-block; width: 5px; height: 5px; border-radius: 50%; margin: 0 6px 1px 0; vertical-align: middle; background: transparent; }
+      .vars-table tr.unseen .v-dot { background: var(--blue); }
+      .vars-table .v-empty { padding: 0.6rem 0.9rem; color: var(--room-ink-soft); font: 12.5px var(--sans); }
+      /* the Figures tab: prints newest first, captioned by name and cell */
+      .fig-list { padding: 12px 16px 16px; display: flex; flex-direction: column; gap: 16px; }
+      .fig-cap { display: flex; align-items: center; gap: 8px; margin: 0 2px 6px; font: 12px var(--sans); color: var(--room-ink-soft); }
+      .fig-cap .n { font: 600 12.5px var(--mono); color: var(--room-ink); }
+      .fig-cap .spacer { flex: 1; }
+      .fig-cap .go { cursor: pointer; }
+      .fig-cap .go:hover { color: var(--blue); }
+
+      /* ---------- mockup chrome: the states (not part of Knuth) ---------- */
+      #states {
+        position: fixed; bottom: 18px; left: calc(var(--rail) + (100vw - var(--rail) - var(--inset)) / 2); transform: translateX(-50%); z-index: 40;
+        display: flex; align-items: center; gap: 2px; padding: 4px 6px 4px 12px;
+        background: rgba(251, 250, 248, 0.92); backdrop-filter: blur(18px) saturate(140%); border: 1px solid rgba(0, 0, 0, 0.08); border-radius: 999px;
+        box-shadow: 0 6px 18px rgba(0, 0, 0, 0.3); color: #2c2b29; font: 12px var(--sans); white-space: nowrap;
+      }
+      #states .lab { color: #6b6b6b; margin-right: 6px; letter-spacing: 0.04em; text-transform: uppercase; font-size: 10.5px; }
+      #states .sep { width: 1px; height: 16px; background: rgba(0, 0, 0, 0.12); margin: 0 6px; }
+      #states button { border: 0; background: transparent; color: #2c2b29; border-radius: 999px; padding: 4px 10px; cursor: pointer; }
+      #states button:hover { background: rgba(0, 0, 0, 0.06); }
+      #states button.on { background: #2c2b29; color: #fff; }
+      #states .hint { color: #6b6b6b; margin-left: 4px; font-size: 11.5px; }
+      @media (max-width: 1180px) { #states .hint { display: none; } }
+    </style>
+  </head>
+  <body data-ledger="auto" data-fit="cards">
+    <!-- the two figures, drawn once; the cell, the thumbnail and the large view all use them -->
+    <svg width="0" height="0" style="position: absolute" aria-hidden="true">
+      <defs>
+        <symbol id="fig-line" viewBox="0 0 460 300">
+          <rect width="460" height="300" fill="#fff"/>
+          <g font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', 'Helvetica Neue', sans-serif" font-size="11" fill="#000">
+            <rect x="60" y="20" width="380" height="235" fill="none" stroke="#000" stroke-width="0.8"/>
+            <g stroke="#000" stroke-width="0.8">
+              <line x1="60" y1="255" x2="60" y2="259"/><line x1="144.4" y1="255" x2="144.4" y2="259"/><line x1="228.9" y1="255" x2="228.9" y2="259"/><line x1="313.3" y1="255" x2="313.3" y2="259"/><line x1="397.8" y1="255" x2="397.8" y2="259"/>
+              <line x1="56" y1="237" x2="60" y2="237"/><line x1="56" y1="192" x2="60" y2="192"/><line x1="56" y1="146.6" x2="60" y2="146.6"/><line x1="56" y1="101.4" x2="60" y2="101.4"/><line x1="56" y1="56" x2="60" y2="56"/>
+            </g>
+            <g text-anchor="middle"><text x="60" y="272">0.70</text><text x="144.4" y="272">0.80</text><text x="228.9" y="272">0.90</text><text x="313.3" y="272">1.00</text><text x="397.8" y="272">1.10</text></g>
+            <g text-anchor="end"><text x="52" y="241">300</text><text x="52" y="196">350</text><text x="52" y="150.6">400</text><text x="52" y="105.4">450</text><text x="52" y="60">500</text></g>
+            <text x="250" y="292" text-anchor="middle" font-size="12">price</text>
+            <text transform="translate(16 137.5) rotate(-90)" text-anchor="middle" font-size="12">median quantity</text>
+            <polyline points="102,38 229,137.5 398,237" fill="none" stroke="#1f77b4" stroke-width="1.6"/>
+            <circle cx="102" cy="38" r="3.6" fill="#1f77b4"/><circle cx="229" cy="137.5" r="3.6" fill="#1f77b4"/><circle cx="398" cy="237" r="3.6" fill="#1f77b4"/>
+          </g>
+        </symbol>
+        <symbol id="fig-bar" viewBox="0 0 460 300">
+          <rect width="460" height="300" fill="#fff"/>
+          <g font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', 'Helvetica Neue', sans-serif" font-size="11" fill="#000">
+            <rect x="60" y="20" width="380" height="235" fill="none" stroke="#000" stroke-width="0.8"/>
+            <g stroke="#000" stroke-width="0.8">
+              <line x1="155" y1="255" x2="155" y2="259"/><line x1="345" y1="255" x2="345" y2="259"/>
+              <line x1="56" y1="20" x2="60" y2="20"/><line x1="56" y1="53.6" x2="60" y2="53.6"/><line x1="56" y1="87.1" x2="60" y2="87.1"/><line x1="56" y1="120.7" x2="60" y2="120.7"/><line x1="56" y1="154.3" x2="60" y2="154.3"/><line x1="56" y1="187.9" x2="60" y2="187.9"/><line x1="56" y1="221.4" x2="60" y2="221.4"/><line x1="56" y1="255" x2="60" y2="255"/>
+            </g>
+            <g text-anchor="middle"><text x="155" y="272">0.9</text><text x="345" y="272">1.1</text></g>
+            <g text-anchor="end"><text x="52" y="24">0.0</text><text x="52" y="57.6">−0.2</text><text x="52" y="91.1">−0.4</text><text x="52" y="124.7">−0.6</text><text x="52" y="158.3">−0.8</text><text x="52" y="191.9">−1.0</text><text x="52" y="225.4">−1.2</text><text x="52" y="259">−1.4</text></g>
+            <text x="250" y="292" text-anchor="middle" font-size="12">price</text>
+            <rect x="113" y="20" width="84" height="178" fill="#305c8a"/>
+            <rect x="303" y="20" width="84" height="203" fill="#305c8a"/>
+            <line x1="60" y1="20" x2="440" y2="20" stroke="#000" stroke-width="0.8"/>
+          </g>
+        </symbol>
+        <symbol id="g-tbl" viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="14" rx="2"/><line x1="3" y1="10" x2="21" y2="10"/><line x1="3" y1="14.5" x2="21" y2="14.5"/><line x1="10" y1="5" x2="10" y2="19"/></symbol>
+        <symbol id="g-ser" viewBox="0 0 24 24"><rect x="8" y="3" width="8" height="18" rx="1.5"/><line x1="8" y1="9" x2="16" y2="9"/><line x1="8" y1="15" x2="16" y2="15"/></symbol>
+        <symbol id="g-fig" viewBox="0 0 24 24"><path d="M3 3v18h18"/><polyline points="7 16 11 10 14.5 13 20 6"/></symbol>
+      </defs>
+    </svg>
+
+    <div id="topbar">
+      <div class="lights"><i></i><i></i><i></i></div>
+      <button class="ctl" data-label="Session panes" id="ctl-panes"><svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="3"/><line x1="9" y1="4" x2="9" y2="20"/></svg></button>
+      <button class="ctl dim" data-label="Back"><svg viewBox="0 0 24 24"><line x1="19" y1="12" x2="5" y2="12"/><polyline points="12 19 5 12 12 5"/></svg></button>
+      <button class="ctl dim" data-label="Forward"><svg viewBox="0 0 24 24"><line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/></svg></button>
+      <div id="docpill">
+        <span class="file"><svg viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg></span>
+        <span class="name" title="Click to rename">analysis.py</span><span class="dirty">●</span>
+        <span class="path">~/Projects/ECON_0150/week-3</span>
+        <span class="spacer"></span>
+        <span class="python"><i></i>uv · Python 3.13</span>
+      </div>
+      <button class="ctl on" id="ctl-session" data-label="Session: beside the cells"><svg viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="2"/><line x1="15" y1="3" x2="15" y2="21"/></svg></button>
+      <div class="avatar"></div>
+    </div>
+
+    <nav id="rail" aria-label="Toolbar">
+      <button class="rb on" data-label="analysis.py"><svg viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg></button>
+      <button class="rb dim" data-label="Open…"><svg viewBox="0 0 24 24"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg></button>
+      <div class="rule"></div>
+      <div class="group">
+        <button class="rb small" data-label="Code cell"><svg viewBox="0 0 24 24"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg></button>
+        <button class="rb small" data-label="Scratch cell"><svg viewBox="0 0 24 24"><rect x="4" y="4" width="16" height="16" rx="2" stroke-dasharray="3.4 2.8"/><line x1="9" y1="12" x2="15" y2="12"/></svg></button>
+        <button class="rb small" data-label="Text cell"><svg viewBox="0 0 24 24"><polyline points="4 7 4 4 20 4 20 7"/><line x1="9" y1="20" x2="15" y2="20"/><line x1="12" y1="4" x2="12" y2="20"/></svg></button>
+      </div>
+      <div class="rule"></div>
+      <div class="group">
+        <button class="rb small solid" data-label="Run stale"><svg viewBox="0 0 24 24"><polygon points="7 4.5 19 12 7 19.5"/></svg></button>
+        <button class="rb small solid" data-label="Run all"><svg viewBox="0 0 24 24"><polygon points="3.5 5 11 12 3.5 19"/><polygon points="13 5 20.5 12 13 19"/></svg></button>
+        <button class="rb small" data-label="Stop"><svg viewBox="0 0 24 24"><rect x="6.5" y="6.5" width="11" height="11" rx="1.5"/></svg></button>
+        <button class="rb small" data-label="Restart session"><svg viewBox="0 0 24 24"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"/></svg></button>
+      </div>
+      <div class="grow"></div>
+      <button class="rb small dim" data-label="Get Knuth"><svg viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg></button>
+      <button class="rb small dim" data-label="New document"><svg viewBox="0 0 24 24"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg></button>
+    </nav>
+
+    <main id="room">
+      <div id="doc">
+        <div id="page">
+          <div id="sheet">
+            <button class="pkg">▸ Packages <span class="list">pandas · matplotlib</span></button>
+
+            <div class="cell-wrap" id="c1">
+              <div class="insert-zone"></div>
+              <div class="cell kind-program">
+                <div class="body">
+                  <div class="cm">
+                    <div class="gut"><button class="run" title="Run"></button><div class="ln"></div><div class="fold"></div></div>
+                    <div class="code">
+                      <div class="line"><span class="k">import</span> pandas <span class="k">as</span> pd</div>
+                      <div class="line">prices <span class="o">=</span> pd.<span class="p">read_csv</span>(<span class="s">'prices.csv'</span>)</div>
+                      <div class="line">prices.<span class="p">describe</span>()</div>
+                    </div>
+                  </div>
+                  <pre class="output">             price     quantity
+count  1200.000000  1200.000000
+mean      0.916667   410.283333
+std       0.144455   112.608109
+min       0.750000   142.000000
+50%       0.900000   409.000000
+max       1.100000   713.000000</pre>
+                </div>
+              </div>
+            </div>
+
+            <div class="cell-wrap" id="c2">
+              <div class="insert-zone"></div>
+              <div class="cell kind-text">
+                <div class="body">
+                  <div class="prose">
+                    <h2>Demand at three prices</h2>
+                    <p>Each row of the table is one buyer’s answer at the price they were shown. The curve below joins the three medians; the slope between neighbouring medians is the elasticity we report in the summary at the end.</p>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div class="cell-wrap" id="c3">
+              <div class="insert-zone"></div>
+              <div class="cell kind-program">
+                <div class="body">
+                  <div class="cm">
+                    <div class="gut"><button class="run" title="Run"></button><div class="ln"></div><div class="fold"></div></div>
+                    <div class="code">
+                      <div class="line">demand <span class="o">=</span> prices.<span class="p">groupby</span>(<span class="s">'price'</span>).<span class="p">quantity</span>.<span class="p">median</span>()</div>
+                      <div class="line">ax <span class="o">=</span> demand.<span class="p">plot</span>(marker<span class="o">=</span><span class="s">'o'</span>)</div>
+                      <div class="line">ax.<span class="p">set_ylabel</span>(<span class="s">'median quantity'</span>)</div>
+                    </div>
+                  </div>
+                  <div class="cell-figures"><div class="figure"><svg viewBox="0 0 460 300" role="img" aria-label="median quantity against price"><use href="#fig-line"/></svg></div></div>
+                  <pre class="output">Text(0, 0.5, 'median quantity')</pre>
+                </div>
+              </div>
+            </div>
+
+            <div class="cell-wrap" id="c4">
+              <div class="insert-zone"></div>
+              <div class="cell kind-scratch">
+                <div class="body">
+                  <div class="scratch-label">scratch</div>
+                  <div class="cm">
+                    <div class="gut"><button class="run" title="Run"></button><div class="ln"></div><div class="fold"></div></div>
+                    <div class="code">
+                      <div class="line">tmp <span class="o">=</span> demand.<span class="p">pct_change</span>()</div>
+                      <div class="line">tmp</div>
+                    </div>
+                  </div>
+                  <pre class="output">price
+0.75         NaN
+0.90   -0.211538
+1.10   -0.268293
+Name: quantity, dtype: float64</pre>
+                </div>
+              </div>
+            </div>
+
+            <div class="cell-wrap" id="c5">
+              <div class="insert-zone"></div>
+              <div class="cell kind-program">
+                <div class="body">
+                  <div class="cm">
+                    <div class="gut"><button class="run" title="Run"></button><div class="ln"></div><div class="fold"></div></div>
+                    <div class="code">
+                      <div class="line">prices <span class="o">=</span> prices[prices.<span class="p">quantity</span> <span class="o">&gt;</span> <span class="n">0</span>]          <span class="c"># drop the no-sale rows</span></div>
+                      <div class="line">dp <span class="o">=</span> demand.<span class="p">index</span>.<span class="p">to_series</span>().<span class="p">pct_change</span>()</div>
+                      <div class="line">elasticity <span class="o">=</span> (demand.<span class="p">pct_change</span>() <span class="o">/</span> dp).<span class="p">dropna</span>()</div>
+                      <div class="line">elasticity.<span class="p">round</span>(<span class="n">2</span>)</div>
+                    </div>
+                  </div>
+                  <pre class="output">price
+0.90   -1.06
+1.10   -1.21
+Name: quantity, dtype: float64</pre>
+                </div>
+              </div>
+            </div>
+
+            <div class="cell-wrap" id="c6">
+              <div class="insert-zone"></div>
+              <div class="cell kind-program stale">
+                <div class="body">
+                  <div class="cm">
+                    <div class="gut"><button class="run" title="Run"></button><div class="ln"></div><div class="fold"></div></div>
+                    <div class="code">
+                      <div class="line">summary <span class="o">=</span> pd.<span class="p">DataFrame</span>({<span class="s">'demand'</span>: demand, <span class="s">'elasticity'</span>: elasticity})</div>
+                      <div class="line">ax2 <span class="o">=</span> summary.<span class="p">elasticity</span>.<span class="p">plot</span>.<span class="p">bar</span>(color<span class="o">=</span><span class="s">'#305c8a'</span>)</div>
+                    </div>
+                  </div>
+                  <div class="c6-out">
+                    <pre class="output">       demand  elasticity
+price
+0.75    520.0         NaN
+0.90    410.0       -1.06
+1.10    300.0       -1.21</pre>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div class="cell-wrap" id="c7">
+              <div class="insert-zone"></div>
+              <div class="cell kind-text">
+                <div class="body">
+                  <div class="prose">
+                    <p>Both elasticities are above one in magnitude: at these prices demand is <em>elastic</em>, and a price cut would raise revenue. The next section checks whether that holds in each region.</p>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- The ledger. One card per cell that bound something; JS sets each card's
+               top from its cell's first line, nudging down only when the card above
+               would overlap. -->
+          <aside id="ledger" aria-label="Session">
+            <div class="lhead" title="The whole session, sorted">Session <b>· <span id="lcount">7</span> names</b></div>
+
+            <div class="lcard" data-cell="c1" data-took="1.2 s">
+              <div class="lbody">
+                <div class="lrow viewable gone" data-view="prices0"><i class="m new">+</i><svg class="g"><use href="#g-tbl"/></svg><b>prices</b><span>DataFrame 1200×2</span><span class="note">rebound ↓</span></div>
+              </div>
+            </div>
+
+            <div class="lcard" data-cell="c3" data-took="0.38 s">
+              <div class="lbody">
+                <div class="lrow viewable" data-view="demand"><i class="m new">+</i><svg class="g"><use href="#g-ser"/></svg><b>demand</b><span>Series 3</span></div>
+                <div class="lrow viewable" data-fig="line"><i class="m new">+</i><svg class="g"><use href="#g-fig"/></svg><b>ax</b><span>Axes</span></div>
+                <div class="lthumb" data-fig="line" title="Show the figure"><svg viewBox="0 0 460 300"><use href="#fig-line"/></svg></div>
+              </div>
+            </div>
+
+            <div class="lcard" data-cell="c4" data-took="12 ms">
+              <div class="lbody">
+                <div class="lrow viewable scratch" data-view="tmp"><i class="m new">+</i><svg class="g"><use href="#g-ser"/></svg><b>tmp</b><span>Series 3 · scratch</span></div>
+              </div>
+            </div>
+
+            <div class="lcard" data-cell="c5" data-took="41 ms">
+              <div class="lbody">
+                <div class="lrow viewable" data-view="prices"><i class="m">~</i><svg class="g"><use href="#g-tbl"/></svg><b>prices</b><span>DataFrame 1187×2</span></div>
+                <div class="lrow viewable" data-view="dp"><i class="m new">+</i><svg class="g"><use href="#g-ser"/></svg><b>dp</b><span>Series 3</span></div>
+                <div class="lrow viewable" data-view="elasticity"><i class="m new">+</i><svg class="g"><use href="#g-ser"/></svg><b>elasticity</b><span>Series 2</span></div>
+              </div>
+            </div>
+
+            <div class="lcard stale" data-cell="c6" data-took="0.21 s">
+              <div class="lbody">
+                <div class="lrow viewable" data-view="summary"><i class="m new">+</i><svg class="g"><use href="#g-tbl"/></svg><b>summary</b><span>DataFrame 3×2</span><span class="note stale">last run</span></div>
+              </div>
+            </div>
+          </aside>
+        </div>
+      </div>
+      <button id="stab" data-count="7" title="Session"><svg viewBox="0 0 24 24"><path d="M8.5 3H7.5a2 2 0 0 0-2 2v4.5a2 2 0 0 1-2 2.5 2 2 0 0 1 2 2.5V19a2 2 0 0 0 2 2h1"/><path d="M15.5 3h1a2 2 0 0 1 2 2v4.5a2 2 0 0 0 2 2.5 2 2 0 0 0-2 2.5V19a2 2 0 0 1-2 2h-1"/></svg><span class="n">7</span></button>
+    </main>
+
+    <!-- cell 6 after its run: a figure in the cell, a thumbnail and a new name in its card -->
+    <template id="c6-after">
+      <div class="cell-figures"><div class="figure"><svg viewBox="0 0 460 300" role="img" aria-label="elasticity by price"><use href="#fig-bar"/></svg></div></div>
+      <pre class="output">&lt;Axes: xlabel='price'&gt;</pre>
+    </template>
+    <template id="c6-card-after">
+      <div class="lbody">
+        <div class="lrow viewable" data-view="summary"><i class="m">~</i><svg class="g"><use href="#g-tbl"/></svg><b>summary</b><span>DataFrame 3×2</span></div>
+        <div class="lrow viewable" data-fig="bar"><i class="m new">+</i><svg class="g"><use href="#g-fig"/></svg><b>ax2</b><span>Axes</span></div>
+        <div class="lthumb" data-fig="bar" title="Show the figure"><svg viewBox="0 0 460 300"><use href="#fig-bar"/></svg></div>
+      </div>
+    </template>
+
+    <div id="overlay" hidden></div>
+
+    <div id="states" aria-label="Mockup states">
+      <span class="lab">Window</span>
+      <button data-win="auto" class="on">Auto</button>
+      <button data-win="cards">Wide</button>
+      <button data-win="spine">Narrow</button>
+      <span class="sep"></span>
+      <button id="st-run">Run the stale cell</button>
+      <button id="st-open">Open the viewer</button>
+      <button id="st-large">Open it large</button>
+      <button id="st-reset">Reset</button>
+      <span class="hint">· or click any ▶, scroll, resize the window</span>
+    </div>
+
+    <script>
+      (function () {
+        const $ = (s, r) => (r || document).querySelector(s);
+        const $$ = (s, r) => Array.from((r || document).querySelectorAll(s));
+        const body = document.body, doc = $('#doc'), page = $('#page'), ledger = $('#ledger');
+
+        /* ---- the parts of the bench the app builds for itself: numbers and insert pills ---- */
+        const PILL = '<div class="insert-actions">' +
+          '<button title="Code"><svg viewBox="0 0 24 24"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg></button>' +
+          '<button title="Scratch"><svg viewBox="0 0 24 24"><rect x="4" y="4" width="16" height="16" rx="2" stroke-dasharray="3.4 2.8"/><line x1="9" y1="12" x2="15" y2="12"/></svg></button>' +
+          '<button title="Text"><svg viewBox="0 0 24 24"><polyline points="4 7 4 4 20 4 20 7"/><line x1="9" y1="20" x2="15" y2="20"/><line x1="12" y1="4" x2="12" y2="20"/></svg></button></div>';
+        $$('.insert-zone').forEach((z) => (z.innerHTML = PILL));
+        $$('.cm').forEach((cm) => {
+          const n = $$('.line', cm).length;
+          $('.ln', cm).innerHTML = Array.from({ length: n }, (_, i) => '<span>' + (i + 1) + '</span>').join('');
+        });
+        /* the dot in every run chip; shown (.ran) once the cell has run */
+        $$('.run').forEach((b) => b.insertAdjacentHTML('beforeend', '<i class="dot" title="What this run put in the session"></i>'));
+        for (const card of $$('.lcard')) $('.cell', document.getElementById(card.dataset.cell)).classList.add('ran');
+        $('#c5 .cell').classList.add('ran-last');
+        const stab = $('#stab');
+
+        /* ---- layout: each card's top is its cell's first line; stack down only to avoid overlap ---- */
+        function layout() {
+          const spine = body.classList.contains('spine');
+          const top0 = page.getBoundingClientRect().top;
+          const head = $('.lhead', ledger);
+          let prev = -1e9;
+          const minTop = spine ? 0 : head.offsetHeight + 6;
+          if (spine) { for (const card of $$('.lcard', ledger)) card.style.top = ($('.cm', document.getElementById(card.dataset.cell)) || document.getElementById(card.dataset.cell)).getBoundingClientRect().top - top0 + 'px'; return; }
+          for (const card of $$('.lcard', ledger)) {
+            const cell = document.getElementById(card.dataset.cell);
+            const anchor = $('.cm', cell) || cell;
+            let top = anchor.getBoundingClientRect().top - top0;
+            top = Math.max(top, prev + (spine ? 6 : 10), minTop);
+            card.style.top = top + 'px';
+            prev = top + card.offsetHeight;
+          }
+        }
+
+        /* ---- fit: does the right margin hold a card? else the dots ---- */
+        const SHEET = 52 * 16;
+        function fit() {
+          const w = doc.clientWidth - 40; // the column's own padding
+          const margin = (w - Math.min(SHEET, w)) / 2;
+          body.dataset.fit = margin - 32 >= 150 ? 'cards' : 'spine';
+          mode();
+        }
+        function mode() {
+          const want = body.dataset.ledger === 'auto' ? body.dataset.fit : body.dataset.ledger;
+          body.classList.toggle('spine', want === 'spine');
+          body.classList.toggle('noledger', want === 'hidden');
+          $('#ctl-session').classList.toggle('on', want !== 'hidden');
+          $('#ctl-session').dataset.label =
+            want === 'hidden' ? 'Session: hidden' : want === 'spine' ? 'Session: in the gutter' : 'Session: beside the cells';
+          layout();
+        }
+        new ResizeObserver(fit).observe(doc);
+        new ResizeObserver(layout).observe($('#sheet'));
+        window.addEventListener('load', fit);
+        if (document.fonts && document.fonts.ready) document.fonts.ready.then(layout);
+        fit();
+
+        /* ---- the window buttons and the topbar's Session button ---- */
+        $$('#states [data-win]').forEach((b) =>
+          b.addEventListener('click', () => {
+            $$('#states [data-win]').forEach((x) => x.classList.toggle('on', x === b));
+            body.dataset.ledger = b.dataset.win;
+            mode();
+          }),
+        );
+        $('#ctl-session').addEventListener('click', () => {
+          const cur = body.dataset.ledger === 'auto' ? body.dataset.fit : body.dataset.ledger;
+          const next = cur === 'cards' ? 'spine' : cur === 'spine' ? 'hidden' : 'auto';
+          body.dataset.ledger = next;
+          $$('#states [data-win]').forEach((x) => x.classList.toggle('on', x.dataset.win === next));
+          mode();
+        });
+
+        /* ---- hover ties a card to its cell and back; looking at a card acknowledges it ---- */
+        function ack(card) {
+          card.classList.remove('unseen');
+          if (!$('.lcard.unseen', ledger)) stab.classList.remove('unseen');
+        }
+        function link(card, on) {
+          card.classList.toggle('linked', on);
+          document.getElementById(card.dataset.cell).classList.toggle('linked', on);
+        }
+        function unpinAll() { $$('.lcard.pinned').forEach((c) => c.classList.remove('pinned')); }
+        const peekTimers = new Map();
+        function peek(card, on, delay) {
+          clearTimeout(peekTimers.get(card));
+          if (on) return card.classList.add('peek');
+          peekTimers.set(card, setTimeout(() => card.classList.remove('peek'), delay || 0));
+        }
+        function wireCard(card) {
+          const cell = document.getElementById(card.dataset.cell);
+          /* the receipt's time, at the right of the first row, on hover */
+          const first = $('.lrow', card);
+          if (first && !$('.note', first)) first.insertAdjacentHTML('beforeend', '<span class="note took">' + card.dataset.took + '</span>');
+          if (card.dataset.wired) return; /* a re-rendered card keeps its listeners */
+          card.dataset.wired = '1';
+          card.addEventListener('mouseenter', () => { link(card, true); peek(card, true); ack(card); });
+          card.addEventListener('mouseleave', () => { link(card, false); peek(card, false, 900); });
+          cell.addEventListener('mouseenter', () => link(card, true));
+          cell.addEventListener('mouseleave', () => link(card, false));
+          /* the dot: in the narrow window it summons the card; in the wide
+             one it finds it; when the ledger is hidden it opens the session */
+          const dot = $('.run .dot', cell);
+          dot.addEventListener('mouseenter', () => { if (body.classList.contains('spine')) peek(card, true); });
+          dot.addEventListener('mouseleave', () => peek(card, false, 300));
+          dot.addEventListener('click', (e) => {
+            e.stopPropagation();
+            if (body.classList.contains('noledger')) return show('session');
+            if (body.classList.contains('spine')) {
+              const was = card.classList.contains('pinned');
+              unpinAll();
+              card.classList.toggle('pinned', !was);
+              if (!was) ack(card);
+            } else {
+              card.classList.add('linked');
+              setTimeout(() => card.classList.remove('linked'), 1400);
+              ack(card);
+            }
+          });
+        }
+        $$('.lcard').forEach(wireCard);
+        document.addEventListener('click', (e) => {
+          if (!e.target.closest('.lcard') && !e.target.closest('.dot')) unpinAll();
+        });
+
+        /* ---- the data behind the chips ---- */
+        let seed = 7;
+        const rnd = () => ((seed = (seed * 1103515245 + 12345) % 2147483648) / 2147483648);
+        const med = { '0.75': 520, '0.90': 410, '1.10': 300 };
+        const priceRows = [];
+        for (let i = 0; i < 100; i++) {
+          const p = ['0.75', '0.90', '1.10'][i % 3];
+          const q = Math.max(0, Math.round(med[p] + (rnd() + rnd() + rnd() - 1.5) * 150));
+          priceRows.push([p, String(q)]);
+        }
+        const DATA = {
+          prices0: { name: 'prices', shape: '1200×2', index: 'index', cols: ['price', 'quantity'], rows: priceRows, idx: priceRows.map((_, i) => String(i)), total: 1200, from: 'c1', line: "prices = pd.read_csv('prices.csv')" },
+          prices: { name: 'prices', shape: '1187×2', index: 'index', cols: ['price', 'quantity'], rows: priceRows.filter((r) => r[1] !== '0'), idx: priceRows.map((_, i) => String(i)), total: 1187, from: 'c5', line: 'prices = prices[prices.quantity > 0]' },
+          demand: { name: 'demand', shape: '3', index: 'price', cols: ['quantity'], rows: [['520.0'], ['410.0'], ['300.0']], idx: ['0.75', '0.90', '1.10'], total: 3, from: 'c3', line: "demand = prices.groupby('price').quantity.median()" },
+          tmp: { name: 'tmp', shape: '3 · scratch', index: 'price', cols: ['quantity'], rows: [['NaN'], ['-0.211538'], ['-0.268293']], idx: ['0.75', '0.90', '1.10'], total: 3, from: 'c4', line: 'tmp = demand.pct_change()' },
+          dp: { name: 'dp', shape: '3', index: 'price', cols: ['price'], rows: [['NaN'], ['0.200000'], ['0.222222']], idx: ['0.75', '0.90', '1.10'], total: 3, from: 'c5', line: 'dp = demand.index.to_series().pct_change()' },
+          elasticity: { name: 'elasticity', shape: '2', index: 'price', cols: ['quantity'], rows: [['-1.057692'], ['-1.207317']], idx: ['0.90', '1.10'], total: 2, from: 'c5', line: 'elasticity = (demand.pct_change() / dp).dropna()' },
+          summary: { name: 'summary', shape: '3×2', index: 'price', cols: ['demand', 'elasticity'], rows: [['520.0', 'NaN'], ['410.0', '-1.057692'], ['300.0', '-1.207317']], idx: ['0.75', '0.90', '1.10'], total: 3, from: 'c6', line: "summary = pd.DataFrame({'demand': demand, 'elasticity': elasticity})" },
+        };
+        const FIGS = {
+          line: { name: 'ax', from: 'c3', line: "ax = demand.plot(marker='o')", sym: '#fig-line' },
+          bar: { name: 'ax2', from: 'c6', line: "ax2 = summary.elasticity.plot.bar(color='#305c8a')", sym: '#fig-bar' },
+        };
+
+        /* ---- the viewer: a card beside the column, or large over the frame ---- */
+        const overlay = $('#overlay');
+        const TOOK = { c1: '1.2 s', c3: '0.38 s', c4: '12 ms', c5: '41 ms', c6: '0.21 s' };
+        const ICON_LARGE = '<svg viewBox="0 0 24 24"><polyline points="15 3 21 3 21 9"/><polyline points="9 21 3 21 3 15"/><line x1="21" y1="3" x2="14" y2="10"/><line x1="3" y1="21" x2="10" y2="14"/></svg>';
+        const ICON_SMALL = '<svg viewBox="0 0 24 24"><polyline points="4 14 10 14 10 20"/><polyline points="20 10 14 10 14 4"/><line x1="14" y1="10" x2="21" y2="3"/><line x1="3" y1="21" x2="10" y2="14"/></svg>';
+        let view = null;
+        function esc(s) { return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/'/g, '&#39;'); }
+        function cellLabel(id) { return 'cell ' + id.slice(1); }
+        /* the session as the ledger knows it: every live row, sorted by name */
+        function namespace() {
+          const rows = [];
+          for (const card of $$('.lcard', ledger)) {
+            for (const r of $$('.lrow:not(.gone)', card)) {
+              rows.push({
+                name: $('b', r).textContent, type: $('span', r).textContent, cell: card.dataset.cell,
+                view: r.dataset.view, fig: r.dataset.fig, scratch: r.classList.contains('scratch'),
+                stale: card.classList.contains('stale'), unseen: card.classList.contains('unseen'),
+              });
+            }
+          }
+          return rows.sort((a, b) => a.name.localeCompare(b.name));
+        }
+        function headHtml(tab) {
+          const large = overlay.classList.contains('large');
+          const t = (k, l) => '<button class="tab' + (tab === k ? ' on' : '') + '" data-tab="' + k + '">' + l + '</button>';
+          return '<div class="head">' + t('session', 'Session') + t('data', 'Data') + t('figs', 'Figures') + '<span class="spacer"></span>' +
+            '<button class="size" title="' + (large ? 'Beside the column' : 'Large, for the projector') + '">' + (large ? ICON_SMALL : ICON_LARGE) + '</button>' +
+            '<button class="x" title="Close (Esc)">✕</button></div>';
+        }
+        function fromHtml(id, line) {
+          return '<span class="from" data-cell="' + id + '" title="Go to the cell"><i>bound by</i>' + esc(line) + '</span><span class="took">' + TOOK[id] + '</span>';
+        }
+        function sessionHtml() {
+          const rows = namespace();
+          if (!rows.length) return '<div class="scroll"><div class="v-empty">nothing in the session yet</div></div>';
+          let html = '<div class="scroll"><table class="vars-table"><tbody>';
+          for (const r of rows) {
+            const cls = [r.view || r.fig ? 'viewable' : '', r.scratch ? 'scratch' : '', r.unseen ? 'unseen' : ''].filter(Boolean).join(' ');
+            html += '<tr class="' + cls + '"' + (r.view ? ' data-view="' + r.view + '"' : '') + (r.fig ? ' data-fig="' + r.fig + '"' : '') + '>' +
+              '<td class="v-name"><i class="v-dot"></i>' + r.name + '</td><td class="v-type">' + r.type + '</td>' +
+              '<td class="v-cell' + (r.stale ? ' stale' : '') + '" data-cell="' + r.cell + '" title="Go to the cell">' + cellLabel(r.cell) + (r.stale ? ' · stale' : '') + '</td></tr>';
+          }
+          return html + '</tbody></table></div>';
+        }
+        function dataHtml(key) {
+          const live = namespace().filter((r) => r.view).map((r) => r.view);
+          const d = DATA[key];
+          let html = '<div class="pick">' + live.map((k) => '<button data-pick="' + k + '"' + (k === key ? ' class="on"' : '') + '>' + DATA[k].name + '</button>').join('') + '</div>';
+          html += '<div class="sub"><span class="name">' + d.name + '</span><span>' + d.shape + '</span>' + fromHtml(d.from, d.line) + '</div>';
+          const shown = d.rows.slice(0, 100);
+          html += '<div class="scroll"><table class="data-table"><thead><tr><th>' + d.index + '</th>';
+          for (const c of d.cols) html += '<th>' + c + '</th>';
+          html += '</tr></thead><tbody>';
+          shown.forEach((r, i) => { html += '<tr><th>' + d.idx[i] + '</th>' + r.map((v) => '<td>' + v + '</td>').join('') + '</tr>'; });
+          html += '</tbody></table></div><div class="foot">' +
+            (d.total > shown.length ? '<button>More (' + shown.length + ' of ' + d.total + ' rows)</button>' : d.total + ' rows') + '</div>';
+          return html;
+        }
+        function figsHtml() {
+          const figs = $$('.lthumb', ledger).map((t) => t.dataset.fig).reverse(); /* newest first */
+          let html = '<div class="scroll"><div class="fig-list">';
+          for (const k of figs) {
+            const f = FIGS[k];
+            html += '<div class="fig-item" id="fig-' + k + '"><div class="fig-cap"><span class="n">' + f.name + '</span><span>' + cellLabel(f.from) + ' · ' + TOOK[f.from] + '</span><span class="spacer"></span><span class="go" data-cell="' + f.from + '">go to the cell →</span></div>' +
+              '<div class="figure"><svg viewBox="0 0 460 300"><use href="' + f.sym + '"/></svg></div></div>';
+          }
+          return html + '</div></div>';
+        }
+        function show(tab, key) {
+          view = { tab, key: key || (view && view.key) || 'prices' };
+          overlay.innerHTML = '<div class="big">' + headHtml(tab) +
+            (tab === 'session' ? sessionHtml() : tab === 'data' ? dataHtml(view.key) : figsHtml()) + '</div>';
+          overlay.hidden = false;
+          $$('.tab', overlay).forEach((b) => b.addEventListener('click', () => show(b.dataset.tab)));
+          $('.x', overlay).addEventListener('click', close);
+          $('.size', overlay).addEventListener('click', () => { overlay.classList.toggle('large'); show(view.tab, view.key); });
+          $$('[data-pick]', overlay).forEach((b) => b.addEventListener('click', () => show('data', b.dataset.pick)));
+          $$('.from, .go, .v-cell', overlay).forEach((el) => el.addEventListener('click', (e) => { e.stopPropagation(); goTo(el.dataset.cell); }));
+          $$('tr[data-view]', overlay).forEach((tr) => tr.addEventListener('click', () => show('data', tr.dataset.view)));
+          $$('tr[data-fig]', overlay).forEach((tr) => tr.addEventListener('click', () => show('figs', tr.dataset.fig)));
+          if (tab === 'figs' && key) { const el = $('#fig-' + key, overlay); if (el) el.scrollIntoView({ block: 'start' }); }
+          if (tab === 'session') { $$('.lcard.unseen', ledger).forEach(ack); stab.classList.remove('unseen'); }
+        }
+        function goTo(id) {
+          const cell = document.getElementById(id);
+          if (overlay.classList.contains('large')) close();
+          cell.scrollIntoView({ behavior: 'smooth', block: 'center' });
+          cell.classList.add('linked');
+          setTimeout(() => cell.classList.remove('linked'), 1400);
+        }
+        function openTable(key) { show('data', key); }
+        function openFigure(key) { show('figs', key); }
+        function close() { overlay.hidden = true; overlay.innerHTML = ''; view = null; }
+        overlay.addEventListener('click', (e) => { if (e.target === overlay) close(); });
+        document.addEventListener('keydown', (e) => {
+          if (e.key !== 'Escape') return;
+          if (!overlay.hidden) close(); else unpinAll();
+        });
+        ledger.addEventListener('click', (e) => {
+          if (e.target.closest('.lhead')) return show('session');
+          const row = e.target.closest('[data-view]');
+          if (row) return openTable(row.dataset.view);
+          const fig = e.target.closest('[data-fig]');
+          if (fig) return openFigure(fig.dataset.fig);
+        });
+        stab.addEventListener('click', () => show('session'));
+        $('#st-open').addEventListener('click', () => { overlay.classList.remove('large'); openTable('prices'); });
+        $('#st-large').addEventListener('click', () => { overlay.classList.add('large'); openTable('prices'); });
+
+        /* ---- a run: the chip spins, then the cell's card eases in lit and settles;
+           it stays marked until looked at. In the narrow window the card peeks
+           beside the cell for a breath; a cell off screen nudges the Session tab. ---- */
+        function count() {
+          const names = new Set($$('.lrow:not(.gone) b', ledger).map((b) => b.textContent));
+          $('#lcount').textContent = names.size;
+          $('.n', stab).textContent = names.size;
+          stab.dataset.count = names.size;
+        }
+        function inView(el) {
+          const r = el.getBoundingClientRect(), d = doc.getBoundingClientRect();
+          return r.bottom > d.top + 40 && r.top < d.bottom - 40;
+        }
+        function refreshCard(card) {
+          card.classList.remove('fresh');
+          void card.offsetWidth;
+          card.classList.add('fresh', 'unseen');
+          stab.classList.add('unseen');
+          layout();
+          count();
+          const cell = document.getElementById(card.dataset.cell);
+          if (body.classList.contains('spine')) {
+            if (inView(cell)) { peek(card, true); peek(card, false, 2500); }
+            else { stab.classList.remove('nudge'); void stab.offsetWidth; stab.classList.add('nudge'); }
+          }
+          if (!overlay.hidden && view && view.tab === 'session') show('session');
+        }
+        function run(wrap) {
+          const cell = $('.cell', wrap);
+          if (!cell || cell.classList.contains('running')) return;
+          cell.classList.add('running');
+          setTimeout(() => {
+            cell.classList.remove('running', 'stale');
+            $$('.cell.ran-last').forEach((c) => c.classList.remove('ran-last'));
+            cell.classList.add('ran', 'ran-last');
+            let card = $('.lcard[data-cell="' + wrap.id + '"]', ledger);
+            if (wrap.id === 'c6' && card.classList.contains('stale')) {
+              $('.c6-out', wrap).innerHTML = $('#c6-after').innerHTML;
+              card.classList.remove('stale');
+              card.innerHTML = $('#c6-card-after').innerHTML;
+              wireCard(card);
+            }
+            if (card) refreshCard(card);
+          }, 700);
+        }
+        $$('.run').forEach((b) => b.addEventListener('click', (e) => { if (e.target.closest('.dot')) return; run(b.closest('.cell-wrap')); }));
+        $('#st-run').addEventListener('click', () => { const w = $('#c6'); w.scrollIntoView({ behavior: 'smooth', block: 'center' }); run(w); });
+        $('#st-reset').addEventListener('click', () => location.reload());
+        count();
+      })();
+    </script>
+  </body>
+</html>

@@ -1,0 +1,767 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <title>Knuth · the session, summoned</title>
+    <style>
+      /* Direction: nothing docked. The session has no column. A run leaves
+         a small dot beside the cell's ▶; ⌘J (or the dot) summons a
+         translucent card beside that cell carrying what the run did — the
+         figure it drew, the variables it changed. Typing dismisses it. A
+         pin takes the same card off the page and hangs it at the room's
+         top-right over the frame, where it shows the whole session and the
+         data viewer, and follows every run. The frame is rail-layout.html's
+         (Zen's shape); cells, outputs, figures and the panes' type are
+         Knuth's own (src/styles.css, src/panel.ts, src/icons.ts), on the
+         dark bench the live app draws. Open by double-click; the pill at the
+         bottom is mockup chrome and switches the states. */
+      :root {
+        /* the frame (rail-layout.html) */
+        --frame: #111112;
+        --frame-ink: #d5d3cf;
+        --frame-ink-soft: #7d7b78;
+        --tile: #29292c;
+        --tile-hover: #202023;
+        --pill: #1e1e21;
+        --rail: 80px;
+        --topbar: 66px;
+        --inset: 8px;
+        /* the room (src/styles.css) */
+        --bg: #2b2a2d;
+        --amber: #c98a1d;
+        --accent: #305c8a;
+        --room-pane: #232226;
+        --room-line: rgba(255, 255, 255, 0.07);
+        --room-ink: #d8d6d1;
+        --room-ink-soft: #8f8d88;
+        --glass-ink: rgba(240, 238, 233, 0.95);
+        --glass-ink-soft: rgba(240, 238, 233, 0.55);
+        --blue: #9db8d6;
+        --serif: 'STIX Two Text', 'Charter', 'Georgia', serif;
+        --prose: 'CMU Serif', 'Computer Modern Serif', 'Charter', 'Georgia', serif;
+        --mono: ui-monospace, 'SF Mono', 'Menlo', 'Consolas', monospace;
+        --sans: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Helvetica Neue', sans-serif;
+        --peek-w: 300px;
+      }
+      * { box-sizing: border-box; }
+      html, body { margin: 0; height: 100%; background: var(--frame); overflow: hidden; }
+      body { color: var(--frame-ink); font: 15px/1.55 var(--sans); } /* on body, not html: rems stay 16px as in the app */
+      button { font: inherit; }
+      .ico { width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; display: block; }
+
+      /* The window. "Narrow" (mockup chrome) shrinks it to a laptop width so
+         the overlap and the tuck can be seen without resizing the browser. */
+      #window { position: relative; width: 100%; height: 100%; margin: 0 auto; overflow: hidden; background: var(--frame); }
+      body.narrow #window { width: 1180px; height: calc(100% - 40px); top: 20px; border-radius: 12px; box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.08), 0 30px 80px rgba(0, 0, 0, 0.6); }
+
+      /* ---------- the top bar (rail-layout.html, verbatim) ---------- */
+      #topbar {
+        position: absolute; top: 0; left: 0; right: 0; height: var(--topbar);
+        display: flex; align-items: center; gap: 10px; padding: 0 18px;
+        -webkit-app-region: drag;
+      }
+      .lights { display: flex; gap: 8px; margin-right: 12px; }
+      .lights i { width: 13px; height: 13px; border-radius: 50%; display: block; background: #3a3a3c; }
+      .ctl { position: relative; display: inline-flex; align-items: center; justify-content: center; width: 34px; height: 34px; border-radius: 9px; color: var(--frame-ink); border: 0; background: transparent; -webkit-app-region: no-drag; cursor: pointer; }
+      .ctl:hover { background: var(--tile-hover); }
+      .ctl.dim { color: var(--frame-ink-soft); }
+      .ctl.on { background: var(--tile); }
+      #docpill {
+        flex: 1; height: 42px; margin: 0 14px 0 10px; border-radius: 12px; background: var(--pill);
+        display: flex; align-items: center; gap: 12px; padding: 0 16px; -webkit-app-region: no-drag;
+      }
+      #docpill .file { color: var(--frame-ink-soft); }
+      #docpill .name { font: 16px/1 var(--serif); letter-spacing: 0.06em; color: var(--frame-ink); cursor: text; }
+      #docpill .dirty { color: var(--amber); font-size: 9px; margin-left: -6px; }
+      #docpill .path { color: var(--frame-ink-soft); font: 12.5px var(--sans); margin-left: 4px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+      #docpill .spacer { flex: 1; }
+      #docpill .python { display: inline-flex; align-items: center; gap: 7px; font: 12px var(--sans); color: var(--frame-ink-soft); white-space: nowrap; }
+      #docpill .python i { width: 8px; height: 8px; border-radius: 50%; background: #4caf7d; display: block; }
+      .avatar { width: 26px; height: 26px; border-radius: 50%; background: #2d7dbb; margin-left: 6px; }
+      /* the label, below, for the top bar's controls */
+      .ctl[data-label]::after {
+        content: attr(data-label); position: absolute; top: calc(100% + 8px); left: 50%; transform: translateX(-50%);
+        background: #0a0a0b; color: var(--frame-ink); font: 12.5px var(--sans); white-space: nowrap;
+        padding: 5px 10px; border-radius: 8px; border: 1px solid rgba(255, 255, 255, 0.08);
+        opacity: 0; pointer-events: none; transition: opacity 0.12s; z-index: 30;
+      }
+      .ctl:hover::after { opacity: 1; }
+
+      /* ---------- the rail (rail-layout.html, verbatim) ---------- */
+      #rail {
+        position: absolute; top: var(--topbar); bottom: 0; left: 0; width: var(--rail);
+        display: flex; flex-direction: column; align-items: center; gap: 14px; padding: 6px 0 22px;
+      }
+      .rb {
+        position: relative; display: inline-flex; align-items: center; justify-content: center;
+        width: 50px; height: 50px; border: 0; border-radius: 14px; background: transparent;
+        color: var(--frame-ink); cursor: pointer;
+      }
+      .rb:hover { background: var(--tile-hover); }
+      .rb.on { background: var(--tile); }
+      .rb.solid .ico { fill: currentColor; stroke: none; }
+      .rb.small { width: 44px; height: 44px; }
+      .rb.small .ico { width: 17px; height: 17px; }
+      .rb.dim { color: var(--frame-ink-soft); }
+      .group { display: flex; flex-direction: column; align-items: center; gap: 6px; }
+      .rule { width: 26px; height: 1px; background: rgba(255, 255, 255, 0.1); }
+      .rb::after {
+        content: attr(data-label); position: absolute; left: calc(100% + 12px); top: 50%; transform: translateY(-50%);
+        background: #0a0a0b; color: var(--frame-ink); font: 12.5px var(--sans); white-space: nowrap;
+        padding: 5px 10px; border-radius: 8px; border: 1px solid rgba(255, 255, 255, 0.08);
+        opacity: 0; pointer-events: none; transition: opacity 0.12s; z-index: 30;
+      }
+      .rb:hover::after { opacity: 1; }
+      .grow { flex: 1; }
+
+      /* ---------- the room: Knuth's bench, inset ---------- */
+      #room {
+        position: absolute; top: var(--topbar); left: var(--rail); right: var(--inset); bottom: var(--inset);
+        border-radius: 12px; background: var(--bg); overflow: hidden; display: flex;
+        box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.05);
+      }
+      /* The document column, as the app draws it: no white sheet, cards on
+         the bench, 52rem wide, centred in whatever the room gives it. There
+         is no panel column: the column is the whole room. */
+      #doc { position: relative; flex: 1; overflow-y: auto; overflow-x: hidden; padding: 26px 24px 40vh 24px; }
+      #sheet { max-width: 52rem; margin: 0 auto; }
+
+      /* packages, folded to a line */
+      .packages-summary {
+        display: flex; align-items: baseline; gap: 8px; width: 100%; margin: 0 0 6px; padding: 6px 12px;
+        color: var(--glass-ink-soft); background: transparent; border: 1px dashed rgba(255, 255, 255, 0.12);
+        border-radius: 10px; font: 12px/1.4 var(--sans); text-align: left; cursor: pointer;
+      }
+      .packages-summary:hover { color: var(--glass-ink); border-color: rgba(255, 255, 255, 0.24); }
+      .packages-summary .chevron { width: 10px; }
+      .packages-summary .label { font-weight: 500; }
+      .packages-summary .list { font-family: var(--mono); font-size: 11.5px; }
+
+      /* cells */
+      .cell-wrap { position: relative; }
+      .insert-zone { height: 22px; position: relative; display: flex; align-items: center; justify-content: center; padding-left: 2.2rem; opacity: 0; transition: opacity 0.12s ease; }
+      .insert-zone:hover { opacity: 1; }
+      .insert-zone::before { content: ''; position: absolute; left: 2.2rem; right: 0; top: 50%; border-top: 1px solid rgba(157, 184, 214, 0.25); }
+      .insert-actions {
+        position: relative; display: inline-flex; align-items: center; gap: 2px; padding: 2px 5px;
+        background: color-mix(in srgb, #3a3840 94%, transparent); backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px);
+        border: 1px solid rgba(255, 255, 255, 0.14); border-radius: 999px; box-shadow: 0 5px 18px rgba(0, 0, 0, 0.45);
+      }
+      .insert-actions button { display: inline-flex; align-items: center; justify-content: center; width: 24px; height: 18px; color: rgba(240, 238, 233, 0.75); border: 0; border-radius: 999px; background: transparent; cursor: pointer; }
+      .insert-actions button:hover { color: #fff; background: rgba(255, 255, 255, 0.12); }
+      .insert-actions .ico { width: 13px; height: 13px; stroke-width: 1.7; }
+
+      .cell { display: flex; padding: 0.2rem 0; position: relative; }
+      .cell .body { flex: 1; min-width: 0; }
+
+      /* the code card: One Dark, the gutter as apparatus, the run chip as
+         line 1's marker (styles.css 683–810) */
+      .cm-editor { display: flex; background: #282c34; color: #abb2bf; border: 1px solid rgba(255, 255, 255, 0.07); border-radius: 8px; font: 13.5px/1.4 var(--mono); overflow: hidden; }
+      .cm-gutters { position: relative; flex: 0 0 48px; display: flex; background: rgba(255, 255, 255, 0.022); border-right: 1px solid rgba(255, 255, 255, 0.06); color: rgba(240, 238, 233, 0.28); padding: 0.5rem 0; }
+      .cm-lineNumbers { width: 36px; text-align: right; }
+      .cm-lineNumbers div { padding: 0 0.35rem 0 0.3rem; height: 18.9px; }
+      .cm-lineNumbers div:first-child { visibility: hidden; }
+      .cm-content { flex: 1; min-width: 0; padding: 0.5rem 0; margin-left: 0.15rem; }
+      .cm-line { padding: 0 0.75rem; white-space: pre-wrap; word-break: break-word; }
+      .kw { color: #c678dd; } .st { color: #98c379; } .nu { color: #d19a66; } .pr { color: #e06c75; } .fn { color: #61afef; } .cm { color: #5c6370; }
+      .cell.stale .cm-gutters { border-right-color: var(--amber); }
+
+      .run {
+        position: absolute; left: 0; right: 0; top: 0; height: min(calc(0.5rem + 37.8px), 100%);
+        border-top-left-radius: 7px; border-bottom-left-radius: 7px; border: 0; padding: 0;
+        background: #2b2f37; color: #6ea576; cursor: pointer; font-size: 13px; z-index: 3; transition: color 0.12s;
+      }
+      .run::before {
+        content: '▶'; position: absolute; left: 0; right: 0; top: 0; height: calc(1rem + 18.9px);
+        display: flex; align-items: center; justify-content: center; border-bottom: 1px solid rgba(255, 255, 255, 0.08); transition: background 0.12s;
+      }
+      .run:hover { color: #8fc79a; }
+      .run:hover::before { background: rgba(255, 255, 255, 0.045); }
+      .cell.kind-scratch .run { background: var(--bg); }
+
+      /* THE GLYPH. After a run, a 5px dot sits at the right of the ▶ band,
+         in the fold column the chip already covers (so a one-line cell has
+         it too). Blue on the cell that ran last — the colour a viewable row
+         already wears — number-grey on earlier runs. It is a signal in the
+         apparatus, like the amber stale rule, not a button that wants
+         pressing; pointed at, it wakes and names the key. */
+      .run .dot {
+        position: absolute; right: 7px; top: calc((1rem + 18.9px) / 2 - 2.5px); width: 5px; height: 5px; border-radius: 50%;
+        background: rgba(240, 238, 233, 0.28); display: none; z-index: 4; cursor: pointer; transition: background 0.12s, transform 0.12s;
+      }
+      .cell.ran .run .dot { display: block; }
+      .cell.ran-last .run .dot { background: var(--blue); box-shadow: 0 0 0 3px rgba(157, 184, 214, 0.12); }
+      .run .dot:hover { background: #fff; transform: scale(1.3); }
+      .run .dot::after {
+        content: 'Session  ⌘J'; position: absolute; left: 50%; top: calc(100% + 9px); transform: translateX(-50%);
+        font: 11px/1.4 var(--sans); white-space: nowrap; color: #2c2b29; background: rgba(251, 250, 248, 0.92); border: 1px solid rgba(0, 0, 0, 0.08);
+        border-radius: 5px; padding: 2px 8px; box-shadow: 0 6px 18px rgba(0, 0, 0, 0.3); opacity: 0; pointer-events: none; transition: opacity 0.12s;
+      }
+      .run .dot:hover::after { opacity: 1; }
+      body[data-state='empty'] .cell .run .dot { display: none; } /* a fresh session has no receipts yet */
+
+      .cell.kind-scratch .cm-editor { border-style: dashed; background: transparent; }
+      .cell.kind-scratch .cm-gutters { background: transparent; }
+      .scratch-label { font-size: 10px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--room-ink-soft); margin-bottom: 0.15rem; }
+
+      /* text cells: prose on the bench, no box */
+      .prose { position: relative; font: 18px/1.55 var(--prose); color: var(--room-ink); padding: 4px 0.75rem; }
+      .prose::before, .prose::after { content: ''; position: absolute; left: calc(0.75rem + 1px); width: 28px; height: 2px; border-radius: 1px; background: transparent; transition: background 0.15s ease; }
+      .prose::before { top: 0; } .prose::after { bottom: 0; }
+      .cell.kind-text:hover .prose::before, .cell.kind-text:hover .prose::after { background: rgba(255, 255, 255, 0.16); }
+      .prose > :first-child { margin-top: 0; } .prose > :last-child { margin-bottom: 0; }
+      .prose h2 { font-weight: 400; font-size: 1.35em; line-height: 1.3; color: #f0eee9; margin: 0.9em 0 0.35em; }
+      .prose p { margin: 0.6em 0; }
+      .prose code { font-family: var(--mono); font-size: 0.87em; background: rgba(255, 255, 255, 0.08); border-radius: 3px; padding: 0.1em 0.35em; }
+      .prose .math { font-style: italic; }
+
+      /* figures: the one lit object on the bench */
+      .cell-figures { display: flex; flex-direction: column; gap: 0.5rem; margin: 0.45rem 0 0; }
+      .figure { background: #fff; border-radius: 6px; padding: 0.5rem; align-self: flex-start; max-width: 100%; overflow: hidden; box-shadow: 0 1px 3px rgba(0, 0, 0, 0.4); }
+      .figure svg { display: block; width: 420px; max-width: 100%; height: auto; }
+
+      /* outputs: the quiet readout */
+      .output { margin: 0.35rem 0 0; padding: 0.45rem 0.75rem; background: transparent; border-left: 3px solid rgba(255, 255, 255, 0.14); font: 12.5px/1.5 var(--mono); white-space: pre-wrap; color: #b5b3ae; }
+
+      /* ---------- THE SESSION CARD: one object, three places ---------- */
+      /* A layer over the frame, not a region of the room: positioned by
+         script (beside the cell that ran; or hung top-right when pinned).
+         Glass of the flyout's family (color-mix #3a3840), thinner for the
+         peek so the bench and the card's edge show through, thicker once
+         pinned — it has settled. */
+      #session {
+        position: absolute; z-index: 20; width: var(--peek-w);
+        background: color-mix(in srgb, #3a3840 78%, transparent);
+        backdrop-filter: blur(18px) saturate(120%); -webkit-backdrop-filter: blur(18px) saturate(120%);
+        border: 1px solid rgba(255, 255, 255, 0.14); border-radius: 12px;
+        box-shadow: 0 1px 0 rgba(255, 255, 255, 0.05) inset, 0 12px 36px rgba(0, 0, 0, 0.45);
+        color: var(--room-ink); overflow: hidden;
+        opacity: 0; pointer-events: none; transform: translateX(8px); transition: opacity 0.16s ease, transform 0.16s ease;
+      }
+      body[data-state='peek'] #session, body[data-state='empty'] #session, body[data-state='pinned'] #session { opacity: 1; pointer-events: auto; transform: none; }
+      #session.moving { transition: opacity 0.16s ease, transform 0.22s ease, left 0.24s cubic-bezier(0.2, 0.7, 0.2, 1), top 0.24s cubic-bezier(0.2, 0.7, 0.2, 1), width 0.24s ease; }
+      body[data-state='pinned'] #session { background: color-mix(in srgb, #3a3840 93%, transparent); max-height: calc(100% - var(--topbar) - 24px); display: flex; flex-direction: column; }
+      /* the pinned card on a narrow window: tucked to a tab at the room's
+         edge; the pointer brings it out */
+      body[data-state='pinned'] #session.tucked { transform: translateX(var(--tuck-dx)); transition: transform 0.22s ease; }
+      body[data-state='pinned'] #session.tucked:hover { transform: none; }
+      #session.tucked:not(:hover) .tab { opacity: 1; }
+      .tab { position: absolute; left: 0; top: 0; bottom: 0; width: 34px; z-index: 3; display: flex; align-items: center; justify-content: center; background: #38373d; border-right: 1px solid rgba(255, 255, 255, 0.08); opacity: 0; pointer-events: none; transition: opacity 0.12s; }
+      .tab span { writing-mode: vertical-rl; transform: rotate(180deg); font: 10.5px var(--sans); letter-spacing: 0.14em; text-transform: uppercase; color: var(--room-ink-soft); }
+      #session .c { display: none; }
+      body[data-state='peek'] #session .c-peek, body[data-state='empty'] #session .c-empty { display: block; }
+      body[data-state='pinned'] #session .c-pinned { display: flex; flex-direction: column; min-height: 0; }
+
+      /* the card's head: pane-title's type, plus the pin and the close */
+      .head { display: flex; align-items: center; gap: 8px; padding: 0.55rem 0.55rem 0.45rem 0.8rem; font-size: 10.5px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--room-ink-soft); background: rgba(255, 255, 255, 0.025); }
+      .head .t { flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+      .head .took { letter-spacing: 0.04em; text-transform: none; font: 11.5px var(--mono); color: var(--room-ink-soft); white-space: nowrap; }
+      .dot-ref { display: inline-block; width: 5px; height: 5px; border-radius: 50%; background: var(--blue); margin: 0 6px 1px 0; vertical-align: middle; } /* the gutter's dot: the run this card is about */
+      .hb { position: relative; display: inline-flex; align-items: center; justify-content: center; width: 22px; height: 22px; border: 0; border-radius: 6px; background: transparent; color: var(--room-ink-soft); cursor: pointer; }
+      .hb:hover { color: var(--room-ink); background: rgba(255, 255, 255, 0.08); }
+      .hb .ico { width: 14px; height: 14px; stroke-width: 1.7; }
+      .hb.pinned-on { color: var(--blue); }
+      .hb.pinned-on .ico { fill: currentColor; }
+      .hb .x { font-size: 12px; }
+      .hb[data-label]::after {
+        content: attr(data-label); position: absolute; top: calc(100% + 6px); left: 50%; transform: translateX(-50%);
+        font: 11px/1.4 var(--sans); letter-spacing: 0; text-transform: none; white-space: nowrap; color: #2c2b29; background: rgba(251, 250, 248, 0.92);
+        border: 1px solid rgba(0, 0, 0, 0.08); border-radius: 5px; padding: 2px 8px; box-shadow: 0 6px 18px rgba(0, 0, 0, 0.3); opacity: 0; pointer-events: none; transition: opacity 0.12s; z-index: 2;
+      }
+      .hb:hover::after { opacity: 1; }
+
+      /* variables: panel.ts's three columns, with a mark column in front
+         for what the run did (+ new, ~ changed) */
+      .vars { width: 100%; border-collapse: collapse; font: 12.5px/1.5 var(--mono); }
+      .vars td { padding: 0.2rem 0.4rem; vertical-align: top; }
+      .vars tr + tr td { border-top: 1px solid rgba(255, 255, 255, 0.045); }
+      .vars td:first-child { padding-left: 0.8rem; }
+      .vars .v-mark { width: 1ch; padding-right: 0; color: var(--room-ink-soft); }
+      .vars .v-mark.new { color: #6ea576; }
+      .vars .v-name { font-weight: 600; white-space: nowrap; color: var(--room-ink); }
+      .vars .v-type { color: var(--room-ink-soft); white-space: nowrap; }
+      .vars .v-preview { color: var(--room-ink-soft); max-width: 0; width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; padding-right: 0.8rem; }
+      .vars tr.scratch .v-name { font-weight: 400; font-style: italic; }
+      .vars tr.viewable { cursor: pointer; }
+      .vars tr.viewable:hover td { background: rgba(255, 255, 255, 0.05); }
+      .vars tr.viewable .v-name { color: var(--blue); }
+      .vars tr.touched td { background: rgba(157, 184, 214, 0.06); }
+      .vars tr.open td { background: rgba(255, 255, 255, 0.06); }
+      .c-pinned .v-preview { display: none; } /* no room beside the shapes at this width; the viewer is where you look */
+
+      /* the figure row: the print, small, as an index of what the run drew
+         (the full card already sits under the cell) */
+      .figrow { display: flex; align-items: center; gap: 12px; padding: 0.55rem 0.8rem 0.35rem; cursor: pointer; }
+      .figrow:hover { background: rgba(255, 255, 255, 0.04); }
+      .figrow .thumb { background: #fff; border-radius: 4px; padding: 4px; box-shadow: 0 1px 3px rgba(0, 0, 0, 0.4); flex: 0 0 auto; }
+      .figrow .thumb svg { display: block; width: 96px; height: auto; }
+      .figrow .fl { font: 12.5px/1.45 var(--mono); color: var(--blue); font-weight: 600; }
+      .figrow .fl small { display: block; font-weight: 400; color: var(--room-ink-soft); font-size: 11.5px; }
+
+      .also { padding: 0.45rem 0.8rem 0.1rem; font: 11.5px/1.5 var(--sans); color: var(--room-ink-soft); border-top: 1px solid rgba(255, 255, 255, 0.06); }
+      .also b { font-weight: 500; color: var(--room-ink); }
+      .also code { font: 11.5px var(--mono); }
+      .hint { padding: 0.35rem 0.8rem 0.6rem; font: 11px/1.5 var(--sans); color: rgba(143, 141, 136, 0.8); }
+      .hint kbd { font: 10.5px var(--sans); color: var(--room-ink-soft); background: rgba(255, 255, 255, 0.07); border: 1px solid rgba(255, 255, 255, 0.1); border-radius: 4px; padding: 0 5px; }
+      .empty-note { padding: 0.75rem 0.8rem 0.25rem; font: 13px/1.5 var(--sans); color: var(--room-ink-soft); }
+      .empty-note b { display: block; font-weight: 500; color: var(--room-ink); margin-bottom: 2px; }
+
+      /* the pinned card's second box: the data viewer, inside the card */
+      .viewer { display: flex; flex-direction: column; min-height: 0; border-top: 1px solid rgba(255, 255, 255, 0.08); margin-top: 0.3rem; }
+      .viewer-head { display: flex; align-items: center; justify-content: space-between; padding: 0.5rem 0.55rem 0.4rem 0.8rem; font-size: 10.5px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--room-ink-soft); background: rgba(255, 255, 255, 0.025); }
+      .viewer-head .vn { letter-spacing: 0.04em; text-transform: none; font: 12px var(--mono); color: var(--room-ink); }
+      .viewer-scroll { flex: 1; min-height: 0; max-height: 236px; overflow: auto; }
+      .data-table { border-collapse: collapse; font: 12px/1.45 var(--mono); color: var(--room-ink); min-width: 100%; }
+      .data-table th, .data-table td { padding: 0.16rem 0.55rem; border-bottom: 1px solid rgba(255, 255, 255, 0.045); white-space: nowrap; text-align: right; }
+      .data-table thead th { position: sticky; top: 0; background: #37363c; color: var(--room-ink-soft); font-weight: 600; z-index: 1; }
+      .data-table tbody th { color: var(--room-ink-soft); font-weight: 400; text-align: left; }
+      .data-table td.price { color: var(--room-ink); }
+      .viewer-foot { padding: 0.45rem 0.8rem 0.55rem; font-size: 12px; color: var(--room-ink-soft); }
+      .viewer-foot button { font: 12px/1 var(--sans); border: 1px solid var(--room-line); border-radius: 999px; background: transparent; color: var(--room-ink); padding: 0.25rem 0.7rem; cursor: pointer; }
+      .viewer-foot button:hover { background: rgba(255, 255, 255, 0.07); }
+      .pinned-scroll { overflow: auto; min-height: 0; }
+
+      body.still *, body.still *::after { transition: none !important; } /* #…,still: for screenshots */
+
+      /* ---------- mockup chrome: the state pill ---------- */
+      #states {
+        position: fixed; left: 50%; bottom: 14px; transform: translateX(-50%); z-index: 50;
+        display: flex; align-items: center; gap: 2px; padding: 4px 6px 4px 12px;
+        background: color-mix(in srgb, #17161a 86%, transparent); backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px);
+        border: 1px solid rgba(255, 255, 255, 0.1); border-radius: 999px; box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45);
+        font: 12px var(--sans); color: var(--glass-ink-soft); white-space: nowrap;
+      }
+      #states .lbl { margin-right: 6px; letter-spacing: 0.08em; text-transform: uppercase; font-size: 10px; }
+      #states button { border: 0; background: transparent; color: var(--glass-ink-soft); font: 12.5px var(--sans); padding: 5px 10px; border-radius: 999px; cursor: pointer; }
+      #states button:hover { color: var(--glass-ink); background: rgba(255, 255, 255, 0.08); }
+      #states button.on { color: #2c2b29; background: rgba(251, 250, 248, 0.92); }
+      #states .sep { width: 1px; height: 16px; background: rgba(255, 255, 255, 0.14); margin: 0 6px; }
+      #states kbd { font: 10.5px var(--sans); color: var(--glass-ink-soft); background: rgba(255, 255, 255, 0.07); border: 1px solid rgba(255, 255, 255, 0.1); border-radius: 4px; padding: 0 5px; margin-left: 4px; }
+    </style>
+  </head>
+  <body data-state="peek">
+    <!-- the figure, drawn once; used under the cell, in the peek and in the pinned card -->
+    <svg width="0" height="0" style="position:absolute" aria-hidden="true">
+      <symbol id="fig-demand" viewBox="0 0 400 260">
+        <rect width="400" height="260" fill="#fff"/>
+        <g stroke="#000" stroke-width="0.8" fill="none">
+          <rect x="56" y="14" width="330" height="206"/>
+        </g>
+        <g font-family="DejaVu Sans, Verdana, sans-serif" font-size="10.5" fill="#222">
+          <g text-anchor="end">
+            <text x="50" y="223.5">0</text><text x="50" y="178.2">200</text><text x="50" y="132.9">400</text><text x="50" y="87.6">600</text><text x="50" y="42.3">800</text>
+          </g>
+          <g text-anchor="middle">
+            <text x="116" y="236">0.50</text><text x="171" y="236">0.75</text><text x="226" y="236">1.00</text><text x="281" y="236">1.25</text><text x="336" y="236">1.50</text>
+          </g>
+          <text x="221" y="252" text-anchor="middle" font-size="11.5">price</text>
+          <text transform="translate(16 117) rotate(-90)" text-anchor="middle" font-size="11.5">median quantity</text>
+        </g>
+        <g stroke="#000" stroke-width="0.8">
+          <line x1="52" y1="220" x2="56" y2="220"/><line x1="52" y1="174.7" x2="56" y2="174.7"/><line x1="52" y1="129.3" x2="56" y2="129.3"/><line x1="52" y1="84" x2="56" y2="84"/><line x1="52" y1="38.7" x2="56" y2="38.7"/>
+          <line x1="116" y1="220" x2="116" y2="224"/><line x1="171" y1="220" x2="171" y2="224"/><line x1="226" y1="220" x2="226" y2="224"/><line x1="281" y1="220" x2="281" y2="224"/><line x1="336" y1="220" x2="336" y2="224"/>
+        </g>
+        <polyline points="116,36 226,127 336,177" fill="none" stroke="#305c8a" stroke-width="1.6"/>
+        <g fill="#305c8a"><circle cx="116" cy="36" r="4"/><circle cx="226" cy="127" r="4"/><circle cx="336" cy="177" r="4"/></g>
+      </symbol>
+    </svg>
+
+    <div id="window">
+      <div id="topbar">
+        <div class="lights"><i></i><i></i><i></i></div>
+        <button class="ctl" data-label="Sidebar"><svg class="ico" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="3"/><line x1="9" y1="4" x2="9" y2="20"/></svg></button>
+        <button class="ctl dim" data-label="Back"><svg class="ico" viewBox="0 0 24 24"><line x1="19" y1="12" x2="5" y2="12"/><polyline points="12 19 5 12 12 5"/></svg></button>
+        <button class="ctl dim" data-label="Forward"><svg class="ico" viewBox="0 0 24 24"><line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/></svg></button>
+        <button class="ctl" data-label="Restart session"><svg class="ico" viewBox="0 0 24 24"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"/></svg></button>
+        <div id="docpill">
+          <span class="file"><svg class="ico" viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg></span>
+          <span class="name" title="Click to rename">analysis.py</span><span class="dirty">●</span>
+          <span class="path">~/Projects/ECON_0150/week-3</span>
+          <span class="spacer"></span>
+          <span class="python"><i></i>uv · Python 3.13</span>
+        </div>
+        <!-- the one chrome control the session keeps: the pin. Lit while pinned. -->
+        <button class="ctl" id="pin-ctl" data-label="Pin the session  ⌘J"><svg class="ico" viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="2"/><line x1="15" y1="3" x2="15" y2="21"/></svg></button>
+        <div class="avatar"></div>
+      </div>
+
+      <nav id="rail" aria-label="Toolbar">
+        <button class="rb on" data-label="analysis.py"><svg class="ico" viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg></button>
+        <button class="rb dim" data-label="Open…"><svg class="ico" viewBox="0 0 24 24"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg></button>
+        <div class="rule"></div>
+        <div class="group">
+          <button class="rb small" data-label="Code cell"><svg class="ico" viewBox="0 0 24 24"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg></button>
+          <button class="rb small" data-label="Scratch cell"><svg class="ico" viewBox="0 0 24 24"><rect x="4" y="4" width="16" height="16" rx="2" stroke-dasharray="3.4 2.8"/><line x1="9" y1="12" x2="15" y2="12"/></svg></button>
+          <button class="rb small" data-label="Text cell"><svg class="ico" viewBox="0 0 24 24"><polyline points="4 7 4 4 20 4 20 7"/><line x1="9" y1="20" x2="15" y2="20"/><line x1="12" y1="4" x2="12" y2="20"/></svg></button>
+        </div>
+        <div class="rule"></div>
+        <div class="group">
+          <button class="rb small solid" data-label="Run stale"><svg class="ico" viewBox="0 0 24 24"><polygon points="7 4.5 19 12 7 19.5"/></svg></button>
+          <button class="rb small solid" data-label="Run all"><svg class="ico" viewBox="0 0 24 24"><polygon points="3.5 5 11 12 3.5 19"/><polygon points="13 5 20.5 12 13 19"/></svg></button>
+          <button class="rb small" data-label="Stop"><svg class="ico" viewBox="0 0 24 24"><rect x="6.5" y="6.5" width="11" height="11" rx="1.5"/></svg></button>
+          <button class="rb small" data-label="Restart session"><svg class="ico" viewBox="0 0 24 24"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"/></svg></button>
+        </div>
+        <div class="grow"></div>
+        <button class="rb small dim" data-label="Get Knuth"><svg class="ico" viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg></button>
+        <button class="rb small dim" data-label="New document"><svg class="ico" viewBox="0 0 24 24"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg></button>
+      </nav>
+
+      <main id="room">
+        <div id="doc">
+          <div id="sheet">
+            <button class="packages-summary"><span class="chevron">▸</span><span class="label">Packages</span><span class="list">pandas · numpy · matplotlib</span></button>
+
+            <!-- cell 1: code, ran earlier -->
+            <div class="cell-wrap" data-cell="1">
+              <div class="insert-zone"><div class="insert-actions">
+                <button><svg class="ico" viewBox="0 0 24 24"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg></button>
+                <button><svg class="ico" viewBox="0 0 24 24"><rect x="4" y="4" width="16" height="16" rx="2" stroke-dasharray="3.4 2.8"/><line x1="9" y1="12" x2="15" y2="12"/></svg></button>
+                <button><svg class="ico" viewBox="0 0 24 24"><polyline points="4 7 4 4 20 4 20 7"/><line x1="9" y1="20" x2="15" y2="20"/><line x1="12" y1="4" x2="12" y2="20"/></svg></button>
+              </div></div>
+              <div class="cell kind-program ran">
+                <div class="body">
+                  <div class="cm-editor">
+                    <div class="cm-gutters">
+                      <div class="cm-lineNumbers"><div>1</div><div>2</div><div>3</div><div>4</div><div>5</div></div>
+                      <button class="run" title="Run cell (Cmd-Enter)"><i class="dot" data-run="1"></i></button>
+                    </div>
+                    <div class="cm-content">
+                      <div class="cm-line"><span class="kw">import</span> pandas <span class="kw">as</span> pd</div>
+                      <div class="cm-line"><span class="kw">import</span> numpy <span class="kw">as</span> np</div>
+                      <div class="cm-line">prices = pd.<span class="pr">read_csv</span>(<span class="st">'data/week3.csv'</span>)</div>
+                      <div class="cm-line">n = <span class="fn">len</span>(prices)</div>
+                      <div class="cm-line">prices.<span class="pr">describe</span>()</div>
+                    </div>
+                  </div>
+                  <pre class="output">            price     quantity
+count  1200.000000  1200.000000
+mean      0.991667   470.683333
+std       0.408418   262.504127
+min       0.500000    12.000000
+25%       0.500000   241.000000
+50%       1.000000   410.000000
+75%       1.500000   688.250000
+max       1.500000  1180.000000</pre>
+                </div>
+              </div>
+            </div>
+
+            <!-- cell 2: text -->
+            <div class="cell-wrap" data-cell="2">
+              <div class="insert-zone"><div class="insert-actions">
+                <button><svg class="ico" viewBox="0 0 24 24"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg></button>
+                <button><svg class="ico" viewBox="0 0 24 24"><rect x="4" y="4" width="16" height="16" rx="2" stroke-dasharray="3.4 2.8"/><line x1="9" y1="12" x2="15" y2="12"/></svg></button>
+                <button><svg class="ico" viewBox="0 0 24 24"><polyline points="4 7 4 4 20 4 20 7"/><line x1="9" y1="20" x2="15" y2="20"/><line x1="12" y1="4" x2="12" y2="20"/></svg></button>
+              </div></div>
+              <div class="cell kind-text">
+                <div class="body">
+                  <div class="prose">
+                    <h2>Demand at three prices</h2>
+                    <p>Each row of the table is one buyer’s answer at one of three posted prices. The curve below joins the three medians; the slope between two of them, in proportional terms, is the arc elasticity <span class="math">ε = (Δq/q) / (Δp/p)</span>.</p>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- cell 3: code, just ran — the figure and three variables -->
+            <div class="cell-wrap" data-cell="3">
+              <div class="insert-zone"><div class="insert-actions">
+                <button><svg class="ico" viewBox="0 0 24 24"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg></button>
+                <button><svg class="ico" viewBox="0 0 24 24"><rect x="4" y="4" width="16" height="16" rx="2" stroke-dasharray="3.4 2.8"/><line x1="9" y1="12" x2="15" y2="12"/></svg></button>
+                <button><svg class="ico" viewBox="0 0 24 24"><polyline points="4 7 4 4 20 4 20 7"/><line x1="9" y1="20" x2="15" y2="20"/><line x1="12" y1="4" x2="12" y2="20"/></svg></button>
+              </div></div>
+              <div class="cell kind-program ran ran-last">
+                <div class="body">
+                  <div class="cm-editor">
+                    <div class="cm-gutters">
+                      <div class="cm-lineNumbers"><div>1</div><div>2</div><div>3</div><div>4</div></div>
+                      <button class="run" title="Run cell (Cmd-Enter)"><i class="dot" data-run="3"></i></button>
+                    </div>
+                    <div class="cm-content">
+                      <div class="cm-line">demand = prices.<span class="pr">groupby</span>(<span class="st">'price'</span>).quantity.<span class="pr">median</span>()</div>
+                      <div class="cm-line">elasticity = demand.<span class="pr">pct_change</span>() / demand.index.<span class="pr">to_series</span>().<span class="pr">pct_change</span>()</div>
+                      <div class="cm-line">ax = demand.<span class="pr">plot</span>(marker=<span class="st">'o'</span>, color=<span class="st">'#305c8a'</span>)</div>
+                      <div class="cm-line">ax.<span class="pr">set_ylabel</span>(<span class="st">'median quantity'</span>)</div>
+                    </div>
+                  </div>
+                  <div class="cell-figures"><div class="figure"><svg viewBox="0 0 400 260"><use href="#fig-demand"/></svg></div></div>
+                  <pre class="output">Text(0, 0.5, 'median quantity')</pre>
+                </div>
+              </div>
+            </div>
+
+            <!-- cell 4: scratch, stale since cell 3 changed -->
+            <div class="cell-wrap" data-cell="4">
+              <div class="insert-zone"><div class="insert-actions">
+                <button><svg class="ico" viewBox="0 0 24 24"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg></button>
+                <button><svg class="ico" viewBox="0 0 24 24"><rect x="4" y="4" width="16" height="16" rx="2" stroke-dasharray="3.4 2.8"/><line x1="9" y1="12" x2="15" y2="12"/></svg></button>
+                <button><svg class="ico" viewBox="0 0 24 24"><polyline points="4 7 4 4 20 4 20 7"/><line x1="9" y1="20" x2="15" y2="20"/><line x1="12" y1="4" x2="12" y2="20"/></svg></button>
+              </div></div>
+              <div class="cell kind-scratch ran stale">
+                <div class="body">
+                  <div class="scratch-label">scratch</div>
+                  <div class="cm-editor">
+                    <div class="cm-gutters">
+                      <div class="cm-lineNumbers"><div>1</div><div>2</div></div>
+                      <button class="run" title="Run cell (Cmd-Enter)"><i class="dot" data-run="4"></i></button>
+                    </div>
+                    <div class="cm-content">
+                      <div class="cm-line">tmp = elasticity.<span class="pr">round</span>(<span class="nu">3</span>)</div>
+                      <div class="cm-line">tmp</div>
+                    </div>
+                  </div>
+                  <pre class="output">price
+0.5      NaN
+1.0   -0.495
+1.5   -1.073
+Name: quantity, dtype: float64</pre>
+                </div>
+              </div>
+            </div>
+
+            <!-- cell 5: text -->
+            <div class="cell-wrap" data-cell="5">
+              <div class="insert-zone"><div class="insert-actions">
+                <button><svg class="ico" viewBox="0 0 24 24"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg></button>
+                <button><svg class="ico" viewBox="0 0 24 24"><rect x="4" y="4" width="16" height="16" rx="2" stroke-dasharray="3.4 2.8"/><line x1="9" y1="12" x2="15" y2="12"/></svg></button>
+                <button><svg class="ico" viewBox="0 0 24 24"><polyline points="4 7 4 4 20 4 20 7"/><line x1="9" y1="20" x2="15" y2="20"/><line x1="12" y1="4" x2="12" y2="20"/></svg></button>
+              </div></div>
+              <div class="cell kind-text">
+                <div class="body">
+                  <div class="prose">
+                    <p>The medians fall by half between the first two prices and by more than half between the last two: demand is more elastic at the top of the range. Next week we add the controls and ask whether the second step survives them.</p>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+      </main>
+
+      <!-- THE SESSION CARD: one element; the script places it beside the
+           cell (peek, empty) or hangs it top-right (pinned). -->
+      <aside id="session" aria-label="Session">
+        <div class="tab"><span>Session</span></div>
+
+        <!-- the peek: what this run did -->
+        <div class="c c-peek">
+          <div class="head">
+            <span class="t" id="peek-title">this run · cell 3</span>
+            <span class="took" id="peek-took">0.38 s</span>
+            <button class="hb" data-label="Pin — stays up, follows every run" data-act="pin"><svg class="ico" viewBox="0 0 24 24"><line x1="12" y1="15.5" x2="12" y2="22"/><path d="M8 2.5h8l-1.2 6.5 3 3.5H6.2l3-3.5z"/></svg></button>
+            <button class="hb" data-label="Dismiss" data-act="close"><span class="x">✕</span></button>
+          </div>
+          <div id="peek-body"></div>
+          <div class="hint">type to dismiss · <kbd>⌘J</kbd> pins · <kbd>esc</kbd></div>
+        </div>
+
+        <!-- the empty session (after Restart, or a fresh file) -->
+        <div class="c c-empty">
+          <div class="head">
+            <span class="t">session</span>
+            <button class="hb" data-label="Pin" data-act="pin"><svg class="ico" viewBox="0 0 24 24"><line x1="12" y1="15.5" x2="12" y2="22"/><path d="M8 2.5h8l-1.2 6.5 3 3.5H6.2l3-3.5z"/></svg></button>
+            <button class="hb" data-label="Dismiss" data-act="close"><span class="x">✕</span></button>
+          </div>
+          <div class="empty-note"><b>Nothing in the session yet.</b>Run a cell — the variables it makes and the figure it draws land here.</div>
+          <div class="hint">type to dismiss · <kbd>⌘J</kbd> pins · <kbd>esc</kbd></div>
+        </div>
+
+        <!-- pinned: the whole session, the figures, the data viewer -->
+        <div class="c c-pinned">
+          <div class="head">
+            <span class="t">session</span>
+            <span class="took"><i class="dot-ref"></i>cell 3</span>
+            <button class="hb pinned-on" data-label="Unpin" data-act="unpin"><svg class="ico" viewBox="0 0 24 24"><line x1="12" y1="15.5" x2="12" y2="22"/><path d="M8 2.5h8l-1.2 6.5 3 3.5H6.2l3-3.5z"/></svg></button>
+            <button class="hb" data-label="Close" data-act="close"><span class="x">✕</span></button>
+          </div>
+          <div class="pinned-scroll">
+            <table class="vars"><tbody>
+              <tr class="viewable open" title="Open in the data viewer"><td class="v-mark"></td><td class="v-name">prices</td><td class="v-type">DataFrame 1200×2</td><td class="v-preview">     price  quantity 0   0.5  812 1  …</td></tr>
+              <tr class="touched"><td class="v-mark">~</td><td class="v-name">demand</td><td class="v-type">Series 3</td><td class="v-preview">price 0.5 812.0 1.0 410.0 1.5 190.0</td></tr>
+              <tr class="touched"><td class="v-mark new">+</td><td class="v-name">elasticity</td><td class="v-type">Series 3</td><td class="v-preview">price 0.5 NaN 1.0 -0.495 1.5 -1.073</td></tr>
+              <tr class="touched"><td class="v-mark new">+</td><td class="v-name">ax</td><td class="v-type">Axes</td><td class="v-preview">&lt;Axes: ylabel='median quantity'&gt;</td></tr>
+              <tr><td class="v-mark"></td><td class="v-name">n</td><td class="v-type">int</td><td class="v-preview">1200</td></tr>
+              <tr class="scratch"><td class="v-mark"></td><td class="v-name">tmp</td><td class="v-type">Series 3 · scratch</td><td class="v-preview">price 0.5 NaN 1.0 -0.495 1.5 -1.073</td></tr>
+            </tbody></table>
+            <div class="figrow" title="Show the figure">
+              <div class="thumb"><svg viewBox="0 0 400 260"><use href="#fig-demand"/></svg></div>
+              <div class="fl">demand.plot<small>figure · cell 3</small></div>
+            </div>
+            <div class="viewer">
+              <div class="viewer-head"><span class="vn">prices — 1200×2</span><button class="hb" data-label="Close viewer"><span class="x">✕</span></button></div>
+              <div class="viewer-scroll">
+                <table class="data-table">
+                  <thead><tr><th></th><th>price</th><th>quantity</th></tr></thead>
+                  <tbody>
+                    <tr><th>0</th><td>0.5</td><td>812</td></tr>
+                    <tr><th>1</th><td>1.0</td><td>377</td></tr>
+                    <tr><th>2</th><td>1.5</td><td>214</td></tr>
+                    <tr><th>3</th><td>0.5</td><td>933</td></tr>
+                    <tr><th>4</th><td>1.0</td><td>455</td></tr>
+                    <tr><th>5</th><td>1.5</td><td>160</td></tr>
+                    <tr><th>6</th><td>0.5</td><td>701</td></tr>
+                    <tr><th>7</th><td>1.5</td><td>198</td></tr>
+                    <tr><th>8</th><td>1.0</td><td>402</td></tr>
+                    <tr><th>9</th><td>0.5</td><td>864</td></tr>
+                    <tr><th>10</th><td>1.0</td><td>418</td></tr>
+                    <tr><th>11</th><td>1.5</td><td>233</td></tr>
+                    <tr><th>12</th><td>0.5</td><td>790</td></tr>
+                    <tr><th>13</th><td>1.0</td><td>366</td></tr>
+                    <tr><th>14</th><td>1.5</td><td>171</td></tr>
+                    <tr><th>15</th><td>0.5</td><td>1021</td></tr>
+                    <tr><th>16</th><td>1.0</td><td>440</td></tr>
+                    <tr><th>17</th><td>1.5</td><td>205</td></tr>
+                  </tbody>
+                </table>
+              </div>
+              <div class="viewer-foot"><button>More (100 of 1200 rows)</button></div>
+            </div>
+          </div>
+        </div>
+      </aside>
+    </div>
+
+    <!-- mockup chrome -->
+    <div id="states">
+      <span class="lbl">states</span>
+      <button data-state="quiet">Quiet</button>
+      <button data-state="peek">Peek</button>
+      <button data-state="pinned">Pinned</button>
+      <button data-state="empty">Empty</button>
+      <span class="sep"></span>
+      <button id="narrow">Narrow window</button>
+      <span class="sep"></span>
+      <span><kbd>⌘J</kbd> summon / pin <kbd>esc</kbd> <kbd>a–z</kbd> dismiss</span>
+    </div>
+
+    <script>
+      // What each run left behind: the kernel's namespace diff after the
+      // cell, the figure it drew, and the names it left alone. The peek is
+      // rendered from this, per cell, so clicking any cell's dot shows that
+      // cell's receipt.
+      const RUNS = {
+        1: { took: '1.2 s', fig: false,
+             vars: [['+', 'prices', 'DataFrame 1200×2', '     price  quantity 0   0.5  812 1  …', true], ['+', 'n', 'int', '1200']],
+             also: [] },
+        3: { took: '0.38 s', fig: true,
+             vars: [['~', 'demand', 'Series 3', 'price 0.5 812.0 1.0 410.0 1.5 190.0'], ['+', 'elasticity', 'Series 3', 'price 0.5 NaN 1.0 -0.495 1.5 -1.073'], ['+', 'ax', 'Axes', "<Axes: ylabel='median quantity'>"]],
+             also: ['prices', 'n', 'tmp'] },
+        4: { took: '12 ms', fig: false, scratch: true,
+             vars: [['+', 'tmp', 'Series 3 · scratch', 'price 0.5 NaN 1.0 -0.495 1.5 -1.073']],
+             also: ['prices', 'n', 'demand', 'elasticity', 'ax'] },
+      };
+
+      const $ = (s) => document.querySelector(s);
+      const body = document.body, win = $('#window'), room = $('#room'), doc = $('#doc'), sheet = $('#sheet'), card = $('#session');
+      const W = 300;
+      let anchor = 3, moveTimer = 0;
+      const esc = (s) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+
+      function renderPeek(n) {
+        const r = RUNS[n];
+        $('#peek-title').textContent = `this run · cell ${n}`;
+        $('#peek-took').textContent = r.took;
+        let html = '';
+        if (r.fig) html += `<div class="figrow" title="Show the figure"><div class="thumb"><svg viewBox="0 0 400 260"><use href="#fig-demand"/></svg></div><div class="fl">demand.plot<small>1 figure, drawn by this run</small></div></div>`;
+        html += '<table class="vars"><tbody>';
+        for (const [mark, name, type, preview, viewable] of r.vars) {
+          const cls = [viewable || /^(DataFrame|Series)/.test(type) ? 'viewable' : '', r.scratch ? 'scratch' : ''].join(' ');
+          html += `<tr class="${cls}"><td class="v-mark ${mark === '+' ? 'new' : ''}">${mark}</td><td class="v-name">${name}</td><td class="v-type">${type}</td><td class="v-preview">${esc(preview)}</td></tr>`;
+        }
+        html += '</tbody></table>';
+        if (r.also.length) html += `<div class="also"><b>unchanged</b> · ${r.also.map((v) => `<code>${v}</code>`).join(' · ')}</div>`;
+        $('#peek-body').innerHTML = html;
+      }
+
+      function place() {
+        const s = body.dataset.state;
+        const wr = win.getBoundingClientRect(), rr = room.getBoundingClientRect(), sr = sheet.getBoundingClientRect();
+        const free = rr.right - sr.right; // the margin right of the column
+        // Pinned, the card may lean over the column's edge by ~80px (code
+        // rarely reaches there); past that it tucks to a tab.
+        if (s === 'pinned') {
+          // Hung at the room's top-right: a layer above the frame. It takes
+          // the margin's width down to 260px before leaning over the
+          // column's edge, and tucks to a tab when it would lean by more
+          // than ~70px.
+          const w = Math.max(260, Math.min(W, free - 10));
+          const left = rr.right - wr.left - w - 10;
+          card.classList.toggle('tucked', free < 200);
+          card.style.width = w + 'px';
+          card.style.left = left + 'px';
+          card.style.setProperty('--tuck-dx', wr.width - 34 - left + 'px'); // tucked: hangs on the window's edge, tab out
+          card.style.top = rr.top - wr.top + 10 + 'px';
+          return;
+        }
+        card.classList.remove('tucked');
+        card.style.width = W + 'px';
+        if (s === 'quiet') return; // fades where it is
+        const cell = $(`[data-cell="${s === 'empty' ? 1 : anchor}"]`);
+        const cr = cell.querySelector('.cm-editor, .prose').getBoundingClientRect(); // the card's own top edge
+        // Beside the cell when the margin allows; otherwise as far right as
+        // the room goes, over the card's edge — translucent, and gone the
+        // moment you type.
+        const left = Math.min(sr.right + 18, rr.right - W - 14) - wr.left;
+        const h = card.offsetHeight;
+        let top = cr.top - wr.top;
+        top = Math.max(rr.top - wr.top + 12, Math.min(top, rr.bottom - wr.top - h - 12)); // clamped into view when the cell scrolls off
+        card.style.left = left + 'px';
+        card.style.top = top + 'px';
+      }
+
+      function setState(s, cell) {
+        if (cell) { anchor = cell; }
+        if (s === 'peek') renderPeek(anchor);
+        body.dataset.state = s;
+        card.classList.add('moving');
+        clearTimeout(moveTimer);
+        moveTimer = setTimeout(() => card.classList.remove('moving'), 280);
+        for (const b of document.querySelectorAll('#states [data-state]')) b.classList.toggle('on', b.dataset.state === s);
+        $('#pin-ctl').classList.toggle('on', s === 'pinned');
+        place();
+      }
+
+      // the dots in the gutters
+      for (const d of document.querySelectorAll('.run .dot')) {
+        d.addEventListener('click', (e) => { e.stopPropagation(); setState('peek', Number(d.dataset.run)); });
+      }
+      // the card's own buttons
+      card.addEventListener('click', (e) => {
+        const b = e.target.closest('[data-act]');
+        if (!b) return;
+        if (b.dataset.act === 'pin') setState('pinned');
+        else if (b.dataset.act === 'unpin') setState('peek');
+        else setState('quiet');
+      });
+      $('#pin-ctl').addEventListener('click', () => setState(body.dataset.state === 'pinned' ? 'quiet' : 'pinned'));
+      for (const b of document.querySelectorAll('#states [data-state]')) b.addEventListener('click', () => setState(b.dataset.state));
+      $('#narrow').addEventListener('click', () => { body.classList.toggle('narrow'); $('#narrow').classList.toggle('on'); requestAnimationFrame(place); });
+
+      window.addEventListener('keydown', (e) => {
+        const s = body.dataset.state;
+        if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'j') {
+          e.preventDefault();
+          setState(s === 'quiet' ? 'peek' : s === 'peek' ? 'pinned' : 'quiet');
+          return;
+        }
+        if (e.key === 'Escape') { if (s !== 'pinned') setState('quiet'); return; }
+        // typing in a cell dismisses the peek; a pinned card stays
+        if (e.key.length === 1 && !e.metaKey && !e.ctrlKey && !e.altKey && (s === 'peek' || s === 'empty')) setState('quiet');
+      });
+      doc.addEventListener('scroll', place, { passive: true });
+      window.addEventListener('resize', place);
+      // a click back in the document dismisses the peek too
+      doc.addEventListener('mousedown', (e) => { if (!e.target.closest('.dot') && (body.dataset.state === 'peek' || body.dataset.state === 'empty')) setState('quiet'); });
+
+      // #peek · #pinned · #empty · #quiet, with ",narrow" to shrink the window
+      const hash = location.hash.slice(1).split(',');
+      if (hash.includes('narrow')) { body.classList.add('narrow'); $('#narrow').classList.add('on'); }
+      if (hash.includes('still')) body.classList.add('still');
+      const first = ['quiet', 'peek', 'pinned', 'empty'].find((k) => hash.includes(k)) || 'peek';
+      doc.scrollTop = first === 'empty' ? 0 : 150; // the cell, its figure and the card in one frame
+      setState(first, 3);
+      document.fonts && document.fonts.ready.then(place);
+    </script>
+  </body>
+</html>

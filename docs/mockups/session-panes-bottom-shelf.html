@@ -1,0 +1,700 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Knuth — session shelf</title>
+    <style>
+      /* A static draft of Knuth in Zen's frame (docs/mockups/rail-layout.html:
+         near-black window, traffic lights and the document pill in the top
+         bar, a rail of rounded icon tiles on the left, the room as a rounded
+         inset) with the session's state on a SHELF under the document instead
+         of a column beside it. Collapsed, the shelf is a 36px strip along the
+         room's bottom edge: three tabs (Session · Data · Figures) and a run of
+         live chips, one per variable and figure. A run that changes something
+         lifts the shelf partway for a couple of seconds — the changed part,
+         its new rows marked amber — then it settles. A click on a tab, a chip
+         or the chevron lifts it fully and it stays; the grip resizes it. On a
+         wide room the open shelf lays the three parts side by side; on a
+         narrow one it shows the active tab. The column of cells is the live
+         app's, unchanged: the shelf takes height from the overscroll padding
+         at the bottom, never width from the document.
+
+         Colors and glyphs inside the room are Knuth's own (src/styles.css,
+         src/icons.ts); the frame's are Zen's. The strip across the very top
+         is the mockup's own control, not part of the app. */
+      :root {
+        --frame: #111112;
+        --frame-ink: #d5d3cf;
+        --frame-ink-soft: #7d7b78;
+        --tile: #29292c;
+        --tile-hover: #202023;
+        --pill: #1e1e21;
+        --bg: #2b2a2d;
+        --sheet: #ffffff;
+        --amber: #c98a1d;
+        --room-pane: #232226;
+        --room-line: rgba(255, 255, 255, 0.07);
+        --room-ink: #d8d6d1;
+        --room-ink-soft: #8f8d88;
+        --serif: 'STIX Two Text', 'Charter', 'Georgia', serif;
+        --prose: 'CMU Serif', 'Computer Modern Serif', 'Charter', 'Georgia', serif;
+        --mono: ui-monospace, 'SF Mono', 'Menlo', 'Consolas', monospace;
+        --sans: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Helvetica Neue', sans-serif;
+        --rail: 80px;
+        --topbar: 66px;
+        --inset: 8px;
+        /* the shelf's three heights */
+        --strip: 36px;
+        --peek: 200px;
+        --open: 42%;
+      }
+      * { box-sizing: border-box; }
+      html, body { margin: 0; height: 100%; background: #000; color: var(--frame-ink); font: 15px/1.55 var(--sans); overflow: hidden; }
+      button { font-family: inherit; }
+      .ico { width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; display: block; }
+
+      /* ---------- the mockup's own strip, above the window ---------- */
+      #mock {
+        position: fixed; top: 0; left: 0; right: 0; height: 32px; z-index: 100;
+        display: flex; align-items: center; gap: 2px; padding: 0 14px;
+        background: #000; font: 12px var(--sans); color: #8a8884;
+      }
+      #mock .t { margin-right: 10px; color: #c9c7c2; font-weight: 600; letter-spacing: 0.02em; }
+      #mock .sep { width: 1px; height: 14px; background: rgba(255, 255, 255, 0.14); margin: 0 8px; }
+      #mock button { font: 12px var(--sans); color: #9a9893; background: transparent; border: 0; border-radius: 6px; padding: 4px 9px; cursor: pointer; }
+      #mock button:hover { background: rgba(255, 255, 255, 0.08); color: #eee; }
+      #mock button.on { background: rgba(255, 255, 255, 0.14); color: #fff; }
+      #mock .hint { margin-left: auto; color: #6d6b68; }
+      #mock .hint b { color: #9a9893; font-weight: 500; }
+
+      /* ---------- the window ---------- */
+      #window { position: absolute; top: 32px; left: 0; right: 0; bottom: 0; background: var(--frame); overflow: hidden; }
+      body[data-win='narrow'] #window {
+        left: 50%; top: 56px; right: auto; bottom: auto; width: 1000px; height: calc(100% - 80px); max-height: 720px;
+        transform: translateX(-50%); border-radius: 12px;
+        box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.08), 0 30px 80px rgba(0, 0, 0, 0.6);
+      }
+
+      /* ---------- the top bar ---------- */
+      #topbar {
+        position: absolute; top: 0; left: 0; right: 0; height: var(--topbar);
+        display: flex; align-items: center; gap: 10px; padding: 0 18px;
+        -webkit-app-region: drag;
+      }
+      .lights { display: flex; gap: 8px; margin-right: 12px; }
+      .lights i { width: 13px; height: 13px; border-radius: 50%; display: block; background: #3a3a3c; }
+      .ctl { display: inline-flex; align-items: center; justify-content: center; width: 34px; height: 34px; border-radius: 9px; color: var(--frame-ink); border: 0; background: transparent; cursor: pointer; -webkit-app-region: no-drag; }
+      .ctl:hover { background: var(--tile-hover); }
+      .ctl.dim { color: var(--frame-ink-soft); }
+      .ctl.on { background: var(--tile); }
+      #docpill {
+        flex: 1; height: 42px; margin: 0 14px 0 10px; border-radius: 12px; background: var(--pill);
+        display: flex; align-items: center; gap: 12px; padding: 0 16px; min-width: 0; -webkit-app-region: no-drag;
+      }
+      #docpill .file { color: var(--frame-ink-soft); display: flex; }
+      #docpill .name { font: 16px/1 var(--serif); letter-spacing: 0.06em; color: var(--frame-ink); cursor: text; white-space: nowrap; }
+      #docpill .name:hover { color: #fff; }
+      #docpill .dirty { color: var(--amber); font-size: 9px; margin-left: -6px; }
+      #docpill .path { color: var(--frame-ink-soft); font: 12.5px var(--sans); margin-left: 4px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+      #docpill .spacer { flex: 1; }
+      #docpill .python { display: inline-flex; align-items: center; gap: 7px; font: 12px var(--sans); color: var(--frame-ink-soft); white-space: nowrap; }
+      #docpill .python i { width: 8px; height: 8px; border-radius: 50%; background: #4caf7d; display: block; }
+      .avatar { width: 26px; height: 26px; border-radius: 50%; background: #2d7dbb; margin-left: 6px; flex: none; }
+
+      /* ---------- the rail ---------- */
+      #rail {
+        position: absolute; top: var(--topbar); bottom: 0; left: 0; width: var(--rail);
+        display: flex; flex-direction: column; align-items: center; gap: 14px; padding: 6px 0 22px;
+      }
+      .rb { position: relative; display: inline-flex; align-items: center; justify-content: center; width: 50px; height: 50px; border: 0; border-radius: 14px; background: transparent; color: var(--frame-ink); cursor: pointer; }
+      .rb:hover { background: var(--tile-hover); }
+      .rb.on { background: var(--tile); }
+      .rb.solid .ico { fill: currentColor; stroke: none; }
+      .rb.small { width: 44px; height: 44px; }
+      .rb.small .ico { width: 17px; height: 17px; }
+      .rb.dim { color: var(--frame-ink-soft); }
+      .group { display: flex; flex-direction: column; align-items: center; gap: 6px; }
+      .rule { width: 26px; height: 1px; background: rgba(255, 255, 255, 0.1); }
+      .rb::after {
+        content: attr(data-label); position: absolute; left: calc(100% + 12px); top: 50%; transform: translateY(-50%);
+        background: #0a0a0b; color: var(--frame-ink); font: 12.5px var(--sans); white-space: nowrap;
+        padding: 5px 10px; border-radius: 8px; border: 1px solid rgba(255, 255, 255, 0.08);
+        opacity: 0; pointer-events: none; transition: opacity 0.12s; z-index: 5;
+      }
+      .rb:hover::after { opacity: 1; }
+      .grow { flex: 1; }
+
+      /* ---------- the room: document above, shelf below ---------- */
+      #room {
+        position: absolute; top: var(--topbar); left: var(--rail); right: var(--inset); bottom: var(--inset);
+        border-radius: 12px; background: var(--bg); overflow: hidden;
+        display: flex; flex-direction: column;
+        box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.05);
+        container-type: inline-size; container-name: room;
+      }
+      #doc { flex: 1 1 auto; min-height: 0; overflow-y: auto; overflow-x: hidden; padding: 22px 24px 40vh 16px; }
+      #sheet { max-width: 52rem; margin: 0 auto; }
+
+      /* ---------- cells: the live app's column, unchanged ---------- */
+      .pkgs { display: block; width: 100%; text-align: left; border: 1px dashed rgba(255, 255, 255, 0.12); border-radius: 10px; padding: 6px 12px; font: 12px var(--sans); color: var(--room-ink-soft); background: transparent; margin: 0 0 6px; cursor: pointer; }
+      .pkgs:hover { color: var(--room-ink); }
+      .pkgs .list { font: 11.5px var(--mono); margin-left: 8px; }
+
+      .insert-zone { height: 22px; position: relative; display: flex; align-items: center; justify-content: center; padding-left: 2.2rem; opacity: 0; transition: opacity 0.12s ease; }
+      .insert-zone:hover { opacity: 1; }
+      .insert-zone::before { content: ''; position: absolute; left: 2.2rem; right: 0; top: 50%; border-top: 1px solid rgba(157, 184, 214, 0.25); }
+      .insert-actions { position: relative; display: inline-flex; align-items: center; gap: 2px; padding: 2px 5px; background: color-mix(in srgb, #3a3840 94%, transparent); border: 1px solid rgba(255, 255, 255, 0.14); border-radius: 999px; box-shadow: 0 5px 18px rgba(0, 0, 0, 0.45); }
+      .insert-actions button { display: inline-flex; align-items: center; justify-content: center; width: 24px; height: 18px; color: rgba(240, 238, 233, 0.75); border: 0; border-radius: 999px; background: transparent; cursor: pointer; }
+      .insert-actions button:hover { color: #fff; background: rgba(255, 255, 255, 0.12); }
+      .insert-actions .ico { width: 13px; height: 13px; stroke-width: 1.7; }
+
+      .cell { display: flex; padding: 0.2rem 0; position: relative; }
+      .cell .body { flex: 1; min-width: 0; }
+      .cm { display: flex; background: #282c34; border: 1px solid rgba(255, 255, 255, 0.07); border-radius: 8px; overflow: hidden; font: 13.5px/18.9px var(--mono); color: #abb2bf; }
+      .cell.focus .cm { border-color: rgba(157, 184, 214, 0.45); }
+      .gutter { position: relative; flex: none; width: 46px; padding: 0.5rem 0; background: rgba(255, 255, 255, 0.022); border-right: 1px solid rgba(255, 255, 255, 0.06); color: rgba(240, 238, 233, 0.28); text-align: right; }
+      .gutter .ln { display: block; height: 18.9px; padding: 0 13px 0 0.3rem; }
+      .content { flex: 1; min-width: 0; padding: 0.5rem 0; margin-left: 0.15rem; }
+      .content .line { padding: 0 0.75rem; height: 18.9px; white-space: pre; }
+      .kw { color: #c678dd; } .st { color: #98c379; } .nu { color: #e5c07b; } .pr { color: #e06c75; } .fn { color: #61afef; } .op { color: #56b6c2; } .c { color: #7d8799; }
+      .run { position: absolute; left: 0; right: 0; top: 0; height: min(calc(0.5rem + 37.8px), 100%); border: 0; padding: 0; border-top-left-radius: 7px; border-bottom-left-radius: 7px; background: #2b2f37; color: #6ea576; cursor: pointer; font-size: 13px; z-index: 3; transition: color 0.12s; }
+      .run::before { content: '▶'; position: absolute; left: 0; right: 0; top: 0; height: calc(1rem + 18.9px); display: flex; align-items: center; justify-content: center; border-bottom: 1px solid rgba(255, 255, 255, 0.08); transition: background 0.12s; }
+      .run:hover { color: #8fc79a; }
+      .run:hover::before { background: rgba(255, 255, 255, 0.045); }
+      .cell.running .run::before { content: ''; }
+      .cell.running .run::after { content: ''; position: absolute; left: 50%; top: calc((1rem + 18.9px) / 2); width: 11px; height: 11px; margin: -6px 0 0 -6px; border: 1.6px solid rgba(110, 165, 118, 0.3); border-top-color: #6ea576; border-radius: 50%; animation: turn 0.8s linear infinite; }
+      .cell.running .run:hover::before { content: '■'; }
+      .cell.running .run:hover::after { display: none; }
+      .cell.running .run:hover { color: #cd6452; }
+      @keyframes turn { to { transform: rotate(360deg); } }
+      .cell.stale .gutter { border-right-color: var(--amber); }
+      .cell.kind-scratch .cm { border-style: dashed; background: transparent; }
+      .cell.kind-scratch .gutter { background: transparent; }
+      .cell.kind-scratch .run { background: var(--bg); }
+      .scratch-label { font-size: 10px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--room-ink-soft); margin-bottom: 0.15rem; }
+
+      .cell-figures { display: flex; flex-direction: column; gap: 0.5rem; margin: 0.45rem 0 0; }
+      .cell-figures[hidden] { display: none; }
+      .figure { background: #fff; border-radius: 6px; padding: 0.5rem; align-self: flex-start; max-width: 100%; overflow: hidden; box-shadow: 0 1px 3px rgba(0, 0, 0, 0.4); }
+      .figure svg { display: block; max-width: 100%; height: auto; }
+      .output { margin: 0.35rem 0 0; padding: 0.45rem 0.75rem; background: transparent; border-left: 3px solid rgba(255, 255, 255, 0.14); font: 12.5px/1.5 var(--mono); white-space: pre-wrap; color: #b5b3ae; }
+      .output[hidden] { display: none; }
+
+      .cell.kind-text .prose { position: relative; font: 18px/1.55 var(--prose); color: var(--room-ink); padding: 4px 0.75rem; }
+      .cell.kind-text .prose::before, .cell.kind-text .prose::after { content: ''; position: absolute; left: calc(0.75rem + 1px); width: 28px; height: 2px; border-radius: 1px; background: transparent; transition: background 0.15s ease; pointer-events: none; }
+      .cell.kind-text .prose::before { top: 0; }
+      .cell.kind-text .prose::after { bottom: 0; }
+      .cell.kind-text:hover .prose::before, .cell.kind-text:hover .prose::after { background: rgba(255, 255, 255, 0.16); }
+      .prose h1, .prose h2 { font-weight: 400; color: #f0eee9; line-height: 1.3; margin: 0.9em 0 0.35em; }
+      .prose h1 { font-size: 1.6em; } .prose h2 { font-size: 1.35em; }
+      .prose p { margin: 0.6em 0; }
+      .prose > :first-child { margin-top: 0; } .prose > :last-child { margin-bottom: 0; }
+      .prose code { font: 0.87em var(--mono); background: rgba(255, 255, 255, 0.08); border-radius: 3px; padding: 0 0.3em; }
+
+      /* ---------- the shelf ---------- */
+      #shelf {
+        position: relative; flex: 0 0 auto; height: var(--strip); min-height: 0;
+        display: flex; flex-direction: column;
+        background: var(--room-pane); border-top: 1px solid var(--room-line);
+        transition: height 0.34s cubic-bezier(0.2, 0.8, 0.2, 1), border-color 0.2s;
+        overflow: hidden; color: var(--room-ink);
+      }
+      #room[data-shelf='hidden'] #shelf { height: 0; border-top-color: transparent; }
+      #room[data-shelf='peek'] #shelf { height: var(--peek); }
+      #room[data-shelf='open'] #shelf { height: var(--open); }
+
+      .grip { position: absolute; top: -1px; left: 0; right: 0; height: 7px; cursor: row-resize; z-index: 4; display: none; }
+      #room[data-shelf='open'] .grip { display: block; }
+      .grip:hover::after, .grip.drag::after { content: ''; position: absolute; top: 0; left: 0; right: 0; border-top: 2px solid rgba(157, 184, 214, 0.45); }
+
+      .shelf-bar { flex: none; height: var(--strip); display: flex; align-items: center; gap: 8px; padding: 0 8px 0 10px; }
+      .tabs { display: flex; gap: 2px; flex: none; }
+      .tab { display: inline-flex; align-items: center; gap: 6px; height: 26px; padding: 0 9px; border: 0; border-radius: 7px; background: transparent; color: var(--room-ink-soft); font: 12px/1 var(--sans); letter-spacing: 0.01em; cursor: pointer; white-space: nowrap; }
+      .tab:hover { background: rgba(255, 255, 255, 0.05); color: var(--room-ink); }
+      .tab .n { font: 10.5px/1 var(--mono); padding: 3px 6px; border-radius: 999px; background: rgba(255, 255, 255, 0.08); color: var(--room-ink-soft); font-weight: 400; }
+      .tab .n:empty { display: none; }
+      .tab.changed .n { background: rgba(201, 138, 29, 0.28); color: #e6b65a; }
+      #room:not([data-shelf='closed']) .tab.on { color: #f0eee9; background: rgba(255, 255, 255, 0.07); }
+      #room:not([data-shelf='closed']) .tab.on .n { background: rgba(255, 255, 255, 0.12); color: var(--room-ink); }
+      .vr { width: 1px; height: 16px; background: rgba(255, 255, 255, 0.1); flex: none; }
+      .chips { flex: 1 1 auto; min-width: 0; display: flex; align-items: center; gap: 6px; overflow: hidden; -webkit-mask-image: linear-gradient(90deg, #000 calc(100% - 36px), transparent); mask-image: linear-gradient(90deg, #000 calc(100% - 36px), transparent); }
+      .chip { display: inline-flex; align-items: center; gap: 6px; height: 22px; padding: 0 8px; border: 0; border-radius: 6px; background: rgba(255, 255, 255, 0.045); font: 11.5px/1 var(--mono); color: var(--room-ink-soft); white-space: nowrap; cursor: pointer; flex: none; transition: background 0.15s; }
+      .chip b { font-weight: 600; color: var(--room-ink); }
+      .chip.viewable b { color: #9db8d6; }
+      .chip.scratch b { font-weight: 400; font-style: italic; }
+      .chip:hover { background: rgba(255, 255, 255, 0.09); }
+      .chip .sw { width: 9px; height: 9px; border-radius: 2px; background: #fff; box-shadow: 0 1px 2px rgba(0, 0, 0, 0.5); display: block; }
+      .chip.changed { background: rgba(201, 138, 29, 0.14); box-shadow: inset 0 0 0 1px rgba(201, 138, 29, 0.35); }
+      .chip.changed::before { content: ''; width: 6px; height: 6px; border-radius: 50%; background: var(--amber); display: block; }
+      .chip.enter { animation: chip-in 0.3s cubic-bezier(0.2, 0.8, 0.2, 1); }
+      @keyframes chip-in { from { opacity: 0; transform: translateY(6px); } }
+      .chev { flex: none; width: 26px; height: 26px; border: 0; border-radius: 7px; background: transparent; color: var(--room-ink-soft); cursor: pointer; display: inline-flex; align-items: center; justify-content: center; }
+      .chev:hover { background: rgba(255, 255, 255, 0.06); color: var(--room-ink); }
+      .chev .ico { width: 16px; height: 16px; transition: transform 0.3s; }
+      #room[data-shelf='open'] .chev .ico { transform: rotate(180deg); }
+
+      .shelf-body { flex: 1 1 auto; min-height: 0; display: grid; grid-template-columns: 1fr; gap: 10px; padding: 0 10px 10px; }
+      .pane { display: flex; flex-direction: column; min-height: 0; min-width: 0; background: rgba(255, 255, 255, 0.022); border: 1px solid rgba(255, 255, 255, 0.06); border-radius: 8px; overflow: hidden; }
+      .pane:not(.on) { display: none; }
+      .pane-title { flex: none; display: flex; align-items: center; justify-content: space-between; gap: 8px; font-size: 10.5px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--room-ink-soft); padding: 0.55rem 0.7rem 0.45rem; background: rgba(255, 255, 255, 0.018); white-space: nowrap; }
+      .pane-title .x { border: 0; background: none; color: var(--room-ink-soft); cursor: pointer; font-size: 12px; letter-spacing: 0; padding: 0 2px; }
+      .pane-title .x:hover { color: var(--room-ink); }
+      .pane-scroll { flex: 1 1 auto; min-height: 0; overflow: auto; }
+      .pane-empty { padding: 0.45rem 0.7rem; color: var(--room-ink-soft); font-size: 12.5px; }
+
+      /* on a wide room the open shelf lays the three parts side by side */
+      @container room (min-width: 1180px) {
+        #room[data-shelf='open'] .shelf-body { grid-template-columns: minmax(300px, 1fr) minmax(380px, 1.45fr) minmax(300px, 1fr); }
+        #room[data-shelf='open'] .pane:not(.on) { display: flex; }
+        #room[data-shelf='open'] .pane.on .pane-title { color: var(--room-ink); }
+      }
+
+      .vars-table { width: 100%; border-collapse: collapse; font: 12.5px/1.5 var(--mono); }
+      .vars-table td { padding: 0.2rem 0.4rem; vertical-align: top; }
+      .vars-table tr + tr td { border-top: 1px solid rgba(255, 255, 255, 0.045); }
+      .vars-table td:first-child { padding-left: 0.7rem; }
+      .vars-table .v-name { font-weight: 600; white-space: nowrap; color: var(--room-ink); }
+      .vars-table .v-type { color: var(--room-ink-soft); white-space: nowrap; }
+      .vars-table .v-preview { color: var(--room-ink-soft); max-width: 0; width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+      .vars-table tr.scratch .v-name { font-weight: 400; font-style: italic; }
+      .vars-table tr.viewable { cursor: pointer; }
+      .vars-table tr.viewable:hover { background: rgba(255, 255, 255, 0.05); }
+      .vars-table tr.viewable .v-name { color: #9db8d6; }
+      .vars-table tr.changed td { animation: row-fade 6s ease-out forwards; }
+      .vars-table tr.changed td:first-child { box-shadow: inset 3px 0 0 var(--amber); }
+      @keyframes row-fade { from { background: rgba(201, 138, 29, 0.16); } 60% { background: rgba(201, 138, 29, 0.08); } to { background: transparent; } }
+
+      .data-table { border-collapse: collapse; font: 12px/1.45 var(--mono); color: var(--room-ink); }
+      .data-table th, .data-table td { padding: 0.16rem 0.55rem; border-bottom: 1px solid rgba(255, 255, 255, 0.045); white-space: nowrap; text-align: right; }
+      .data-table thead th { position: sticky; top: 0; background: #272629; color: var(--room-ink-soft); font-weight: 600; z-index: 1; }
+      .data-table tbody th { color: var(--room-ink-soft); font-weight: 400; text-align: left; }
+      .viewer-foot { flex: none; padding: 0.4rem 0.7rem; font-size: 12px; color: var(--room-ink-soft); }
+      .viewer-foot button { font: 12px/1 var(--sans); border: 1px solid var(--room-line); border-radius: 999px; background: transparent; color: var(--room-ink); padding: 0.25rem 0.7rem; cursor: pointer; }
+      .viewer-foot button:hover { background: rgba(255, 255, 255, 0.07); }
+
+      .figs .pane-scroll { display: flex; gap: 14px; padding: 0.6rem 0.7rem 0.7rem; overflow-x: auto; overflow-y: hidden; align-items: stretch; }
+      .fig-card { flex: none; display: flex; flex-direction: column; gap: 5px; min-height: 0; cursor: pointer; }
+      .fig-card .figure { flex: 1 1 auto; min-height: 0; align-self: auto; display: flex; padding: 0.4rem; transition: box-shadow 0.3s; }
+      .fig-card .figure svg { height: 100%; width: auto; max-width: none; }
+      .fig-card .cap { flex: none; font: 11.5px var(--mono); color: var(--room-ink-soft); }
+      .fig-card.changed .figure { box-shadow: 0 0 0 2px rgba(201, 138, 29, 0.75), 0 1px 3px rgba(0, 0, 0, 0.4); animation: fig-fade 6s ease-out forwards; }
+      @keyframes fig-fade { to { box-shadow: 0 0 0 2px rgba(201, 138, 29, 0), 0 1px 3px rgba(0, 0, 0, 0.4); } }
+    </style>
+  </head>
+  <body data-win="wide">
+    <div id="mock">
+      <span class="t">session shelf</span>
+      <button data-shelf="hidden">Hidden</button>
+      <button data-shelf="closed">Strip</button>
+      <button data-peek>Peek (a run)</button>
+      <button data-shelf="open">Open</button>
+      <span class="sep"></span>
+      <button data-win="narrow">Narrow</button>
+      <button data-win="wide">Wide</button>
+      <span class="sep"></span>
+      <button data-reset>Reset</button>
+      <span class="hint">click <b>▶</b> on a cell and the shelf reacts · a tab, a chip or the chevron pulls it up · drag its top edge to resize</span>
+    </div>
+
+    <div id="window">
+      <div id="topbar">
+        <div class="lights"><i></i><i></i><i></i></div>
+        <button class="ctl" id="shelf-toggle" title="Session shelf"><svg class="ico" viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="2"/><line x1="3" y1="15" x2="21" y2="15"/></svg></button>
+        <button class="ctl dim" title="Back"><svg class="ico" viewBox="0 0 24 24"><line x1="19" y1="12" x2="5" y2="12"/><polyline points="12 19 5 12 12 5"/></svg></button>
+        <button class="ctl dim" title="Forward"><svg class="ico" viewBox="0 0 24 24"><line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/></svg></button>
+        <button class="ctl" title="Run all"><svg class="ico" viewBox="0 0 24 24"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"/></svg></button>
+        <div id="docpill">
+          <span class="file"><svg class="ico" viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg></span>
+          <span class="name" title="Click to rename">analysis.py</span><span class="dirty">●</span>
+          <span class="path">~/Projects/ECON_0150/week-3</span>
+          <span class="spacer"></span>
+          <span class="python"><i></i>uv · Python 3.13</span>
+        </div>
+        <button class="ctl" id="session-toggle" title="Session"><svg class="ico" viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="2"/><line x1="15" y1="3" x2="15" y2="21"/></svg></button>
+        <div class="avatar"></div>
+      </div>
+
+      <nav id="rail" aria-label="Toolbar">
+        <button class="rb on" data-label="analysis.py"><svg class="ico" viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg></button>
+        <button class="rb dim" data-label="Open…"><svg class="ico" viewBox="0 0 24 24"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg></button>
+        <div class="rule"></div>
+        <div class="group">
+          <button class="rb small" data-label="Code cell"><svg class="ico" viewBox="0 0 24 24"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg></button>
+          <button class="rb small" data-label="Scratch cell"><svg class="ico" viewBox="0 0 24 24"><rect x="4" y="4" width="16" height="16" rx="2" stroke-dasharray="3.4 2.8"/><line x1="9" y1="12" x2="15" y2="12"/></svg></button>
+          <button class="rb small" data-label="Text cell"><svg class="ico" viewBox="0 0 24 24"><polyline points="4 7 4 4 20 4 20 7"/><line x1="9" y1="20" x2="15" y2="20"/><line x1="12" y1="4" x2="12" y2="20"/></svg></button>
+        </div>
+        <div class="rule"></div>
+        <div class="group">
+          <button class="rb small solid" data-label="Run stale"><svg class="ico" viewBox="0 0 24 24"><polygon points="7 4.5 19 12 7 19.5"/></svg></button>
+          <button class="rb small solid" data-label="Run all"><svg class="ico" viewBox="0 0 24 24"><polygon points="3.5 5 11 12 3.5 19"/><polygon points="13 5 20.5 12 13 19"/></svg></button>
+          <button class="rb small" data-label="Stop"><svg class="ico" viewBox="0 0 24 24"><rect x="6.5" y="6.5" width="11" height="11" rx="1.5"/></svg></button>
+          <button class="rb small" data-label="Restart session"><svg class="ico" viewBox="0 0 24 24"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"/></svg></button>
+        </div>
+        <div class="grow"></div>
+        <button class="rb small dim" data-label="Get Knuth"><svg class="ico" viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg></button>
+        <button class="rb small dim" data-label="New document"><svg class="ico" viewBox="0 0 24 24"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg></button>
+      </nav>
+
+      <main id="room" data-shelf="closed" data-part="session">
+        <div id="doc">
+          <div id="sheet">
+            <button class="pkgs">▸ Packages <span class="list">pandas · matplotlib</span></button>
+
+            <div class="cell-wrap">
+              <div class="cell kind-text">
+                <div class="body">
+                  <div class="prose">
+                    <h1>Three prices, one survey</h1>
+                    <p>Twelve hundred people were each shown one of three prices for the same cup of coffee and asked how many they would buy in a month. The file has one row per answer: the price they saw and the quantity they named.</p>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div class="cell-wrap">
+              <div class="insert-zone"><div class="insert-actions"><button title="Code"><svg class="ico" viewBox="0 0 24 24"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg></button><button title="Scratch"><svg class="ico" viewBox="0 0 24 24"><rect x="4" y="4" width="16" height="16" rx="2" stroke-dasharray="3.4 2.8"/><line x1="9" y1="12" x2="15" y2="12"/></svg></button><button title="Text"><svg class="ico" viewBox="0 0 24 24"><polyline points="4 7 4 4 20 4 20 7"/><line x1="9" y1="20" x2="15" y2="20"/><line x1="12" y1="4" x2="12" y2="20"/></svg></button></div></div>
+              <div class="cell kind-program" id="c2" data-effect="prices">
+                <div class="body">
+                  <div class="cm">
+                    <div class="gutter"><button class="run" title="Run"></button><span class="ln">1</span><span class="ln">2</span><span class="ln">3</span></div>
+                    <div class="content">
+                      <div class="line"><span class="kw">import</span> pandas <span class="kw">as</span> pd</div>
+                      <div class="line">prices <span class="op">=</span> pd.<span class="pr">read_csv</span>(<span class="st">'data.csv'</span>)</div>
+                      <div class="line">prices.<span class="pr">describe</span>()</div>
+                    </div>
+                  </div>
+                  <pre class="output">             price     quantity
+count  1200.000000  1200.000000
+mean      1.000000   408.316667
+std       0.408418   168.902140
+min       0.500000   120.000000
+25%       0.500000   258.000000
+50%       1.000000   409.000000
+75%       1.500000   560.000000
+max       1.500000   700.000000</pre>
+                </div>
+              </div>
+            </div>
+
+            <div class="cell-wrap">
+              <div class="insert-zone"><div class="insert-actions"><button title="Code"><svg class="ico" viewBox="0 0 24 24"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg></button><button title="Scratch"><svg class="ico" viewBox="0 0 24 24"><rect x="4" y="4" width="16" height="16" rx="2" stroke-dasharray="3.4 2.8"/><line x1="9" y1="12" x2="15" y2="12"/></svg></button><button title="Text"><svg class="ico" viewBox="0 0 24 24"><polyline points="4 7 4 4 20 4 20 7"/><line x1="9" y1="20" x2="15" y2="20"/><line x1="12" y1="4" x2="12" y2="20"/></svg></button></div></div>
+              <div class="cell kind-text">
+                <div class="body">
+                  <div class="prose">
+                    <h2>Demand at three prices</h2>
+                    <p>Each row of the table is one buyer’s answer at the price they were shown. The curve below joins the three medians; its slope is the thing we are after.</p>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div class="cell-wrap">
+              <div class="insert-zone"><div class="insert-actions"><button title="Code"><svg class="ico" viewBox="0 0 24 24"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg></button><button title="Scratch"><svg class="ico" viewBox="0 0 24 24"><rect x="4" y="4" width="16" height="16" rx="2" stroke-dasharray="3.4 2.8"/><line x1="9" y1="12" x2="15" y2="12"/></svg></button><button title="Text"><svg class="ico" viewBox="0 0 24 24"><polyline points="4 7 4 4 20 4 20 7"/><line x1="9" y1="20" x2="15" y2="20"/><line x1="12" y1="4" x2="12" y2="20"/></svg></button></div></div>
+              <div class="cell kind-program" id="c4" data-effect="figure">
+                <div class="body">
+                  <div class="cm">
+                    <div class="gutter"><button class="run" title="Run"></button><span class="ln">1</span><span class="ln">2</span></div>
+                    <div class="content">
+                      <div class="line">demand <span class="op">=</span> prices.<span class="pr">groupby</span>(<span class="st">'price'</span>).quantity.<span class="pr">median</span>()</div>
+                      <div class="line">demand.<span class="pr">plot</span>(marker<span class="op">=</span><span class="st">'o'</span>)</div>
+                    </div>
+                  </div>
+                  <div class="cell-figures">
+                    <div class="figure" id="fig-src">
+                      <svg viewBox="0 0 460 300" width="460" height="300" xmlns="http://www.w3.org/2000/svg" font-family="'DejaVu Sans', 'Helvetica Neue', Arial, sans-serif" font-size="11">
+                        <rect width="460" height="300" fill="#fff"/>
+                        <rect x="58" y="22" width="382" height="232" fill="none" stroke="#000" stroke-width="0.8"/>
+                        <g stroke="#000" stroke-width="0.8">
+                          <line x1="58" y1="243.9" x2="54.5" y2="243.9"/><line x1="58" y1="193.5" x2="54.5" y2="193.5"/><line x1="58" y1="143" x2="54.5" y2="143"/><line x1="58" y1="92.6" x2="54.5" y2="92.6"/><line x1="58" y1="42.2" x2="54.5" y2="42.2"/>
+                          <line x1="110.1" y1="254" x2="110.1" y2="257.5"/><line x1="179.5" y1="254" x2="179.5" y2="257.5"/><line x1="249" y1="254" x2="249" y2="257.5"/><line x1="318.5" y1="254" x2="318.5" y2="257.5"/><line x1="388" y1="254" x2="388" y2="257.5"/>
+                        </g>
+                        <g fill="#000" text-anchor="end" dominant-baseline="middle">
+                          <text x="50" y="243.9">200</text><text x="50" y="193.5">300</text><text x="50" y="143">400</text><text x="50" y="92.6">500</text><text x="50" y="42.2">600</text>
+                        </g>
+                        <g fill="#000" text-anchor="middle">
+                          <text x="110.1" y="271">0.6</text><text x="179.5" y="271">0.8</text><text x="249" y="271">1.0</text><text x="318.5" y="271">1.2</text><text x="388" y="271">1.4</text>
+                        </g>
+                        <text x="249" y="291" text-anchor="middle" fill="#000">price</text>
+                        <polyline points="75.4,36.1 249,138 422.6,242.4" fill="none" stroke="#1f77b4" stroke-width="1.5" stroke-linejoin="round"/>
+                        <g fill="#1f77b4"><circle cx="75.4" cy="36.1" r="3.6"/><circle cx="249" cy="138" r="3.6"/><circle cx="422.6" cy="242.4" r="3.6"/></g>
+                      </svg>
+                    </div>
+                  </div>
+                  <pre class="output">&lt;Axes: xlabel='price'&gt;</pre>
+                </div>
+              </div>
+            </div>
+
+            <div class="cell-wrap">
+              <div class="insert-zone"><div class="insert-actions"><button title="Code"><svg class="ico" viewBox="0 0 24 24"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg></button><button title="Scratch"><svg class="ico" viewBox="0 0 24 24"><rect x="4" y="4" width="16" height="16" rx="2" stroke-dasharray="3.4 2.8"/><line x1="9" y1="12" x2="15" y2="12"/></svg></button><button title="Text"><svg class="ico" viewBox="0 0 24 24"><polyline points="4 7 4 4 20 4 20 7"/><line x1="9" y1="20" x2="15" y2="20"/><line x1="12" y1="4" x2="12" y2="20"/></svg></button></div></div>
+              <div class="cell kind-scratch" id="c5" data-effect="peak">
+                <div class="body">
+                  <div class="scratch-label">scratch</div>
+                  <div class="cm">
+                    <div class="gutter"><button class="run" title="Run"></button><span class="ln">1</span></div>
+                    <div class="content">
+                      <div class="line">peak <span class="op">=</span> demand.<span class="pr">idxmax</span>(); peak</div>
+                    </div>
+                  </div>
+                  <pre class="output">0.5</pre>
+                </div>
+              </div>
+            </div>
+
+            <div class="cell-wrap">
+              <div class="insert-zone"><div class="insert-actions"><button title="Code"><svg class="ico" viewBox="0 0 24 24"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg></button><button title="Scratch"><svg class="ico" viewBox="0 0 24 24"><rect x="4" y="4" width="16" height="16" rx="2" stroke-dasharray="3.4 2.8"/><line x1="9" y1="12" x2="15" y2="12"/></svg></button><button title="Text"><svg class="ico" viewBox="0 0 24 24"><polyline points="4 7 4 4 20 4 20 7"/><line x1="9" y1="20" x2="15" y2="20"/><line x1="12" y1="4" x2="12" y2="20"/></svg></button></div></div>
+              <div class="cell kind-program stale focus" id="c6" data-effect="elasticity">
+                <div class="body">
+                  <div class="cm">
+                    <div class="gutter"><button class="run" title="Run"></button><span class="ln">1</span><span class="ln">2</span><span class="ln">3</span></div>
+                    <div class="content">
+                      <div class="line">dp <span class="op">=</span> demand.index.<span class="pr">to_series</span>().<span class="pr">pct_change</span>()</div>
+                      <div class="line">elasticity <span class="op">=</span> demand.<span class="pr">pct_change</span>() <span class="op">/</span> dp</div>
+                      <div class="line">elasticity</div>
+                    </div>
+                  </div>
+                  <pre class="output" hidden>price
+0.5         NaN
+1.0   -0.330065
+1.5   -1.009756
+Name: quantity, dtype: float64</pre>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <section id="shelf" aria-label="Session">
+          <div class="grip" title="Drag to resize"></div>
+          <header class="shelf-bar">
+            <div class="tabs">
+              <button class="tab on" data-part="session">Session <b class="n" id="n-session">3</b></button>
+              <button class="tab" data-part="data">Data <b class="n" id="n-data">prices</b></button>
+              <button class="tab" data-part="figures">Figures <b class="n" id="n-figures">1</b></button>
+            </div>
+            <i class="vr"></i>
+            <div class="chips" id="chips">
+              <button class="chip viewable" data-var="prices" data-part="data"><b>prices</b><span>DataFrame 1200×2</span></button>
+              <button class="chip viewable" data-var="demand" data-part="data"><b>demand</b><span>Series 3</span></button>
+              <button class="chip scratch" data-var="peak" data-part="session"><b>peak</b><span>float · scratch</span></button>
+              <button class="chip fig" data-fig="1" data-part="figures"><i class="sw"></i><b>fig 1</b><span>demand.plot · [4]</span></button>
+            </div>
+            <button class="chev" id="chev" title="Pull up the shelf"><svg class="ico" viewBox="0 0 24 24"><polyline points="6 15 12 9 18 15"/></svg></button>
+          </header>
+          <div class="shelf-body">
+            <section class="pane vars on" data-part="session">
+              <div class="pane-title"><span>Session</span></div>
+              <div class="pane-scroll">
+                <table class="vars-table"><tbody id="vars">
+                  <tr class="viewable" data-var="prices"><td class="v-name">prices</td><td class="v-type">DataFrame 1200×2</td><td class="v-preview">price quantity · 0 0.5 612 · 1 1.5 203 · 2 1.0 410 · 3 0.5 588 …</td></tr>
+                  <tr class="viewable" data-var="demand"><td class="v-name">demand</td><td class="v-type">Series 3</td><td class="v-preview">price · 0.5 612.0 · 1.0 410.0 · 1.5 203.0</td></tr>
+                  <tr class="scratch" data-var="peak"><td class="v-name">peak</td><td class="v-type">float · scratch</td><td class="v-preview">0.5</td></tr>
+                </tbody></table>
+              </div>
+            </section>
+            <section class="pane data" data-part="data">
+              <div class="pane-title"><span id="data-title">prices — 1200×2</span><button class="x" title="Close">✕</button></div>
+              <div class="pane-scroll"><table class="data-table" id="data-table"></table></div>
+              <div class="viewer-foot" id="data-foot"><button>More (100 of 1200 rows)</button></div>
+            </section>
+            <section class="pane figs" data-part="figures">
+              <div class="pane-title"><span>Figures</span></div>
+              <div class="pane-scroll">
+                <div class="fig-card" id="fig-card-1"><div class="figure" id="fig1-slot"></div><div class="cap">fig 1 · demand.plot · cell [4]</div></div>
+              </div>
+            </section>
+          </div>
+        </section>
+      </main>
+    </div>
+
+    <script>
+      (() => {
+        const room = document.getElementById('room');
+        const shelf = document.getElementById('shelf');
+        const tabs = [...document.querySelectorAll('.tab')];
+        const panes = [...document.querySelectorAll('.pane')];
+        const chips = document.getElementById('chips');
+        const vars = document.getElementById('vars');
+        const mock = document.getElementById('mock');
+        const wide = () => room.clientWidth >= 1180;
+        let settle = null;
+
+        // The shelf pushes the document up as it rises and lets it back down
+        // as it settles: the doc's bottom edge stays anchored to the same
+        // content, so the cell you just ran is never covered by the shelf.
+        const doc = document.getElementById('doc');
+        let anchoring = false;
+        function anchor() {
+          if (anchoring) return; anchoring = true;
+          let last = shelf.getBoundingClientRect().height, idle = 0;
+          const step = () => {
+            const h = shelf.getBoundingClientRect().height, d = h - last; last = h;
+            if (d) { doc.scrollTop += d; idle = 0; } else idle++;
+            if (idle < 12) requestAnimationFrame(step); else anchoring = false;
+          };
+          requestAnimationFrame(step);
+        }
+
+        // ----- the shelf's three heights -----
+        function setShelf(s) { anchor(); room.dataset.shelf = s; syncMock(); }
+        function setPart(p) {
+          room.dataset.part = p;
+          tabs.forEach(t => t.classList.toggle('on', t.dataset.part === p));
+          panes.forEach(x => x.classList.toggle('on', x.dataset.part === p));
+        }
+        function seen(p) {
+          chips.querySelectorAll(`.chip.changed[data-part="${p}"]`).forEach(c => c.classList.remove('changed'));
+          tabs.find(t => t.dataset.part === p).classList.remove('changed');
+        }
+        function openTo(p) { clearTimeout(settle); setPart(p); setShelf('open'); seen(p); if (wide()) panes.forEach(x => seen(x.dataset.part)); }
+        function peek(p) { setPart(p); setShelf('peek'); armSettle(2600); }
+        function armSettle(ms) {
+          clearTimeout(settle);
+          settle = setTimeout(() => {
+            if (room.dataset.shelf !== 'peek') return;
+            if (shelf.matches(':hover')) { armSettle(1200); return; } // being looked at: hold
+            setShelf('closed');
+          }, ms);
+        }
+        shelf.addEventListener('mouseleave', () => { if (room.dataset.shelf === 'peek') armSettle(900); });
+        doc.addEventListener('mousedown', () => { if (room.dataset.shelf === 'peek') { clearTimeout(settle); setShelf('closed'); } });
+
+        tabs.forEach(t => t.addEventListener('click', () => {
+          const p = t.dataset.part;
+          if (room.dataset.shelf === 'open' && room.dataset.part === p) setShelf('closed');
+          else openTo(p);
+        }));
+        document.getElementById('chev').addEventListener('click', () => {
+          room.dataset.shelf === 'open' ? setShelf('closed') : openTo(room.dataset.part);
+        });
+        document.getElementById('session-toggle').addEventListener('click', () => {
+          room.dataset.shelf === 'open' ? setShelf('closed') : openTo(room.dataset.part);
+        });
+        document.getElementById('shelf-toggle').addEventListener('click', () => {
+          setShelf(room.dataset.shelf === 'hidden' ? 'closed' : 'hidden');
+        });
+        chips.addEventListener('click', e => {
+          const c = e.target.closest('.chip'); if (!c) return;
+          if (c.dataset.var && c.classList.contains('viewable')) showData(c.dataset.var);
+          openTo(c.dataset.part);
+          if (c.dataset.part === 'session') flashRow(c.dataset.var);
+          c.classList.remove('changed');
+        });
+        vars.addEventListener('click', e => {
+          const r = e.target.closest('tr.viewable'); if (!r) return;
+          showData(r.dataset.var);
+          if (!wide()) setPart('data');
+        });
+        document.querySelector('.pane.data .x').addEventListener('click', () => {
+          document.getElementById('n-data').textContent = '';
+          document.getElementById('data-table').innerHTML = '';
+          document.getElementById('data-title').textContent = 'Data';
+          document.getElementById('data-foot').innerHTML = '';
+          if (!wide()) setPart('session');
+        });
+
+        // ----- the grip: drag the open shelf's top edge -----
+        const grip = document.querySelector('.grip');
+        grip.addEventListener('pointerdown', e => {
+          const y0 = e.clientY, h0 = shelf.getBoundingClientRect().height;
+          grip.setPointerCapture(e.pointerId); grip.classList.add('drag'); shelf.style.transition = 'none'; anchor();
+          const move = ev => { const h = Math.max(120, Math.min(room.clientHeight * 0.8, h0 + (y0 - ev.clientY))); room.style.setProperty('--open', h + 'px'); anchor(); };
+          const up = () => { grip.classList.remove('drag'); shelf.style.transition = ''; grip.removeEventListener('pointermove', move); grip.removeEventListener('pointerup', up); };
+          grip.addEventListener('pointermove', move); grip.addEventListener('pointerup', up);
+        });
+
+        // ----- the data pane -----
+        const rnd = seed => { let s = seed; return () => { s = (s * 1103515245 + 12345) & 0x7fffffff; return s / 0x7fffffff; }; };
+        const tables = {
+          prices: { title: 'prices — 1200×2', cols: ['price', 'quantity'], foot: '<button>More (100 of 1200 rows)</button>', rows: (() => {
+            const r = rnd(7), med = { 0.5: 612, 1.0: 410, 1.5: 203 }, out = [];
+            for (let i = 0; i < 100; i++) { const p = [0.5, 1.5, 1.0][(i * 7 + i % 3) % 3]; out.push([i, p.toFixed(1), Math.round(med[p] + (r() - 0.5) * 170)]); }
+            out[0][2] = 612; out[1][2] = 203; out[2][2] = 410; out[3][2] = 588;
+            return out; })() },
+          demand: { title: 'demand — 3×1', cols: ['quantity'], foot: '3 rows', rows: [['0.5', '612.0'], ['1.0', '410.0'], ['1.5', '203.0']] },
+        };
+        function showData(name) {
+          const t = tables[name]; if (!t) return;
+          document.getElementById('n-data').textContent = name;
+          document.getElementById('data-title').textContent = t.title;
+          document.getElementById('data-foot').innerHTML = t.foot;
+          document.getElementById('data-table').innerHTML =
+            `<thead><tr><th></th>${t.cols.map(c => `<th>${c}</th>`).join('')}</tr></thead><tbody>` +
+            t.rows.map(r => `<tr><th>${r[0]}</th>${r.slice(1).map(v => `<td>${v}</td>`).join('')}</tr>`).join('') + '</tbody>';
+        }
+        showData('prices');
+
+        // ----- the figures pane: the same print, pinned at the room's edge -----
+        document.getElementById('fig1-slot').appendChild(document.querySelector('#fig-src svg').cloneNode(true));
+
+        // ----- a run: the cell spins, then whatever changed lifts the shelf partway -----
+        function flashRow(name) {
+          const r = vars.querySelector(`tr[data-var="${name}"]`); if (!r) return;
+          r.classList.remove('changed'); void r.offsetWidth; r.classList.add('changed');
+          setTimeout(() => r.classList.remove('changed'), 6000);
+        }
+        function markChip(name, part) {
+          const c = chips.querySelector(`.chip[data-var="${name}"], .chip[data-fig="${name}"]`); if (!c) return;
+          c.classList.add('changed');
+          tabs.find(t => t.dataset.part === part).classList.add('changed');
+        }
+        function addVar(name, type, preview, viewable) {
+          if (vars.querySelector(`tr[data-var="${name}"]`)) return;
+          const tr = document.createElement('tr'); tr.dataset.var = name; if (viewable) tr.classList.add('viewable');
+          tr.innerHTML = `<td class="v-name">${name}</td><td class="v-type">${type}</td><td class="v-preview">${preview}</td>`;
+          vars.appendChild(tr);
+          const chip = document.createElement('button'); chip.className = 'chip enter' + (viewable ? ' viewable' : ''); chip.dataset.var = name; chip.dataset.part = viewable ? 'data' : 'session';
+          chip.innerHTML = `<b>${name}</b><span>${type}</span>`;
+          chips.appendChild(chip);
+          document.getElementById('n-session').textContent = vars.children.length;
+        }
+        const effects = {
+          prices() { markChip('prices', 'data'); flashRow('prices'); peek('session'); },
+          figure() { const card = document.getElementById('fig-card-1'); card.classList.remove('changed'); void card.offsetWidth; card.classList.add('changed'); setTimeout(() => card.classList.remove('changed'), 6000); markChip('demand', 'data'); markChip('1', 'figures'); flashRow('demand'); peek('figures'); },
+          peak() { markChip('peak', 'session'); flashRow('peak'); peek('session'); },
+          elasticity() {
+            const cell = document.getElementById('c6'); cell.querySelector('.output').hidden = false;
+            addVar('dp', 'Series 3', 'price · 0.5 NaN · 1.0 1.0 · 1.5 0.5', true);
+            addVar('elasticity', 'Series 3', 'price · 0.5 NaN · 1.0 -0.330 · 1.5 -1.010', true);
+            markChip('dp', 'session'); markChip('elasticity', 'session'); flashRow('dp'); flashRow('elasticity');
+            peek('session');
+            const sc = document.querySelector('.pane.vars .pane-scroll'); sc.scrollTop = sc.scrollHeight;
+          },
+        };
+        function run(cell) {
+          if (cell.classList.contains('running')) return;
+          cell.classList.add('running');
+          setTimeout(() => { cell.classList.remove('running', 'stale'); effects[cell.dataset.effect](); }, 900);
+        }
+        document.querySelectorAll('.cell .run').forEach(b => b.addEventListener('click', e => { e.stopPropagation(); run(b.closest('.cell')); }));
+
+        function reset() {
+          clearTimeout(settle);
+          const cell = document.getElementById('c6'); cell.classList.add('stale'); cell.classList.remove('running'); cell.querySelector('.output').hidden = true;
+          ['dp', 'elasticity'].forEach(n => { vars.querySelector(`tr[data-var="${n}"]`)?.remove(); chips.querySelector(`.chip[data-var="${n}"]`)?.remove(); });
+          document.getElementById('n-session').textContent = vars.children.length;
+          document.querySelectorAll('.changed').forEach(x => x.classList.remove('changed'));
+          room.style.removeProperty('--open');
+          showData('prices'); setPart('session'); setShelf('closed');
+        }
+
+        // ----- the mockup's strip -----
+        function syncMock() {
+          mock.querySelectorAll('[data-shelf]').forEach(b => b.classList.toggle('on', b.dataset.shelf === room.dataset.shelf));
+          mock.querySelector('[data-peek]').classList.toggle('on', room.dataset.shelf === 'peek');
+          mock.querySelectorAll('[data-win]').forEach(b => b.classList.toggle('on', b.dataset.win === document.body.dataset.win));
+        }
+        mock.addEventListener('click', e => {
+          const b = e.target.closest('button'); if (!b) return;
+          if (b.dataset.shelf) { clearTimeout(settle); b.dataset.shelf === 'open' ? openTo(room.dataset.part) : setShelf(b.dataset.shelf); }
+          if ('peek' in b.dataset) { const stale = document.getElementById('c6'); run(stale.classList.contains('stale') ? stale : document.getElementById('c4')); }
+          if (b.dataset.win) { document.body.dataset.win = b.dataset.win; syncMock(); }
+          if ('reset' in b.dataset) reset();
+        });
+        syncMock();
+      })();
+    </script>
+  </body>
+</html>

@@ -1,0 +1,647 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <title>Knuth session panes — floating edge</title>
+    <style>
+      /* A static draft of the roadmap's "floating session panes", drawn in
+         the Zen-style frame of rail-layout.html so the five session-pane
+         mockups compare like for like. The frame (near-black, a top bar
+         with the traffic lights and the document pill, a rail of rounded
+         tiles on the left, the room as an inset rounded panel) is Zen's;
+         everything inside the room is Knuth's own: the dark bench, One
+         Dark code cards, the run chip, CMU prose, white figure cards.
+
+         The direction: the session's three parts (variables, figures, the
+         data viewer) are three rounded boxes that live OFF the room's right
+         edge. At rest only a 44px tab of each shows. When one changes it
+         opens and eases 210px into the room for a couple of seconds, then
+         settles back. A click on a tab pulls the box all the way out and it
+         stays; a click back in a cell tucks it. On a window whose right
+         margin can hold a whole box, the boxes simply sit there, open.
+
+         The whole app window is drawn at a fixed virtual size (1440×900 for
+         the three laptop states, 1760×1000 for the wide one) and scaled to
+         fit the browser, so every viewer sees the same margins. */
+      :root {
+        --frame: #111112;
+        --frame-ink: #d5d3cf;
+        --frame-ink-soft: #7d7b78;
+        --tile: #29292c;
+        --tile-hover: #202023;
+        --pill: #1e1e21;
+        --bg: #2b2a2d;
+        --amber: #c98a1d;
+        --room-pane: #232226;
+        --room-line: rgba(255, 255, 255, 0.07);
+        --room-ink: #d8d6d1;
+        --room-ink-soft: #8f8d88;
+        --box: #313035;
+        --serif: 'STIX Two Text', 'Charter', 'Georgia', serif;
+        --prose: 'CMU Serif', 'Computer Modern Serif', 'Charter', 'Georgia', serif;
+        --mono: ui-monospace, 'SF Mono', 'Menlo', 'Consolas', monospace;
+        --sans: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Helvetica Neue', sans-serif;
+        --rail: 80px;
+        --topbar: 66px;
+        --inset: 8px;
+        --boxw: 340px;   /* a box, fully out */
+        --tabw: 44px;    /* what shows when tucked */
+        --peek: 210px;   /* what shows on a nudge: name and type, not the preview */
+      }
+      * { box-sizing: border-box; }
+      html, body { margin: 0; height: 100%; background: #050506; color: var(--frame-ink); font: 15px/1.55 var(--sans); overflow: hidden; }
+      svg { width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+      button { font: inherit; }
+
+      /* ---------- the app window, on the desk ---------- */
+      #window {
+        position: absolute; top: 28px; left: 50%; transform-origin: top center;
+        width: 1440px; height: 900px; background: var(--frame); border-radius: 11px; overflow: hidden;
+        box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.07), 0 40px 90px rgba(0, 0, 0, 0.7);
+      }
+
+      /* ---------- the top bar ---------- */
+      #topbar {
+        position: absolute; top: 0; left: 0; right: 0; height: var(--topbar);
+        display: flex; align-items: center; gap: 6px; padding: 0 18px;
+      }
+      .lights { display: flex; gap: 8px; margin-right: 14px; }
+      .lights i { width: 13px; height: 13px; border-radius: 50%; display: block; background: #3a3a3c; }
+      .ctl { position: relative; display: inline-flex; align-items: center; justify-content: center; width: 34px; height: 34px; border-radius: 9px; color: var(--frame-ink); border: 0; background: transparent; cursor: pointer; }
+      .ctl:hover { background: var(--tile-hover); }
+      .ctl.dim { color: var(--frame-ink-soft); }
+      #docpill {
+        flex: 1; height: 42px; margin: 0 0 0 12px; border-radius: 12px; background: var(--pill);
+        display: flex; align-items: center; gap: 12px; padding: 0 16px;
+      }
+      #docpill .file { color: var(--frame-ink-soft); display: inline-flex; }
+      #docpill .name { font: 16px/1 var(--serif); letter-spacing: 0.06em; color: var(--frame-ink); cursor: text; }
+      #docpill .name:hover { color: #fff; }
+      #docpill .dirty { color: var(--amber); font-size: 9px; margin-left: -6px; }
+      #docpill .path { color: var(--frame-ink-soft); font: 12.5px var(--sans); margin-left: 4px; }
+      #docpill .spacer { flex: 1; }
+      #docpill .python { display: inline-flex; align-items: center; gap: 7px; font: 12px var(--sans); color: var(--frame-ink-soft); }
+      #docpill .python i { width: 8px; height: 8px; border-radius: 50%; background: #4caf7d; display: block; }
+
+      /* ---------- the rail ---------- */
+      #rail {
+        position: absolute; top: var(--topbar); bottom: 0; left: 0; width: var(--rail);
+        display: flex; flex-direction: column; align-items: center; gap: 14px; padding: 6px 0 22px;
+      }
+      .rb {
+        position: relative; display: inline-flex; align-items: center; justify-content: center;
+        width: 50px; height: 50px; border: 0; border-radius: 14px; background: transparent;
+        color: var(--frame-ink); cursor: pointer;
+      }
+      .rb:hover { background: var(--tile-hover); }
+      .rb.on { background: var(--tile); }
+      .rb.solid svg { fill: currentColor; stroke: none; }
+      .rb.small { width: 44px; height: 44px; }
+      .rb.small svg { width: 17px; height: 17px; }
+      .rb.dim { color: var(--frame-ink-soft); }
+      .group { display: flex; flex-direction: column; align-items: center; gap: 6px; }
+      .rule { width: 26px; height: 1px; background: rgba(255, 255, 255, 0.1); }
+      .rb::after, .ctl::after {
+        content: attr(data-label); position: absolute; left: calc(100% + 12px); top: 50%; transform: translateY(-50%);
+        background: #0a0a0b; color: var(--frame-ink); font: 12.5px var(--sans); white-space: nowrap;
+        padding: 5px 10px; border-radius: 8px; border: 1px solid rgba(255, 255, 255, 0.08);
+        opacity: 0; pointer-events: none; transition: opacity 0.12s; z-index: 5;
+      }
+      .ctl::after { left: 50%; top: calc(100% + 8px); transform: translateX(-50%); }
+      .rb:hover::after, .ctl:hover::after { opacity: 1; }
+      .grow { flex: 1; }
+
+      /* ---------- the room: Knuth's dark bench, inset ---------- */
+      #room {
+        position: absolute; top: var(--topbar); left: var(--rail); right: var(--inset); bottom: var(--inset);
+        border-radius: 12px; background: var(--bg); overflow: hidden;
+        box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.05);
+      }
+      #doc {
+        position: absolute; inset: 0; overflow-y: auto; overflow-x: hidden;
+        padding: 22px 30px 40vh 30px;
+        transition: padding-right 0.38s cubic-bezier(0.2, 0.7, 0.2, 1);
+      }
+      /* A pulled-out box asks for room; the document eases left instead of
+         narrowing (the sheet keeps its 832px, only its centre moves). */
+      #room.shifted #doc, #room.docked #doc { padding-right: calc(var(--boxw) + 12px + 24px); }
+      #sheet { max-width: 832px; margin: 0 auto; }
+
+      /* cell zero, folded to its packages */
+      .pkgs {
+        display: flex; align-items: center; gap: 8px; width: 100%; text-align: left;
+        border: 1px dashed rgba(255, 255, 255, 0.12); border-radius: 10px; padding: 6px 12px; margin: 0 0 6px;
+        font: 12px var(--sans); color: var(--room-ink-soft); background: transparent; cursor: pointer;
+      }
+      .pkgs code { font: 11.5px var(--mono); }
+
+      /* the column of cells */
+      .insert { height: 22px; }
+      .cell { display: flex; padding: 0.2rem 0; position: relative; }
+      .cell .body { flex: 1; min-width: 0; }
+      .card {
+        display: flex; position: relative; overflow: hidden;
+        background: #282c34; border: 1px solid rgba(255, 255, 255, 0.07); border-radius: 8px;
+        font: 13.5px/18.9px var(--mono); color: #abb2bf;
+      }
+      .cell.focused .card { border-color: rgba(157, 184, 214, 0.45); }
+      .gutter {
+        position: relative; flex: 0 0 auto; display: flex; padding: 8px 0;
+        background: rgba(255, 255, 255, 0.022); border-right: 1px solid rgba(255, 255, 255, 0.06);
+        color: rgba(240, 238, 233, 0.28);
+      }
+      .nums { min-width: 36px; text-align: right; padding: 0 0.35rem 0 0.3rem; }
+      .nums span { display: block; }
+      .foldg { width: 11px; }
+      .run {
+        position: absolute; left: 0; right: 0; top: 0; height: min(calc(0.5rem + 37.8px), 100%);
+        border: 0; padding: 0; border-radius: 7px 0 0 7px; background: #2b2f37; color: #6ea576;
+        cursor: pointer; font-size: 13px; z-index: 3; transition: color 0.12s;
+      }
+      .run::before {
+        content: '▶'; position: absolute; left: 0; right: 0; top: 0; height: calc(1rem + 18.9px);
+        display: flex; align-items: center; justify-content: center;
+        border-bottom: 1px solid rgba(255, 255, 255, 0.08); transition: background 0.12s;
+      }
+      .run:hover { color: #8fc79a; }
+      .run:hover::before { background: rgba(255, 255, 255, 0.045); }
+      .cell.running .run::before { content: ''; }
+      .cell.running .run::after {
+        content: ''; position: absolute; left: 50%; top: calc((1rem + 18.9px) / 2); width: 11px; height: 11px;
+        margin: -6px 0 0 -6px; border: 1.6px solid rgba(110, 165, 118, 0.3); border-top-color: #6ea576;
+        border-radius: 50%; animation: turn 0.8s linear infinite;
+      }
+      @keyframes turn { to { transform: rotate(360deg); } }
+      .code { margin: 0 0 0 0.15rem; flex: 1; min-width: 0; padding: 0.5rem 0; white-space: pre-wrap; font: inherit; }
+      .code .ln { display: block; padding: 0 0.75rem; }
+      .kw { color: #c678dd; } .fn { color: #61afef; } .st { color: #98c379; } .nu { color: #d19a66; } .pr { color: #e06c75; } .cm { color: #5c6370; } .op { color: #56b6c2; }
+      .cell.stale .gutter { border-right-color: var(--amber); }
+      .cell.kind-scratch .card { border-style: dashed; background: transparent; }
+      .cell.kind-scratch .gutter { background: transparent; }
+      .cell.kind-scratch .run { background: var(--bg); }
+      .scratch-label { font-size: 10px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--room-ink-soft); margin-bottom: 0.15rem; }
+      .prose { font: 18px/1.55 var(--prose); color: var(--room-ink); padding: 4px 0.75rem; }
+      .prose h1 { font-weight: 400; font-size: 1.6em; line-height: 1.3; color: #f0eee9; margin: 0 0 0.35em; }
+      .prose p { margin: 0.6em 0; }
+      .prose p:last-child { margin-bottom: 0; }
+      .prose em { font-style: italic; }
+      .output {
+        margin: 0.35rem 0 0; padding: 0.45rem 0.75rem; background: transparent;
+        border-left: 3px solid rgba(255, 255, 255, 0.14); font: 12.5px/1.5 var(--mono); white-space: pre-wrap; color: #b5b3ae;
+      }
+      .output[hidden] { display: none; }
+      .figs { display: flex; flex-direction: column; gap: 0.5rem; margin: 0.45rem 0 0; }
+      .figs[hidden] { display: none; }
+      .figure { background: #fff; border-radius: 6px; padding: 0.5rem; align-self: flex-start; max-width: 100%; overflow: hidden; box-shadow: 0 1px 3px rgba(0, 0, 0, 0.4); }
+      .figure svg, .thumb svg { display: block; width: 440px; max-width: 100%; height: auto; stroke: none; }
+
+      /* ---------- the session boxes, off the right edge ---------- */
+      #panes {
+        position: absolute; top: 22px; right: 0; bottom: 22px; width: calc(var(--boxw) + 12px);
+        display: flex; flex-direction: column; align-items: flex-end; gap: 10px;
+        pointer-events: none; z-index: 5;
+      }
+      #panes[hidden] { display: none; }
+      .box {
+        --tx: calc(var(--boxw) - var(--tabw));
+        position: relative; pointer-events: auto; width: var(--boxw); flex: 0 1 auto; min-height: 0;
+        display: flex; flex-direction: column;
+        background: var(--box); border: 1px solid rgba(255, 255, 255, 0.08); border-radius: 10px; color: var(--room-ink);
+        transform: translateX(var(--tx));
+        /* settling back is slower and softer than coming in */
+        transition: transform 0.55s cubic-bezier(0.4, 0, 0.2, 1), box-shadow 0.3s;
+      }
+      /* Variables and figures keep their natural height; the data table is
+         the one that scrolls when the column runs short. */
+      .box.vars { max-height: 40%; flex-shrink: 0; }
+      .box.figs { max-height: 40%; flex-shrink: 0; }
+      .box.data { max-height: 64%; min-height: 44px; }
+      .box.nudged, .box.out {
+        --tx: calc(var(--boxw) - var(--peek));
+        transition: transform 0.34s cubic-bezier(0.2, 0.75, 0.25, 1), box-shadow 0.3s;
+        box-shadow: 0 12px 32px rgba(0, 0, 0, 0.42), 0 2px 6px rgba(0, 0, 0, 0.3);
+        z-index: 2;
+      }
+      .box.out { --tx: -12px; }
+      /* a tucked tab eases in a touch under the pointer */
+      .box:not(.nudged):not(.out):hover { --tx: calc(var(--boxw) - var(--tabw) - 6px); transition: transform 0.18s ease; }
+      /* the wide window, and docked mode: the boxes sit whole in the margin */
+      #room.wide .box, #room.docked .box { --tx: -12px; box-shadow: none; }
+      /* the tab's label, to its left, while tucked */
+      .box::before {
+        content: attr(data-label); position: absolute; right: calc(100% + 10px); top: 10px;
+        background: #0a0a0b; color: var(--frame-ink); font: 12.5px var(--sans); white-space: nowrap;
+        padding: 5px 10px; border-radius: 8px; border: 1px solid rgba(255, 255, 255, 0.08);
+        opacity: 0; pointer-events: none; transition: opacity 0.12s;
+      }
+      .box:not(.nudged):not(.out):hover::before { opacity: 1; }
+      #room.wide .box::before, #room.docked .box::before { display: none; }
+
+      .head { display: flex; align-items: center; height: 44px; flex: 0 0 auto; cursor: pointer; user-select: none; }
+      .tab { position: relative; width: var(--tabw); height: 44px; flex: 0 0 auto; display: flex; align-items: center; justify-content: center; color: var(--room-ink-soft); transition: color 0.15s; }
+      .box:hover .tab { color: var(--room-ink); }
+      .tab svg { width: 18px; height: 18px; stroke-width: 1.7; }
+      .tab .n {
+        position: absolute; top: 6px; left: 26px; font: 600 9.5px/1 var(--mono); color: var(--room-ink-soft);
+        background: var(--box); padding: 1px 2px; border-radius: 4px; transition: opacity 0.15s;
+      }
+      .ttl {
+        flex: 1; min-width: 0; display: flex; align-items: baseline; gap: 8px;
+        font-size: 10.5px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--room-ink-soft); white-space: nowrap;
+        opacity: 0; transition: opacity 0.2s;
+      }
+      .ttl .cnt { letter-spacing: 0; font: 11px var(--mono); }
+      .handle { width: 40px; height: 44px; display: flex; align-items: center; justify-content: center; color: var(--room-ink-soft); opacity: 0; transition: opacity 0.2s, color 0.15s; }
+      .handle:hover { color: var(--room-ink); }
+      .handle svg { width: 16px; height: 16px; }
+      .box.nudged .ttl, .box.out .ttl, #room.wide .ttl, #room.docked .ttl,
+      .box.nudged .handle, .box.out .handle { opacity: 1; transition-delay: 0.08s; }
+      .box.nudged .tab .n, .box.out .tab .n, #room.wide .tab .n, #room.docked .tab .n { opacity: 0; }
+
+      /* the body: collapsed behind the tab, open when the box is in */
+      .fold { display: grid; grid-template-rows: 0fr; flex: 1 1 auto; min-height: 0; transition: grid-template-rows 0.32s cubic-bezier(0.2, 0.7, 0.2, 1); }
+      .box.nudged .fold, .box.out .fold, #room.wide .fold, #room.docked .fold { grid-template-rows: 1fr; }
+      .inner { min-height: 0; overflow: hidden; display: flex; flex-direction: column; }
+      .scroll { flex: 1 1 auto; min-height: 0; overflow: auto; }
+
+      /* variables */
+      .vars-table { width: 100%; border-collapse: collapse; font: 12.5px/1.5 var(--mono); }
+      .vars-table td { padding: 0.2rem 0.4rem; vertical-align: top; }
+      .vars-table tr + tr td { border-top: 1px solid rgba(255, 255, 255, 0.045); }
+      .vars-table td:first-child { padding-left: 0.7rem; }
+      .vars-table .v-name { font-weight: 600; white-space: nowrap; color: var(--room-ink); }
+      .vars-table .v-type { color: var(--room-ink-soft); white-space: nowrap; }
+      .vars-table .v-preview { color: var(--room-ink-soft); max-width: 0; width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+      .vars-table tr.scratch .v-name { font-weight: 400; font-style: italic; }
+      .vars-table tr.viewable { cursor: pointer; }
+      .vars-table tr.viewable:hover td { background: rgba(255, 255, 255, 0.05); }
+      .vars-table tr.viewable .v-name { color: #9db8d6; }
+      /* what just changed: a tint that fades as the box settles back */
+      .vars-table tr.fresh td { animation: fresh 3.4s ease-out forwards; }
+      @keyframes fresh { 0%, 50% { background: rgba(157, 184, 214, 0.16); } 100% { background: transparent; } }
+      #room.hold .fresh td, #room.hold .thumb.fresh .fcard { animation-play-state: paused; }
+
+      /* figures */
+      .thumbs { padding: 0.25rem 0.7rem 0.7rem; display: flex; flex-direction: column; gap: 0.6rem; }
+      .thumb .cap { font: 11.5px var(--mono); color: var(--room-ink-soft); margin: 0.2rem 0 4px; }
+      .thumb .fcard { background: #fff; border-radius: 6px; padding: 0.5rem; box-shadow: 0 1px 3px rgba(0, 0, 0, 0.4); }
+      .thumb svg { width: 100%; }
+      .thumb.fresh .fcard { animation: freshcard 3.4s ease-out forwards; }
+      @keyframes freshcard { 0%, 50% { box-shadow: 0 0 0 2px rgba(157, 184, 214, 0.55), 0 1px 3px rgba(0, 0, 0, 0.4); } 100% { box-shadow: 0 1px 3px rgba(0, 0, 0, 0.4); } }
+
+      /* the data viewer */
+      .data-table { border-collapse: collapse; font: 12px/1.45 var(--mono); color: var(--room-ink); }
+      .data-table th, .data-table td { padding: 0.16rem 0.55rem; border-bottom: 1px solid rgba(255, 255, 255, 0.045); white-space: nowrap; text-align: right; }
+      .data-table thead th { position: sticky; top: 0; background: var(--box); color: var(--room-ink-soft); font-weight: 600; z-index: 1; }
+      .data-table tbody th { color: var(--room-ink-soft); font-weight: 400; text-align: left; }
+      .viewer-foot { flex: 0 0 auto; padding: 0.4rem 0.7rem; font-size: 12px; color: var(--room-ink-soft); }
+      .viewer-foot button { font: 12px/1 var(--sans); border: 1px solid var(--room-line); border-radius: 999px; background: transparent; color: var(--room-ink); padding: 0.25rem 0.7rem; cursor: pointer; }
+      .viewer-foot button:hover { background: rgba(255, 255, 255, 0.07); }
+
+      /* ---------- the state switch, on the desk under the window ---------- */
+      #states {
+        position: fixed; bottom: 16px; left: 50%; transform: translateX(-50%);
+        display: flex; align-items: center; justify-content: center; gap: 4px; padding: 5px 6px 5px 6px;
+        max-width: calc(100vw - 24px);
+        background: #0a0a0b; border: 1px solid rgba(255, 255, 255, 0.1); border-radius: 22px;
+        font: 12.5px var(--sans); color: var(--frame-ink-soft); white-space: nowrap; z-index: 20;
+        box-shadow: 0 10px 30px rgba(0, 0, 0, 0.6);
+      }
+      #states button { border: 0; background: transparent; color: var(--frame-ink); padding: 6px 12px; border-radius: 999px; cursor: pointer; }
+      #states button:hover { background: var(--tile-hover); }
+      #states button.on { background: var(--tile); }
+      #states .sep { width: 1px; height: 18px; background: rgba(255, 255, 255, 0.12); margin: 0 6px; }
+      #states .note { padding: 0 10px 0 4px; }
+      #states .note b { color: var(--frame-ink); font-weight: 500; }
+      @media (max-width: 900px) { #states { flex-wrap: wrap; } }
+    </style>
+  </head>
+  <body>
+    <div id="window">
+      <div id="topbar">
+        <div class="lights"><i></i><i></i><i></i></div>
+        <button class="ctl" data-label="Open…"><svg viewBox="0 0 24 24"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg></button>
+        <button class="ctl" data-label="New document"><svg viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="12" y1="12" x2="12" y2="18"/><line x1="9" y1="15" x2="15" y2="15"/></svg></button>
+        <button class="ctl dim" data-label="Download a copy"><svg viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg></button>
+        <div id="docpill">
+          <span class="file"><svg viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg></span>
+          <span class="name" title="Click to rename">analysis.py</span><span class="dirty" title="Unsaved changes">●</span>
+          <span class="path">~/Projects/ECON_0150/week-3</span>
+          <span class="spacer"></span>
+          <span class="python"><i></i>uv · Python 3.13</span>
+        </div>
+      </div>
+
+      <nav id="rail" aria-label="Toolbar">
+        <div class="group">
+          <button class="rb small" data-label="Code cell"><svg viewBox="0 0 24 24"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg></button>
+          <button class="rb small" data-label="Scratch cell"><svg viewBox="0 0 24 24"><rect x="4" y="4" width="16" height="16" rx="2" stroke-dasharray="3.4 2.8"/><line x1="9" y1="12" x2="15" y2="12"/></svg></button>
+          <button class="rb small" data-label="Text cell"><svg viewBox="0 0 24 24"><polyline points="4 7 4 4 20 4 20 7"/><line x1="9" y1="20" x2="15" y2="20"/><line x1="12" y1="4" x2="12" y2="20"/></svg></button>
+        </div>
+        <div class="rule"></div>
+        <div class="group">
+          <button class="rb small solid" data-label="Run stale"><svg viewBox="0 0 24 24"><polygon points="7 4.5 19 12 7 19.5"/></svg></button>
+          <button class="rb small solid" data-label="Run all"><svg viewBox="0 0 24 24"><polygon points="3.5 5 11 12 3.5 19"/><polygon points="13 5 20.5 12 13 19"/></svg></button>
+          <button class="rb small" data-label="Stop"><svg viewBox="0 0 24 24"><rect x="6.5" y="6.5" width="11" height="11" rx="1.5"/></svg></button>
+          <button class="rb small" data-label="Restart session"><svg viewBox="0 0 24 24"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"/></svg></button>
+        </div>
+        <div class="rule"></div>
+        <button class="rb small on" id="mode" data-label="Session panes · floating"><svg viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="2"/><line x1="15" y1="3" x2="15" y2="21"/></svg></button>
+        <div class="grow"></div>
+        <button class="rb small dim" data-label="Get Knuth"><svg viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg></button>
+      </nav>
+
+      <main id="room">
+        <div id="doc">
+          <div id="sheet">
+            <button class="pkgs">▸ Packages <code>pandas · numpy · matplotlib</code></button>
+
+            <div class="cell kind-text"><div class="body"><div class="prose">
+              <h1>Demand at three prices</h1>
+              <p>Each row of the table is one buyer’s answer at one of three posted prices. The curve below joins the three medians; its slope, in logs, is the elasticity <em>ε</em> we estimate at the end.</p>
+            </div></div></div>
+
+            <div class="insert"></div>
+            <div class="cell kind-program" data-touches="prices">
+              <div class="body">
+                <div class="card">
+                  <div class="gutter"><button class="run" title="Run"></button><div class="nums"><span>1</span><span>2</span><span>3</span><span>4</span></div><div class="foldg"></div></div>
+                  <pre class="code"><span class="ln"><span class="kw">import</span> pandas <span class="kw">as</span> pd</span><span class="ln">prices = pd.<span class="fn">read_csv</span>(<span class="st">'data.csv'</span>)</span><span class="ln">n, p0 = <span class="fn">len</span>(prices), prices.<span class="pr">price</span>.<span class="fn">mean</span>()</span><span class="ln">prices.<span class="fn">describe</span>()</span></pre>
+                </div>
+                <pre class="output">             price     quantity
+count  1200.000000  1200.000000
+mean      0.883333   414.071667
+std       0.306541   167.223915
+min       0.500000   102.000000
+50%       0.900000   409.000000
+max       1.250000   731.000000</pre>
+              </div>
+            </div>
+
+            <div class="insert"></div>
+            <div class="cell kind-scratch" data-touches="tmp">
+              <div class="body">
+                <div class="scratch-label">scratch</div>
+                <div class="card">
+                  <div class="gutter"><button class="run" title="Run"></button><div class="nums"><span>1</span></div><div class="foldg"></div></div>
+                  <pre class="code"><span class="ln">tmp = prices.<span class="fn">sample</span>(<span class="nu">3</span>, random_state=<span class="nu">0</span>); tmp</span></pre>
+                </div>
+                <pre class="output">      price  quantity
+841    0.90       433
+1019   1.25       198
+77     0.50       604</pre>
+              </div>
+            </div>
+
+            <div class="insert"></div>
+            <div class="cell kind-program focused" data-touches="demand">
+              <div class="body">
+                <div class="card">
+                  <div class="gutter"><button class="run" title="Run"></button><div class="nums"><span>1</span><span>2</span></div><div class="foldg"></div></div>
+                  <pre class="code"><span class="ln">demand = prices.<span class="fn">groupby</span>(<span class="st">'price'</span>).<span class="pr">quantity</span>.<span class="fn">median</span>()</span><span class="ln">demand</span></pre>
+                </div>
+                <pre class="output">price
+0.50    612.0
+0.90    410.0
+1.25    220.0
+Name: quantity, dtype: float64</pre>
+              </div>
+            </div>
+
+            <div class="insert"></div>
+            <div class="cell kind-program" data-touches="fig">
+              <div class="body">
+                <div class="card">
+                  <div class="gutter"><button class="run" title="Run"></button><div class="nums"><span>1</span><span>2</span><span>3</span></div><div class="foldg"></div></div>
+                  <pre class="code"><span class="ln">labels = [<span class="st">'low'</span>, <span class="st">'mid'</span>, <span class="st">'high'</span>]</span><span class="ln">fig = demand.<span class="fn">plot</span>(marker=<span class="st">'o'</span>, ylabel=<span class="st">'quantity (median)'</span>).<span class="pr">figure</span></span><span class="ln">fig</span></pre>
+                </div>
+                <div class="figs"><div class="figure" id="inline-fig"></div></div>
+              </div>
+            </div>
+
+            <div class="insert"></div>
+            <div class="cell kind-program stale" data-touches="e">
+              <div class="body">
+                <div class="card">
+                  <div class="gutter"><button class="run" title="Run"></button><div class="nums"><span>1</span><span>2</span><span>3</span></div><div class="foldg"></div></div>
+                  <pre class="code"><span class="ln"><span class="kw">import</span> numpy <span class="kw">as</span> np</span><span class="ln">lq, lp = np.<span class="fn">log</span>(demand.values), np.<span class="fn">log</span>(demand.index.values)</span><span class="ln">e = np.<span class="fn">polyfit</span>(lp, lq, <span class="nu">1</span>)[<span class="nu">0</span>]; e</span></pre>
+                </div>
+                <pre class="output" hidden>np.float64(-1.1172)</pre>
+              </div>
+            </div>
+            <div class="insert"></div>
+          </div>
+        </div>
+
+        <div id="panes">
+          <section class="box vars" id="box-vars" data-label="Variables · 7">
+            <div class="head">
+              <span class="tab"><svg viewBox="0 0 24 24"><path d="M8.5 3H7.5a2 2 0 0 0-2 2v4.5a2 2 0 0 1-2 2.5 2 2 0 0 1 2 2.5V19a2 2 0 0 0 2 2h1"/><path d="M15.5 3h1a2 2 0 0 1 2 2v4.5a2 2 0 0 0 2 2.5 2 2 0 0 0-2 2.5V19a2 2 0 0 1-2 2h-1"/></svg><span class="n">7</span></span>
+              <span class="ttl">Variables <span class="cnt">7</span></span>
+              <span class="handle" title="Tuck away"><svg viewBox="0 0 24 24"><polyline points="9 6 15 12 9 18"/></svg></span>
+            </div>
+            <div class="fold"><div class="inner"><div class="scroll">
+              <table class="vars-table"><tbody>
+                <tr class="viewable" data-var="prices"><td class="v-name">prices</td><td class="v-type">DataFrame 1200×2</td><td class="v-preview">price quantity · 0 0.50 612 · 1 0.90 433 · 2 1.25 198 …</td></tr>
+                <tr class="viewable" data-var="demand" id="row-demand"><td class="v-name">demand</td><td class="v-type">Series 3</td><td class="v-preview">0.50 612.0 · 0.90 410.0 · 1.25 220.0</td></tr>
+                <tr class="viewable" data-fig="fig"><td class="v-name">fig</td><td class="v-type">Figure</td><td class="v-preview">640×480 · 1 axes</td></tr>
+                <tr><td class="v-name">p0</td><td class="v-type">float</td><td class="v-preview">0.8833333333333333</td></tr>
+                <tr><td class="v-name">n</td><td class="v-type">int</td><td class="v-preview">1200</td></tr>
+                <tr><td class="v-name">labels</td><td class="v-type">list 3</td><td class="v-preview">['low', 'mid', 'high']</td></tr>
+                <tr class="scratch viewable" data-var="tmp"><td class="v-name">tmp</td><td class="v-type">DataFrame 3×2 · scratch</td><td class="v-preview">price quantity · 841 0.90 433 · 1019 1.25 198 …</td></tr>
+              </tbody></table>
+            </div></div></div>
+          </section>
+
+          <section class="box figs" id="box-figs" data-label="Figures · 1">
+            <div class="head">
+              <span class="tab"><svg viewBox="0 0 24 24"><path d="M4 4v16h16"/><polyline points="7.5 14.5 11.5 9.5 15 12.5 20 6.5"/></svg><span class="n">1</span></span>
+              <span class="ttl">Figures <span class="cnt">1</span></span>
+              <span class="handle" title="Tuck away"><svg viewBox="0 0 24 24"><polyline points="9 6 15 12 9 18"/></svg></span>
+            </div>
+            <div class="fold"><div class="inner"><div class="scroll">
+              <div class="thumbs"><div class="thumb" id="thumb-fig"><div class="cap">fig · cell 4</div><div class="fcard"></div></div></div>
+            </div></div></div>
+          </section>
+
+          <section class="box data" id="box-data" data-label="Data · prices">
+            <div class="head">
+              <span class="tab"><svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2"/><line x1="3" y1="10" x2="21" y2="10"/><line x1="3" y1="15" x2="21" y2="15"/><line x1="9" y1="10" x2="9" y2="20"/></svg><span class="n">1</span></span>
+              <span class="ttl"><span style="text-transform:none; letter-spacing:0; font: 12px var(--mono); color: var(--room-ink)">prices</span><span class="cnt">— 1200×2</span></span>
+              <span class="handle" title="Tuck away"><svg viewBox="0 0 24 24"><polyline points="9 6 15 12 9 18"/></svg></span>
+            </div>
+            <div class="fold"><div class="inner">
+              <div class="scroll">
+                <table class="data-table">
+                  <thead><tr><th></th><th>price</th><th>quantity</th></tr></thead>
+                  <tbody>
+                    <tr><th>0</th><td>0.50</td><td>612</td></tr><tr><th>1</th><td>0.90</td><td>433</td></tr><tr><th>2</th><td>1.25</td><td>198</td></tr>
+                    <tr><th>3</th><td>0.50</td><td>588</td></tr><tr><th>4</th><td>0.90</td><td>402</td></tr><tr><th>5</th><td>1.25</td><td>241</td></tr>
+                    <tr><th>6</th><td>0.50</td><td>671</td></tr><tr><th>7</th><td>0.90</td><td>377</td></tr><tr><th>8</th><td>1.25</td><td>206</td></tr>
+                    <tr><th>9</th><td>0.50</td><td>549</td></tr><tr><th>10</th><td>0.90</td><td>455</td></tr><tr><th>11</th><td>1.25</td><td>163</td></tr>
+                    <tr><th>12</th><td>0.50</td><td>630</td></tr><tr><th>13</th><td>0.90</td><td>418</td></tr><tr><th>14</th><td>1.25</td><td>229</td></tr>
+                    <tr><th>15</th><td>0.50</td><td>596</td></tr><tr><th>16</th><td>0.90</td><td>391</td></tr><tr><th>17</th><td>1.25</td><td>254</td></tr>
+                    <tr><th>18</th><td>0.50</td><td>702</td></tr><tr><th>19</th><td>0.90</td><td>409</td></tr><tr><th>20</th><td>1.25</td><td>187</td></tr>
+                    <tr><th>21</th><td>0.50</td><td>561</td></tr><tr><th>22</th><td>0.90</td><td>446</td></tr><tr><th>23</th><td>1.25</td><td>215</td></tr>
+                  </tbody>
+                </table>
+              </div>
+              <div class="viewer-foot"><button>More (100 of 1200 rows)</button></div>
+            </div></div>
+          </section>
+        </div>
+      </main>
+    </div>
+
+    <div id="states">
+      <button data-state="tucked" class="on">Tucked</button>
+      <button data-state="nudged">Nudged</button>
+      <button data-state="out">Pulled out</button>
+      <button data-state="wide">Wide window</button>
+      <span class="sep"></span>
+      <span class="note" id="note"></span>
+    </div>
+
+    <script>
+      // The figure, drawn once and shown twice: inline under its cell and
+      // as the Figures box's thumbnail (the "pinned copy").
+      const FIG = `<svg viewBox="0 0 440 270" xmlns="http://www.w3.org/2000/svg" font-family="-apple-system, 'Helvetica Neue', Arial, sans-serif" font-size="10.5" fill="#000">
+        <rect x="60" y="18" width="350" height="212" fill="#fff" stroke="#000" stroke-width="0.8"/>
+        <g stroke="#000" stroke-width="0.8">
+          <line x1="96" y1="230" x2="96" y2="234"/><line x1="185" y1="230" x2="185" y2="234"/><line x1="275" y1="230" x2="275" y2="234"/><line x1="364" y1="230" x2="364" y2="234"/>
+          <line x1="56" y1="209" x2="60" y2="209"/><line x1="56" y1="167" x2="60" y2="167"/><line x1="56" y1="125" x2="60" y2="125"/><line x1="56" y1="83" x2="60" y2="83"/><line x1="56" y1="41" x2="60" y2="41"/>
+        </g>
+        <g text-anchor="middle"><text x="96" y="246">0.50</text><text x="185" y="246">0.75</text><text x="275" y="246">1.00</text><text x="364" y="246">1.25</text></g>
+        <g text-anchor="end"><text x="52" y="212.5">200</text><text x="52" y="170.5">300</text><text x="52" y="128.5">400</text><text x="52" y="86.5">500</text><text x="52" y="44.5">600</text></g>
+        <text x="235" y="262" text-anchor="middle" font-size="11.5">price</text>
+        <text transform="translate(16 124) rotate(-90)" text-anchor="middle" font-size="11.5">quantity (median)</text>
+        <polyline points="96,36 239,121 364,201" fill="none" stroke="#1f77b4" stroke-width="1.6"/>
+        <g fill="#1f77b4"><circle cx="96" cy="36" r="3.6"/><circle cx="239" cy="121" r="3.6"/><circle cx="364" cy="201" r="3.6"/></g>
+      </svg>`;
+      document.getElementById('inline-fig').innerHTML = FIG;
+      document.querySelector('#thumb-fig .fcard').innerHTML = FIG;
+
+      const win = document.getElementById('window');
+      const room = document.getElementById('room');
+      const panes = document.getElementById('panes');
+      const note = document.getElementById('note');
+      const boxes = { vars: document.getElementById('box-vars'), figs: document.getElementById('box-figs'), data: document.getElementById('box-data') };
+      const SIZES = { laptop: [1440, 900], display: [1760, 1000] };
+      let mode = 'floating'; // what the rail's Session tile cycles: hidden / floating / docked
+      let state = 'tucked';
+      const timers = new Map();
+
+      // Scale the virtual window to the browser, and say what the margin holds.
+      function fit() {
+        const [W, H] = state === 'wide' ? SIZES.display : SIZES.laptop;
+        const s = Math.min(1, (innerWidth - 32) / W, (innerHeight - 92) / H);
+        win.style.width = W + 'px'; win.style.height = H + 'px';
+        win.style.transform = `translateX(-50%) scale(${s})`;
+        const margin = Math.round(((W - 88) - 60 - 832) / 2);
+        const fits = margin >= 340 + 24;
+        note.innerHTML = `<b>${W} × ${H}</b> · right margin ${margin} px ${fits ? '— holds a whole box, so they sit open' : '— tabs at rest; ▶ a cell to see its box nudge'}`;
+      }
+
+      function anyOut() { return Object.values(boxes).some((b) => b.classList.contains('out')); }
+      function sync() { room.classList.toggle('shifted', mode === 'floating' && state !== 'wide' && anyOut()); }
+
+      function tuckAll() {
+        for (const b of Object.values(boxes)) { b.classList.remove('out', 'nudged'); clearTimeout(timers.get(b)); }
+        sync();
+      }
+      function pullOut(b) {
+        clearTimeout(timers.get(b));
+        b.classList.remove('nudged'); b.classList.add('out'); sync();
+      }
+      // The change gesture: open, ease in to the peek width, hold, settle.
+      function nudge(b, freshEl) {
+        if (freshEl) { freshEl.classList.remove('fresh'); void freshEl.offsetWidth; freshEl.classList.add('fresh'); }
+        if (b.classList.contains('out') || room.classList.contains('wide') || room.classList.contains('docked') || mode === 'hidden') return;
+        b.classList.add('nudged');
+        settleLater(b, 2600);
+      }
+      function settleLater(b, ms) {
+        clearTimeout(timers.get(b));
+        timers.set(b, setTimeout(() => { if (!b.matches(':hover') && !b.classList.contains('out')) b.classList.remove('nudged'); }, ms));
+      }
+      for (const b of Object.values(boxes)) {
+        b.addEventListener('mouseenter', () => clearTimeout(timers.get(b)));
+        b.addEventListener('mouseleave', () => { if (b.classList.contains('nudged') && !room.classList.contains('hold')) settleLater(b, 900); });
+        b.querySelector('.head').addEventListener('click', () => {
+          if (room.classList.contains('wide') || room.classList.contains('docked')) return;
+          if (b.classList.contains('out')) { b.classList.remove('out'); sync(); } else pullOut(b);
+        });
+      }
+      // A viewable row opens the data box; a figure row, the figures box.
+      document.querySelectorAll('.vars-table tr.viewable').forEach((tr) => tr.addEventListener('click', (e) => {
+        e.stopPropagation();
+        if (tr.dataset.fig) { pullOut(boxes.figs); return; }
+        boxes.data.querySelector('.ttl > span').textContent = tr.dataset.var;
+        boxes.data.dataset.label = 'Data · ' + tr.dataset.var;
+        pullOut(boxes.data);
+      }));
+      // A click back in the document tucks whatever is out.
+      document.getElementById('doc').addEventListener('mousedown', (e) => { if (!e.target.closest('.run') && mode === 'floating') tuckAll(); });
+      document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && mode === 'floating') tuckAll(); });
+
+      // ▶ on a cell: a short run, then the box that changed nudges in.
+      const varsBody = boxes.vars.querySelector('tbody');
+      document.querySelectorAll('.run').forEach((btn) => btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const cell = btn.closest('.cell');
+        if (cell.classList.contains('running')) return;
+        cell.classList.add('running');
+        setTimeout(() => {
+          cell.classList.remove('running', 'stale');
+          const t = cell.dataset.touches;
+          if (t === 'fig') { nudge(boxes.figs, document.getElementById('thumb-fig')); return; }
+          let row = varsBody.querySelector(`[data-var="${t}"], #row-${t}`);
+          if (!row && t === 'e') {
+            cell.querySelector('.output').hidden = false;
+            row = document.createElement('tr');
+            row.dataset.var = 'e';
+            row.innerHTML = '<td class="v-name">e</td><td class="v-type">float64</td><td class="v-preview">-1.1172</td>';
+            varsBody.insertBefore(row, varsBody.querySelector('tr.scratch'));
+            const n = varsBody.children.length;
+            boxes.vars.querySelector('.tab .n').textContent = n; boxes.vars.querySelector('.ttl .cnt').textContent = n;
+            boxes.vars.dataset.label = 'Variables · ' + n;
+          }
+          nudge(boxes.vars, row);
+        }, 700);
+      }));
+
+      // The rail's Session tile: floating → docked → hidden → floating.
+      const modeBtn = document.getElementById('mode');
+      modeBtn.addEventListener('click', () => {
+        mode = mode === 'floating' ? 'docked' : mode === 'docked' ? 'hidden' : 'floating';
+        panes.hidden = mode === 'hidden';
+        room.classList.toggle('docked', mode === 'docked');
+        modeBtn.classList.toggle('on', mode !== 'hidden');
+        modeBtn.dataset.label = 'Session panes · ' + mode;
+        sync();
+      });
+
+      // The four states on the desk.
+      function setState(s) {
+        state = s;
+        document.querySelectorAll('#states button').forEach((b) => b.classList.toggle('on', b.dataset.state === s));
+        room.classList.remove('hold', 'wide');
+        tuckAll();
+        document.querySelectorAll('.fresh').forEach((el) => el.classList.remove('fresh'));
+        if (s === 'nudged') {
+          room.classList.add('hold');
+          boxes.vars.classList.add('nudged');
+          document.getElementById('row-demand').classList.add('fresh');
+        } else if (s === 'out') {
+          pullOut(boxes.data);
+        } else if (s === 'wide') {
+          room.classList.add('wide');
+        }
+        fit();
+      }
+      document.querySelectorAll('#states button').forEach((b) => b.addEventListener('click', () => setState(b.dataset.state)));
+      addEventListener('resize', fit);
+      fit();
+    </script>
+  </body>
+</html>

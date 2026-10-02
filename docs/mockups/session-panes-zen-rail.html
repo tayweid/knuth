@@ -1,0 +1,779 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Knuth session rail</title>
+    <style>
+      /* Session panes, Zen's shape taken literally.
+
+         The frame is rail-layout.html's: near-black window, the top bar
+         with the traffic lights and the document pill, the rail of rounded
+         tiles on the left, the room inset as a rounded panel. The column of
+         cells inside the room is the live app's dark bench, untouched.
+
+         The session lives in the rail. Three small tiles — Variables,
+         Figures, Data — sit under the document's own tile. When a run
+         changes what a tile holds, the tile lights: its glyph brightens, a
+         small count badge lands on its corner (Zen's audio badge, the same
+         place), and for a moment a label whispers what arrived. A click on
+         a tile opens one floating card beside the tile group, in the
+         frame's own dark material, over the bench's left margin — never
+         over the paper when the window is wide enough, and never moving
+         the column. Click back into a cell and the card tucks away; pin it
+         and it stays. */
+      :root {
+        --frame: #111112;
+        --frame-ink: #d5d3cf;
+        --frame-ink-soft: #7d7b78;
+        --tile: #29292c;
+        --tile-hover: #202023;
+        --pill: #1e1e21;
+        --bg: #2b2a2d;
+        --sheet: #ffffff;
+        --ink: #1a1a1a;
+        --ink-soft: #6b6b6b;
+        --line: #e4e2dd;
+        --wash: #f6f5f2;
+        --accent: #305c8a;
+        --error: #a94438;
+        --amber: #c98a1d;
+        --glass: color-mix(in srgb, #17161a 80%, transparent);
+        --glass-border: rgba(255, 255, 255, 0.08);
+        --glass-ink: rgba(240, 238, 233, 0.95);
+        --glass-ink-soft: rgba(240, 238, 233, 0.55);
+        --room-pane: #232226;
+        --room-line: rgba(255, 255, 255, 0.07);
+        --room-ink: #d8d6d1;
+        --room-ink-soft: #8f8d88;
+        /* The floating card: frame material brought forward, one step
+           lighter than the frame so it reads as an object, not a hole. */
+        --card: #18181a;
+        --card-line: rgba(255, 255, 255, 0.09);
+        /* "Look here": the same blue that marks viewable rows and focus. */
+        --lit: #9db8d6;
+        --serif: 'STIX Two Text', 'Charter', 'Georgia', serif;
+        --prose: 'CMU Serif', 'Computer Modern Serif', 'Charter', 'Georgia', serif;
+        --mono: ui-monospace, 'SF Mono', 'Menlo', 'Consolas', monospace;
+        --sans: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Helvetica Neue', sans-serif;
+        --rail: 80px;
+        --topbar: 66px;
+        --inset: 8px;
+      }
+      * { box-sizing: border-box; }
+      html, body { margin: 0; height: 100%; background: var(--frame); color: var(--frame-ink); font: 15px/1.55 var(--sans); overflow: hidden; }
+      button { font: inherit; }
+      .ico { width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; display: block; flex: none; }
+
+      /* ---------- the top bar (rail-layout.html, verbatim) ---------- */
+      #topbar {
+        position: fixed; top: 0; left: 0; right: 0; height: var(--topbar);
+        display: flex; align-items: center; gap: 10px; padding: 0 18px 0 18px;
+        -webkit-app-region: drag;
+      }
+      .lights { display: flex; gap: 8px; margin-right: 12px; }
+      .lights i { width: 13px; height: 13px; border-radius: 50%; display: block; background: #3a3a3c; }
+      .ctl { display: inline-flex; align-items: center; justify-content: center; width: 34px; height: 34px; border-radius: 9px; color: var(--frame-ink); border: 0; background: transparent; -webkit-app-region: no-drag; cursor: pointer; }
+      .ctl:hover { background: var(--tile-hover); }
+      .ctl.dim { color: var(--frame-ink-soft); }
+      #docpill {
+        flex: 1; height: 42px; margin: 0 14px 0 10px; border-radius: 12px; background: var(--pill);
+        display: flex; align-items: center; gap: 12px; padding: 0 16px; -webkit-app-region: no-drag;
+      }
+      #docpill .file { color: var(--frame-ink-soft); }
+      #docpill .name { font: 16px/1 var(--serif); letter-spacing: 0.06em; color: var(--frame-ink); cursor: text; }
+      #docpill .name:hover { color: #fff; }
+      #docpill .dirty { color: var(--amber); font-size: 9px; margin-left: -6px; }
+      #docpill .path { color: var(--frame-ink-soft); font: 12.5px var(--sans); margin-left: 4px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+      #docpill .name { white-space: nowrap; }
+      #docpill .python { white-space: nowrap; }
+      #docpill .spacer { flex: 1; }
+      #docpill .python { display: inline-flex; align-items: center; gap: 7px; font: 12px var(--sans); color: var(--frame-ink-soft); }
+      #docpill .python i { width: 8px; height: 8px; border-radius: 50%; background: #4caf7d; display: block; }
+      .avatar { width: 26px; height: 26px; border-radius: 50%; background: #2d7dbb; margin-left: 6px; }
+
+      /* ---------- the rail (rail-layout.html, plus the session tiles) ---------- */
+      #rail {
+        position: fixed; top: var(--topbar); bottom: 0; left: 0; width: var(--rail);
+        display: flex; flex-direction: column; align-items: center; gap: 14px; padding: 6px 0 22px;
+        z-index: 30;
+      }
+      .rb {
+        position: relative; display: inline-flex; align-items: center; justify-content: center;
+        width: 50px; height: 50px; border: 0; border-radius: 14px; background: transparent;
+        color: var(--frame-ink); cursor: pointer; transition: background 0.12s, color 0.12s, box-shadow 0.2s;
+      }
+      .rb:hover { background: var(--tile-hover); }
+      .rb.on { background: var(--tile); }
+      .rb.solid .ico { fill: currentColor; stroke: none; }
+      .rb.small { width: 44px; height: 44px; }
+      .rb.small .ico { width: 17px; height: 17px; }
+      .rb.dim { color: var(--frame-ink-soft); }
+      .group { display: flex; flex-direction: column; align-items: center; gap: 6px; }
+      .rule { width: 26px; height: 1px; background: rgba(255, 255, 255, 0.1); }
+      .rb::after {
+        content: attr(data-label); position: absolute; left: calc(100% + 12px); top: 50%; transform: translateY(-50%);
+        background: #0a0a0b; color: var(--frame-ink); font: 12.5px var(--sans); white-space: nowrap;
+        padding: 5px 10px; border-radius: 8px; border: 1px solid rgba(255, 255, 255, 0.08);
+        opacity: 0; pointer-events: none; transition: opacity 0.12s; z-index: 5;
+      }
+      .rb:hover::after { opacity: 1; }
+      .grow { flex: 1; }
+
+      /* A session tile that something landed in since you last looked:
+         the glyph wakes, the tile takes a faint ring of the "look here"
+         blue, and a count sits on the corner where Zen keeps its audio
+         badge. Opening the tile clears it. */
+      .rb.lit { color: var(--frame-ink); background: #19191c; box-shadow: inset 0 0 0 1px rgba(157, 184, 214, 0.22); }
+      .rb.lit:hover { background: var(--tile-hover); }
+      .rb .badge {
+        position: absolute; top: -4px; right: -4px; min-width: 17px; height: 17px; padding: 0 5px;
+        border-radius: 9px; background: var(--lit); color: #111112; font: 600 10.5px/17px var(--sans); font-style: normal;
+        box-shadow: 0 0 0 2px var(--frame); animation: badge-in 0.22s cubic-bezier(0.2, 0.9, 0.3, 1.3);
+      }
+      .rb .badge[hidden] { display: none; }
+      @keyframes badge-in { from { transform: scale(0.4); opacity: 0; } to { transform: none; opacity: 1; } }
+      /* The whisper: the hover label's material, shown unbidden for a
+         breath after a run, naming what arrived. */
+      .rb .whisper {
+        position: absolute; left: calc(100% + 12px); top: 50%; transform: translateY(-50%);
+        background: #0a0a0b; color: var(--frame-ink); font: 12.5px var(--sans); white-space: nowrap;
+        padding: 5px 10px; border-radius: 8px; border: 1px solid rgba(255, 255, 255, 0.08);
+        opacity: 0; pointer-events: none; z-index: 6;
+      }
+      .rb .whisper b { font-weight: 500; color: var(--lit); }
+      .rb.whispering .whisper { animation: whisper 3s ease forwards; }
+      .rb.whispering::after { display: none; }
+      @keyframes whisper {
+        0% { opacity: 0; transform: translate(-6px, -50%); }
+        9% { opacity: 1; transform: translate(0, -50%); }
+        78% { opacity: 1; }
+        100% { opacity: 0; }
+      }
+
+      /* ---------- the inset panel: Knuth's room ---------- */
+      #room {
+        position: absolute; top: var(--topbar); left: var(--rail); right: var(--inset); bottom: var(--inset);
+        border-radius: 12px; background: var(--bg); overflow: hidden; display: flex;
+        box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.05);
+      }
+      /* The live app's column: the sheet centred, cells straight on the
+         bench. The top bar is outside the room now, so no 60px to clear. */
+      #doc { flex: 1; overflow-y: auto; overflow-x: hidden; padding: 1.5rem 1.5rem 40vh 1rem; color: var(--ink); }
+      #sheet { max-width: 52rem; margin: 0 auto; }
+
+      /* cell zero: the uv header, folded */
+      .pkg {
+        display: flex; align-items: baseline; gap: 10px; width: 100%; margin: 0 0 6px; padding: 6px 12px;
+        border: 1px dashed rgba(255, 255, 255, 0.12); border-radius: 10px; background: transparent;
+        color: var(--room-ink-soft); font: 12px var(--sans); text-align: left; cursor: pointer;
+      }
+      .pkg:hover { color: var(--room-ink); border-color: rgba(255, 255, 255, 0.2); }
+      .pkg .list { font: 11.5px var(--mono); }
+
+      /* insert strips */
+      .insert-zone { height: 22px; position: relative; display: flex; align-items: center; justify-content: center; padding-left: 2.2rem; opacity: 0; transition: opacity 0.12s ease; }
+      .insert-zone:hover { opacity: 1; }
+      .insert-zone::before { content: ''; position: absolute; left: 2.2rem; right: 0; top: 50%; border-top: 1px solid rgba(157, 184, 214, 0.25); }
+      .insert-actions {
+        position: relative; display: inline-flex; align-items: center; gap: 2px; padding: 2px 5px;
+        background: color-mix(in srgb, #3a3840 94%, transparent); backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px);
+        border: 1px solid rgba(255, 255, 255, 0.14); border-radius: 999px; box-shadow: 0 5px 18px rgba(0, 0, 0, 0.45);
+      }
+      .insert-actions button { display: inline-flex; align-items: center; justify-content: center; width: 24px; height: 18px; color: rgba(240, 238, 233, 0.75); border: 0; border-radius: 999px; background: transparent; cursor: pointer; }
+      .insert-actions button:hover { color: #fff; background: rgba(255, 255, 255, 0.12); }
+      .insert-actions .ico { width: 13px; height: 13px; stroke-width: 1.7; }
+
+      /* cells */
+      .cell { display: flex; padding: 0.2rem 0; position: relative; }
+      .cell .body { flex: 1; min-width: 0; }
+
+      .cm-editor { display: flex; border: 1px solid rgba(255, 255, 255, 0.07); border-radius: 8px; background: #282c34; color: #abb2bf; font: 13.5px/18.9px var(--mono); overflow: hidden; }
+      .cm-editor:hover { border-color: rgba(255, 255, 255, 0.1); }
+      .cm-gutters {
+        position: relative; flex: none; display: flex; flex-direction: column; padding: 0.5rem 13px 0.5rem 0;
+        background: rgba(255, 255, 255, 0.022); border-right: 1px solid rgba(255, 255, 255, 0.06); color: rgba(240, 238, 233, 0.28);
+      }
+      .ln { min-width: 2.25rem; padding: 0 0.35rem 0 0.3rem; text-align: right; }
+      .cm-content { flex: 1; min-width: 0; padding: 0.5rem 0; margin-left: 0.15rem; }
+      .cm-line { padding: 0 0.75rem; white-space: pre-wrap; word-break: break-word; }
+      .kw { color: #c678dd; } .nm { color: #e06c75; } .fn { color: #61afef; } .st { color: #98c379; } .nu { color: #e5c07b; } .op { color: #56b6c2; } .cm { color: #7d8799; }
+
+      .cell .run {
+        position: absolute; left: 0; right: 0; top: 0; height: min(calc(0.5rem + 37.8px), 100%);
+        border-top-left-radius: 7px; border-bottom-left-radius: 7px; border: 0; padding: 0;
+        background: #2b2f37; color: #6ea576; cursor: pointer; font-size: 13px; z-index: 3; transition: color 0.12s;
+      }
+      .cell .run::before { content: '▶'; position: absolute; left: 0; right: 0; top: 0; height: calc(1rem + 18.9px); display: flex; align-items: center; justify-content: center; border-bottom: 1px solid rgba(255, 255, 255, 0.08); transition: background 0.12s; }
+      .cell .run:hover { color: #8fc79a; }
+      .cell .run:hover::before { background: rgba(255, 255, 255, 0.045); }
+      .cell.running .run::before { content: ''; }
+      .cell.running .run::after { content: ''; position: absolute; left: 50%; top: calc((1rem + 18.9px) / 2); width: 11px; height: 11px; margin: -6px 0 0 -6px; border: 1.6px solid rgba(110, 165, 118, 0.3); border-top-color: #6ea576; border-radius: 50%; animation: knuth-turn 0.8s linear infinite; }
+      @keyframes knuth-turn { to { transform: rotate(360deg); } }
+      .cell.stale .cm-gutters { border-right-color: var(--amber); }
+
+      .cell.kind-scratch .cm-editor { border-style: dashed; background: transparent; }
+      .cell.kind-scratch .cm-gutters { background: transparent; }
+      .cell.kind-scratch .run { background: var(--bg); }
+      .scratch-label { font-size: 10px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--room-ink-soft); margin-bottom: 0.15rem; }
+
+      .cell.kind-text .pm { position: relative; font: 18px/1.55 var(--prose); color: var(--room-ink); padding: 4px 0.75rem; }
+      .cell.kind-text .pm::before, .cell.kind-text .pm::after { content: ''; position: absolute; left: calc(0.75rem + 1px); width: 28px; height: 2px; border-radius: 1px; background: transparent; transition: background 0.12s; }
+      .cell.kind-text .pm::before { top: 0; } .cell.kind-text .pm::after { bottom: 0; }
+      .cell.kind-text .pm:hover::before, .cell.kind-text .pm:hover::after { background: rgba(255, 255, 255, 0.16); }
+      .pm h2 { font-size: 1.35em; font-weight: 400; color: #f0eee9; margin: 0.9em 0 0.35em; }
+      .pm p { margin: 0.6em 0; }
+      .pm > :first-child { margin-top: 0; } .pm > :last-child { margin-bottom: 0; }
+      .pm em { font-style: italic; }
+
+      .cell-figures { display: flex; flex-direction: column; gap: 0.5rem; margin: 0.45rem 0 0; }
+      .figure { background: #fff; border-radius: 6px; padding: 0.5rem; align-self: flex-start; max-width: 100%; overflow: hidden; box-shadow: 0 1px 3px rgba(0, 0, 0, 0.4); }
+      .figure svg { display: block; max-width: 100%; height: auto; }
+
+      .output { margin: 0.35rem 0 0; padding: 0.45rem 0.75rem; background: transparent; border-left: 3px solid rgba(255, 255, 255, 0.14); font: 12.5px/1.5 var(--mono); white-space: pre-wrap; color: #b5b3ae; }
+
+      /* ---------- the session card ---------- */
+      #card {
+        position: fixed; left: calc(var(--rail) + 10px); top: 215px; width: 344px; max-height: 70vh;
+        display: flex; flex-direction: column; overflow: hidden; z-index: 20;
+        background: var(--card); color: var(--room-ink); border: 1px solid var(--card-line); border-radius: 14px;
+        box-shadow: 0 24px 70px rgba(0, 0, 0, 0.6), 0 2px 8px rgba(0, 0, 0, 0.4);
+      }
+      #card[hidden] { display: none; }
+      #card.is-figs { width: 424px; }
+      /* Data sizes to its table: two columns make a slim card, twelve a
+         wide one that scrolls sideways past 640. */
+      #card.is-data { width: auto; min-width: 300px; max-width: min(640px, calc(100vw - var(--rail) - 60px)); }
+      /* On a wide window the card keeps to the bench's free margin (set
+         from script as max-width) so it never touches the column; on a
+         narrow one it keeps its natural width and floats over the edge. */
+      #card.enter { animation: card-in 0.16s ease-out; }
+      @keyframes card-in { from { opacity: 0; transform: translateX(-10px); } to { opacity: 1; transform: none; } }
+      .card-head { flex: none; display: flex; align-items: center; gap: 9px; padding: 9px 8px 8px 14px; border-bottom: 1px solid rgba(255, 255, 255, 0.06); }
+      .card-head .ico { width: 15px; height: 15px; color: var(--room-ink-soft); }
+      .card-title { font-size: 10.5px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--room-ink-soft); }
+      .card-meta { font: 11.5px var(--sans); color: var(--room-ink-soft); opacity: 0.8; }
+      .card-head .spacer { flex: 1; }
+      .card-btn { display: inline-flex; align-items: center; justify-content: center; width: 24px; height: 24px; border: 0; border-radius: 6px; background: transparent; color: var(--room-ink-soft); cursor: pointer; font-size: 12px; }
+      .card-btn:hover { color: var(--room-ink); background: rgba(255, 255, 255, 0.07); }
+      .card-btn .ico { width: 14px; height: 14px; color: inherit; }
+      .card-btn.pin.on { color: var(--lit); }
+      .card-body { flex: 1; min-height: 0; overflow: auto; }
+      .pane[hidden] { display: none; }
+
+      /* variables: the app's table, verbatim, plus a dot for what is new */
+      .vars-table { width: 100%; border-collapse: collapse; font: 12.5px/1.5 var(--mono); }
+      .vars-table td { padding: 0.2rem 0.4rem; vertical-align: top; }
+      .vars-table tr + tr td { border-top: 1px solid rgba(255, 255, 255, 0.045); }
+      .vars-table td:first-child { padding-left: 0.7rem; }
+      .vars-table .v-dot { width: 6px; padding-right: 0; }
+      .vars-table .v-dot i { display: block; width: 5px; height: 5px; border-radius: 50%; background: transparent; margin-top: 7px; }
+      .vars-table tr.new .v-dot i { background: var(--lit); }
+      .vars-table .v-name { font-weight: 600; white-space: nowrap; color: var(--room-ink); }
+      .vars-table .v-type { color: var(--room-ink-soft); white-space: nowrap; }
+      .vars-table .v-preview { color: var(--room-ink-soft); max-width: 0; width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+      .vars-table tr.scratch .v-name { font-weight: 400; font-style: italic; }
+      .vars-table tr.viewable { cursor: pointer; }
+      .vars-table tr.viewable:hover { background: rgba(255, 255, 255, 0.05); }
+      .vars-table tr.viewable .v-name { color: var(--lit); }
+      .pane-foot { padding: 0.45rem 0.7rem 0.55rem; font-size: 11.5px; color: var(--room-ink-soft); border-top: 1px solid rgba(255, 255, 255, 0.045); }
+      .pane-foot kbd { font: 11px var(--mono); padding: 0 4px; border: 1px solid var(--room-line); border-radius: 4px; }
+
+      /* figures: the prints, newest on top */
+      .fig-list { display: flex; flex-direction: column; gap: 12px; padding: 10px 12px 12px; }
+      .fig-item .figure { align-self: auto; }
+      .fig-cap { display: flex; align-items: center; gap: 8px; margin: 0 2px 5px; font: 12px var(--sans); color: var(--room-ink-soft); }
+      .fig-cap .n { font: 600 12.5px var(--mono); color: var(--room-ink); }
+      .fig-cap .d { width: 5px; height: 5px; border-radius: 50%; background: transparent; }
+      .fig-item.new .fig-cap .d { background: var(--lit); }
+      .fig-cap .spacer { flex: 1; }
+
+      /* data: which table, then the app's viewer */
+      .data-pick { display: flex; gap: 6px; padding: 8px 12px 6px; }
+      .data-pick button { font: 12px var(--mono); border: 1px solid var(--room-line); border-radius: 999px; background: transparent; color: var(--room-ink-soft); padding: 0.2rem 0.65rem; cursor: pointer; }
+      .data-pick button:hover { color: var(--room-ink); }
+      .data-pick button.on { background: rgba(255, 255, 255, 0.08); color: var(--room-ink); border-color: transparent; }
+      .data-pick button span { opacity: 0.6; margin-left: 6px; }
+      .data-scroll { overflow: auto; max-height: 48vh; }
+      .data-tbl[hidden] { display: none; }
+      .data-table { border-collapse: collapse; font: 12px/1.45 var(--mono); color: var(--room-ink); margin-left: 4px; }
+      .data-table th, .data-table td { padding: 0.16rem 0.55rem; border-bottom: 1px solid rgba(255, 255, 255, 0.045); white-space: nowrap; text-align: right; }
+      .data-table thead th { position: sticky; top: 0; background: var(--card); color: var(--room-ink-soft); font-weight: 600; z-index: 1; }
+      .data-table tbody th { color: var(--room-ink-soft); font-weight: 400; text-align: left; }
+      .viewer-foot { padding: 0.4rem 0.7rem 0.6rem; font-size: 12px; color: var(--room-ink-soft); }
+      .viewer-foot button { font: 12px/1 var(--sans); border: 1px solid var(--room-line); border-radius: 999px; background: transparent; color: var(--room-ink); padding: 0.25rem 0.7rem; cursor: pointer; }
+      .viewer-foot button:hover { background: rgba(255, 255, 255, 0.07); }
+
+      /* ---------- mockup only: the state switcher, in the toast's glass ---------- */
+      #states {
+        position: fixed; bottom: 1.1rem; left: 50%; transform: translateX(-50%); z-index: 60;
+        display: flex; align-items: center; gap: 4px; padding: 0.35rem 0.55rem 0.35rem 0.85rem;
+        background: var(--glass); backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px);
+        border: 1px solid var(--glass-border); border-radius: 1.1rem; color: var(--glass-ink); font-size: 12.5px; white-space: nowrap;
+      }
+      #states .mk { font-size: 10.5px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--glass-ink-soft); margin-right: 6px; }
+      #states button { border: 0; border-radius: 999px; padding: 0.3rem 0.7rem; background: transparent; color: var(--glass-ink); cursor: pointer; font-size: 12.5px; }
+      #states button:hover { background: rgba(255, 255, 255, 0.1); }
+      #states button.on { background: rgba(251, 250, 248, 0.92); color: #2c2b29; }
+      #states .hint { color: var(--glass-ink-soft); font-size: 11.5px; margin: 0 4px 0 10px; }
+    </style>
+  </head>
+  <body>
+    <div id="topbar">
+      <div class="lights"><i></i><i></i><i></i></div>
+      <button class="ctl dim" title="Back"><svg class="ico" viewBox="0 0 24 24"><line x1="19" y1="12" x2="5" y2="12"/><polyline points="12 19 5 12 12 5"/></svg></button>
+      <button class="ctl dim" title="Forward"><svg class="ico" viewBox="0 0 24 24"><line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/></svg></button>
+      <button class="ctl" title="Restart session"><svg class="ico" viewBox="0 0 24 24"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"/></svg></button>
+      <div id="docpill">
+        <span class="file"><svg class="ico" viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg></span>
+        <span class="name" title="Click to rename">analysis.py</span><span class="dirty">●</span>
+        <span class="path">~/Projects/ECON_0150/week-3</span>
+        <span class="spacer"></span>
+        <span class="python"><i></i>uv · Python 3.13</span>
+      </div>
+      <div class="avatar"></div>
+    </div>
+
+    <nav id="rail" aria-label="Toolbar">
+      <button class="rb on" data-label="analysis.py"><svg class="ico" viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg></button>
+      <button class="rb dim" data-label="Open…"><svg class="ico" viewBox="0 0 24 24"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg></button>
+      <div class="rule"></div>
+      <!-- The session: three tiles, the document's own things. -->
+      <div class="group" id="session-group">
+        <button class="rb small dim" id="t-vars" data-label="Variables" aria-pressed="false">
+          <svg class="ico" viewBox="0 0 24 24"><path d="M8 3H7a2 2 0 0 0-2 2v5a2 2 0 0 1-2 2 2 2 0 0 1 2 2v5a2 2 0 0 0 2 2h1"/><path d="M16 21h1a2 2 0 0 0 2-2v-5a2 2 0 0 1 2-2 2 2 0 0 1-2-2V5a2 2 0 0 0-2-2h-1"/></svg>
+          <i class="badge" hidden></i><span class="whisper"></span>
+        </button>
+        <button class="rb small dim" id="t-figs" data-label="Figures" aria-pressed="false">
+          <svg class="ico" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2"/><polyline points="6.5 15.5 10 10.5 13.5 13 17.5 7.5"/></svg>
+          <i class="badge" hidden></i><span class="whisper"></span>
+        </button>
+        <button class="rb small dim" id="t-data" data-label="Data" aria-pressed="false">
+          <svg class="ico" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2"/><line x1="3" y1="9.5" x2="21" y2="9.5"/><line x1="3" y1="14.5" x2="21" y2="14.5"/><line x1="9.5" y1="9.5" x2="9.5" y2="20"/></svg>
+          <i class="badge" hidden></i><span class="whisper"></span>
+        </button>
+      </div>
+      <div class="rule"></div>
+      <div class="group">
+        <button class="rb small" data-label="Code cell"><svg class="ico" viewBox="0 0 24 24"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg></button>
+        <button class="rb small" data-label="Scratch cell"><svg class="ico" viewBox="0 0 24 24"><rect x="4" y="4" width="16" height="16" rx="2" stroke-dasharray="3.4 2.8"/><line x1="9" y1="12" x2="15" y2="12"/></svg></button>
+        <button class="rb small" data-label="Text cell"><svg class="ico" viewBox="0 0 24 24"><polyline points="4 7 4 4 20 4 20 7"/><line x1="9" y1="20" x2="15" y2="20"/><line x1="12" y1="4" x2="12" y2="20"/></svg></button>
+      </div>
+      <div class="rule"></div>
+      <div class="group">
+        <button class="rb small solid" data-label="Run stale"><svg class="ico" viewBox="0 0 24 24"><polygon points="7 4.5 19 12 7 19.5"/></svg></button>
+        <button class="rb small solid" data-label="Run all"><svg class="ico" viewBox="0 0 24 24"><polygon points="3.5 5 11 12 3.5 19"/><polygon points="13 5 20.5 12 13 19"/></svg></button>
+        <button class="rb small" data-label="Stop"><svg class="ico" viewBox="0 0 24 24"><rect x="6.5" y="6.5" width="11" height="11" rx="1.5"/></svg></button>
+        <button class="rb small" data-label="Restart session"><svg class="ico" viewBox="0 0 24 24"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"/></svg></button>
+      </div>
+      <div class="grow"></div>
+      <button class="rb small dim" data-label="Get Knuth"><svg class="ico" viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg></button>
+      <button class="rb small dim" data-label="New document"><svg class="ico" viewBox="0 0 24 24"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg></button>
+    </nav>
+
+    <main id="room">
+      <div id="doc">
+        <div id="sheet">
+          <button class="pkg">▸ Packages <span class="list">pandas · matplotlib</span></button>
+
+          <div class="cell-wrap">
+            <div class="insert-zone"><div class="insert-actions">
+              <button title="Code"><svg class="ico" viewBox="0 0 24 24"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg></button>
+              <button title="Scratch"><svg class="ico" viewBox="0 0 24 24"><rect x="4" y="4" width="16" height="16" rx="2" stroke-dasharray="3.4 2.8"/><line x1="9" y1="12" x2="15" y2="12"/></svg></button>
+              <button title="Text"><svg class="ico" viewBox="0 0 24 24"><polyline points="4 7 4 4 20 4 20 7"/><line x1="9" y1="20" x2="15" y2="20"/><line x1="12" y1="4" x2="12" y2="20"/></svg></button>
+            </div></div>
+            <div class="cell kind-program">
+              <div class="body">
+                <div class="cm-editor">
+                  <div class="cm-gutters"><button class="run" title="Run"></button><div class="ln">1</div><div class="ln">2</div><div class="ln">3</div><div class="ln">4</div><div class="ln">5</div></div>
+                  <div class="cm-content">
+                    <div class="cm-line"><span class="kw">import</span> <span class="nm">pandas</span> <span class="kw">as</span> <span class="nm">pd</span></div>
+                    <div class="cm-line"><span class="kw">import</span> <span class="nm">matplotlib</span><span class="op">.</span><span class="nm">pyplot</span> <span class="kw">as</span> <span class="nm">plt</span></div>
+                    <div class="cm-line"></div>
+                    <div class="cm-line">prices <span class="op">=</span> <span class="nm">pd</span><span class="op">.</span><span class="nm">read_csv</span>(<span class="st">'data.csv'</span>)</div>
+                    <div class="cm-line"><span class="nm">prices</span><span class="op">.</span><span class="nm">describe</span>()</div>
+                  </div>
+                </div>
+                <pre class="output">             price     quantity
+count  1200.000000  1200.000000
+mean      0.996667   410.183333
+std       0.408418   161.420775
+min       0.500000   102.000000
+25%       0.500000   258.750000
+50%       1.000000   405.000000
+75%       1.500000   561.250000
+max       1.500000   779.000000</pre>
+              </div>
+            </div>
+          </div>
+
+          <div class="cell-wrap">
+            <div class="insert-zone"><div class="insert-actions">
+              <button title="Code"><svg class="ico" viewBox="0 0 24 24"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg></button>
+              <button title="Scratch"><svg class="ico" viewBox="0 0 24 24"><rect x="4" y="4" width="16" height="16" rx="2" stroke-dasharray="3.4 2.8"/><line x1="9" y1="12" x2="15" y2="12"/></svg></button>
+              <button title="Text"><svg class="ico" viewBox="0 0 24 24"><polyline points="4 7 4 4 20 4 20 7"/><line x1="9" y1="20" x2="15" y2="20"/><line x1="12" y1="4" x2="12" y2="20"/></svg></button>
+            </div></div>
+            <div class="cell kind-program">
+              <div class="body">
+                <div class="cm-editor">
+                  <div class="cm-gutters"><button class="run" title="Run"></button><div class="ln">1</div></div>
+                  <div class="cm-content">
+                    <div class="cm-line"><span class="nm">prices</span><span class="op">.</span><span class="nm">quantity</span><span class="op">.</span><span class="nm">hist</span>(<span class="nm">bins</span><span class="op">=</span><span class="nu">20</span>, <span class="nm">figsize</span><span class="op">=</span>(<span class="nu">5</span>, <span class="nu">2.4</span>))</div>
+                  </div>
+                </div>
+                <div class="cell-figures"><div class="figure" data-fig="hist"></div></div>
+                <pre class="output">&lt;Axes: &gt;</pre>
+              </div>
+            </div>
+          </div>
+
+          <div class="cell-wrap">
+            <div class="insert-zone"><div class="insert-actions">
+              <button title="Code"><svg class="ico" viewBox="0 0 24 24"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg></button>
+              <button title="Scratch"><svg class="ico" viewBox="0 0 24 24"><rect x="4" y="4" width="16" height="16" rx="2" stroke-dasharray="3.4 2.8"/><line x1="9" y1="12" x2="15" y2="12"/></svg></button>
+              <button title="Text"><svg class="ico" viewBox="0 0 24 24"><polyline points="4 7 4 4 20 4 20 7"/><line x1="9" y1="20" x2="15" y2="20"/><line x1="12" y1="4" x2="12" y2="20"/></svg></button>
+            </div></div>
+            <div class="cell kind-text">
+              <div class="body"><div class="pm">
+                <h2>Demand at three prices</h2>
+                <p>Each row of the table is one buyer’s answer at a posted price of $0.50, $1.00 or $1.50. The curve below joins the three medians: the demand schedule as the class drew it, read off the live data rather than assumed.</p>
+              </div></div>
+            </div>
+          </div>
+
+          <div class="cell-wrap">
+            <div class="insert-zone"><div class="insert-actions">
+              <button title="Code"><svg class="ico" viewBox="0 0 24 24"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg></button>
+              <button title="Scratch"><svg class="ico" viewBox="0 0 24 24"><rect x="4" y="4" width="16" height="16" rx="2" stroke-dasharray="3.4 2.8"/><line x1="9" y1="12" x2="15" y2="12"/></svg></button>
+              <button title="Text"><svg class="ico" viewBox="0 0 24 24"><polyline points="4 7 4 4 20 4 20 7"/><line x1="9" y1="20" x2="15" y2="20"/><line x1="12" y1="4" x2="12" y2="20"/></svg></button>
+            </div></div>
+            <div class="cell kind-program" id="cell-demand">
+              <div class="body">
+                <div class="cm-editor">
+                  <div class="cm-gutters"><button class="run" title="Run"></button><div class="ln">1</div><div class="ln">2</div><div class="ln">3</div><div class="ln">4</div><div class="ln">5</div></div>
+                  <div class="cm-content">
+                    <div class="cm-line">demand <span class="op">=</span> <span class="nm">prices</span><span class="op">.</span><span class="nm">groupby</span>(<span class="st">'price'</span>)<span class="op">.</span><span class="nm">quantity</span><span class="op">.</span><span class="nm">median</span>()</div>
+                    <div class="cm-line">fig, ax <span class="op">=</span> <span class="nm">plt</span><span class="op">.</span><span class="nm">subplots</span>(<span class="nm">figsize</span><span class="op">=</span>(<span class="nu">5</span>, <span class="nu">3</span>))</div>
+                    <div class="cm-line"><span class="nm">demand</span><span class="op">.</span><span class="nm">plot</span>(<span class="nm">ax</span><span class="op">=</span><span class="nm">ax</span>, <span class="nm">marker</span><span class="op">=</span><span class="st">'o'</span>)</div>
+                    <div class="cm-line"><span class="nm">ax</span><span class="op">.</span><span class="nm">set_ylabel</span>(<span class="st">'median quantity'</span>)</div>
+                    <div class="cm-line"><span class="nm">demand</span></div>
+                  </div>
+                </div>
+                <div class="cell-figures"><div class="figure" data-fig="demand"></div></div>
+                <pre class="output">price
+0.5    612.0
+1.0    405.0
+1.5    228.0
+Name: quantity, dtype: float64</pre>
+              </div>
+            </div>
+          </div>
+
+          <div class="cell-wrap">
+            <div class="insert-zone"><div class="insert-actions">
+              <button title="Code"><svg class="ico" viewBox="0 0 24 24"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg></button>
+              <button title="Scratch"><svg class="ico" viewBox="0 0 24 24"><rect x="4" y="4" width="16" height="16" rx="2" stroke-dasharray="3.4 2.8"/><line x1="9" y1="12" x2="15" y2="12"/></svg></button>
+              <button title="Text"><svg class="ico" viewBox="0 0 24 24"><polyline points="4 7 4 4 20 4 20 7"/><line x1="9" y1="20" x2="15" y2="20"/><line x1="12" y1="4" x2="12" y2="20"/></svg></button>
+            </div></div>
+            <div class="cell kind-scratch stale">
+              <div class="body">
+                <div class="scratch-label">scratch</div>
+                <div class="cm-editor">
+                  <div class="cm-gutters"><button class="run" title="Run"></button><div class="ln">1</div><div class="ln">2</div><div class="ln">3</div><div class="ln">4</div></div>
+                  <div class="cm-content">
+                    <div class="cm-line">dq <span class="op">=</span> <span class="nm">demand</span><span class="op">.</span><span class="nm">pct_change</span>()</div>
+                    <div class="cm-line">dp <span class="op">=</span> <span class="nm">demand</span><span class="op">.</span><span class="nm">index</span><span class="op">.</span><span class="nm">to_series</span>()<span class="op">.</span><span class="nm">pct_change</span>()</div>
+                    <div class="cm-line">elasticity <span class="op">=</span> (<span class="nm">dq</span> <span class="op">/</span> <span class="nm">dp</span>)<span class="op">.</span><span class="nm">mean</span>()</div>
+                    <div class="cm-line"><span class="nm">elasticity</span></div>
+                  </div>
+                </div>
+                <pre class="output">np.float64(-0.6061546840958606)</pre>
+              </div>
+            </div>
+          </div>
+
+          <div class="cell-wrap">
+            <div class="insert-zone"><div class="insert-actions">
+              <button title="Code"><svg class="ico" viewBox="0 0 24 24"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg></button>
+              <button title="Scratch"><svg class="ico" viewBox="0 0 24 24"><rect x="4" y="4" width="16" height="16" rx="2" stroke-dasharray="3.4 2.8"/><line x1="9" y1="12" x2="15" y2="12"/></svg></button>
+              <button title="Text"><svg class="ico" viewBox="0 0 24 24"><polyline points="4 7 4 4 20 4 20 7"/><line x1="9" y1="20" x2="15" y2="20"/><line x1="12" y1="4" x2="12" y2="20"/></svg></button>
+            </div></div>
+            <div class="cell kind-text">
+              <div class="body"><div class="pm">
+                <p>Arc elasticity over the whole schedule is about <em>−0.6</em>: inelastic, which fits a snack sold on a Thursday evening. Next week we add a second week of answers and ask whether the curve moved.</p>
+              </div></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </main>
+
+    <!-- The card: one at a time, beside the tile group, in frame material. -->
+    <aside id="card" hidden>
+      <div class="card-head">
+        <span id="card-glyph"></span>
+        <span class="card-title" id="card-title">Variables</span>
+        <span class="card-meta" id="card-meta"></span>
+        <span class="spacer"></span>
+        <button class="card-btn pin" id="pin" title="Keep open"><svg class="ico" viewBox="0 0 24 24"><path d="M12 17v5"/><path d="M9 10.76a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24V16a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-.76a2 2 0 0 0-1.11-1.79l-1.78-.9A2 2 0 0 1 15 10.76V7a1 1 0 0 1 1-1 2 2 0 0 0 0-4H8a2 2 0 0 0 0 4 1 1 0 0 1 1 1z"/></svg></button>
+        <button class="card-btn" id="close" title="Close">✕</button>
+      </div>
+      <div class="card-body">
+        <div class="pane" id="pane-vars">
+          <table class="vars-table"><tbody>
+            <tr class="viewable" data-open="data:prices" title="Open in the data viewer"><td class="v-dot"><i></i></td><td class="v-name">prices</td><td class="v-type">DataFrame 1200×2</td><td class="v-preview">price  quantity …</td></tr>
+            <tr class="viewable" data-open="data:demand" data-new title="Open in the data viewer"><td class="v-dot"><i></i></td><td class="v-name">demand</td><td class="v-type">Series 3</td><td class="v-preview">0.5→612.0  1.0→405.0  1.5→228.0</td></tr>
+            <tr class="viewable" data-open="figs" data-new title="Show the figure"><td class="v-dot"><i></i></td><td class="v-name">fig</td><td class="v-type">Figure</td><td class="v-preview">500×300</td></tr>
+            <tr data-new><td class="v-dot"><i></i></td><td class="v-name">ax</td><td class="v-type">Axes</td><td class="v-preview">ylabel='median quantity'</td></tr>
+            <tr class="viewable scratch" data-open="data:demand" title="Open in the data viewer"><td class="v-dot"><i></i></td><td class="v-name">dq</td><td class="v-type">Series 3 · scratch</td><td class="v-preview">NaN  -0.338  -0.437</td></tr>
+            <tr class="viewable scratch" data-open="data:demand" title="Open in the data viewer"><td class="v-dot"><i></i></td><td class="v-name">dp</td><td class="v-type">Series 3 · scratch</td><td class="v-preview">NaN  1.0  0.5</td></tr>
+            <tr class="scratch"><td class="v-dot"><i></i></td><td class="v-name">elasticity</td><td class="v-type">float · scratch</td><td class="v-preview">-0.6061546840958606</td></tr>
+          </tbody></table>
+          <div class="pane-foot">Blue names open in Data or Figures · <kbd>esc</kbd> or a click in a cell tucks this away</div>
+        </div>
+
+        <div class="pane" id="pane-figs" hidden>
+          <div class="fig-list">
+            <div class="fig-item" id="fig-demand" data-new>
+              <div class="fig-cap"><i class="d"></i><span class="n">fig</span><span>cell 4</span><span class="spacer"></span><span>500×300</span></div>
+              <div class="figure" data-fig="demand"></div>
+            </div>
+            <div class="fig-item">
+              <div class="fig-cap"><i class="d"></i><span class="n">—</span><span>cell 2 · prices.quantity.hist</span><span class="spacer"></span><span>500×240</span></div>
+              <div class="figure" data-fig="hist"></div>
+            </div>
+          </div>
+        </div>
+
+        <div class="pane" id="pane-data" hidden>
+          <div class="data-pick">
+            <button class="on" data-table="prices">prices<span>1200×2</span></button>
+            <button data-table="demand">demand<span>3</span></button>
+          </div>
+          <div class="data-scroll">
+            <table class="data-table data-tbl" data-name="prices">
+              <thead><tr><th></th><th>price</th><th>quantity</th></tr></thead>
+              <tbody id="prices-rows"></tbody>
+            </table>
+            <table class="data-table data-tbl" data-name="demand" hidden>
+              <thead><tr><th>price</th><th>quantity</th></tr></thead>
+              <tbody><tr><th>0.5</th><td>612.0</td></tr><tr><th>1.0</th><td>405.0</td></tr><tr><th>1.5</th><td>228.0</td></tr></tbody>
+            </table>
+          </div>
+          <div class="viewer-foot" id="data-foot"><button>More (100 of 1200 rows)</button></div>
+        </div>
+      </div>
+    </aside>
+
+    <div id="states" class="mock">
+      <span class="mk">mockup</span>
+      <button data-state="quiet">quiet</button>
+      <button data-state="changed">after a run</button>
+      <button data-state="vars">variables</button>
+      <button data-state="figs">figures</button>
+      <button data-state="data">data</button>
+      <span class="hint">press ▶ in a cell · click a tile · click a cell · resize the window</span>
+    </div>
+
+    <script>
+      // ---- figures: two matplotlib-looking SVGs, drawn once, used twice ----
+      const FIG = {};
+      (() => {
+        const T = "font-family=\"'DejaVu Sans', Verdana, sans-serif\" font-size=\"13\" fill=\"#000\"";
+        // demand.plot(marker='o') on a 5x3in figure
+        const yt = [[250, 244.5], [300, 217.1], [350, 189.8], [400, 162.4], [450, 135.1], [500, 107.7], [550, 80.4], [600, 53.0]];
+        const xt = [['0.6', 115.3], ['0.8', 185.8], ['1.0', 256.3], ['1.2', 326.7], ['1.4', 397.2]];
+        FIG.demand = `<svg viewBox="0 0 500 300" width="500" height="300" xmlns="http://www.w3.org/2000/svg" ${T}>
+          <rect width="500" height="300" fill="#fff"/>
+          <rect x="62.5" y="36" width="387.5" height="231" fill="#fff" stroke="#000" stroke-width="1"/>
+          <g stroke="#000" stroke-width="1">${yt.map(([, y]) => `<line x1="57.6" y1="${y}" x2="62.5" y2="${y}"/>`).join('')}${xt.map(([, x]) => `<line x1="${x}" y1="267" x2="${x}" y2="271.9"/>`).join('')}</g>
+          <g text-anchor="end">${yt.map(([v, y]) => `<text x="54" y="${y + 4.5}">${v}</text>`).join('')}</g>
+          <g text-anchor="middle">${xt.map(([v, x]) => `<text x="${x}" y="285">${v}</text>`).join('')}</g>
+          <text x="256" y="298" text-anchor="middle">price</text>
+          <text transform="translate(17 151.5) rotate(-90)" text-anchor="middle">median quantity</text>
+          <polyline points="80.1,46.5 256.25,159.7 432.4,256.5" fill="none" stroke="#1f77b4" stroke-width="2"/>
+          <g fill="#1f77b4"><circle cx="80.1" cy="46.5" r="4.2"/><circle cx="256.25" cy="159.7" r="4.2"/><circle cx="432.4" cy="256.5" r="4.2"/></g>
+        </svg>`;
+        // prices.quantity.hist(bins=20) on a 5x2.4in figure
+        const counts = [3, 8, 20, 41, 62, 48, 22, 10, 14, 38, 70, 88, 61, 30, 12, 18, 44, 68, 52, 21];
+        const bars = counts.map((c, i) => `<rect x="${(80.2 + 17.6 * i).toFixed(1)}" y="${(213.6 - 2 * c).toFixed(1)}" width="17.6" height="${2 * c}"/>`).join('');
+        const hy = [[0, 213.6], [20, 173.6], [40, 133.6], [60, 93.6], [80, 53.6]];
+        const hx = [100, 200, 300, 400, 500, 600, 700, 800].map((v, k) => [v, 79.1 + 52.03 * k]);
+        FIG.hist = `<svg viewBox="0 0 500 240" width="500" height="240" xmlns="http://www.w3.org/2000/svg" ${T}>
+          <rect width="500" height="240" fill="#fff"/>
+          <g fill="#1f77b4">${bars}</g>
+          <rect x="62.5" y="28.8" width="387.5" height="184.8" fill="none" stroke="#000" stroke-width="1"/>
+          <g stroke="#000" stroke-width="1">${hy.map(([, y]) => `<line x1="57.6" y1="${y}" x2="62.5" y2="${y}"/>`).join('')}${hx.map(([, x]) => `<line x1="${x.toFixed(1)}" y1="213.6" x2="${x.toFixed(1)}" y2="218.5"/>`).join('')}</g>
+          <g text-anchor="end">${hy.map(([v, y]) => `<text x="54" y="${y + 4.5}">${v}</text>`).join('')}</g>
+          <g text-anchor="middle">${hx.map(([v, x]) => `<text x="${x.toFixed(1)}" y="232">${v}</text>`).join('')}</g>
+        </svg>`;
+        document.querySelectorAll('[data-fig]').forEach((el) => { el.innerHTML = FIG[el.dataset.fig]; });
+      })();
+
+      // ---- the prices table, 20 of 1200 rows ----
+      (() => {
+        const rows = [[0.5, 634], [1.0, 412], [1.5, 231], [0.5, 598], [1.0, 377], [1.5, 240], [1.0, 455], [0.5, 701], [1.5, 196], [1.0, 388],
+                      [0.5, 575], [1.5, 263], [1.0, 421], [0.5, 640], [1.0, 402], [1.5, 219], [0.5, 611], [1.0, 433], [1.5, 247], [0.5, 587]];
+        document.getElementById('prices-rows').innerHTML = rows.map(([p, q], i) => `<tr><th>${i}</th><td>${p.toFixed(1)}</td><td>${q}</td></tr>`).join('');
+      })();
+
+      // ---- the session: tiles, badges, whispers, the card ----
+      const $ = (s, r = document) => r.querySelector(s);
+      const tiles = { vars: $('#t-vars'), figs: $('#t-figs'), data: $('#t-data') };
+      const panes = { vars: $('#pane-vars'), figs: $('#pane-figs'), data: $('#pane-data') };
+      const titles = { vars: 'Variables', figs: 'Figures', data: 'Data' };
+      const card = $('#card');
+      const badges = { vars: 0, figs: 0, data: 0 };
+      let open = null;
+      let pinned = false;
+      let table = 'prices';
+
+      function meta(k) {
+        if (k === 'vars') {
+          const n = panes.vars.querySelectorAll('tr.new').length;
+          return '7 names' + (n ? ` · ${n} new` : '');
+        }
+        if (k === 'figs') {
+          const n = panes.figs.querySelectorAll('.fig-item.new').length;
+          return '2 figures' + (n ? ` · ${n} new` : '');
+        }
+        return table === 'prices' ? 'prices · 1200×2' : 'demand · 3';
+      }
+
+      function paintTiles() {
+        for (const k in tiles) {
+          const t = tiles[k];
+          const b = $('.badge', t);
+          const n = badges[k];
+          b.hidden = !n;
+          b.textContent = n;
+          t.classList.toggle('lit', n > 0 && open !== k);
+          t.classList.toggle('on', open === k);
+          t.classList.toggle('dim', !n && open !== k);
+          t.setAttribute('aria-pressed', open === k);
+        }
+        paintSwitch();
+      }
+
+      function placeCard() {
+        const g = $('#session-group').getBoundingClientRect();
+        card.style.top = g.top + 'px';
+        card.style.maxHeight = Math.max(240, innerHeight - g.top - 8 - 10) + 'px';
+        // The free margin between the rail and the column. Wide enough to
+        // be useful (300px): the card fits itself to it. Narrower: the card
+        // keeps its natural width and lies over the column's edge.
+        const margin = $('#sheet').getBoundingClientRect().left - parseFloat(getComputedStyle(card).left) - 12;
+        card.style.maxWidth = margin >= 300 ? margin + 'px' : '';
+      }
+
+      function markNew(on) {
+        panes.vars.querySelectorAll('tr[data-new]').forEach((r) => r.classList.toggle('new', on));
+        panes.figs.querySelectorAll('.fig-item[data-new]').forEach((r) => r.classList.toggle('new', on));
+      }
+
+      function showCard(k) {
+        open = k;
+        badges[k] = 0;
+        for (const p in panes) panes[p].hidden = p !== k;
+        card.className = 'is-' + k;
+        card.hidden = false;
+        $('#card-title').textContent = titles[k];
+        $('#card-glyph').innerHTML = tiles[k].querySelector('svg').outerHTML;
+        $('#card-meta').textContent = meta(k);
+        void card.offsetWidth;
+        card.classList.add('enter');
+        placeCard();
+        paintTiles();
+      }
+
+      function closeCard(force) {
+        if (card.hidden) return;
+        if (pinned && !force) return;
+        // Once you have looked, the "new" marks have done their job.
+        if (open === 'vars' || open === 'figs') markNew(false);
+        open = null;
+        card.hidden = true;
+        paintTiles();
+      }
+
+      function whisper(tile, html) {
+        const w = $('.whisper', tile);
+        w.innerHTML = html;
+        tile.classList.remove('whispering');
+        void w.offsetWidth;
+        tile.classList.add('whispering');
+        clearTimeout(tile._wt);
+        tile._wt = setTimeout(() => tile.classList.remove('whispering'), 3100);
+      }
+
+      // A run that made things: demand, fig and ax arrived; one figure drew.
+      function changed() {
+        markNew(true);
+        if (open !== 'vars') badges.vars = 3;
+        if (open !== 'figs') badges.figs = 1;
+        if (open) $('#card-meta').textContent = meta(open);
+        // The open card shows its own arrivals (the dots); only closed
+        // tiles whisper.
+        if (open !== 'vars') whisper(tiles.vars, '<b>+3</b> demand · fig · ax');
+        if (open !== 'figs') setTimeout(() => whisper(tiles.figs, '<b>+1</b> fig'), 140);
+        paintTiles();
+      }
+
+      function pick(name) {
+        table = name;
+        panes.data.querySelectorAll('.data-pick button').forEach((b) => b.classList.toggle('on', b.dataset.table === name));
+        panes.data.querySelectorAll('.data-tbl').forEach((t) => { t.hidden = t.dataset.name !== name; });
+        $('#data-foot').innerHTML = name === 'prices' ? '<button>More (100 of 1200 rows)</button>' : '3 rows';
+        if (open === 'data') $('#card-meta').textContent = meta('data');
+      }
+
+      // ---- the mockup's states ----
+      function quiet() {
+        badges.vars = badges.figs = badges.data = 0;
+        pinned = false; $('#pin').classList.remove('on');
+        closeCard(true);
+        markNew(false);
+        paintTiles();
+      }
+      const states = {
+        quiet,
+        changed() { quiet(); changed(); },
+        vars() { quiet(); markNew(true); badges.figs = 1; showCard('vars'); },
+        figs() { quiet(); markNew(true); badges.vars = 3; showCard('figs'); },
+        data() { quiet(); badges.vars = 3; badges.figs = 1; pick('prices'); showCard('data'); },
+      };
+      function paintSwitch() {
+        const cur = open || (badges.vars || badges.figs ? 'changed' : 'quiet');
+        document.querySelectorAll('#states button').forEach((b) => b.classList.toggle('on', b.dataset.state === cur));
+      }
+      document.querySelectorAll('#states button').forEach((b) => b.addEventListener('click', () => states[b.dataset.state]()));
+
+      // ---- wiring ----
+      for (const k in tiles) tiles[k].addEventListener('click', () => (open === k ? closeCard(true) : showCard(k)));
+      $('#close').addEventListener('click', () => closeCard(true));
+      $('#pin').addEventListener('click', (e) => { pinned = !pinned; e.currentTarget.classList.toggle('on', pinned); });
+      panes.vars.querySelectorAll('tr[data-open]').forEach((r) => r.addEventListener('click', () => {
+        const [k, name] = r.dataset.open.split(':');
+        if (name) pick(name);
+        showCard(k);
+      }));
+      panes.data.querySelectorAll('.data-pick button').forEach((b) => b.addEventListener('click', () => pick(b.dataset.table)));
+      // A click back into the document tucks the card away (unless pinned).
+      $('#doc').addEventListener('mousedown', () => closeCard(false));
+      document.addEventListener('keydown', (e) => { if (e.key === 'Escape') closeCard(true); });
+      addEventListener('resize', () => { if (!card.hidden) placeCard(); });
+      // Pressing ▶ is a run: a breath of spinner, then the tiles light.
+      document.querySelectorAll('.cell .run').forEach((btn) => btn.addEventListener('mousedown', (e) => e.stopPropagation()));
+      document.querySelectorAll('.cell .run').forEach((btn) => btn.addEventListener('click', () => {
+        const cell = btn.closest('.cell');
+        cell.classList.add('running');
+        setTimeout(() => { cell.classList.remove('running', 'stale'); changed(); }, 700);
+      }));
+
+      // Open on the richest view: the variables just after a run, the
+      // figures tile still lit beside it.
+      states.vars();
+      setTimeout(() => whisper(tiles.figs, '<b>+1</b> fig'), 350);
+    </script>
+  </body>
+</html>
