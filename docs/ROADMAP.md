@@ -89,9 +89,9 @@ question that still needs one.
 - OPEN: a per-process token, minted at startup and echoed in `attach`, as
   defense in depth against a future origin-check bug. Cheap now that the
   server serving the page is the server holding the secret.
-- The hosted demo is still technically installable (its manifest is
-  unconditional), against the DECIDED demo-not-installable posture. Close
-  the gap.
+- DONE 2026-10-01: the hosted demo is no longer installable — the
+  manifest link is added by the page only when served from loopback and
+  not inside Knuth.app (SAME_ORIGIN.md, step 3).
 - OPEN: the dev-loop vite WebSocket proxy — implement it so dev and
   production exercise the same code path, or strike the section.
 - DECIDED (`d6659d0`): built assets stay committed and freshness-gated;

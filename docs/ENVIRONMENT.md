@@ -286,11 +286,20 @@ only): `find_header(text)`, `header_lines(text)`, `parse_header(text)`.
 
 ## Follow-ups
 
-- Knuth.app bundles uv and sets `KNUTH_UV` (APP.md).
-- Page: send `document`; show `environment`, `dependency`, and `header`
-  events; splice headers; offer to pin a headerless document. Restart on
-  document change, not only folder change.
+- DONE 2026-09-30, the shell's way: Knuth.app does not bundle uv; the
+  Claerbout shell finds uv on the Mac or downloads it on the first launch,
+  and sets `KNUTH_UV` for the engine (APP.md, SHELL_STABILITY.md).
+- DONE 2026-09-27 (`200fbaf` … `156ad71`): the page sends `document` on
+  attach and restart, shows the `environment`, `dependency` and `header`
+  events (the status line and its title, the toast while uv works, the
+  folded header in the document), and a failed import offers Install with
+  uv, which installs into the session and pins in the header; a restart
+  follows a document change, not only a folder change. OPEN, small:
+  offering to pin a headerless document that imports nothing new — today
+  a header appears with the first install.
 - DONE 2026-09-26: the browser kernel feeds `parse_header(...)["dependencies"]`
   to micropip, so one header serves both backends (read-only there).
-- OPEN: a first-launch `uv python install` in the app, so the first
-  document does not pay the download at its first run.
+- DONE 2026-09-30, the shell's way: the first launch installs the engine's
+  own Python (`uv venv --python 3.13`, shell 0.1.x), which is the Python
+  uv then gives every document's environment too, so a first document
+  pays no download for its interpreter.

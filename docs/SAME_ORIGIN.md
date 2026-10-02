@@ -244,9 +244,10 @@ Steps 1–3 and 5 are done; step 4 remains.
    now derive from the serving origin, so the engine works on any port.
 3. **DONE — Package the frontend** into the wheel: `python/knuth/web/` is
    committed and freshness-gated (`npm run check:web`), and the install
-   command points at the GitHub archive. Leftover: the Pages demo is still
-   technically installable (its manifest is unconditional) despite the
-   demo-not-installable decision above — tracked in ROADMAP.md.
+   command points at the GitHub archive. The leftover — the Pages demo
+   was still technically installable, its manifest unconditional — closed
+   2026-10-01: `index.html` carries no manifest link; `main.ts` adds one
+   only when the page is served from loopback and not inside Knuth.app.
 4. **Install locally as a PWA**, confirm `.py` handlers and the offline
    shell against the real app rather than the spike.
 5. **DONE (2026-08-18, `18b6040`)** — the two remaining refusals stopped

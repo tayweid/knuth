@@ -352,6 +352,15 @@ const APP_LINE = 'curl -fsSL https://knuth.tayweid.io/install | bash';
 const ENGINE_LINE =
   'python3 -m pip install --upgrade --force-reinstall "knuth @ https://github.com/tayweid/knuth/archive/refs/heads/main.zip#subdirectory=python"';
 if (servedLocally || shell) $('get-app').hidden = true;
+// The manifest, and with it installability, only where the app is served
+// by its engine (SAME_ORIGIN.md: one installable app, served locally; the
+// hosted demo is a demo). Inside Knuth.app there is nothing to install.
+if (servedLocally && !shell) {
+  const link = document.createElement('link');
+  link.rel = 'manifest';
+  link.href = './manifest.webmanifest';
+  document.head.append(link);
+}
 
 // Knuth.app updating itself (the shell's update.js; also Knuth menu → Check
 // for Updates…). The shell looks at the site after launch and tells every
