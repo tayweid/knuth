@@ -86,14 +86,16 @@ question that still needs one.
 
 ### Same-origin loose ends (SAME_ORIGIN.md)
 
-- OPEN: a per-process token, minted at startup and echoed in `attach`, as
-  defense in depth against a future origin-check bug. Cheap now that the
-  server serving the page is the server holding the secret.
+- DECIDED 2026-10-02: no per-process token for now (SAME_ORIGIN.md,
+  "Security"): the origin check is the boundary, the dev loop now shares
+  it, and a token the engine injects into the page would reintroduce a
+  dev-only path. Reopen if the origin check gains a second implementation.
 - DONE 2026-10-01: the hosted demo is no longer installable — the
   manifest link is added by the page only when served from loopback and
   not inside Knuth.app (SAME_ORIGIN.md, step 3).
-- OPEN: the dev-loop vite WebSocket proxy — implement it so dev and
-  production exercise the same code path, or strike the section.
+- DONE 2026-10-02: the dev-loop vite WebSocket proxy (SAME_ORIGIN.md,
+  "Development"): dev and production exercise the same code path, and
+  `knuth serve` needs no `--origin` for development.
 - DECIDED (`d6659d0`): built assets stay committed and freshness-gated;
   revisit a CI-built release wheel at the first tagged release.
 

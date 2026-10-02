@@ -201,14 +201,16 @@ npx playwright install chromium # one-time browser test setup
 npm run test:browser             # real-browser regression tests
 
 python3 -m venv .venv && .venv/bin/pip install -e 'python[test]'
-.venv/bin/knuth serve --origin http://127.0.0.1:5198 # explicit Vite origin
-.venv/bin/python -m pytest python/tests              # Python unit + end-to-end tests
+.venv/bin/knuth serve                   # the engine on 5197; the dev page reaches it through vite
+.venv/bin/python -m pytest python/tests # Python unit + end-to-end tests
 ```
 
-The installed sidecar accepts WebSocket upgrades only from Knuth's exact
-release origin. Development and custom deployments opt into each additional
-origin explicitly with one or more `knuth serve --origin
-https://exact.example` arguments.
+The engine accepts WebSocket upgrades only from the origin it serves the
+page on. In development vite proxies the page's socket to the engine as
+that origin (`vite.config.ts`; `KNUTH_ENGINE` names another engine
+address), so nothing is opted into. A deployment that really serves the
+page from elsewhere names each origin with `knuth serve --origin
+https://exact.example`.
 
 `python/` is the distributed `knuth` package: the hosted launcher, live session,
 kernel subprocess, WebSocket server, background-agent helper, and the

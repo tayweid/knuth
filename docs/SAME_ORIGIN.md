@@ -73,8 +73,14 @@ have.
 DECIDED: the durable, on-disk capability goes away. It exists only to be
 carried across origins.
 
-OPEN: whether to keep a per-process token, minted at startup, injected into
-`index.html`, and echoed in `attach`. It buys defense in depth against a
+DECIDED 2026-10-02 (Taylor deferred to the recommendation): no per-process
+token, for now. The origin check is the boundary, and since the dev proxy
+(below) the dev loop shares it; a token minted by the engine and injected
+into `index.html` would reintroduce a dev-only path, because in
+development vite serves the page and the engine could not inject it.
+Reopen if the origin check ever gains a second implementation or if a
+served page becomes readable by another local origin. The earlier
+reasoning stays for that day: it buys defense in depth against a
 future bug in the origin check, and it costs almost nothing now that the
 server serving the page is the server holding the secret — no file, no
 `localStorage`, no URL fragment, no delivery to confirm. The important
@@ -138,12 +144,17 @@ Neither pip nor Pages belongs in the inner loop:
   edits.
 - `npm run dev` — vite at `127.0.0.1:5198` with HMR, unchanged.
 
-OPEN — not yet implemented: to keep dev same-origin too, vite would proxy
-the WebSocket to the engine, so the dev page talks to `127.0.0.1:5198` for
-everything. That would retire the `--origin` dev opt-in and, more
-importantly, mean dev and production exercise the same code path instead of
-dev being the one place cross-origin still happens. Today `vite.config.ts`
-has no proxy; dev opts in with `knuth serve --origin http://127.0.0.1:5198`.
+DONE 2026-10-02 (Taylor: "one code path is good"): vite proxies the page's
+WebSocket to the engine (`vite.config.ts`: the root path, upgrades only,
+every plain request stays vite's, and the proxied upgrade carries the
+engine's own origin as its `Origin`), so the dev page talks to
+`127.0.0.1:5198` for everything and the engine sees the origin it serves
+itself on. Dev and production exercise the same code path, and `knuth
+serve` needs no `--origin` for development; the flag stays for a
+deployment that really serves the page from elsewhere. `KNUTH_ENGINE`
+names another engine address for vite (default `http://127.0.0.1:5197`).
+Checked with a live engine started plainly and the dev page attaching
+through the proxy, vite's own HMR socket untouched.
 
 Measured for reference, so the shipping choice is made on numbers: a pip
 install from a GitHub archive is **1.8s cold, 1.4s warm** (845 KB, pure
