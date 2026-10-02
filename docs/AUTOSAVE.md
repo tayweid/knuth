@@ -75,18 +75,45 @@ happened. `"autosave": true` in an app's config turns it on; Knuth's
 
 What landed, of the Decided section:
 
-- **The branch.** `refs/heads/claerbout-autosave`, one per repository
-  (a project is the repository the document's folder is in; a folder in
-  none gets one, with `untracked/` ignored), written with plumbing only: a
-  temporary index filled by `git add -A` (so `.gitignore` applies), then
-  `write-tree`, `commit-tree` on the tip, `update-ref`. HEAD, the branch,
-  the index and the working tree are never touched. Skipped while
-  `index.lock` exists or a merge, rebase, cherry-pick or revert is in
-  progress, and when the tree equals the tip's. Messages are
+- **The project.** The repository the document's folder is in, wherever
+  that is. A folder in none gets one (with `untracked/` ignored), but only
+  in a project's folder: never the home folder or a folder it is in,
+  never `~/Desktop`, `Documents`, `Downloads`, `Movies`, `Music`,
+  `Pictures`, `Public` or `Library` themselves, a cloud-synced root (iCloud
+  Drive and the apps' containers, `~/Library/CloudStorage/*`, a Google
+  Drive's `My Drive`, `~/Dropbox`, `~/OneDrive…`, `~/Box`), a temporary
+  folder or a volume root; a folder at least one level below those
+  (`~/Projects/foo`, `~/Desktop/week-3`) qualifies. Elsewhere: no record,
+  and one log line saying why, once per folder per launch. (Decided after
+  the first review: a document in `~` had initialised `~/.git` and hashed
+  the whole home folder every minute.)
+- **The branch.** One per working tree, a refinement of "one autosave
+  branch per repo": `refs/heads/claerbout-autosave` in a repository's main
+  working tree, `refs/heads/claerbout-autosave-<name>` in a linked
+  worktree (`<name>` as git keeps it in `.git/worktrees`; a hyphen, since
+  git cannot keep `claerbout-autosave/<name>` beside
+  `claerbout-autosave`), so two worktrees open at once never flap the tip
+  between their trees. Two apps on one working tree share its branch (the
+  update is a compare-and-swap, retried once). Written with plumbing
+  only: a temporary index, kept between commits in the app's state folder
+  for its stat cache and removed at quit, filled by `git add -A
+  --ignore-errors` (so `.gitignore` applies), entries the ignore rules or
+  the secrets have come to match since dropped from it, then
+  `write-tree`, `commit-tree` on the tip, `update-ref`. Every git runs with
+  `core.splitIndex`, `core.fsmonitor` and the add advice off, so nothing
+  lands in the user's `.git` but objects and the branch.
+- **What it never touches, and what it writes.** The user's HEAD, branch
+  and index are never touched: nothing is committed while the record's
+  branch is checked out in any working tree (an `update-ref` would move
+  that HEAD, which the first review showed), while `index.lock` exists or
+  a merge, rebase, cherry-pick or revert is in progress, or when the tree
+  equals the tip's. In the working tree it writes `untracked/`, a
+  `.gitignore` line and `.claerbout/untracked.json`, which show in the
+  user's `git status`. A file git cannot read is left out (named once in
+  the log) and the rest recorded; a nested repository without a commit is
+  left out until it has one, then recorded as a gitlink. Messages are
   `<app>: <trigger>`; the author is the repository's identity, else
-  `Claerbout Autosave <autosave@claerbout.local>`. Two apps on one
-  project share the branch (the update is a compare-and-swap, retried
-  once).
+  `Claerbout Autosave <autosave@claerbout.local>`.
 - **The triggers.** Knuth sends `{type: 'autosave', trigger: 'cell run
   [n]'}` when a cell's run completes (`DocumentView.onRunDone` →
   `reportCellRun` in `shell.ts`), once the run's writes have landed: the
@@ -95,17 +122,27 @@ What landed, of the Decided section:
   sent at completion found the tree unchanged and the timer took the
   change a minute later, which the first smoke run showed. Runs that
   complete while those writes settle (a run-all) are reported together,
-  `cell run [1, 2, 3]`. The timer is one minute per open project;
-  `session open` and `session close` bracket the first and last window on
-  a project; quitting flushes. Each commits only if something changed.
+  `cell run [1, 2, 3]`. The timer is one minute per open project, not per
+  window, and a tick while a commit is under way is dropped, never
+  queued; `session open` and `session close` bracket the first and last
+  window on a project; one job at a time per project. Quitting closes
+  every session and waits for every queued job, bounded at 20 s. Each
+  commits only if something changed.
 - **untracked/.** Created in the project with a `.gitignore` entry; the
   manifest `.claerbout/untracked.json` (path, size, mtime, SHA-256 per
   file, hashed again only when size or mtime changed, the hashes cached
-  in the app's state folder) is rewritten before every commit, so it is
-  inside the track.
-- **Secrets.** `.env`, `.env.*`, `*.pem`, `*.key`, `id_rsa*`, `*.p12`,
-  `credentials.json`, `.npmrc`, `.netrc` are kept out of the temporary
-  index by pathspec, in every folder.
+  in the app's state folder) is rewritten before every commit and always
+  recorded, as is `.gitignore`, whatever the ignore rules say (a `*.json`
+  or `.claerbout/` line had kept it out). A file named `untracked` means no
+  `untracked/` handling for that project, said once.
+- **Secrets.** Kept out by pathspec, in every folder: `.env`, `.env.*`,
+  `*.pem`, `*.key`, `id_rsa*`, `id_ed25519*`, `id_ecdsa*`, `id_dsa*`,
+  `*.p12`, `*.pfx`, `*.jks`, `*.keystore`, `*.gpg`, `*.asc`,
+  `credentials.json`, `service-account*.json`, `.git-credentials`,
+  `.pypirc`, `.npmrc`, `.netrc`, `token*`, `*.token`, and everything under
+  `.env/`, `.aws/`, `.ssh/` and `.gnupg/`. `token*` also catches
+  `tokenizer.py`; the log names what the list kept out of a project once
+  per launch, so such a catch is seen.
 - **Plass.** Its documents are handles, not paths, so the page sends
   `{type: 'document', path, name, size, modified}` whenever its open file
   changes (`reportDocument` in `src/claerbout.ts`, from the file
@@ -117,12 +154,19 @@ What landed, of the Decided section:
   the other side: Chromium asks the shell's permission handler about
   every read and write of a handle, with the file's path but no window,
   and the shell matches the reported name, size and mtime against the
-  files lately touched, newest first.
+  files lately touched, newest first; a report that matches none of them
+  is none (no same-name fallback). A reported `path` is taken only when it
+  is an absolute path to an existing regular file.
 - **Tests.** The shell's `test/autosave.test.mjs` (node:test, real git in
   temporary repositories: a folder with no repository, a clean branch
   with a dirty index left as they were, `index.lock`, a merge in
-  progress, the unchanged skip, the secrets, the manifest and its cache,
-  the identity, the sessions, the timer, quit); its fixture smoke checks
+  progress, the unchanged skip, the record checked out in the main and a
+  linked worktree, the project-folder rule, linked worktrees, an
+  unreadable file, a nested repository without a commit, the secrets and
+  the README's list of them, the manifest forced in and its cache, the
+  kept index, nothing new in `.git` under `core.splitIndex`, a file named
+  `untracked`, the identity, the sessions, the timer not piling up, quit
+  waiting and bounded); its fixture smoke checks
   the `session open` commit; Knuth's `src/shell.test.ts` pins the notice;
   Plass's `src/claerbout.test.ts` pins the document report; Knuth's smoke
   (`smoke.autosave` in `app/knuth.json`) asserts `knuth: session open` and
@@ -133,13 +177,17 @@ What landed, of the Decided section:
 What stays open, and why:
 
 - **Pushing (the outside witness).** Not built. The module never pushes;
-  the record stays on the machine. The push policy (every ~10 commits,
-  every 30 minutes with anything unpushed, on close, on launch; never
-  forced; failures retried quietly) and its wiring are a decision for
-  Taylor to take and build himself, since automatic pushes from inside
-  the app touch a remote on the user's behalf; nothing else in the
-  module would change. The anti-pruning remote (the Claerbout org) is
-  the other half of that decision.
+  the record stays on the machine. The push policy is decided above (every
+  ~10 commits, every 30 minutes with anything unpushed, on close, on
+  launch; never forced; failures retried quietly), and after the review it
+  was to be built as: only `refs/heads/<record>` to a remote named
+  `origin`, never `--force`, a failure one log line retried at the next
+  trigger, `<PREFIX>_AUTOSAVE_PUSH=0` set in every test and smoke, and a
+  test against a bare temporary remote. Writing it was refused twice by
+  the permission check (automatic pushes from inside the app, against the
+  standing no-push rule), so it is Taylor's to build or to authorise;
+  nothing else in the module would change. The anti-pruning remote (the
+  Claerbout org) is the other half of that decision.
 - **External-edit tagging** and the "changed while closed" commit on
   launch: the module keeps no per-file hashes of what the app itself
   wrote, so a change made outside the app is recorded by the next
@@ -152,6 +200,9 @@ What stays open, and why:
 - Smaller: a run in the browser tab (no shell) is not recorded; a nested
   repository inside the project is recorded as a gitlink, not its
   contents; the manifest and the `.gitignore` line show in the user's own
-  `git status` as untracked and modified, which the spec accepts; the
-  temporary index is rebuilt from scratch at every commit, so a very
-  large working tree costs a full `git add` per minute.
+  `git status` as untracked and modified, which the spec accepts; a file
+  the user tracks although an ignore rule matches it (`git add -f`) is
+  left out of the record, since the temporary index starts from the
+  working tree, not from HEAD; an existing repository is recorded
+  wherever it is, so a dotfiles repository at `~` takes in whatever its
+  ignore rules let through.
