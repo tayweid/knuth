@@ -1121,8 +1121,10 @@ body[data-view='source'] #view-toggle {
 
 /* The cursor's cell: a bar in the frame's focus blue at the cell's top,
    the one blue mark. Under the cell's own tick or dot (z-index), and wider
-   than them (Plass's caret is 8 px), so it shows either side of a red
-   tick rather than hide it. */
+   than them, so it shows either side of a red tick rather than hide it:
+   Plass's caret is 8 px, which would vanish under the 9 px red tick of
+   the cell you are fixing (open for Taylor in docs/ZEN-DRAFT.md, The
+   scroll rail; this width is the one switch). */
 .sr-caret {
   z-index: 0;
   width: 12px;

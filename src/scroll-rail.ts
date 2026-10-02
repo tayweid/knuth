@@ -18,12 +18,16 @@
 // track is exactly the room's height. The marks are placed by that
 // fraction in CSS (`top: calc(var(--f) * 100%)`), and the band, the visible
 // span, is the room's scrollTop and clientHeight over the same height, so
-// the two agree by construction. The band is drawn on its own layer: a
-// scroll writes its offset, a transform, in a frame (and its height, only
-// when the room's scroll range or size changed), and the marks inside it
-// carry the class `in` (a step brighter), set only on those that crossed
-// the band's edges since the last frame, usually none. Nothing a scroll
-// writes is inherited by the marks or lays the rail out.
+// the two agree by construction. The 40vh is part of that height, so the
+// foot of the track is the empty run the room scrolls into under the last
+// cell, and a change of the window's height alone moves every mark a
+// little along the track (by the 40vh's share) though no cell moved; the
+// band moves with them. The band is drawn on its own layer: a scroll
+// writes its offset, a transform, in a frame (and its height, only when
+// the room's scroll range or size changed), and the marks inside it carry
+// the class `in` (a step brighter), set only on those that crossed the
+// band's edges since the last frame, usually none. Nothing a scroll writes
+// is inherited by the marks or lays the rail out.
 //
 // What differs from Plass, and why. Plass's paper is laid out once at
 // 816 px and drawn to the panel's width by a transform, so a resize moves
@@ -37,7 +41,12 @@
 // breaks, their numbers and the numbers' crowding rule are not here;
 // instead the code cells' ticks thin on a long notebook (TICK_ROOM). A mark
 // is reused across reads by its key, so the focus and the hover survive
-// the column settling under them.
+// the column settling under them; a heading's key is its place in its
+// cell, so one retyped to another level keeps its button and changes its
+// dot. Every place is read before any mark is written (build): a write
+// between two reads lays the document out again, once per mark. Plass's
+// marks are new buttons not yet in the document, so it reads and writes
+// as it goes.
 //
 // The gutter is there while the column runs past the room in the cell view
 // (its last cell's end below the room's bottom at the top of the scroll):
@@ -45,12 +54,18 @@
 // 8 px edge. The gutter takes 12 px from the room, whose column keeps its
 // own width rules (at the usual widths it is the 52rem measure either way;
 // only the margins change). The room draws no scrollbar of its own in the
-// cell view (styles.css), so the gutter's 12 px only ever narrow what the
-// column can have, and a narrower column is never shorter: the gutter
-// cannot take itself away. It comes and goes at once, not animated. Nothing
-// opens or grows while a mouse button is down: a gutter due then waits for
-// the button to come up, and a press that began on the text (a selection
-// dragged toward the edge) wakes nothing on the rail.
+// cell view (styles.css), so the gutter's 12 px are all that come and go.
+// A narrower column is mostly a taller one, but not always: a figure is
+// drawn to the column's width (max-width: 100%), so it is shorter in a
+// narrower column, and a column can fit the room only once the gutter has
+// taken its 12 px, and run past again without them. So when the gutter
+// would go, refresh asks again at once at the wider width, before the
+// frame paints, and such a column keeps its gutter: the gutter never takes
+// itself away to come back in the next frame. It comes and goes at once,
+// not animated. Nothing opens or grows while a mouse button is down: a
+// gutter due then waits for the button to come up, and a press that began
+// on the text (a selection dragged toward the edge) wakes nothing on the
+// rail.
 
 /** px either side of a mark, in the rail, within which the pointer takes it. */
 const HIT = 7;
@@ -221,6 +236,14 @@ export function attachScrollRail(source: RailSource, panel: HTMLElement, stack: 
       else {
         on = want;
         root.classList.toggle('has-rail', on);
+        // A figure drawn to the column's width can let the column fit only
+        // with the gutter's 12 px taken: asked again at the wider width, at
+        // once, a column that runs past there keeps its gutter. The class
+        // ends where it began, so no size changes and nothing asks again.
+        if (!on && wanted()) {
+          on = true;
+          root.classList.add('has-rail');
+        }
         if (!on) {
           unhot();
           rail.classList.remove('awake', 'moving', 'dragging');
@@ -249,10 +272,19 @@ export function attachScrollRail(source: RailSource, panel: HTMLElement, stack: 
 
   /* ---------- the marks, read when the column settles ---------- */
 
-  function markFor(src: SourceMark): Mark {
+  /** The mark for `src`, its button reused by key, at `y` (read by the
+   *  caller before any mark is written: build). */
+  function markFor(src: SourceMark, y = placeOf(src)): Mark {
     let m = byKey.get(src.key);
-    if (m) m.src = src;
-    else {
+    if (m) {
+      m.src = src;
+      // A heading retyped to another level keeps its key, its place in
+      // its cell, and takes the new level's dot.
+      if (m.kind !== src.kind) {
+        m.button.classList.replace(CLASSES[m.kind], CLASSES[src.kind]);
+        m.kind = src.kind;
+      }
+    } else {
       const button = make('button', `sr-mark ${CLASSES[src.kind]}`);
       button.type = 'button';
       button.tabIndex = -1;
@@ -265,7 +297,7 @@ export function attachScrollRail(source: RailSource, panel: HTMLElement, stack: 
       byKey.set(src.key, m);
       track.append(button);
     }
-    m.y = placeOf(src);
+    m.y = y;
     m.f = fraction(m.y);
     const f = fmt(m.f);
     if (m.button.style.getPropertyValue('--f') !== f) m.button.style.setProperty('--f', f);
@@ -280,9 +312,15 @@ export function attachScrollRail(source: RailSource, panel: HTMLElement, stack: 
     docH = panel.scrollHeight || 1;
     const focused = marks.findIndex((m) => m.button === document.activeElement);
     const stop = marks.find((m) => m.button.tabIndex === 0) ?? null;
-    const next: Mark[] = source.marks().map(markFor);
+    // Every place read before any mark is written: a write between two
+    // reads would lay the document out again for each mark, and a new
+    // line moves every mark under it.
+    const sources = source.marks();
     const place = source.caret();
-    caret = place ? markFor({ ...place, key: 'caret', kind: 'caret' }) : null;
+    const ys = sources.map(placeOf);
+    const caretY = place ? placeOf(place) : 0;
+    const next: Mark[] = sources.map((src, i) => markFor(src, ys[i]));
+    caret = place ? markFor({ ...place, key: 'caret', kind: 'caret' }, caretY) : null;
     if (caret) next.push(caret);
     // Gone: the cell was deleted, its figure redrawn as fewer, the view
     // switched. A gone mark under the pointer puts its label away.

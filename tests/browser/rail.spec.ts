@@ -9,11 +9,13 @@
 // squares and tables (a run that left a DataFrame) as open ones, the
 // cursor's cell as the blue bar. The mock engine answers a run as
 // session.spec's does (what a cell bound, a figure for `.plot(`), raises
-// for a cell with `raise` in it (history.spec's message), and takes
-// `sleep(s)` seconds.
+// for a cell with `raise` in it (history.spec's message), takes
+// `sleep(s)` seconds, and draws an 800 × 600 figure (matplotlib's default
+// size) for `big(`.
 import { expect, test, type Page } from '@playwright/test';
 
 const FIGURE_SVG = '<svg xmlns="http://www.w3.org/2000/svg" width="240" height="140" viewBox="0 0 240 140"><rect width="240" height="140" fill="#fff"/><path d="M20 30 L120 80 L220 115" fill="none" stroke="#305c8a" stroke-width="3"/></svg>';
+const BIG_SVG = '<svg xmlns="http://www.w3.org/2000/svg" width="800" height="600" viewBox="0 0 800 600"><rect width="800" height="600" fill="#fff"/><path d="M40 80 L400 340 L760 520" fill="none" stroke="#305c8a" stroke-width="4"/></svg>';
 const RAIL = 44;
 const EDGE = 8;
 const GUTTER = 20;
@@ -50,7 +52,7 @@ const NOTEBOOK = [
 const SHORT = '# %% [markdown]\n# ## Notes\n\n# %%\nx = 1\n';
 
 test.beforeEach(async ({ page }) => {
-  await page.addInitScript((figureSvg) => {
+  await page.addInitScript(({ figureSvg, bigSvg }) => {
     const KINDS: Record<string, Record<string, unknown>> = {
       prices: { type: 'DataFrame', shape: [250, 2], preview: '     price  quantity\n0   0.5  812' },
       demand: { type: 'Series', length: 3, preview: 'price 0.5 812.0 1.0 410.0 1.5 190.0' },
@@ -104,7 +106,8 @@ test.beforeEach(async ({ page }) => {
             this.ns.set(name, entry);
             bound.push(entry);
           }
-          if (code.includes('.plot(')) this.reply({ type: 'figures', id: msg.id, svgs: [figureSvg], named: ['ax'] });
+          if (code.includes('big(')) this.reply({ type: 'figures', id: msg.id, svgs: [bigSvg], named: [] });
+          else if (code.includes('.plot(')) this.reply({ type: 'figures', id: msg.id, svgs: [figureSvg], named: ['ax'] });
           this.reply({ type: 'done', id: msg.id, result: null, bound });
         } else if (msg.type === 'namespace') {
           const vars = [...this.ns.values()].map(({ saved: _saved, ...entry }) => entry);
@@ -126,7 +129,7 @@ test.beforeEach(async ({ page }) => {
     Object.defineProperty(window, 'WebSocket', { configurable: true, value: MockWebSocket });
     // Silent: no receipt card beside a cell, so a run moves nothing sideways.
     localStorage.setItem('knuth-receipts', 'silent');
-  }, FIGURE_SVG);
+  }, { figureSvg: FIGURE_SVG, bigSvg: BIG_SVG });
 });
 
 /** The document for this page, kept across a reload (the stash's own key). */
@@ -452,6 +455,22 @@ test('a run that raised turns its tick red, a running cell\'s tick pulses, and t
   await expect(page.locator('#scrollrail .sr-code.running')).toHaveCount(0, { timeout: 5_000 });
   // The raised cell stays red until it runs cleanly.
   await expect(page.locator('#scrollrail .sr-code.error')).toHaveCount(1);
+
+  // Run again (slowly: a comment the mock reads), Cell 4 is running, not
+  // raised: the readout keeps its red until the run ends, the tick does
+  // not. Its label is its first line, and "running".
+  await page.mouse.move(600, 400);
+  await codeCell(page, 4).locator('.cm-line').last().click();
+  await page.keyboard.press('End');
+  await page.keyboard.type('  # sleep(1.5)');
+  await runCell(page, 4);
+  await expect(page.locator('#scrollrail .sr-code.running')).toHaveCount(1);
+  const rerun = await page.locator('#scrollrail .sr-code.running').evaluate((el) => ({ error: el.classList.contains('error'), name: el.getAttribute('aria-label') }));
+  expect(rerun).toEqual({ error: false, name: 'Cell 4, elasticity = demand.pct_change(), running' });
+  expect(await page.locator('#scrollrail .sr-code.error').count()).toBe(0);
+  // It raises again: red again.
+  await expect(page.locator('#scrollrail .sr-code.error')).toHaveCount(1, { timeout: 5_000 });
+  await expect(page.locator('#scrollrail .sr-code.running')).toHaveCount(0);
 });
 
 test('the cursor\'s cell is the blue bar, and it moves with a click into another cell', async ({ page }) => {
@@ -482,6 +501,32 @@ test('the cursor\'s cell is the blue bar, and it moves with a click into another
     const b = await bar();
     return b ? Math.abs(b.y - (await inTrack(await rowTop(page, 9)))) : 99;
   }).toBeLessThan(1);
+  expect(await page.locator('#scrollrail .sr-caret').getAttribute('aria-label')).toBe('Cursor, Cell 9');
+  // In a text cell the bar is named by the cell's first block, its
+  // heading, not the heading run into the paragraph under it.
+  await cell(page, 0).evaluate((el) => el.scrollIntoView({ block: 'center' }));
+  await cell(page, 0).locator('.ProseMirror p').first().click();
+  await expect.poll(() => page.locator('#scrollrail .sr-caret').getAttribute('aria-label')).toBe('Cursor, Demand for coffee');
+});
+
+test('a heading retyped to another level takes that level\'s dot', async ({ page }) => {
+  await boot(page);
+  await expect.poll(() => hasRail(page)).toBe(true);
+  const dot = () =>
+    page.evaluate(() => {
+      const el = [...document.querySelectorAll<HTMLElement>('#scrollrail .sr-mark')].find((b) => b.getAttribute('aria-label') === 'Demand for coffee');
+      return el ? { kind: el.className.replace(/\s*\b(in|hot|thin)\b/g, ''), size: [el.offsetWidth, el.offsetHeight] } : null;
+    });
+  expect(await dot()).toEqual({ kind: 'sr-mark sr-title', size: [7, 7] });
+  // The title made a section (its key, the cell's first heading, stays).
+  await cell(page, 0).locator('.ProseMirror h1').click();
+  await page.keyboard.press('ControlOrMeta+Alt+2');
+  await expect(cell(page, 0).locator('.ProseMirror h2')).toHaveCount(1);
+  await expect.poll(dot).toEqual({ kind: 'sr-mark sr-section', size: [5, 5] });
+  expect(await page.locator('#scrollrail .sr-title').count()).toBe(0);
+  // And back.
+  await page.keyboard.press('ControlOrMeta+Alt+1');
+  await expect.poll(dot).toEqual({ kind: 'sr-mark sr-title', size: [7, 7] });
 });
 
 test('the label names a heading by its words and a code cell by its number and first line, and stays inside the window', async ({ page }) => {
@@ -790,4 +835,74 @@ test('on a long notebook the code cells\' ticks thin so the ones drawn stay 4 px
   await expect(page.locator('#scrollrail .sr-code.error')).toHaveCount(1);
   t = await ticks();
   expect(t.filter((k) => k.red)).toEqual([expect.objectContaining({ drawn: true })]);
+});
+
+test('a figure drawn to the column\'s width that fits only with the gutter keeps the gutter: it never comes and goes frame after frame', async ({ page }) => {
+  // One cell draws an 800 × 600 figure, drawn to the column's width: 12 px
+  // narrower with the gutter, about 9 px shorter. Between the two heights
+  // the column fits the room only with the gutter taken.
+  const doc = `# %% [markdown]\n# ## Notes\n\n# %%\nfig = big(1)\n\n# %%\n${filler('v', 6).join('\n')}\n`;
+  await boot(page, doc, 700, 1400);
+  await runCell(page, 1);
+  await expect(page.locator('#sheet .cell-figures .figure img')).toHaveCount(1);
+  /** The column's end at the top of the scroll, the room's height, and how
+   *  much taller the window is than the room. */
+  const ends = () =>
+    page.evaluate(() => {
+      const doc = document.getElementById('doc')!;
+      const sheet = document.getElementById('sheet')!;
+      doc.scrollTop = 0;
+      const end = sheet.getBoundingClientRect().top - doc.getBoundingClientRect().top - doc.clientTop + sheet.offsetHeight;
+      return { end, rail: document.documentElement.classList.contains('has-rail'), extra: innerHeight - doc.clientHeight };
+    });
+  await expect.poll(async () => (await ends()).rail).toBe(false);
+  await expect(page.locator('#sheet .cell-figures .figure img')).toHaveJSProperty('complete', true);
+  const wide = await ends();
+  await page.setViewportSize({ width: 700, height: 500 });
+  await expect.poll(async () => (await ends()).rail).toBe(true);
+  const narrow = await ends();
+  expect(wide.end - narrow.end).toBeGreaterThan(4);
+  // The room's height between the two ends (wanted() asks end > height + 1).
+  const height = Math.round((wide.end + narrow.end) / 2 - 1 + wide.extra);
+  await page.setViewportSize({ width: 700, height });
+  await page.waitForTimeout(200);
+  const writes = await page.evaluate(() => new Promise<number>((done) => {
+    let n = 0;
+    const watch = new MutationObserver((records) => (n += records.length));
+    watch.observe(document.documentElement, { attributes: true, attributeFilter: ['class'] });
+    window.setTimeout(() => {
+      watch.disconnect();
+      done(n);
+    }, 250);
+  }));
+  expect(writes).toBeLessThanOrEqual(2);
+  // It settled with the gutter: the column runs past the room without it.
+  expect(await hasRail(page)).toBe(true);
+});
+
+test('a new line in a long notebook lays the column out a few times, not once for every mark it moves', async ({ page }) => {
+  test.setTimeout(90_000);
+  const cells = Array.from({ length: 240 }, (_, i) => `# %%\nv_${i} = ${i}\n`).join('\n');
+  await boot(page, `# %% [markdown]\n# # A long notebook\n\n${cells}`);
+  await expect.poll(() => hasRail(page)).toBe(true);
+  await expect.poll(() => page.locator('#scrollrail .sr-code').count()).toBe(240);
+  const last = () => page.locator('#scrollrail .sr-code').last().evaluate((el) => el.style.getPropertyValue('--f'));
+  await codeCell(page, 1).locator('.cm-content').click();
+  await page.keyboard.press('ControlOrMeta+End');
+  await page.waitForTimeout(500);
+  const cdp = await page.context().newCDPSession(page);
+  await cdp.send('Performance.enable');
+  const layouts = async () => (await cdp.send('Performance.getMetrics')).metrics.find((m) => m.name === 'LayoutCount')!.value;
+  for (let k = 0; k < 2; k++) {
+    const f = await last();
+    const before = await layouts();
+    await page.keyboard.press('Enter');
+    // The rail read the marks again: the last tick moved down the track.
+    await expect.poll(last).not.toBe(f);
+    await page.waitForTimeout(300);
+    // Every mark's place read before any is written: a handful of layouts
+    // (the editor's and the rail's), not one per mark (about 245 when each
+    // mark was read after the last was written).
+    expect(await layouts() - before).toBeLessThan(30);
+  }
 });

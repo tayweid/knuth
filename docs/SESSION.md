@@ -134,7 +134,12 @@ is in the frame's gutter outside the room, and the docked card slides the
 column inside it, so the two never meet; its rule reads the room's box,
 which is 12 px narrower while the rail shows (at 1100 × 760 the column
 644 px beside the 320 px card, 656 without the rail; the room scrolls
-sideways under a window of about 1097 px rather than 1085).
+sideways under a window of about 1097 px rather than 1085). Docked, the
+column is narrower still, and a figure drawn to its width is shorter
+in it: a column that fits the room only with the gutter's 12 px taken
+keeps the gutter (scroll-rail.ts asks again at the wider width before
+the frame paints), where the gutter had come and gone every frame (a
+window 1100 wide and 665 to 668 tall, a `figsize=(10, 4)` figure).
 
 **The kernel change.** `Session.bound(names)` (python/knuth/session.py)
 returns the snapshot's entry for each name the run assigned, in the

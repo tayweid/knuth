@@ -780,7 +780,9 @@ export class DocumentView {
         },
         figures: v.figsEl.hidden ? [] : ([...v.figsEl.children] as HTMLElement[]),
         output: shown ? v.outEl : null,
-        error: shown && v.outEl.classList.contains('error'),
+        // A cell re-run after it raised keeps the readout's red until the
+        // run ends (runCell): while it runs it is running, not raised.
+        error: shown && !v.running && v.outEl.classList.contains('error'),
         running: v.running,
       };
     });

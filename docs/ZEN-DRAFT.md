@@ -89,8 +89,10 @@ counts it and its first line in the code's mono ("Cell 3 ·
 demand = prices.groupby(…)"), or with its last run raised the
 traceback's last line in red ("Cell 5 · NameError: name 'fit_line' is
 not defined"), or "running" while it runs; "Figure · Cell 3";
-"Table · prices · Cell 2"; over empty track a faint line and the cell
-or section that point is in. A click puts the mark's place an eighth of
+"Table · prices · Cell 2"; the cursor's bar "Cursor · Cell 9", or in a
+text cell the cell's first block ("Cursor · Demand for coffee": its
+heading when it opens with one, else its first paragraph); over empty
+track a faint line and the cell or section that point is in. A click puts the mark's place an eighth of
 the way down the room (a cell's top, a heading, a figure); empty track
 centres that point; a press that drags scrubs the band and jumps
 nothing; the wheel over the gutter scrolls the room. The keyboard: one
@@ -117,8 +119,15 @@ arriving, a figure loading, a cell added or removed, a line typed, a
 rewrap at a new width, the window's height, which moves the 40vh under
 the column); and when a run starts or ends (`onRunStart`, `onRunDone`
 in main.ts), which changes a tick's colour without a size. A mark is
-reused by its key (cell and kind), so a read writes only what moved,
-and the focus and the hover survive it. The cursor's bar moves on
+reused by its key (the cell and the mark's place in it; a heading
+retyped to another level changes its dot), so a read writes only what
+moved, and the focus and the hover survive it. Every place is read
+before any mark is written: a write between two reads lays the column
+out again, so reading and writing mark by mark cost a layout per mark
+(246 for a new line in rail.spec's 240-cell notebook, about 40 ms),
+and reading first costs 4 or 5. A cell run again after it raised is
+running, not raised, until the run ends (its readout keeps the red till
+then; `railCells` does not). The cursor's bar moves on
 `focusin` in the column, in a frame. A scroll writes, in a frame, the
 band's offset (a transform on its own layer; its height only when the
 range or the room changed) and the class `in` on the marks the band's
@@ -134,9 +143,17 @@ floor and `--axis` (the toast) read it. The room draws no scrollbar of
 its own in the cell view, rail or not (the source view's editor keeps
 its own): the rail is the map, and a scrollbar that came and went with
 the rail would widen the column as the gutter narrowed the room. So the
-gutter's 12 px only ever narrow the column, a narrower column is never
-shorter, and the gutter cannot take itself away. It comes and goes at
-once, not animated.
+gutter's 12 px are all that come and go. A narrower column is mostly a
+taller one, but not always: a figure is drawn to the column's width
+(`max-width: 100%`), so it is shorter in a narrower column, and a column
+can fit the room only once the gutter has taken its 12 px, and run past
+again without them (a matplotlib-sized figure in a 700 px window about
+850 px tall; the pinned Session card at 1100 with a `figsize=(10, 4)`
+figure). The gutter would then come and go every frame. So when it would
+go, `refresh` asks again at once at the wider width, before the frame
+paints, and a column that runs past there keeps its gutter; the class
+ends where it began, so nothing asks again. It comes and goes at once,
+not animated.
 
 **The pinned Session card** is unaffected in kind: it slides the column
 inside the room, and the rail is outside it, so the two never meet. Its
@@ -170,7 +187,7 @@ label rgba(27, 26, 30, .94), the heading 13 px STIX Two Text. Knuth's
 own: the code tick 7 × 1 px at rgba(240, 238, 233, .5); the red and the
 running tick 9 × 2 px at full strength (#cd6452; #6ea576 pulsing to 30 %
 over 1.1 s); the cursor's bar 12 × 2 px #9db8d6 (Plass's caret is
-8 px); a code line in the label 12 px mono, an error #e08a7b. The bar
+8 px; open, below); a code line in the label 12 px mono, an error #e08a7b. The bar
 keeps its own 8 px at the right: the session pill ends at the window's
 edge less 8 whether the rail shows or not.
 
@@ -184,8 +201,18 @@ edge less 8 whether the rail shows or not.
   or ends; reusing each mark by its key keeps that cheap.
 - *What the track maps.* The room's whole scroll height: the 24 px above
   the column and the 40vh under it are part of the scroll, so the band
-  can go there, and the bottom of the track is that empty run. Whether
-  the rail shows is asked of the column alone.
+  can go there, and the bottom of the track is that empty run (about 7 %
+  of it on a forty-cell notebook at 1100 × 760, about a third on a
+  document just past the room; in Plass the marks run to the rail's
+  foot). The 40vh changes with the window's height, so a change of the
+  height alone moves every mark a little along the track though no cell
+  moved (forty cells: the last mark 0.909 of the way down at 760 tall,
+  0.898 at 900, 0.922 at 600, about 10 px of track); a change of width
+  moves a mark only where the column rewraps. Mapping the
+  column alone would keep the marks still and run them to the foot, but
+  the band could then not be the room's scroll: over the last 40vh it
+  would stop at the foot while the room still moved. Whether the rail
+  shows is asked of the column alone.
 - *No pages.* Plass's page breaks, their numbers and the numbers'
   crowding rule have no place here; the code ticks thin instead.
 - *The landing.* CodeMirror lays out a cell far off screen from an
@@ -225,27 +252,83 @@ edge less 8 whether the rail shows or not.
 3. *The cursor's bar at the cell's top* or at the cursor's line, as
    Plass's: the line would follow the arrows inside a long cell, and
    needs a hook on each editor's selection.
-4. *Staleness* is not drawn (an amber tick would read the way the
+4. *The cursor's bar's width*: 12 px, against Plass's 8, on the 14 px
+   band. It stands at the cell's top, where the cell's own tick is, and
+   is drawn under it, so it shows either side of the 9 px red tick of a
+   cell that raised, the cell you are most likely fixing; at Plass's
+   8 px it would vanish under that tick (and show half a pixel either
+   side of a plain one). One value in styles.css (`.sr-caret`).
+5. *The track's foot* (above, *What the track maps*): it is the empty
+   run under the last cell, so the marks stop short of the foot, and a
+   change of the window's height moves them by the 40vh's share.
+6. *Staleness* is not drawn (an amber tick would read the way the
    gutter's amber does); nor is uv's work for a cell (its spinner) a
    pulse, only a run.
-5. *Thinned ticks* on a very long notebook are not drawn; a label still
+7. *Thinned ticks* on a very long notebook are not drawn; a label still
    names them. Whether a notebook that long wants the ticks at all is
    for a long notebook to say.
-6. *Cell zero* folded to the package header has no mark; unfolded (or a
+8. *Cell zero* folded to the package header has no mark; unfolded (or a
    script's body before its first marker) it is "Cell 0".
-7. Plass's open items apply: the unrolling outline, the frame's uneven
+9. Plass's open items apply: the unrolling outline, the frame's uneven
    edge (6 beside the tiles, 8 at the bottom, 20 at the right while the
    rail shows).
+
+**The verifiers' round.** Two verifiers drove 09c4456: one in the
+checkout shell beside main and Plass's rail (four documents, three
+window sizes, a zoom step, the pinned card, CDP's layout counts), one
+over the code with probes in a copy. Nine problems, seven distinct;
+each closed with a test in rail.spec that fails on 09c4456:
+
+1. *A new line cost a layout per mark* (twice reported). `build` read
+   each mark's place after writing the last one's `--f`, so a change of
+   the column's height, which moves every mark under it, laid the column
+   out once per mark: 246 layouts per Enter on the 240-cell notebook
+   (about 40 ms), 44 per key on a forty-cell one against main's 2. Every
+   place is now read first (`markFor` takes it), then every mark
+   written: 4 or 5. Test: a new line in the 240-cell notebook, under 30
+   layouts by CDP's count, the last tick moved.
+2. *The cursor's label in a text cell* ran the heading into the
+   paragraph ("Cursor, Demand for coffeeThe price…", twice reported):
+   the editor's textContent has no space between blocks. It is now the
+   cell's first block with words, its heading when it opens with one,
+   read block by block (innerText would lay the column out). Test:
+   the bar's name in the title's cell.
+3. *The gutter could come and go every frame*: the header, this record
+   and 09c4456's message said a narrower column is never shorter, which
+   a figure drawn to the column's width disproves (15 class writes on
+   the root in 250 ms). `refresh` asks again at the wider width before
+   the frame paints and keeps the gutter (the mechanism, above). The
+   verifier's two height scans (a 700 px window, 560–900 tall; the
+   pinned card at 1100, 500–900 tall) find nothing now. Test: an
+   800 × 600 figure at 700 wide, the window's height between the two
+   column ends, at most two class writes in 250 ms, the gutter kept.
+4. *A heading retyped to another level kept its dot*: its key is its
+   place in its cell, which survives the retype, and the reused mark
+   kept its kind. `markFor` now swaps the class and the kind. Test:
+   Mod-Alt-2 in the title, a 5 px section dot; Mod-Alt-1, the 7 px
+   title's again.
+5. *A cell run again after it raised read as raised while it ran*
+   (red, "raised" in red in its label): the readout keeps its class till
+   the run ends. `railCells` reports no error while a cell runs. Test:
+   Cell 4 run again slowly, running and not red, named by its first
+   line, red again when it raises.
+6. *The cursor's bar is 12 px, Plass's 8*: kept, and put to Taylor
+   (*What is open*, 4), since at 8 px it vanishes under a red tick.
+7. *A change of the window's height alone moves the marks*: kept, and
+   said (*What the track maps*; *What is open*, 5), since mapping the
+   column alone would part the band from the room's scroll.
 
 ## Checks (the scroll rail)
 
 - `npm test`: green. `npm run build:engine` and `npm run check:web`:
   green ("committed app matches its sources"), the stamp committed.
-- `CI=1 npx playwright test` on a spare port (a scratch copy of
-  `playwright.config.ts` on 5461 with `--strictPort`, deleted after):
-  120 passed and one failed, `app.spec.ts`'s embed test, which
-  hardcodes 5198 in its iframe and so fails alone on any other port.
-  `tests/browser/rail.spec.ts` (12 tests): the gutter and the rail only
+- `CI=1 npx playwright test` on a spare port (a scratch config on 5487
+  with `--strictPort`, outside the checkout, deleted after): 123 passed
+  and one failed, `app.spec.ts`'s embed test, which hardcodes 5198 in
+  its iframe and so fails alone on any other port; nothing else retried.
+  rail, frame and session specs `--repeat-each=3` with no retries:
+  201 of 201. (09c4456's run: 120 and the same one.)
+  `tests/browser/rail.spec.ts` (15 tests): the gutter and the rail only
   while the column runs past the room, the room's box with and without
   it, the session pill unmoved, no scrollbar in the cell view, the
   onboarding's right edge and the toast's axis following the room; none
@@ -258,8 +341,11 @@ edge less 8 whether the rail shows or not.
   twelve code ticks, a figure and a table after runs, the marks
   following the cells the figure pushed down, and again after a rewrap
   at 1500), the marks' sizes; the red tick after a run that raised
-  (history.spec's message), its label, the running cell's pulse; the
-  cursor's bar moving with a click; the label for a heading and a code
+  (history.spec's message), its label, the running cell's pulse, the
+  raised cell run again running and not red, then red again; the
+  cursor's bar moving with a click, named by its cell or, in a text
+  cell, by the heading; a heading retyped to another level taking that
+  level's dot, and back; the label for a heading and a code
   cell, a retyped first line, empty track and the track's ends; a click
   landing a cell's top an eighth down the room, a heading too; a drag
   scrubbing and jumping nothing; the wheel; the band's span against
@@ -268,13 +354,19 @@ edge less 8 whether the rail shows or not.
   `in`, a keystroke writing nothing to the rail, a new line moving the
   ticks; the keyboard; nothing waking during a selection dragged from a
   cell into the gutter; a 240-cell notebook's ticks thinned 4 px apart
-  with a red one always drawn. `frame.spec.ts` says where the room's
+  with a red one always drawn, and a new line there under 30 layouts by
+  CDP's count (4 or 5; 246 before the verifiers' round); an 800 × 600
+  figure at 700 wide with the window's height between the column's two
+  ends, at most two class writes on the root in 250 ms and the gutter
+  kept. The five checks the verifiers' round added fail on 09c4456 and
+  pass now. `frame.spec.ts` says where the room's
   right edge is the gutter's (its documents fit the room, so its numbers
   stand).
 - The Python tests are untouched (no engine change).
 - `node ~/Projects/claerbout/smoke.mjs --config app/knuth.json browser`
   and `uv`: ok, with the autosave record's subjects ("knuth: session
-  open", "knuth: cell run [1]") in the smoke's throwaway folders.
+  open", "knuth: cell run [1]") in the smoke's throwaway folders; after
+  the verifiers' round, `browser` again: ok, the same two.
 - The record's run in the checkout shell: no console errors; the rail
   there at 1100 and 1500 with the room at (44, 44)–(1080, 752) and
   (44, 44)–(1480, 932).

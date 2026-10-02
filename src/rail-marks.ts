@@ -19,7 +19,8 @@
 //     figures, so the two squares of a cell that plots and leaves a table
 //     stand apart).
 //   - The cursor's cell as the blue bar, at the cell's top, under the
-//     cell's own mark.
+//     cell's own mark; in a text cell its label is the cell's first block
+//     (its heading, else its first paragraph).
 //
 // The labels: a heading's words; a code cell's number as the receipt
 // counts it ("Cell 3") and its first line, set as code; an errored cell's
@@ -41,10 +42,19 @@ function raised(c: RailCell): string {
   return lines.at(-1)?.trim() ?? 'raised';
 }
 
-/** A cell's top line of prose, for the cursor's bar in a text cell with
- *  nothing else to name it by. */
+/** A text cell's first block with words in it, for the cursor's bar: its
+ *  heading's words when it opens with one, else its first paragraph (a
+ *  list or a quote by its first item). Block by block: the editor's
+ *  textContent runs a heading into the paragraph under it, and innerText
+ *  would lay the column out. */
 function prose(c: RailCell): string {
-  return (c.prose?.textContent ?? '').replace(/\s+/g, ' ').trim().slice(0, 120) || 'text cell';
+  let text = '';
+  for (let el = c.prose?.firstElementChild ?? null; el && !text; el = el.nextElementSibling) {
+    let block: Element = el;
+    while (block.matches('ul, ol, blockquote') && block.firstElementChild) block = block.firstElementChild;
+    text = (block.textContent ?? '').replace(/\s+/g, ' ').trim();
+  }
+  return text.slice(0, 120) || 'text cell';
 }
 
 /** Laid out, so it has a place: a folded or hidden row has none. */
