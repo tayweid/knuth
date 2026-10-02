@@ -637,7 +637,8 @@ Where the build differs from the spec above:
 - **The guards' reasons are sentences** ("a merge is in progress on
   main"), in the log and in the page alike.
 
-What the apps still owe (the shell side is ready for each):
+What the apps still owe (the shell side is ready for each). Knuth's part
+is done (2026-10-02, branch `ux/history`); Plass still owes its own.
 
 - **Answering `save` and `reload`.** On `save {id, reason: 'rewind'}`,
   write the open document if it has changes and answer `{type: 'saved',
@@ -647,11 +648,59 @@ What the apps still owe (the shell side is ready for each):
   (`markAllStale`), Plass reloading the paper. Until then every rewind
   waits 3 seconds at the save step and its card says to reopen the
   document.
+  - *Knuth, done 2026-10-02* (`answerRewinds` in `src/shell.ts`; the file
+    manager's `saveForRewind`, `reloadFromDisk` and `release`). `save` is
+    written through ⌘S's write (the engine's `save`, or the shell's
+    `write` with Python in the tab) and answered `{type: 'saved', id, ok:
+    true}` once it lands, at once when nothing is unsaved; a document with
+    no file answers `ok: false, error: '<name> is not saved to a file
+    yet'`, since a rewind cannot wait on a Save dialog. Between the save
+    and the rewind's `reload` (at most 30 s) the autosave holds, so a
+    keystroke or a run finishing meanwhile cannot write back over the
+    file being restored, and the change poll waits too; edits made then
+    are written when the hold ends, or set aside when the reload replaces
+    the document. `reload` re-reads the document through the shell when
+    its path is in `paths` (git's `/private/tmp/…` is the `/tmp/…` a
+    launch gives the page, so the two are compared without the
+    `/private`), replaces it in place keeping the view, the scroll and the
+    focused cell with its cursor (`src/place.ts`, as every reload from
+    disk now does), marks every cell stale and says in the toast
+    "Rewound to 1a2b3c4; the session is as it was, so every cell is
+    stale" ("Rewound by Plass to …" when `app` names another app); a
+    `reload` that does not name it only ends the hold. `reload` is not
+    answered: the shell waits for nothing there.
 - **A History button:** `{type: 'history', action: 'open', at?}`, from a
   rail button in Knuth and an item in Plass's File menu, hidden when the
   shell answers `null` (an older shell).
+  - *Knuth, done 2026-10-02*: an item in the File tile's menu, not a rail
+    button, **History…** with the shell's ⇧⌘H beside it (the key itself
+    is the shell's View › History…, which a native menu takes first). It
+    is absent in a browser tab, as the update item is. It cannot be hidden
+    in advance where the shell answers `null`, since asking opens the
+    window, so it is shown in every shell and an older shell's `null` is
+    said in the toast ("This Knuth.app has no history view: a newer shell
+    brings it"). Today's shell answers `{opened: true}` even where there
+    is no record, and its window says why; a shell that answered with the
+    reason instead (`unsaved`, `refused` with the folder rule's words,
+    `off`, `no-git`) would have it said in the toast (`historyNote`).
 - **The error notice** (open question 2): Knuth sends `cell run [4]
   (error)` when a reported cell raised, so the river draws a red ring.
+  - *Knuth, done 2026-10-02*: `reportCellRun(host, cells, raised)`, the
+    outcome from `DocumentView.onRunDone`; runs reported together are
+    `cell run [1, 2] (error)` when any of them raised (an interrupt counts:
+    it raises `KeyboardInterrupt`).
+
+Checked live on 2026-10-02 in the shell checkout (claerbout `b19873e`)
+with Knuth from the branch, launched as `npm run app` launches it (port
+5177, "Knuth (checkout)"), on a scratch repository: three runs recorded
+(`knuth: cell run [1]` twice and `knuth: cell run [2] (error)`, ringed in
+red), View › History…, an edit typed and not yet saved, then Rewind to the
+first run from its card. The steps went save, "rewind from", write,
+"rewind to", reload in under a second, none of them in amber; "rewind
+from" holds the typed edit (the save step wrote it), "rewind to" holds the
+target's tree, and the window showed the target's cell with the cursor
+where it was, the session's `x` still 2, every cell stale. The shell's log
+has no "did not answer save".
 
 And before either app sees any of it: the claerbout tag, then each
 app's pin moved to it.
