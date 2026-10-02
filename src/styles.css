@@ -889,7 +889,8 @@ body[data-view='source'] #view-toggle {
      panel's fixed 350 px beside it), less what the frame takes — the
      rail and the right edge — so the room scrolls sideways at the same
      window widths as before the frame, and the default window survives a
-     zoom step. The column bottoms out at 544 px (it was 600). */
+     zoom step. The column bottoms out at 548 px (it was 600; 544 with
+     the 48 px rail of the first drafts). */
   min-width: calc(640px - var(--rail) - var(--edge));
   overflow-y: auto;
   /* Never sideways: everything in the room wraps (editors, outputs), and

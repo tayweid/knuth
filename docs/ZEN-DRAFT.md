@@ -80,11 +80,12 @@ since one system is the point.
   its text), so the rail's foot no longer repeats the Code cell's `<>`
   at its top.
 - **Main's floor.** `#doc`'s min-width is main's 640 px less what the
-  frame takes (the rail and the right edge): 584. With the panel shown
-  the room fits a 990 px window again (the first draft needed 1046), so
+  frame takes (the rail and the right edge): 584 then, 588 with the 44 px
+  rail. With the panel shown the room fits a 990 px window again (the
+  first draft needed 1046), so
   the default 1100 × 760 window survives one ⌘+ without the room
   scrolling sideways or the panel running past the room's edge; the
-  column bottoms out at 544 px instead of 600.
+  column bottoms out at 548 px (544 with the 48 px rail) instead of 600.
 
 ## Running it
 
@@ -137,7 +138,8 @@ fullscreen, where the File tile stands over the rail's column):
 
 The rest of the bar is empty: drag region.
 
-**The rail** (`nav#rail`, 48 px; not a drag region, since it scrolls),
+**The rail** (`nav#rail`, 48 px in the first drafts, 44 since the afternoon's
+bar change below; not a drag region, since it scrolls),
 top to bottom, in the old bar's groups under a hairline:
 
 - *Cells* (`#cells-pod`): Code cell, Scratch cell, Text cell.
