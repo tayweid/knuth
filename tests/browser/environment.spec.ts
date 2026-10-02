@@ -246,9 +246,9 @@ test('opening another document restarts the session for that document', async ({
   await page.goto('/?open=/p/analysis.py');
   await expect(page.getByText('x = 1')).toBeVisible();
 
-  // Recent lives in the hover flyout that lays over its own trigger, so a
-  // pointer hover never settles; the click itself is what matters here.
-  await page.getByTitle('Your documents').dispatchEvent('click');
+  // Recent is in the File tile's drop, beside the traffic lights.
+  await page.locator('#file-tile').click();
+  await page.getByTitle('Your documents').click();
   await page.getByText('other.py', { exact: true }).click();
   await expect(page.getByText('y = 2')).toBeVisible();
   await expect.poll(async () => (await messages(page)).find((m) => m.type === 'restart')).toMatchObject({

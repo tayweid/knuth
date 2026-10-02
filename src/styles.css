@@ -1,6 +1,8 @@
-/* Knuth in the Claerbout reading room (Plass's design language): a warm
-   graphite canvas where the document sheet is the only light; chrome is
-   dark floating glass that sleeps until the mouse comes near. */
+/* Knuth in the Claerbout reading room (Plass's design language), in Zen's
+   shape: a dark grey frame — the bar across the top, the rail of tools
+   down the left, one thin edge all round — holds the room, a rounded
+   graphite panel where the document sits; menus and captions are dark
+   glass. */
 
 @font-face {
   font-family: 'STIX Two Text';
@@ -79,83 +81,108 @@
   --prose: 'CMU Serif', 'Computer Modern Serif', 'Georgia', serif;
   --mono: ui-monospace, 'SF Mono', 'Menlo', 'Consolas', monospace;
   --sans: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Helvetica Neue', sans-serif;
+  /* Zen's shape, with Plass's values (plass/src/style.css), so the two
+     apps read as one system. The frame is Zen's (#131313–#141414 measured
+     in Zen's own window) a step up, so it reads as a dark grey edge rather
+     than black; the room (--bg) is the grey a soft shadow shows on; the
+     name and status pills a shade up from the frame; a lit tile Zen's. */
+  --frame: #18181a;
+  --pill: #232326;
+  --tile: #2e2e32;
+  /* The bar's height is the traffic lights' band, which the shell
+     publishes as the Window Controls Overlay (in CSS px, so a zoom step
+     keeps the bar's row on the lights); 60 px in a tab, the PWA and
+     fullscreen. */
+  --topbar: env(titlebar-area-height, 60px);
+  /* The frame's one width: the window's edge round the room, and the gap
+     either side of a rail tile. */
+  --edge: 8px;
+  --rail-tile: 32px;
+  --rail: calc(var(--rail-tile) + 2 * var(--edge));
+  /* The room's axis, where the toast sits: the middle between the rail
+     and the room's right edge. */
+  --axis: calc((var(--rail) + 100vw - var(--edge)) / 2);
 }
 
 * { box-sizing: border-box; }
 
-html, body { margin: 0; height: 100%; }
-
-/* Below the layout floor the app scrolls sideways instead of crushing (a
-   PWA can't refuse a small window; it can refuse to deform). The html
-   element scrolls; the body sizes to the layout, so the absolute toolbar
-   spans the full scrollable width and rides along. */
-html {
-  overflow-x: auto;
-  overflow-y: hidden;
-  /* Sideways scrolling below the floor stays; the trackpad rubber-band
-     past the edge goes. Vertical overscroll is #doc's and stays bouncy. */
-  overscroll-behavior-x: none;
-}
+/* Nothing scrolls but the room's own scrollers: below the layout floor the
+   room scrolls sideways (#layout), so the bar and the rail stay put. */
+html, body { margin: 0; height: 100%; overflow: hidden; }
 
 body {
-  position: relative;
-  min-width: fit-content;
-  background: var(--bg);
+  background: var(--frame);
   color: var(--ink);
   font: 15px/1.55 var(--sans);
 }
 
-/* ---------- toolbar: Plass's floating glass pods, verbatim ---------- */
+/* ---------- the bar ---------- */
 
+/* One plain bar on the frame, a straight line across the top of the
+   window. The document's way in and out sits on the left beside the
+   traffic lights — the File tile, the name pill with the unsaved mark and
+   the folder — and the I/O on the right: Install, Update, Get Knuth and
+   the kernel's status, whose pill ends where the room does (the bar's
+   right padding is the frame's edge). The cell tools are on the rail.
+
+   In Knuth.app the bar is the window's title bar (the shell hides its own
+   and leaves the traffic lights over the page; app/knuth.json). Its row
+   is padded on the left by the lights' room (env(titlebar-area-x)) and by
+   nothing else; with no lights' room — a tab, the PWA, fullscreen, a
+   native title bar — the File tile stands over the rail's column of
+   tiles instead, 6 px in ((48 − 36) / 2: the fallback undoes 6 px of the
+   12). The bar's empty part drags the window, which is the shell's to
+   handle, so its children, the File drop and the menus that open into
+   its band are marked the page's; a browser ignores the property. The
+   rail is no drag region: it scrolls, and a drag region takes the wheel.
+   z-index 11: the File drop hangs over the rail's first tiles. */
 #toolbar {
-  /* Absolute in the fit-content body (not fixed): pinned to the top —
-     the page never scrolls vertically — but scrolls horizontally with
-     the layout when the window is below the floor. */
-  position: absolute;
+  position: fixed;
   top: 0;
   left: 0;
   right: 0;
-  height: 60px;
+  height: var(--topbar);
   display: flex;
   align-items: center;
-  justify-content: center;
-  gap: 5px;
-  padding: 0 14px;
-  z-index: 10;
+  gap: 6px;
+  padding-inline: calc(12px + env(titlebar-area-x, -6px)) var(--edge);
+  z-index: 11;
+  -webkit-app-region: drag;
 }
 
-/* Keep the pods centered on the document column, not the viewport:
-   when the session panel is open, cede its width. */
-body:not([data-plain='true']):has(#panel:not([hidden])) #toolbar {
-  padding-right: calc(350px + 14px);
+#toolbar > *,
+.tb-flyout,
+.file-menu {
+  -webkit-app-region: no-drag;
 }
 
-.tb-pod {
-  display: inline-flex;
+/* Keep the active group above its neighbours (the File drop over the
+   name pill). */
+#toolbar > * { position: relative; }
+#toolbar > *:hover,
+#toolbar > *:focus-within { z-index: 20; }
+
+/* The name pill: Zen's address pill, a shade up from the frame, holding
+   the document's name with its unsaved mark (click to rename) and the
+   folder it lives in, which gives way first when the bar is short. */
+.doc-pod {
+  display: flex;
   align-items: center;
-  gap: 2px;
-  height: 42px;
-  padding: 0 6px;
-  background: var(--glass);
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
-  border: 1px solid var(--glass-border);
-  border-radius: 12px;
-}
-
-/* Stadium end-caps on the run of pods; flat facing seams between. */
-.tb-pod.doc-pod {
   gap: 9px;
-  padding: 0 10px 0 16px;
-  border-radius: 21px 12px 12px 21px;
-}
-
-#toolbar > .tb-pod:last-child {
-  border-radius: 12px 21px 21px 12px;
+  flex: 0 1 auto;
+  min-width: 0;
+  max-width: min(560px, 50vw);
+  height: 42px;
+  padding: 0 12px;
+  background: var(--pill);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 12px;
 }
 
 /* The document slug: small serif, letterspaced, quiet (Plass's galley). */
 #toolbar .name {
+  flex: 0 1 auto;
+  min-width: 0;
   font: 15px/1.5 var(--serif);
   letter-spacing: 0.09em;
   color: rgba(252, 252, 251, 0.8);
@@ -167,8 +194,37 @@ body:not([data-plain='true']):has(#panel:not([hidden])) #toolbar {
 
 #toolbar .dirty { color: var(--amber); font-size: 9px; }
 
-/* Sleep/wake: soft at rest, everything wakes near the bar. */
+/* The folder: the path's, home as ~ (the whole path in its title). */
+#doc-folder {
+  flex: 0 4 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font: 12px/1.5 var(--sans);
+  color: var(--glass-ink-soft);
+}
+
+#doc-folder[hidden] { display: none; }
+
+@media (max-width: 759px) {
+  #doc-folder { display: none; }
+}
+
+/* The I/O, at the bar's right end. */
+.tb-end {
+  margin-left: auto;
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+/* Tiles: quiet icons, always visible (the old bar's sleep-until-hover is
+   gone, as in Plass), the word fading in as a caption — below a bar
+   tile, beside a rail tile. */
 .tb-btn {
+  position: relative;
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -180,25 +236,58 @@ body:not([data-plain='true']):has(#panel:not([hidden])) #toolbar {
   min-width: 32px;
   padding: 0 6px;
   cursor: pointer;
-  opacity: 0.4;
-  transition: opacity 0.25s ease, background 0.12s, color 0.12s;
+  transition: background 0.12s, color 0.12s;
 }
 
-#toolbar:hover .tb-btn { opacity: 1; }
 .tb-btn:hover { background: rgba(255, 255, 255, 0.12); }
 /* display above out-specifies the UA's [hidden] rule. */
 .tb-btn[hidden] { display: none; }
-/* The hosted preview's way to the app: a popup under the toolbar button. */
+.tb-btn .ico { width: 19px; height: 19px; display: block; }
+
+/* The bar's tiles (File, Get Knuth): bare, a little larger than the
+   rail's, the open one on a lighter tile. */
+#toolbar .tb-tile {
+  flex: none;
+  width: 36px;
+  min-width: 36px;
+  height: 36px;
+  padding: 0;
+  border-radius: 10px;
+  color: rgba(240, 238, 233, 0.62);
+}
+
+#toolbar .tb-tile .ico { width: 20px; height: 20px; }
+
+#toolbar .tb-tile:hover,
+#toolbar .tb-tile:focus-visible {
+  color: #fff;
+  background: rgba(255, 255, 255, 0.08);
+}
+
+#toolbar .tb-tile[aria-expanded='true'] {
+  color: #fff;
+  background: var(--tile);
+}
+
+#toolbar button:focus-visible,
+#rail button:focus-visible,
+#kernel-status:focus-visible {
+  outline: 2px solid #9db8d6;
+  outline-offset: 2px;
+}
+
+/* The hosted preview's way to the app: a popup under the Get Knuth tile,
+   in the menus' dark glass (.file-menu). */
 .file-menu.get-menu {
   width: min(460px, calc(100vw - 16px));
   padding: 14px 16px 16px;
-  color: #2c2b29;
+  color: rgba(240, 238, 233, 0.9);
   font: 12.5px/1.5 var(--sans);
 }
 .get-menu h2 { margin: 0 0 4px; font: 500 15px var(--sans); }
-.get-menu h3 { margin: 14px 0 2px; font: 500 12px var(--sans); color: #5a5955; }
+.get-menu h3 { margin: 14px 0 2px; font: 500 12px var(--sans); color: rgba(240, 238, 233, 0.62); }
 .get-menu p { margin: 0 0 8px; }
-.get-menu .get-note { color: #5a5955; font-size: 11.5px; }
+.get-menu .get-note { color: rgba(240, 238, 233, 0.55); font-size: 11.5px; }
 .get-menu .get-download {
   display: inline-flex;
   align-items: center;
@@ -206,29 +295,29 @@ body:not([data-plain='true']):has(#panel:not([hidden])) #toolbar {
   margin: 4px 0 8px;
   padding: 8px 14px;
   border-radius: 8px;
-  color: #fbfaf8;
-  background: #2c2b29;
+  color: #1b1a1e;
+  background: #f0eee9;
   text-decoration: none;
   font: 500 13px var(--sans);
 }
 .get-menu .get-download .ico { width: 17px; height: 17px; }
-.get-menu .get-download:hover { background: #454340; }
+.get-menu .get-download:hover { background: #fff; }
 .get-menu .command-row { margin-top: 6px; }
 
-.tb-btn .ico { width: 19px; height: 19px; display: block; }
-
-/* Word tags on buttons (Plass): light glass chips, dark ink, revealed on
-   hover — shared by the toolbar, the between-cell inserter, and the kind
-   picker (positioned per context below). */
-.tb-btn { position: relative; }
-
+/* Word tags on buttons (Plass): glass chips revealed on hover — shared by
+   the bar, the rail, the between-cell inserter, and the kind picker
+   (positioned per context below). Light glass in the room; the frame's
+   are dark (below). */
 .lbl {
   position: absolute;
   font: 11px var(--sans);
   color: #2c2b29;
   background: rgba(251, 250, 248, 0.92);
+  /* Unprefixed only, here and everywhere in this file: the build's
+     minifier (lightningcss) reads the pair as one property and kept the
+     -webkit- line written last, which Chromium does not read, so
+     Knuth.app drew no blur. The minifier adds the prefix itself. */
   backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
   border: 1px solid rgba(0, 0, 0, 0.08);
   border-radius: 5px;
   padding: 2px 8px;
@@ -251,13 +340,21 @@ body:not([data-plain='true']):has(#panel:not([hidden])) #toolbar {
   opacity: 1;
 }
 
-/* Hover flyouts: the group's labeled icons laid OVER their trigger.
-   Pods carry backdrop-filter (a stacking context), so lift whichever
-   pod the cursor is in above its neighbors. */
-#toolbar > * { position: relative; }
-#toolbar > *:hover,
-#toolbar > *:focus-within { z-index: 20; }
+/* An open menu takes the caption's place. */
+.tb-btn[aria-expanded='true'] > .lbl { visibility: hidden; }
 
+/* Every caption in the frame — a bar tile's, a rail tile's, a File glyph's
+   — is the menus' dark glass, Zen's tooltip on the dark frame. */
+#toolbar .lbl,
+#rail .lbl {
+  color: rgba(240, 238, 233, 0.9);
+  background: rgba(27, 26, 30, 0.94);
+  border-color: rgba(255, 255, 255, 0.1);
+}
+
+/* The File drop: its glyph row 8 px under the tile, left-aligned with it,
+   in Plass's dark menu glass; open on a click, not a hover (main.ts,
+   fileTile). */
 .tb-flyout-wrap {
   position: relative;
   display: inline-flex;
@@ -265,19 +362,17 @@ body:not([data-plain='true']):has(#panel:not([hidden])) #toolbar {
 
 .tb-flyout {
   position: absolute;
-  left: 50%;
-  top: 50%;
-  transform: translate(-50%, -50%);
+  left: 0;
+  top: calc(100% + 8px);
   display: flex;
   align-items: center;
   gap: 2px;
-  padding: 5px 8px;
-  background: color-mix(in srgb, #3a3840 94%, transparent);
-  backdrop-filter: blur(14px);
-  -webkit-backdrop-filter: blur(14px);
-  border: 1px solid rgba(255, 255, 255, 0.14);
-  border-radius: 999px;
-  box-shadow: 0 5px 18px rgba(0, 0, 0, 0.45);
+  padding: 5px;
+  background: rgba(27, 26, 30, 0.94);
+  backdrop-filter: blur(18px) saturate(140%);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 13px;
+  box-shadow: 0 3px 8px rgba(0, 0, 0, 0.15), 0 16px 40px rgba(0, 0, 0, 0.28);
   opacity: 0;
   visibility: hidden;
   transition: opacity 0.14s ease;
@@ -288,13 +383,19 @@ body:not([data-plain='true']):has(#panel:not([hidden])) #toolbar {
   height: 40px;
   min-width: 40px;
   padding: 0 8px;
-  opacity: 1;
+  border-radius: 9px;
+  color: rgba(240, 238, 233, 0.8);
+}
+
+.tb-flyout .tb-btn:hover,
+.tb-flyout .tb-btn:focus-visible {
+  color: #fff;
+  background: rgba(255, 255, 255, 0.13);
 }
 
 .tb-flyout .tb-btn .ico { width: 22px; height: 22px; }
 
-.tb-flyout-wrap:hover .tb-flyout,
-.tb-flyout-wrap:focus-within .tb-flyout {
+.tb-flyout-wrap.open .tb-flyout {
   opacity: 1;
   visibility: visible;
 }
@@ -315,11 +416,21 @@ body:not([data-plain='true']):has(#panel:not([hidden])) #toolbar {
 #toolbar .name { cursor: text; border-radius: 5px; padding: 1px 4px; }
 #toolbar .name:hover { color: #fff; }
 
+/* The kernel's status, at the bar's right end: a pill matching the name
+   pill, its right edge on the room's. Text only — the shell's smoke reads
+   its textContent ('uv', 'Pyodide') — with the dot or the spinner drawn
+   before it by class. A click opens the onboarding while the kernel is
+   not ready. (Where the session pill of the panes design will grow.) */
 #kernel-status {
-  font: 12px/1 var(--sans);
+  display: inline-block;
+  height: 42px;
+  padding: 0 14px;
+  font: 12px/40px var(--sans);
   color: var(--glass-ink-soft);
-  padding: 0 10px;
   white-space: nowrap;
+  background: var(--pill);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 12px;
 }
 
 #kernel-status.ok::before { content: '● '; color: #6ea576; }
@@ -384,24 +495,26 @@ body:not([data-plain='true']):has(#panel:not([hidden])) #toolbar {
 
 /* ---------- first-run engine and PWA onboarding ---------- */
 
+/* Over the room only, rounded as it is: the bar (with the kernel's
+   status, which opens this) and the rail stay usable. */
 #onboarding {
   position: fixed;
-  inset: 60px 0 0;
+  inset: var(--topbar) var(--edge) var(--edge) var(--rail);
   z-index: 9;
   display: grid;
   place-items: start center;
   overflow: auto;
   padding: 2rem 1.5rem 5rem;
+  border-radius: 12px;
   background: color-mix(in srgb, var(--bg) 88%, transparent);
   backdrop-filter: blur(8px);
-  -webkit-backdrop-filter: blur(8px);
   color: var(--room-ink);
 }
 
 #onboarding[hidden] { display: none; }
 
 .onboarding-card {
-  width: min(680px, calc(100vw - 3rem));
+  width: min(680px, calc(100vw - var(--rail) - var(--edge) - 3rem));
   min-width: 560px;
   background: #201f23;
   border: 1px solid var(--glass-border);
@@ -580,18 +693,157 @@ body:not([data-plain='true']):has(#panel:not([hidden])) #toolbar {
 .onboarding-foot code { color: var(--room-ink); font-family: var(--mono); }
 .onboarding-foot #manual-pair { float: right; margin: -0.25rem 0 -0.25rem 1rem; }
 
-/* ---------- layout ---------- */
+/* ---------- the rail ---------- */
 
+/* Under the bar, down the left edge, as narrow as Zen's: 32 px tiles with
+   the frame's edge either side (--rail). The cell and run groups scroll as
+   one when the window is short (no scrollbar drawn; the wheel still
+   scrolls, and a fade at the cut edge says there is more), and, as Zen
+   pins its bottom icons, the session panel's toggle and the view switch
+   stay pinned at the bottom, the switch level with the room's bottom
+   edge, the first tile level with its top: only tools ever go under the
+   fade. Values and rules are Plass's (plass/src/toolbar.css). */
+#rail {
+  position: fixed;
+  top: var(--topbar);
+  left: 0;
+  bottom: 0;
+  width: var(--rail);
+  z-index: 10;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  padding: 0 0 var(--edge);
+}
+
+.tb-rail-groups {
+  flex: 1 1 auto;
+  min-height: 0;
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: none;
+  /* A tile Tab reaches scrolls clear of the fade (its height, below). */
+  scroll-padding-block: 28px;
+}
+
+.tb-rail-groups::-webkit-scrollbar { display: none; }
+
+/* The cue that the groups go on past the cut: the frame's colour laid
+   over the last (or first) tiles in view, held at the edge while the
+   groups scroll (main.ts sets the classes on scroll and resize). */
+.tb-rail-groups.tb-more-below::after,
+.tb-rail-groups.tb-more-above::before {
+  content: '';
+  position: sticky;
+  z-index: 1;
+  flex: none;
+  width: 100%;
+  height: 28px;
+  pointer-events: none;
+}
+
+.tb-rail-groups.tb-more-below::after {
+  bottom: 0;
+  margin-top: -31px;
+  background: linear-gradient(transparent, var(--frame) 85%);
+}
+
+.tb-rail-groups.tb-more-above::before {
+  top: 0;
+  margin-bottom: -31px;
+  background: linear-gradient(var(--frame) 15%, transparent);
+}
+
+.tb-rail-group,
+.tb-rail-foot {
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
+}
+
+.tb-rule {
+  flex: none;
+  width: 18px;
+  height: 1px;
+  margin: 3px 0;
+  background: rgba(255, 255, 255, 0.1);
+}
+
+/* Tiles: Zen's rounded squares at soft ink, the pressed one (the session
+   panel showing, the source view) on a lighter tile. */
+#rail .tb-btn {
+  flex: none;
+  width: var(--rail-tile);
+  min-width: var(--rail-tile);
+  height: var(--rail-tile);
+  padding: 0;
+  border: 0;
+  border-radius: 9px;
+  background: transparent;
+  color: rgba(240, 238, 233, 0.64);
+}
+
+#rail .tb-btn .ico { width: 18px; height: 18px; }
+
+#rail .tb-btn:hover,
+#rail .tb-btn:focus-visible {
+  color: #fff;
+  background: rgba(255, 255, 255, 0.08);
+}
+
+#rail .tb-btn[aria-pressed='true'],
+body[data-view='source'] #view-toggle {
+  color: #fff;
+  background: var(--tile);
+}
+
+/* The caption to the tile's right, where nothing crowds it; fixed to the
+   window, since the groups scroll and would clip it (main.ts places it
+   when the tile is hovered or focused). */
+#rail .tb-btn .lbl {
+  position: fixed;
+  top: auto;
+  left: auto;
+  transform: translateY(-50%);
+}
+
+/* ---------- the room ---------- */
+
+/* Zen's inset panel, under the bar and right of the rail, rounded at all
+   four corners, a shade lighter than the frame, which shows as one thin
+   edge of it all round: the bar's band below its pills, the rail's beside
+   its tiles, --edge at the window's right and bottom. The document column
+   keeps its width and centres in it (#sheet); the session panel sits at
+   its right. Below the layout floor the room scrolls sideways instead of
+   crushing (a PWA can't refuse a small window; it can refuse to deform),
+   and the bar and the rail stay put. */
 #layout {
+  position: fixed;
+  inset: var(--topbar) var(--edge) var(--edge) var(--rail);
   display: flex;
   align-items: stretch;
-  height: 100vh;
+  border-radius: 12px;
+  background: var(--bg);
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.05);
+  overflow-x: auto;
+  overflow-y: hidden;
+  /* Sideways scrolling below the floor stays; the trackpad rubber-band
+     past the edge goes. Vertical overscroll is #doc's and stays bouncy. */
+  overscroll-behavior-x: none;
 }
 
 #doc {
   flex: 1;
-  /* The floor: toolbar pods (~555px) plus breathing room. The session
-     panel's fixed 350px stacks on top of this. */
+  /* The floor, kept from the old bar's pods: the column is unchanged.
+     The session panel's fixed 350px stacks on top of this. */
   min-width: 640px;
   overflow-y: auto;
   /* Never sideways: everything in the room wraps (editors, outputs), and
@@ -599,10 +851,11 @@ body:not([data-plain='true']):has(#panel:not([hidden])) #toolbar {
      poking past the edge — the .cell::after hover bridge, mainly — turns
      into a phantom 24px page scroll with the room showing through. */
   overflow-x: hidden;
-  /* The bar floats over the room; content starts below it and scrolls
-     beneath it, Plass-style. Left stays lean: the sheet centers at wide
-     widths, so side padding only ever costs narrow windows. */
-  padding: calc(60px + 1.5rem) 1.5rem 40vh 1rem;
+  /* The bar is the frame's now, above the room, so the column starts
+     24 px under the room's top edge (Plass's --margin). Left stays lean:
+     the sheet centers at wide widths, so side padding only ever costs
+     narrow windows. */
+  padding: 1.5rem 1.5rem 40vh 1rem;
   /* Container so cells can center the kind picker in the free margin
      between the card column and the session panel (cqw units). */
   container-type: inline-size;
@@ -615,21 +868,22 @@ body:not([data-plain='true']):has(#panel:not([hidden])) #toolbar {
   margin: 0 auto;
 }
 
-/* Recents dropdown: Plass's file-menu verbatim — light frosted glass,
-   dark ink, the same material as the hover word tags. */
+/* Recents and Get dropdowns: Plass's menus (.tb-menu) — dark glass,
+   light ink, the same material as the File drop and the frame's
+   captions. */
 .file-menu {
   position: fixed;
   z-index: 100;
-  background: rgba(251, 250, 248, 0.92);
+  background: rgba(27, 26, 30, 0.94);
   backdrop-filter: blur(18px) saturate(140%);
-  -webkit-backdrop-filter: blur(18px) saturate(140%);
-  border: 1px solid rgba(0, 0, 0, 0.08);
-  border-radius: 16px;
-  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.35), 0 18px 50px rgba(0, 0, 0, 0.45);
-  padding: 6px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 13px;
+  box-shadow: 0 3px 8px rgba(0, 0, 0, 0.15), 0 16px 40px rgba(0, 0, 0, 0.28);
+  padding: 7px;
   width: 240px;
   display: flex;
   flex-direction: column;
+  color-scheme: dark;
 }
 
 .file-menu-item {
@@ -638,11 +892,11 @@ body:not([data-plain='true']):has(#panel:not([hidden])) #toolbar {
   align-items: center;
   gap: 12px;
   font: 13px var(--sans);
-  color: #2c2b29;
+  color: rgba(240, 238, 233, 0.9);
   background: transparent;
   border: none;
-  border-radius: 10px;
-  padding: 6px 10px;
+  border-radius: 6px;
+  padding: 7px 10px;
   cursor: pointer;
   text-align: left;
   width: 100%;
@@ -651,11 +905,12 @@ body:not([data-plain='true']):has(#panel:not([hidden])) #toolbar {
   text-overflow: ellipsis;
 }
 
-.file-menu-item:hover { background: rgba(0, 0, 0, 0.07); }
+.file-menu-item:hover,
+.file-menu-item:focus-visible { background: rgba(255, 255, 255, 0.09); outline: none; }
 
 .file-menu-empty {
   font: 12px var(--sans);
-  color: #85837e;
+  color: rgba(240, 238, 233, 0.5);
   padding: 6px 10px;
 }
 
@@ -1062,7 +1317,6 @@ body[data-view='source'] .cell .run-num { visibility: visible; }
   padding: 2px 5px;
   background: color-mix(in srgb, #3a3840 94%, transparent);
   backdrop-filter: blur(14px);
-  -webkit-backdrop-filter: blur(14px);
   border: 1px solid rgba(255, 255, 255, 0.14);
   border-radius: 999px;
   box-shadow: 0 5px 18px rgba(0, 0, 0, 0.45);
@@ -1096,10 +1350,10 @@ body[data-view='source'] .cell .run-num { visibility: visible; }
   background: var(--bg);
   color: var(--room-ink);
   overflow: hidden;
-  /* Clears the floating toolbar, then insets the boxes from the seam so
-     they read as objects sitting in the column rather than as the column
-     itself divided up. */
-  padding: calc(60px + 0.7rem) 0.7rem 0.7rem;
+  /* Insets the boxes from the seam so they read as objects sitting in the
+     column rather than as the column itself divided up. (The bar is the
+     frame's, above the room: nothing to clear.) */
+  padding: 0.7rem;
 }
 
 #panel[hidden] { display: none; }
@@ -1255,14 +1509,14 @@ body[data-view='source'] .cell .run-num { visibility: visible; }
 
 /* ---------- toast: the same dark glass ---------- */
 
+/* On the room's axis, near its bottom edge. */
 #toast {
   position: fixed;
-  bottom: 1.25rem;
-  left: 50%;
+  bottom: calc(var(--edge) + 12px);
+  left: var(--axis);
   transform: translateX(-50%);
   background: var(--glass);
   backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
   border: 1px solid var(--glass-border);
   color: var(--glass-ink);
   padding: 0.45rem 0.95rem;
@@ -1271,7 +1525,7 @@ body[data-view='source'] .cell .run-num { visibility: visible; }
   font-size: 13px;
   z-index: 20;
   width: max-content;
-  max-width: min(40rem, calc(100vw - 2rem));
+  max-width: min(40rem, calc(100vw - var(--rail) - var(--edge) - 2rem));
   text-align: center;
   overflow-wrap: anywhere;
 }
@@ -1293,8 +1547,10 @@ body[data-view='source'] .cell .run-num { visibility: visible; }
    that structure a document — running a cell, its staleness, where the
    next one goes, what kind it is — act on cells, and here there are none
    on screen. Same surface and type, less apparatus. The cell view is a
-   deliberate toggle (⌘⇧E, the toolbar Source button, the floating Cells
-   pill), never a side effect of typing a marker. */
+   deliberate toggle (⌘⇧E, or the rail's view switch), never a side effect
+   of typing a marker. The rail keeps only that switch; the bar keeps the
+   name, File, the I/O and the status — under the shell's hidden title bar
+   it is the only place the document's name shows. */
 body[data-view='source'] .run,
 body[data-view='source'] .badge,
 body[data-view='source'] .insert-zone,
@@ -1304,6 +1560,7 @@ body[data-view='source'] #panel,
 body[data-view='source'] #toggle-panel,
 body[data-view='source'] #cells-pod,
 body[data-view='source'] #run-pod,
+body[data-view='source'] #rail .tb-rule,
 body[data-view='source'] #run-stale,
 body[data-view='source'] #run-all,
 body[data-view='source'] #stop,
@@ -1324,18 +1581,16 @@ body[data-view='source'] #sheet {
   max-width: none;
 }
 
-/* All the way: a plain file is one edge-to-edge editor. No toolbar (the
-   tab names the file; ⌘O/⌘S still work; typing a # %% marker brings the
-   whole workbench back), no card border, no reserved gutter column —
-   just the text against the window, with editor-style overscroll below. */
-body[data-view='source'] #toolbar {
-  display: none;
-}
+/* All the way: a plain file is one editor, edge to edge in the room. No
+   cell tools on the rail (⌘O/⌘S still work; typing a # %% marker offers
+   the cell view back), no card border, no reserved gutter column — just
+   the text against the room's edges, with editor-style overscroll below. */
 
 /* The room is the editor's own surface here: below a short file (and in
    the 40vh overscroll) the One Dark background continues instead of
-   breaking to the workbench grey — one editor, edge to edge. */
-body[data-view='source'] {
+   breaking to the workbench grey — one editor, edge to edge. The frame
+   stays. */
+body[data-view='source'] #layout {
   background: #282c34; /* @codemirror/theme-one-dark's background */
 }
 
@@ -1365,29 +1620,12 @@ body[data-view='source'] .cell.stale .cm-gutters {
   border-right-color: rgba(255, 255, 255, 0.06);
 }
 
-/* The view toggle: one quiet floating pill in the same corner in both
-   views — the way in and the way out are the same spot. Hidden only when
+/* The view switch: the rail's last tile, pinned at its foot, the same
+   spot in every view — the way in and the way out (Plass's Plain text /
+   Paper switch); lit in source view (the rail's rules). Hidden only when
    a markerless source file offers no cell view to switch to. */
 #view-toggle {
   display: none;
-  position: fixed;
-  top: 14px;
-  right: 12px;
-  z-index: 60;
-  align-items: center;
-  gap: 6px;
-  height: 32px;
-  padding: 0 12px;
-  background: var(--glass);
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
-  border: 1px solid var(--glass-border);
-  border-radius: 999px;
-  color: rgba(240, 238, 233, 0.9);
-  font-size: 12px;
-  cursor: pointer;
-  opacity: 0.45;
-  transition: opacity 0.25s ease, background 0.12s;
 }
 
 body[data-view='source'][data-cells='true'] #view-toggle,
@@ -1395,38 +1633,25 @@ body:not([data-view='source']) #view-toggle {
   display: inline-flex;
 }
 
-#view-toggle:hover {
-  opacity: 1;
-  background: rgba(255, 255, 255, 0.12);
-}
-
-#view-toggle .ico {
-  width: 16px;
-  height: 16px;
-  display: block;
-}
-
-/* The label names the view you would switch TO. */
+/* The caption names the view you would switch TO. */
 #view-toggle .lbl-source { display: none; }
 body:not([data-view='source']) #view-toggle .lbl-cells { display: none; }
 body:not([data-view='source']) #view-toggle .lbl-source { display: inline; }
 
-/* The 350px allowance for the session panel is made by the rule above, which
-   now excludes plain mode: the panel is display:none here, not [hidden], so
-   that rule still matched it and ceded space to a column not on screen. */
-
 /* Grid view: a .csv/.tsv as a table of cells (src/grid.ts), each one
    editable in place. The same edge-to-edge surface as the source editor —
    the toggle flips between the two views of the same lines — so the same
-   chrome goes away: no toolbar, no panel, no insert strips. */
-body[data-view='grid'] #toolbar,
+   chrome goes away: no cell tools, no panel, no insert strips. */
+body[data-view='grid'] #cells-pod,
+body[data-view='grid'] #run-pod,
+body[data-view='grid'] #rail .tb-rule,
 body[data-view='grid'] #panel,
 body[data-view='grid'] #toggle-panel,
 body[data-view='grid'] .insert-zone {
   display: none;
 }
 
-body[data-view='grid'] {
+body[data-view='grid'] #layout {
   background: #282c34;
 }
 
@@ -1469,9 +1694,9 @@ body[data-view='grid'] #doc {
 .grid-scroll {
   height: 100%;
   overflow: auto;
-  /* The table's width is the scroller's business, not the page's: without
-     this a wide file would widen the body (min-width: fit-content) and
-     scroll the whole room sideways. */
+  /* The table's width is the scroller's business, not the room's: without
+     this a wide file would widen #doc and scroll the whole room
+     sideways. */
   contain: inline-size;
 }
 

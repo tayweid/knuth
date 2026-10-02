@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/test';
+import { expect, test, type Page } from '@playwright/test';
 
 type WindowWithProbe = typeof window & {
   __knuthSocketUrl?: string;
@@ -318,6 +318,16 @@ test('a file opened from a folder Knuth already holds does not ask again', async
   expect(adopted.differentFolder).toBe(false);
 });
 
+/** Source view keeps the frame: the bar with the file's name, and a rail
+ *  with no cell tools on it. */
+async function expectSourceFrame(page: Page) {
+  await expect(page.locator('#toolbar')).toBeVisible();
+  await expect(page.locator('#file-name')).toBeVisible();
+  for (const gone of ['#cells-pod', '#run-pod', '#toggle-panel']) {
+    await expect(page.locator(gone), `${gone} acts on cells`).toBeHidden();
+  }
+}
+
 test('a script opens as edge-to-edge source, and cell view is a deliberate toggle', async ({ page }) => {
   // Seed the session the way a reload would, with a plain script: no markers,
   // so it parses to one body and zero cells.
@@ -333,7 +343,7 @@ test('a script opens as edge-to-edge source, and cell view is a deliberate toggl
 
   await expect(page.locator('body')).toHaveAttribute('data-view', 'source');
   const hidden = ['.run', '.insert-zone', '#panel', '#run-all', '#restart',
-                  '#cells-pod'];
+                  '#cells-pod', '#run-pod', '#toggle-panel'];
   for (const gone of hidden) {
     await expect(page.locator(gone).first(), `${gone} is noise on a source file`)
       .toBeHidden();
@@ -345,8 +355,10 @@ test('a script opens as edge-to-edge source, and cell view is a deliberate toggl
   const sheetCap = () =>
     page.locator('#sheet').evaluate((el) => getComputedStyle(el).maxWidth);
   expect(await sheetCap()).toBe('none');
-  // Edge to edge: no toolbar, no doc inset, no card border on the editor.
-  await expect(page.locator('#toolbar')).toBeHidden();
+  // Edge to edge in the room: the frame stays — the bar names the file,
+  // which under the shell's hidden title bar nothing else does — with no
+  // cell tools on the rail, no doc inset, no card border on the editor.
+  await expectSourceFrame(page);
   expect(await page.locator('#doc').evaluate((el) => getComputedStyle(el).paddingLeft))
     .toBe('0px');
   expect(await page.locator('.cell .cm-editor').first()
@@ -360,7 +372,7 @@ test('a script opens as edge-to-edge source, and cell view is a deliberate toggl
   await page.keyboard.press('ControlOrMeta+ArrowUp');
   await page.keyboard.type('# %%\n');
   await expect(page.locator('body')).toHaveAttribute('data-view', 'source');
-  await expect(page.locator('#toolbar')).toBeHidden();
+  await expectSourceFrame(page);
   await expect(page.locator('#view-toggle')).toBeVisible();
   await expect(page.locator('#view-toggle')).toHaveText(/Cells/);
 
@@ -371,7 +383,7 @@ test('a script opens as edge-to-edge source, and cell view is a deliberate toggl
   await expect(page.locator('.cm-content').first()).toContainText('import math');
   await expect(page.locator('#view-toggle')).toBeHidden();
 
-  // With a marker in place, the corner pill switches to cell view...
+  // With a marker in place, the rail's view switch goes to cell view...
   await page.keyboard.type('# %%\nx = 1\n');
   await page.locator('#view-toggle').click();
   await expect(page.locator('body')).toHaveAttribute('data-view', '');
@@ -380,12 +392,12 @@ test('a script opens as edge-to-edge source, and cell view is a deliberate toggl
   await expect(page.locator('#cells-pod')).toBeVisible();
   expect(await sheetCap()).not.toBe('none');
 
-  // ...where the same pill, in the same corner, now reads Source and
+  // ...where the same switch, in the same spot, now reads Source and
   // switches back, markers intact.
   await expect(page.locator('#view-toggle')).toHaveText(/Source/);
   await page.locator('#view-toggle').click();
   await expect(page.locator('body')).toHaveAttribute('data-view', 'source');
-  await expect(page.locator('#toolbar')).toBeHidden();
+  await expectSourceFrame(page);
   await expect(page.locator('.cm-content').first()).toContainText('# %%');
 });
 

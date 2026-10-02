@@ -29,65 +29,167 @@ import { icon } from './icons.ts';
 import { Onboarding } from './onboarding.ts';
 import { shell, type ShellMessage } from './shell.ts';
 
-// Plass's hover flyout: the trigger's group lays its labeled icons OVER
-// the trigger — pure :hover, no gap for the cursor to cross.
-function flyout(
-  parent: HTMLElement,
+// The File tile, as Plass's File: a bare tile in the bar beside the
+// traffic lights whose glyph row (New, Open, Recent) drops below it on a
+// click — never laid over the trigger, which at the bar's left edge would
+// put it under the lights. It closes on an item, a click anywhere else,
+// Escape (the focus back on the tile) or the focus leaving it; from the
+// keyboard, Enter, Space or ArrowDown opens it and the arrows walk it.
+function fileTile(
   glyph: string,
   title: string,
   items: Array<{ glyph: string; label: string; title: string; run: () => void }>,
-) {
+): HTMLElement {
   const wrap = document.createElement('span');
   wrap.className = 'tb-flyout-wrap';
   const trigger = document.createElement('button');
   trigger.type = 'button';
-  trigger.className = 'tb-btn';
+  trigger.id = 'file-tile';
+  trigger.className = 'tb-btn tb-tile';
   trigger.title = title;
-  trigger.innerHTML = glyph;
+  trigger.setAttribute('aria-haspopup', 'menu');
+  trigger.setAttribute('aria-expanded', 'false');
+  trigger.innerHTML = `${glyph}<span class="lbl">File</span>`;
   trigger.addEventListener('mousedown', (e) => e.preventDefault());
-  wrap.append(trigger);
   const fly = document.createElement('span');
   fly.className = 'tb-flyout';
-  for (const it of items) {
+  fly.setAttribute('role', 'menu');
+  fly.setAttribute('aria-label', 'File');
+  fly.setAttribute('aria-orientation', 'horizontal');
+  const buttons = items.map((it) => {
     const b = document.createElement('button');
     b.type = 'button';
     b.className = 'tb-btn';
+    b.setAttribute('role', 'menuitem');
     b.title = it.title;
     b.innerHTML = `${it.glyph}<span class="lbl">${it.label}</span>`;
     b.addEventListener('mousedown', (e) => e.preventDefault());
-    b.addEventListener('click', it.run);
+    b.addEventListener('click', () => {
+      close();
+      it.run();
+    });
     fly.append(b);
+    return b;
+  });
+  wrap.append(trigger, fly);
+  const isOpen = () => wrap.classList.contains('open');
+  function open() {
+    wrap.classList.add('open');
+    trigger.setAttribute('aria-expanded', 'true');
   }
-  wrap.append(fly);
-  parent.append(wrap);
+  function close(refocus = false) {
+    if (!isOpen()) return;
+    wrap.classList.remove('open');
+    trigger.setAttribute('aria-expanded', 'false');
+    if (refocus) trigger.focus();
+  }
+  trigger.addEventListener('click', () => (isOpen() ? close() : open()));
+  wrap.addEventListener('keydown', (e) => {
+    const at = buttons.indexOf(document.activeElement as HTMLButtonElement);
+    if (e.key === 'Escape' && isOpen()) {
+      e.preventDefault();
+      e.stopPropagation();
+      close(true);
+    } else if (e.key === 'ArrowDown' && document.activeElement === trigger) {
+      e.preventDefault();
+      open();
+      buttons[0].focus();
+    } else if ((e.key === 'ArrowRight' || e.key === 'ArrowLeft') && at !== -1) {
+      e.preventDefault();
+      const step = e.key === 'ArrowRight' ? 1 : buttons.length - 1;
+      buttons[(at + step) % buttons.length].focus();
+    }
+  });
+  wrap.addEventListener('focusout', (e) => {
+    if (!wrap.contains(e.relatedTarget as Node | null)) close();
+  });
+  document.addEventListener('mousedown', (e) => {
+    if (isOpen() && !wrap.contains(e.target as Node)) close();
+  });
+  // Opened by a click, the focus is still in the document (the tile takes
+  // none): Escape there closes the drop and carries on to the cell.
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') close();
+  });
+  return wrap;
 }
 
-function labeled(id: string, glyph: string, label: string, title: string): string {
-  return `<button class="tb-btn" id="${id}" title="${title}">${glyph}<span class="lbl">${label}</span></button>`;
+function labeled(id: string, glyph: string, label: string, title: string, className = 'tb-btn'): string {
+  return `<button type="button" class="${className}" id="${id}" title="${title}">${glyph}<span class="lbl">${label}</span></button>`;
 }
 
+// Zen's shape, as Plass has it (docs/ZEN-DRAFT.md): the bar across the top
+// holds the document's way in and out beside the traffic lights — the File
+// tile (placed before the name pill below, once its actions exist), the
+// name with its unsaved mark and its folder — and, at the right, the I/O:
+// Install, Update, Get Knuth and the kernel's status. In Knuth.app the bar
+// is the window's title bar (styles.css).
 const toolbar = document.getElementById('toolbar')!;
+toolbar.setAttribute('aria-label', 'Document');
 toolbar.innerHTML = `
-  <div class="tb-pod doc-pod" id="doc-pod"><span class="name" id="file-name" title="Click to rename">${DEFAULT_DOC_NAME}</span></div>
-  <div class="tb-pod tb-group" id="cells-pod">
-    ${labeled('add-code', icon('code'), 'Code', 'Program cell below the current one')}
-    ${labeled('add-scratch', icon('scratch'), 'Scratch', 'Scratch cell — explores the session, never persists')}
-    ${labeled('add-text', icon('text'), 'Text', 'Markdown text cell')}
-  </div>
-  <div class="tb-pod tb-group" id="run-pod">
-    ${labeled('run-stale', icon('play'), 'Stale', 'Run stale program cells in order')}
-    ${labeled('run-all', icon('playall'), 'All', 'Run all program cells from the top')}
-    ${labeled('stop', icon('stop'), 'Stop', 'Interrupt the running cell')}
-    ${labeled('restart', icon('restart'), 'Restart', 'Fresh session (kernel process replaced)')}
-  </div>
-  <div class="tb-pod tb-group">
-    ${labeled('toggle-panel', icon('panel'), 'Session', 'Show/hide the session panes')}
+  <div class="doc-pod" id="doc-pod"><span class="name" id="file-name" title="Click to rename">${DEFAULT_DOC_NAME}</span><span class="doc-folder" id="doc-folder" hidden></span></div>
+  <div class="tb-end">
     <button type="button" id="install-app" hidden>Install</button>
     <button type="button" id="update-app" hidden>Update</button>
-    ${labeled('get-app', icon('download'), 'Get Knuth', 'Get Knuth for your Mac — this page runs Python in the tab; the app runs it on your computer, on your files')}
+    ${labeled('get-app', icon('download'), 'Get Knuth', 'Get Knuth for your Mac — this page runs Python in the tab; the app runs it on your computer, on your files', 'tb-btn tb-tile')}
     <span id="kernel-status">connecting…</span>
   </div>
 `;
+
+// The rail down the left: the cell and run tools in their groups under a
+// hairline, scrolling as one when the window is short, and the session
+// panel's toggle pinned at the foot with the view switch (added below), as
+// Zen pins its bottom icons. The captions are longer words than the old
+// bar's, since there is room beside a tile; the titles are unchanged.
+const rail = document.getElementById('rail')!;
+rail.innerHTML = `
+  <div class="tb-rail-groups">
+    <div class="tb-rail-group" id="cells-pod" role="group" aria-label="Cells">
+      ${labeled('add-code', icon('code'), 'Code cell', 'Program cell below the current one')}
+      ${labeled('add-scratch', icon('scratch'), 'Scratch cell', 'Scratch cell — explores the session, never persists')}
+      ${labeled('add-text', icon('text'), 'Text cell', 'Markdown text cell')}
+    </div>
+    <div class="tb-rule" role="separator"></div>
+    <div class="tb-rail-group" id="run-pod" role="group" aria-label="Run">
+      ${labeled('run-stale', icon('play'), 'Run stale', 'Run stale program cells in order')}
+      ${labeled('run-all', icon('playall'), 'Run all', 'Run all program cells from the top')}
+      ${labeled('stop', icon('stop'), 'Stop', 'Interrupt the running cell')}
+      ${labeled('restart', icon('restart'), 'Restart session', 'Fresh session (kernel process replaced)')}
+    </div>
+  </div>
+  <div class="tb-rail-foot">
+    ${labeled('toggle-panel', icon('panel'), 'Session panel', 'Show/hide the session panes')}
+  </div>
+`;
+
+// A short window cuts the groups: a fade at the cut edge says the rest is
+// a scroll away (styles.css). Read on scroll and resize only — a group
+// hidden by the view counts as a resize.
+const railGroups = rail.querySelector<HTMLElement>('.tb-rail-groups')!;
+const railCue = () => {
+  const { scrollTop, scrollHeight, clientHeight } = railGroups;
+  railGroups.classList.toggle('tb-more-above', scrollTop > 1);
+  railGroups.classList.toggle('tb-more-below', scrollTop + clientHeight < scrollHeight - 1);
+};
+railGroups.addEventListener('scroll', railCue, { passive: true });
+const railResized = new ResizeObserver(railCue);
+railResized.observe(railGroups);
+for (const group of railGroups.children) railResized.observe(group);
+
+// A rail tile's caption sits to its right, fixed to the window: the groups
+// scroll, and a scrolling box clips what hangs out of it. Placed when the
+// tile is hovered or focused, never on the typing path.
+function placeRailCaption(target: EventTarget | null, from: EventTarget | null = null) {
+  const button = target instanceof Element ? target.closest<HTMLElement>('.tb-btn') : null;
+  if (!button || (from instanceof Node && button.contains(from))) return;
+  const rect = button.getBoundingClientRect();
+  for (const label of button.querySelectorAll<HTMLElement>('.lbl')) {
+    label.style.top = `${rect.top + rect.height / 2}px`;
+    label.style.left = `${rect.right + 12}px`;
+  }
+}
+rail.addEventListener('mouseover', (e) => placeRailCaption(e.target, e.relatedTarget));
+rail.addEventListener('focusin', (e) => placeRailCaption(e.target));
 
 const $ = (id: string) => document.getElementById(id)!;
 const toastEl = $('toast');
@@ -612,6 +714,11 @@ function attachProjectFolder() {
 
 const panel = new SessionPanel($('panel'), kernel);
 if (localStorage.getItem('knuth-panel') === '0') $('panel').hidden = true;
+// The rail's panel tile is lit while the panel shows.
+function paintPanelToggle() {
+  $('toggle-panel').setAttribute('aria-pressed', String(!$('panel').hidden));
+}
+paintPanelToggle();
 
 // Structural changes the editors' own history cannot undo (deleted cell,
 // plain file converted to cells) get one immediate Cmd-Z lifeline,
@@ -751,9 +858,22 @@ function repaintName() {
     dot.textContent = '●';
     label.append(dot);
   }
+  // The folder beside the name, in a sibling so the name's own text stays
+  // exactly the name: the path's folder (home as ~), or an attached
+  // folder's name, or nothing.
+  const folder = $('doc-folder');
+  const where = fileManager.path ? fileManager.root ?? dirname(fileManager.path) : null;
+  folder.textContent = where ? tilde(where) : fileManager.dir?.name ?? '';
+  folder.title = where ?? '';
+  folder.hidden = !folder.textContent;
   // Just the file name: the installed app's window prepends its own
   // app name, so anything more reads twice.
   document.title = fileManager.name;
+}
+
+/** A folder as a person reads it: their home as ~. */
+function tilde(path: string): string {
+  return path.replace(/^\/(?:Users|home)\/[^/]+(?=\/|$)/, '~');
 }
 
 // During boot restore, setDoc must NOT restart the kernel — the whole
@@ -863,14 +983,23 @@ void (async () => {
 })();
 
 // Recents dropdown: the one inherently dynamic list (Plass's exception
-// to everything-on-the-bar).
+// to everything-on-the-bar). The Get menu shares its slot.
 let recentsMenu: HTMLElement | null = null;
+// The tile whose menu is open (Get Knuth): it reads as open, and a click
+// on it closes the menu rather than closing and reopening it.
+let menuAnchor: HTMLElement | null = null;
 function closeRecentsMenu() {
   recentsMenu?.remove();
   recentsMenu = null;
+  menuAnchor?.setAttribute('aria-expanded', 'false');
+  menuAnchor = null;
 }
 document.addEventListener('mousedown', (e) => {
-  if (recentsMenu && !recentsMenu.contains(e.target as Node)) closeRecentsMenu();
+  const target = e.target as Node;
+  if (recentsMenu && !recentsMenu.contains(target) && !menuAnchor?.contains(target)) closeRecentsMenu();
+});
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape' && recentsMenu) closeRecentsMenu();
 });
 
 function commandRow(command: string): HTMLElement {
@@ -920,6 +1049,8 @@ function showGetMenu(anchor: HTMLElement) {
   menu.style.right = `${Math.max(8, window.innerWidth - rect.right - 10)}px`;
   document.body.append(menu);
   recentsMenu = menu;
+  menuAnchor = anchor;
+  anchor.setAttribute('aria-expanded', 'true');
 }
 
 async function showRecents(anchor: HTMLElement) {
@@ -954,12 +1085,12 @@ async function showRecents(anchor: HTMLElement) {
   recentsMenu = menu;
 }
 
-// The file lifecycle lives in the name slug — Plass's set (New, Open,
-// Recent) plus Folder, which only exists because the browser grants the
-// project-directory handle for values.json/figs through a user picker.
-// Folder needs no button: Save on a homeless doc IS the folder grant,
-// and opened/launched docs get the attach offer when it matters.
-flyout($('doc-pod'), icon('open'), 'File — new, open, recent', [
+// The file lifecycle lives in the File tile beside the name — Plass's set
+// (New, Open, Recent) plus Folder, which only exists because the browser
+// grants the project-directory handle for values.json/figs through a user
+// picker. Folder needs no button: Save on a homeless doc IS the folder
+// grant, and opened/launched docs get the attach offer when it matters.
+const fileWrap = fileTile(icon('open'), 'File — new, open, recent', [
   {
     glyph: icon('new'),
     label: 'New',
@@ -971,21 +1102,25 @@ flyout($('doc-pod'), icon('open'), 'File — new, open, recent', [
     glyph: icon('clock'),
     label: 'Recent',
     title: 'Your documents',
-    run: () => void showRecents($('doc-pod')),
+    run: () => void showRecents($('file-tile')),
   },
 ]);
+$('doc-pod').before(fileWrap);
 
-// The view toggle lives in one corner in both views, so the way in and
-// the way out are the same spot. CSS swaps its label by view and hides
-// it when a markerless file offers no cell view to switch to.
+// The view toggle is the rail's last tile in every view, so the way in and
+// the way out are the same spot (Plass's Plain text / Paper switch). CSS
+// swaps its caption by view, lights it in source view, and hides it when
+// a markerless file offers no cell view to switch to.
 const viewToggle = document.createElement('button');
+viewToggle.type = 'button';
 viewToggle.id = 'view-toggle';
+viewToggle.className = 'tb-btn';
 viewToggle.title = 'Switch between source and cell (or grid) view (⌘⇧E)';
 viewToggle.innerHTML =
   `${icon('code')}<span class="lbl lbl-cells">Cells</span>` +
   `<span class="lbl lbl-grid">Grid</span><span class="lbl lbl-source">Source</span>`;
 viewToggle.addEventListener('click', () => docView.setSource(!docView.isSource));
-document.body.append(viewToggle);
+rail.querySelector('.tb-rail-foot')!.append(viewToggle);
 
 $('get-app').addEventListener('click', () => showGetMenu($('get-app')));
 $('add-code').addEventListener('click', () => docView.insertRelative('program'));
@@ -1005,6 +1140,7 @@ $('toggle-panel').addEventListener('click', () => {
   const el = $('panel');
   el.hidden = !el.hidden;
   localStorage.setItem('knuth-panel', el.hidden ? '0' : '1');
+  paintPanelToggle();
   if (!el.hidden) void panel.refresh();
 });
 
