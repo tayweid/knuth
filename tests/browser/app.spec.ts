@@ -318,13 +318,14 @@ test('a file opened from a folder Knuth already holds does not ask again', async
   expect(adopted.differentFolder).toBe(false);
 });
 
-/** Source view keeps the frame: the bar with the file's name, and a rail
- *  with no cell tools on it. */
+/** Source view keeps the frame: the bar with the file's name, and the
+ *  rail with its cell tools resting, dim (Plass's rule). */
 async function expectSourceFrame(page: Page) {
   await expect(page.locator('#toolbar')).toBeVisible();
   await expect(page.locator('#file-name')).toBeVisible();
-  for (const gone of ['#cells-pod', '#run-pod', '#toggle-panel']) {
-    await expect(page.locator(gone), `${gone} acts on cells`).toBeHidden();
+  for (const id of ['add-code', 'add-scratch', 'add-text', 'run-stale', 'run-all', 'stop', 'restart', 'toggle-panel']) {
+    await expect(page.locator(`#${id}`), `#${id} acts on cells`).toBeVisible();
+    await expect(page.locator(`#${id}`), `#${id} acts on cells`).toHaveAttribute('aria-disabled', 'true');
   }
 }
 
@@ -342,8 +343,7 @@ test('a script opens as edge-to-edge source, and cell view is a deliberate toggl
   await expect(page.locator('#kernel-status')).toHaveText('Python');
 
   await expect(page.locator('body')).toHaveAttribute('data-view', 'source');
-  const hidden = ['.run', '.insert-zone', '#panel', '#run-all', '#restart',
-                  '#cells-pod', '#run-pod', '#toggle-panel'];
+  const hidden = ['.run', '.insert-zone', '#panel'];
   for (const gone of hidden) {
     await expect(page.locator(gone).first(), `${gone} is noise on a source file`)
       .toBeHidden();
@@ -363,8 +363,8 @@ test('a script opens as edge-to-edge source, and cell view is a deliberate toggl
     .toBe('0px');
   expect(await page.locator('.cell .cm-editor').first()
     .evaluate((el) => getComputedStyle(el).borderTopWidth)).toBe('0px');
-  // With no markers, cell view has nothing to act on: no way in is offered.
-  await expect(page.locator('#view-toggle')).toBeHidden();
+  // With no markers, cell view has nothing to act on: the way in rests.
+  await expect(page.locator('#view-toggle')).toHaveAttribute('aria-disabled', 'true');
 
   // Typing a marker converts nothing — it just opens the door. The view
   // stays put and the editor's own undo history keeps working.
@@ -373,7 +373,7 @@ test('a script opens as edge-to-edge source, and cell view is a deliberate toggl
   await page.keyboard.type('# %%\n');
   await expect(page.locator('body')).toHaveAttribute('data-view', 'source');
   await expectSourceFrame(page);
-  await expect(page.locator('#view-toggle')).toBeVisible();
+  await expect(page.locator('#view-toggle')).not.toHaveAttribute('aria-disabled', 'true');
   await expect(page.locator('#view-toggle')).toHaveText(/Cells/);
 
   // ⌘Z is plain editor undo: the typed marker comes back out, and the
@@ -381,7 +381,7 @@ test('a script opens as edge-to-edge source, and cell view is a deliberate toggl
   for (let i = 0; i < 6; i += 1) await page.keyboard.press('ControlOrMeta+z');
   await expect(page.locator('.cm-content').first()).not.toContainText('%%');
   await expect(page.locator('.cm-content').first()).toContainText('import math');
-  await expect(page.locator('#view-toggle')).toBeHidden();
+  await expect(page.locator('#view-toggle')).toHaveAttribute('aria-disabled', 'true');
 
   // With a marker in place, the rail's view switch goes to cell view...
   await page.keyboard.type('# %%\nx = 1\n');
@@ -389,7 +389,7 @@ test('a script opens as edge-to-edge source, and cell view is a deliberate toggl
   await expect(page.locator('body')).toHaveAttribute('data-view', '');
   await expect(page.locator('#toolbar')).toBeVisible();
   await expect(page.locator('.run').first()).toBeVisible();
-  await expect(page.locator('#cells-pod')).toBeVisible();
+  await expect(page.locator('#add-code')).not.toHaveAttribute('aria-disabled', 'true');
   expect(await sheetCap()).not.toBe('none');
 
   // ...where the same switch, in the same spot, now reads Source and

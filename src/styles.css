@@ -120,10 +120,10 @@ body {
 
 /* One plain bar on the frame, a straight line across the top of the
    window. The document's way in and out sits on the left beside the
-   traffic lights — the File tile, the name pill with the unsaved mark and
-   the folder — and the I/O on the right: Install, Update, Get Knuth and
-   the kernel's status, whose pill ends where the room does (the bar's
-   right padding is the frame's edge). The cell tools are on the rail.
+   traffic lights — the File tile with its menu, the name pill with the
+   save mark and the folder — and the kernel's status on the right, whose
+   pill ends where the room does (the bar's right padding is the frame's
+   edge). The cell tools are on the rail.
 
    In Knuth.app the bar is the window's title bar (the shell hides its own
    and leaves the traffic lights over the page; app/knuth.json). Its row
@@ -132,10 +132,9 @@ body {
    native title bar — the File tile stands over the rail's column of
    tiles instead, 6 px in ((48 − 36) / 2: the fallback undoes 6 px of the
    12). The bar's empty part drags the window, which is the shell's to
-   handle, so its children, the File drop and the menus that open into
-   its band are marked the page's; a browser ignores the property. The
-   rail is no drag region: it scrolls, and a drag region takes the wheel.
-   z-index 11: the File drop hangs over the rail's first tiles. */
+   handle, so its children and the menus that open into its band are
+   marked the page's; a browser ignores the property. The rail is no drag
+   region: it scrolls, and a drag region takes the wheel. */
 #toolbar {
   position: fixed;
   top: 0;
@@ -151,20 +150,21 @@ body {
 }
 
 #toolbar > *,
-.tb-flyout,
-.file-menu {
+.tb-menu {
   -webkit-app-region: no-drag;
 }
 
-/* Keep the active group above its neighbours (the File drop over the
-   name pill). */
+/* Keep the hovered or focused item (and its caption) above its
+   neighbours. */
 #toolbar > * { position: relative; }
 #toolbar > *:hover,
 #toolbar > *:focus-within { z-index: 20; }
 
 /* The name pill: Zen's address pill, a shade up from the frame, holding
-   the document's name with its unsaved mark (click to rename) and the
-   folder it lives in, which gives way first when the bar is short. */
+   the document's name (click to rename), its save mark and the folder it
+   lives in. When the pill is short only the folder gives way, from its
+   start, so the nearest folder stays; the name and the mark never do —
+   the name takes an ellipsis only if it alone overfills the pill. */
 .doc-pod {
   display: flex;
   align-items: center;
@@ -179,28 +179,45 @@ body {
   border-radius: 12px;
 }
 
-/* The document slug: small serif, letterspaced, quiet (Plass's galley). */
+/* The document slug: small serif, letterspaced, quiet (Plass's galley).
+   (Its max-width leaves the mark and its gap their room.) */
 #toolbar .name {
-  flex: 0 1 auto;
-  min-width: 0;
+  flex: none;
+  max-width: min(40ch, calc(100% - 15px));
   font: 15px/1.5 var(--serif);
   letter-spacing: 0.09em;
   color: rgba(252, 252, 251, 0.8);
   white-space: nowrap;
-  max-width: 40ch;
   overflow: hidden;
   text-overflow: ellipsis;
 }
 
-#toolbar .dirty { color: var(--amber); font-size: 9px; }
+/* The save mark: Plass's small honest dot beside the name — green when
+   the file on disk holds the document, red when it does not (unsaved
+   changes, or no file yet). */
+.doc-mark {
+  flex: none;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: rgba(205, 100, 82, 0.95);
+  transition: background 0.3s ease;
+}
 
-/* The folder: the path's, home as ~ (the whole path in its title). */
+.doc-saved .doc-mark { background: rgba(110, 165, 118, 0.9); }
+
+/* The folder: the path's, home as ~ (the whole path in its title). It
+   alone shrinks, and it ellipsizes from its start: right-to-left in the
+   pill, the path itself left-to-right inside (its span's dir), so the
+   cut and the ellipsis fall at the path's head. */
 #doc-folder {
-  flex: 0 4 auto;
+  flex: 0 1 auto;
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  direction: rtl;
+  text-align: left;
   font: 12px/1.5 var(--sans);
   color: var(--glass-ink-soft);
 }
@@ -211,7 +228,7 @@ body {
   #doc-folder { display: none; }
 }
 
-/* The I/O, at the bar's right end. */
+/* The bar's right end: the kernel's status. */
 .tb-end {
   margin-left: auto;
   flex: none;
@@ -244,8 +261,8 @@ body {
 .tb-btn[hidden] { display: none; }
 .tb-btn .ico { width: 19px; height: 19px; display: block; }
 
-/* The bar's tiles (File, Get Knuth): bare, a little larger than the
-   rail's, the open one on a lighter tile. */
+/* The bar's tile (File): bare, a little larger than the rail's, lit while
+   its menu is open. */
 #toolbar .tb-tile {
   flex: none;
   width: 36px;
@@ -275,34 +292,6 @@ body {
   outline: 2px solid #9db8d6;
   outline-offset: 2px;
 }
-
-/* The hosted preview's way to the app: a popup under the Get Knuth tile,
-   in the menus' dark glass (.file-menu). */
-.file-menu.get-menu {
-  width: min(460px, calc(100vw - 16px));
-  padding: 14px 16px 16px;
-  color: rgba(240, 238, 233, 0.9);
-  font: 12.5px/1.5 var(--sans);
-}
-.get-menu h2 { margin: 0 0 4px; font: 500 15px var(--sans); }
-.get-menu h3 { margin: 14px 0 2px; font: 500 12px var(--sans); color: rgba(240, 238, 233, 0.62); }
-.get-menu p { margin: 0 0 8px; }
-.get-menu .get-note { color: rgba(240, 238, 233, 0.55); font-size: 11.5px; }
-.get-menu .get-download {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  margin: 4px 0 8px;
-  padding: 8px 14px;
-  border-radius: 8px;
-  color: #1b1a1e;
-  background: #f0eee9;
-  text-decoration: none;
-  font: 500 13px var(--sans);
-}
-.get-menu .get-download .ico { width: 17px; height: 17px; }
-.get-menu .get-download:hover { background: #fff; }
-.get-menu .command-row { margin-top: 6px; }
 
 /* Word tags on buttons (Plass): glass chips revealed on hover — shared by
    the bar, the rail, the between-cell inserter, and the kind picker
@@ -343,8 +332,8 @@ body {
 /* An open menu takes the caption's place. */
 .tb-btn[aria-expanded='true'] > .lbl { visibility: hidden; }
 
-/* Every caption in the frame — a bar tile's, a rail tile's, a File glyph's
-   — is the menus' dark glass, Zen's tooltip on the dark frame. */
+/* Every caption in the frame — the File tile's, a rail tile's — is the
+   menus' dark glass, Zen's tooltip on the dark frame. */
 #toolbar .lbl,
 #rail .lbl {
   color: rgba(240, 238, 233, 0.9);
@@ -352,52 +341,104 @@ body {
   border-color: rgba(255, 255, 255, 0.1);
 }
 
-/* The File drop: its glyph row 8 px under the tile, left-aligned with it,
-   in Plass's dark menu glass; open on a click, not a hover (main.ts,
-   fileTile). */
-.tb-flyout-wrap {
-  position: relative;
-  display: inline-flex;
+/* The menus: Plass's (plass/src/toolbar.css, .tb-menu), the File tile's
+   and its submenus, Recent documents and Get Knuth, in the frame's dark
+   glass; 10 px under the tile, left-aligned with it (menu.ts). */
+.tb-menu {
+  --menu-ink: rgba(240, 238, 233, 0.9);
+  --menu-ink-soft: rgba(240, 238, 233, 0.5);
+  --menu-hairline: rgba(255, 255, 255, 0.1);
+  position: fixed;
+  z-index: 100;
+  width: 258px;
+  max-width: calc(100vw - 16px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 7px;
+  border: 1px solid var(--menu-hairline);
+  border-radius: 13px;
+  background: rgba(27, 26, 30, 0.94);
+  color: var(--menu-ink);
+  backdrop-filter: blur(18px) saturate(140%);
+  box-shadow: 0 3px 8px rgba(0, 0, 0, 0.15), 0 16px 40px rgba(0, 0, 0, 0.28);
+  color-scheme: dark;
 }
 
-.tb-flyout {
-  position: absolute;
-  left: 0;
-  top: calc(100% + 8px);
+.tb-menu[hidden],
+.tb-menu-item[hidden],
+.tb-menu-divider[hidden] {
+  display: none;
+}
+
+.tb-menu-heading {
+  padding: 8px 10px 5px;
+  font: 600 10px/1.2 var(--sans);
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: var(--menu-ink-soft);
+}
+
+.tb-menu-item {
+  position: relative;
   display: flex;
   align-items: center;
-  gap: 2px;
-  padding: 5px;
-  background: rgba(27, 26, 30, 0.94);
-  backdrop-filter: blur(18px) saturate(140%);
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  border-radius: 13px;
-  box-shadow: 0 3px 8px rgba(0, 0, 0, 0.15), 0 16px 40px rgba(0, 0, 0, 0.28);
-  opacity: 0;
-  visibility: hidden;
-  transition: opacity 0.14s ease;
-  z-index: 30;
+  justify-content: space-between;
+  gap: 12px;
+  width: 100%;
+  min-height: 32px;
+  padding: 7px 10px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: inherit;
+  font: 13px/1.3 var(--sans);
+  text-align: left;
+  cursor: pointer;
 }
 
-.tb-flyout .tb-btn {
-  height: 40px;
-  min-width: 40px;
-  padding: 0 8px;
-  border-radius: 9px;
-  color: rgba(240, 238, 233, 0.8);
+/* Hover and keyboard focus share one quiet highlight instead of a drawn
+   ring. */
+.tb-menu-item:hover:not(:disabled),
+.tb-menu-item:focus-visible {
+  background: rgba(255, 255, 255, 0.09);
+  outline: none;
 }
 
-.tb-flyout .tb-btn:hover,
-.tb-flyout .tb-btn:focus-visible {
-  color: #fff;
-  background: rgba(255, 255, 255, 0.13);
+.tb-menu-item:disabled {
+  opacity: 0.35;
+  cursor: default;
 }
 
-.tb-flyout .tb-btn .ico { width: 22px; height: 22px; }
+.tb-menu-item kbd {
+  flex: none;
+  color: var(--menu-ink-soft);
+  font: 11px var(--sans);
+}
 
-.tb-flyout-wrap.open .tb-flyout {
-  opacity: 1;
-  visibility: visible;
+.tb-menu-label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tb-menu-divider {
+  height: 1px;
+  margin: 6px 8px;
+  background: var(--menu-hairline);
+}
+
+.tb-menu-hint {
+  padding: 10px;
+  font: 12px/1.5 var(--sans);
+  color: var(--menu-ink-soft);
+  overflow-wrap: anywhere;
+}
+
+/* A line for the terminal, under the item that copies it. */
+.tb-menu-hint.tb-menu-line {
+  padding-top: 2px;
+  font: 11px/1.5 var(--mono);
 }
 
 /* Renaming, in place in the slug. */
@@ -478,20 +519,6 @@ body {
   .cell.running .run::after, .cell.working .run::after { animation: none; }
 }
 #kernel-status.bad::before { content: '● '; color: #cd6452; }
-
-#install-app, #update-app {
-  font: 11px/1 var(--sans);
-  color: var(--glass-ink);
-  background: rgba(255, 255, 255, 0.08);
-  border: 1px solid var(--glass-border);
-  border-radius: 999px;
-  padding: 0.4rem 0.7rem;
-  cursor: pointer;
-}
-
-#install-app:hover, #update-app:hover { background: rgba(255, 255, 255, 0.15); }
-#install-app[hidden], #update-app[hidden] { display: none; }
-#update-app:disabled { cursor: default; opacity: 0.7; }
 
 /* ---------- first-run engine and PWA onboarding ---------- */
 
@@ -805,6 +832,18 @@ body[data-view='source'] #view-toggle {
   background: var(--tile);
 }
 
+/* A tile that cannot act in this view rests, dim, rather than going away
+   (Plass's rule; main.ts, paintRail): at 40 % — the old bar's resting
+   ink — with no hover, no lit tile and no caption. */
+#rail .tb-btn[aria-disabled='true'] {
+  opacity: 0.4;
+  cursor: default;
+  color: rgba(240, 238, 233, 0.64);
+  background: transparent;
+}
+
+#rail .tb-btn[aria-disabled='true'] .lbl { visibility: hidden; }
+
 /* The caption to the tile's right, where nothing crowds it; fixed to the
    window, since the groups scroll and would clip it (main.ts places it
    when the tile is hovered or focused). */
@@ -842,9 +881,12 @@ body[data-view='source'] #view-toggle {
 
 #doc {
   flex: 1;
-  /* The floor, kept from the old bar's pods: the column is unchanged.
-     The session panel's fixed 350px stacks on top of this. */
-  min-width: 640px;
+  /* The floor: the window main had, 640 px (990 with the session
+     panel's fixed 350 px beside it), less what the frame takes — the
+     rail and the right edge — so the room scrolls sideways at the same
+     window widths as before the frame, and the default window survives a
+     zoom step. The column bottoms out at 544 px (it was 600). */
+  min-width: calc(640px - var(--rail) - var(--edge));
   overflow-y: auto;
   /* Never sideways: everything in the room wraps (editors, outputs), and
      wide receipts scroll inside their own boxes. Without this, anything
@@ -866,52 +908,6 @@ body[data-view='source'] #view-toggle {
 #sheet {
   max-width: 52rem;
   margin: 0 auto;
-}
-
-/* Recents and Get dropdowns: Plass's menus (.tb-menu) — dark glass,
-   light ink, the same material as the File drop and the frame's
-   captions. */
-.file-menu {
-  position: fixed;
-  z-index: 100;
-  background: rgba(27, 26, 30, 0.94);
-  backdrop-filter: blur(18px) saturate(140%);
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  border-radius: 13px;
-  box-shadow: 0 3px 8px rgba(0, 0, 0, 0.15), 0 16px 40px rgba(0, 0, 0, 0.28);
-  padding: 7px;
-  width: 240px;
-  display: flex;
-  flex-direction: column;
-  color-scheme: dark;
-}
-
-.file-menu-item {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  gap: 12px;
-  font: 13px var(--sans);
-  color: rgba(240, 238, 233, 0.9);
-  background: transparent;
-  border: none;
-  border-radius: 6px;
-  padding: 7px 10px;
-  cursor: pointer;
-  text-align: left;
-  width: 100%;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.file-menu-item:hover,
-.file-menu-item:focus-visible { background: rgba(255, 255, 255, 0.09); outline: none; }
-
-.file-menu-empty {
-  font: 12px var(--sans);
-  color: rgba(240, 238, 233, 0.5);
-  padding: 6px 10px;
 }
 
 /* ---------- cells on the bench ---------- */
@@ -1548,23 +1544,16 @@ body[data-view='source'] .cell .run-num { visibility: visible; }
    next one goes, what kind it is — act on cells, and here there are none
    on screen. Same surface and type, less apparatus. The cell view is a
    deliberate toggle (⌘⇧E, or the rail's view switch), never a side effect
-   of typing a marker. The rail keeps only that switch; the bar keeps the
-   name, File, the I/O and the status — under the shell's hidden title bar
-   it is the only place the document's name shows. */
+   of typing a marker. The rail's cell and run tiles rest, dim (main.ts,
+   paintRail); the bar keeps the name, File and the status — under the
+   shell's hidden title bar it is the only place the document's name
+   shows. */
 body[data-view='source'] .run,
 body[data-view='source'] .badge,
 body[data-view='source'] .insert-zone,
 body[data-view='source'] .output,
 body[data-view='source'] .cell-figures,
-body[data-view='source'] #panel,
-body[data-view='source'] #toggle-panel,
-body[data-view='source'] #cells-pod,
-body[data-view='source'] #run-pod,
-body[data-view='source'] #rail .tb-rule,
-body[data-view='source'] #run-stale,
-body[data-view='source'] #run-all,
-body[data-view='source'] #stop,
-body[data-view='source'] #restart {
+body[data-view='source'] #panel {
   display: none;
 }
 
@@ -1581,10 +1570,11 @@ body[data-view='source'] #sheet {
   max-width: none;
 }
 
-/* All the way: a plain file is one editor, edge to edge in the room. No
-   cell tools on the rail (⌘O/⌘S still work; typing a # %% marker offers
-   the cell view back), no card border, no reserved gutter column — just
-   the text against the room's edges, with editor-style overscroll below. */
+/* All the way: a plain file is one editor, edge to edge in the room. The
+   rail's tools rest, the view switch too (⌘O/⌘S still work; typing a
+   # %% marker offers the cell view back), no card border, no reserved
+   gutter column — just the text against the room's edges, with
+   editor-style overscroll below. */
 
 /* The room is the editor's own surface here: below a short file (and in
    the 40vh overscroll) the One Dark background continues instead of
@@ -1622,18 +1612,9 @@ body[data-view='source'] .cell.stale .cm-gutters {
 
 /* The view switch: the rail's last tile, pinned at its foot, the same
    spot in every view — the way in and the way out (Plass's Plain text /
-   Paper switch); lit in source view (the rail's rules). Hidden only when
-   a markerless source file offers no cell view to switch to. */
-#view-toggle {
-  display: none;
-}
-
-body[data-view='source'][data-cells='true'] #view-toggle,
-body:not([data-view='source']) #view-toggle {
-  display: inline-flex;
-}
-
-/* The caption names the view you would switch TO. */
+   Paper switch); lit in source view (the rail's rules). It rests when a
+   markerless source file offers no cell view to switch to (main.ts). The
+   caption names the view you would switch TO. */
 #view-toggle .lbl-source { display: none; }
 body:not([data-view='source']) #view-toggle .lbl-cells { display: none; }
 body:not([data-view='source']) #view-toggle .lbl-source { display: inline; }
@@ -1641,12 +1622,9 @@ body:not([data-view='source']) #view-toggle .lbl-source { display: inline; }
 /* Grid view: a .csv/.tsv as a table of cells (src/grid.ts), each one
    editable in place. The same edge-to-edge surface as the source editor —
    the toggle flips between the two views of the same lines — so the same
-   chrome goes away: no cell tools, no panel, no insert strips. */
-body[data-view='grid'] #cells-pod,
-body[data-view='grid'] #run-pod,
-body[data-view='grid'] #rail .tb-rule,
+   chrome goes away: no panel, no insert strips, the rail's cell tools
+   resting. */
 body[data-view='grid'] #panel,
-body[data-view='grid'] #toggle-panel,
 body[data-view='grid'] .insert-zone {
   display: none;
 }
@@ -1756,12 +1734,8 @@ body[data-view='grid'] #doc {
   box-shadow: inset 0 0 0 2px #61afef;
 }
 
-/* The toggle shows for a grid file in either of its views, and the label
-   names the view you would switch TO. */
-body[data-view='grid'] #view-toggle,
-body[data-view='source'][data-grid='true'] #view-toggle {
-  display: inline-flex;
-}
+/* For a grid file the toggle's caption names the view you would switch
+   TO. */
 #view-toggle .lbl-grid { display: none; }
 body[data-view='source'][data-grid='true'] #view-toggle .lbl-cells { display: none; }
 body[data-view='source'][data-grid='true'] #view-toggle .lbl-grid { display: inline; }

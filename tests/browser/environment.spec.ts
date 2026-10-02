@@ -233,7 +233,7 @@ test('the header the engine rewrites is spliced into the preamble', async ({ pag
   await expect(page.getByText('after the header')).toBeVisible();
   await expect(page.getByText('before the header')).toBeVisible();
   // Written by the engine, so nothing is left to save.
-  await expect(page.locator('#file-name')).not.toContainText('●');
+  await expect(page.locator('#doc-pod')).toHaveClass(/doc-saved/);
   // The engine's mtime was adopted: the poll never reloads over the splice.
   await page.waitForTimeout(2000);
   expect((await messages(page)).filter((m) => m.type === 'open').length).toBe(1);
@@ -246,7 +246,7 @@ test('opening another document restarts the session for that document', async ({
   await page.goto('/?open=/p/analysis.py');
   await expect(page.getByText('x = 1')).toBeVisible();
 
-  // Recent is in the File tile's drop, beside the traffic lights.
+  // Recent is in the File tile's menu, beside the traffic lights.
   await page.locator('#file-tile').click();
   await page.getByTitle('Your documents').click();
   await page.getByText('other.py', { exact: true }).click();
@@ -379,7 +379,7 @@ test('a header from the session scratch environment lands in the document as an 
   await page.getByTitle('Run all program cells from the top').click();
   // Folded to its summary, and marked unsaved so autosave carries it to disk.
   await expect(page.locator('.packages-summary')).toContainText('seaborn');
-  await expect(page.locator('#file-name')).toContainText('●');
+  await expect(page.locator('#doc-pod')).toHaveClass(/doc-unsaved/);
   // No restart for any of it.
   expect((await messages(page)).some((m) => m.type === 'restart')).toBe(false);
 });
