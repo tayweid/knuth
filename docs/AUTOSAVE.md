@@ -123,7 +123,8 @@ What landed, of the Decided section:
   equals the tip's. The second review added: nothing while the branch is
   being rebased in any working tree or is a symbolic ref, and every guard
   is asked again just before the ref moves, since a fill takes seconds. In
-  the working tree it writes `untracked/`, a `.gitignore` line and
+  the working tree it writes `untracked/`, a `.gitignore` line (`/untracked/`,
+  anchored, so only the project's own folder is ignored) and
   `.claerbout/untracked.json`, which show in the user's `git status`, and
   never through a symbolic link: a link at any of those names turns the
   manifest off for that project, said once. A file git cannot read is left out (named once in
@@ -145,7 +146,7 @@ What landed, of the Decided section:
   window on a project; one job at a time per project. Quitting closes
   every session and waits for every queued job, bounded at 20 s. Each
   commits only if something changed.
-- **untracked/.** Created in the project with a `.gitignore` entry; the
+- **untracked/.** Created in the project with a `.gitignore` entry (`/untracked/`); the
   manifest `.claerbout/untracked.json` (path, size, mtime, SHA-256 per
   file, hashed again only when size or mtime changed, the hashes cached
   in the app's state folder) is rewritten before every commit and always
