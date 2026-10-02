@@ -637,8 +637,9 @@ Where the build differs from the spec above:
 - **The guards' reasons are sentences** ("a merge is in progress on
   main"), in the log and in the page alike.
 
-What the apps still owe (the shell side is ready for each). Knuth's part
-is done (2026-10-02, branch `ux/history`); Plass still owes its own.
+What the apps owed (the shell side is ready for each). Both parts are
+done, 2026-10-02: Knuth's on its `ux/history` (merged in ad1bbb1),
+Plass's on its own `ux/history` (e37314a, merged in eb4ea89).
 
 - **Answering `save` and `reload`.** On `save {id, reason: 'rewind'}`,
   write the open document if it has changes and answer `{type: 'saved',
@@ -669,6 +670,19 @@ is done (2026-10-02, branch `ux/history`); Plass still owes its own.
     stale" ("Rewound by Plass to …" when `app` names another app); a
     `reload` that does not name it only ends the hold. `reload` is not
     answered: the shell waits for nothing there.
+  - *Plass, done 2026-10-02* (`onShellSave`, `onShellReload` in
+    `src/claerbout.ts`; the file manager's `saveForShell` and
+    `reloadFromDisk`; `src/reload-in-place.ts`): `save` through ⌘S's own
+    write without its toast, `ok` at once when nothing changed, else
+    `ok: false` with why (no file yet, the file changed outside Plass or
+    was moved, the write failed); `reload` re-reads the file through its
+    handle when it is among `paths` and replaces only the changed range,
+    so the caret and scroll stay where the text still allows, as one undo
+    step, never written back; edits typed since the save are kept with
+    autosave paused and Overwrite disk offered; the toast says "Rewound to
+    <sha>" or "Rewound by Knuth". The disk watcher's reload of an outside
+    edit goes the same way now (in place, undoable). Its smoke drives a
+    rewind end to end.
 - **A History button:** `{type: 'history', action: 'open', at?}`, from a
   rail button in Knuth and an item in Plass's File menu, hidden when the
   shell answers `null` (an older shell).
@@ -683,6 +697,10 @@ is done (2026-10-02, branch `ux/history`); Plass still owes its own.
     is no record, and its window says why; a shell that answered with the
     reason instead (`unsaved`, `refused` with the folder rule's words,
     `off`, `no-git`) would have it said in the toast (`historyNote`).
+  - *Plass, done 2026-10-02*: one **History…** entry after Save in the
+    File menu, ⇧⌘H shown, only inside Plass.app; an older shell's `null`
+    is said ("This Plass.app has no history view — File → Check for
+    updates…") and the item then hides.
 - **The error notice** (open question 2): Knuth sends `cell run [4]
   (error)` when a reported cell raised, so the river draws a red ring.
   - *Knuth, done 2026-10-02*: `reportCellRun(host, cells, raised)`, the
