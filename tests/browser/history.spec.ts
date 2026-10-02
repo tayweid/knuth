@@ -254,8 +254,10 @@ test('a reload re-reads only the document whose path it names, in place', async 
   await expect(page.locator('#toast')).toHaveText('Rewound by Plass to 1a2b3c4; the session is as it was, so every cell is stale');
 });
 
-test('a run that raised is recorded as one', async ({ page }) => {
-  await open(page, '# %%\nx = 1\n\n# %%\nraise ValueError("no fit")\n');
+test('a run that raised is recorded as one, numbered as its receipt is (code cells only)', async ({ page }) => {
+  // A text cell between: the raising cell is the second code cell, the
+  // third cell of the document.
+  await open(page, '# %%\nx = 1\n\n# %% [markdown]\n# Some words.\n\n# %%\nraise ValueError("no fit")\n');
   const triggers = async () => (await sent(page, 'autosave')).map((message) => message.trigger);
   await page.locator('.cell .run').nth(0).click();
   await expect.poll(triggers, { timeout: 5_000 }).toEqual(['cell run [1]']);

@@ -119,10 +119,11 @@ export function connectShell(host: ShellHost): Shell | null {
 
 /** Cells' runs completed (cleanly or not: either way their outputs are
  *  new) and their writes landed: the shell's autosave record gets
- *  `cell run [4]`, the cell's number in the document, or `cell run [1, 2,
- *  3]` for runs reported together, with ` (error)` when any of them
- *  raised, which the history view draws as a red ring. Nothing without a
- *  shell, or with no cells. */
+ *  `cell run [4]`, the cell's number as its receipt counts it (the code
+ *  cells only; DocumentView.cellNumber), or `cell run [1, 2, 3]` for runs
+ *  reported together, with ` (error)` when any of them raised, which the
+ *  history view draws as a red ring. Nothing without a shell, or with no
+ *  cells. */
 export function reportCellRun(host: Shell | null, cells: readonly number[], raised = false): void {
   if (!host || cells.length === 0) return;
   host.notify({ type: 'autosave', trigger: `cell run [${cells.join(', ')}]${raised ? ' (error)' : ''}` });
