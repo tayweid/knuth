@@ -73,7 +73,7 @@ have.
 DECIDED: the durable, on-disk capability goes away. It exists only to be
 carried across origins.
 
-DECIDED 2026-10-02 (Taylor deferred to the recommendation): no per-process
+DECIDED 2026-10-01 (Taylor deferred to the recommendation): no per-process
 token, for now. The origin check is the boundary, and since the dev proxy
 (below) the dev loop shares it; a token minted by the engine and injected
 into `index.html` would reintroduce a dev-only path, because in
@@ -144,7 +144,7 @@ Neither pip nor Pages belongs in the inner loop:
   edits.
 - `npm run dev` — vite at `127.0.0.1:5198` with HMR, unchanged.
 
-DONE 2026-10-02 (Taylor: "one code path is good"): vite proxies the page's
+DONE 2026-10-01 (Taylor: "one code path is good"): vite proxies the page's
 WebSocket to the engine (`vite.config.ts`: the root path, upgrades only,
 every plain request stays vite's, and the proxied upgrade carries the
 engine's own origin as its `Origin`), so the dev page talks to
