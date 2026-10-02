@@ -673,6 +673,11 @@ export class DocumentView {
     working: (on: boolean) => void,
   ) => void;
 
+  /** A run completed, cleanly or not: the cell's number in the document
+   *  (1-based; 0 is the preamble) and whether it finished cleanly. The
+   *  shell's autosave record is told (shell.ts, reportCellRun). */
+  onRunDone?: (cell: number, ok: boolean) => void;
+
   /** Run one code cell; resolves true when it finished cleanly. */
   private async runCell(v: CellView): Promise<boolean> {
     if (v.cell.kind === 'text' || v.running) return false;
@@ -740,6 +745,7 @@ export class DocumentView {
     if (!v.isPreamble) this.onChange();
     if (outcome.ok && v.cell.kind === 'program') this.onProgramRun?.();
     this.onRun?.();
+    this.onRunDone?.(v.isPreamble ? 0 : this.views.indexOf(v) + 1, outcome.ok);
     if (!outcome.ok && outcome.traceback) {
       this.onRunFailed?.(outcome.traceback, () => this.runCell(v), (on) => {
         v.working = on;
