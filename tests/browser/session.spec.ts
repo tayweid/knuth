@@ -4,7 +4,9 @@
 // (which slides left for it), its three modes and its Data and Figures
 // tabs. The mock engine answers a run the way the real
 // one does: a done event whose `bound` lists what the cell assigned, a
-// figures event for a cell that plots, and a namespace that keeps them.
+// figures event for a cell that plots, and a namespace that keeps them —
+// one request at a time, in order, as the engine takes them (a cell with
+// `sleep(s)` in it takes s seconds).
 import { expect, test, type Locator, type Page } from '@playwright/test';
 
 type Probe = typeof window & { __knuthTableRequests?: Array<Record<string, unknown>>; __knuthRuns?: number };
@@ -32,6 +34,7 @@ test.beforeEach(async ({ page }) => {
       readonly url: string;
       readyState = MockWebSocket.CONNECTING;
       private ns = new Map<string, Record<string, unknown>>();
+      private queue: Promise<void> = Promise.resolve();
 
       constructor(url: string | URL) {
         super();
@@ -45,6 +48,14 @@ test.beforeEach(async ({ page }) => {
       send(raw: string) {
         const msg = JSON.parse(raw);
         const probe = window as Probe;
+        if (msg.type === 'run') probe.__knuthRuns = (probe.__knuthRuns ?? 0) + 1;
+        // One at a time, in order: a namespace asked for while runs are
+        // queued is answered once they have run.
+        this.queue = this.queue.then(() => this.handle(msg));
+      }
+
+      private async handle(msg: Record<string, unknown>) {
+        const probe = window as Probe;
         if (msg.type === 'attach') {
           this.reply({ type: 'attached', protocol: msg.protocol, session: msg.session, resumed: false });
           this.reply({ type: 'ready' });
@@ -52,7 +63,8 @@ test.beforeEach(async ({ page }) => {
           this.ns.clear();
           this.reply({ type: 'ready', id: msg.id });
         } else if (msg.type === 'run') {
-          probe.__knuthRuns = (probe.__knuthRuns ?? 0) + 1;
+          const sleep = /sleep\(([\d.]+)\)/.exec(String(msg.code));
+          await new Promise((done) => window.setTimeout(done, sleep ? Number(sleep[1]) * 1000 : 30));
           const bound: Array<Record<string, unknown>> = [];
           for (const line of String(msg.code).split('\n')) {
             // A change in place binds nothing the AST can see; the
@@ -71,7 +83,7 @@ test.beforeEach(async ({ page }) => {
           if (String(msg.code).includes('.plot(')) {
             this.reply({ type: 'figures', id: msg.id, svgs: [figureSvg], named: ['ax'] });
           }
-          window.setTimeout(() => this.reply({ type: 'done', id: msg.id, result: null, bound }), 30);
+          this.reply({ type: 'done', id: msg.id, result: null, bound });
         } else if (msg.type === 'namespace') {
           const vars = [...this.ns.values()].map(({ saved: _saved, ...entry }) => entry);
           this.reply({ type: 'namespace', id: msg.id, vars });
@@ -577,10 +589,11 @@ test('the receipt never lies over the column: its width follows the margin, and 
       expect(g.receipt.width, at).toBeGreaterThanOrEqual(270);
       await expect(page.locator('#receipt'), at).not.toHaveClass(/slim/);
     } else if (width === 1300) {
-      // Just under: the column slides by the difference.
-      expect(g.sheet.left, at).toBeLessThanOrEqual(before.sheet.left);
-      expect(g.sheet.left, at).toBeGreaterThan(before.sheet.left - 50);
-      expect(g.receipt.width, at).toBeGreaterThanOrEqual(199);
+      // A few px short of 200: the card takes the margin as it is, and the
+      // column does not twitch for it.
+      expect(g.sheet.left, at).toBeCloseTo(before.sheet.left, 0);
+      expect(g.receipt.width, at).toBeGreaterThanOrEqual(192);
+      expect(g.receipt.width, at).toBeLessThan(200);
     } else {
       // Well under: the column slid all the way left for the card.
       expect(Math.abs(g.sheet.left - g.contentLeft), at).toBeLessThan(1);
@@ -661,6 +674,8 @@ test('a chip\'s hover never moves the column; where the margin holds no card the
   await expect(page.locator('#receipt')).toBeHidden();
   expect(await stop()).toEqual([Math.round(before.sheet.left)]);
   await expect(chip).toHaveAttribute('title', /^prices, n — click for the receipt$/);
+  // Its accessible name never offers hover, which a keyboard never makes.
+  await expect(chip).toHaveAttribute('aria-label', 'Receipt of cell 1\'s last run: prices, n — click for the receipt');
   // The click: held, as a run's card, the column sliding for it.
   await chip.click();
   await expect(page.locator('#receipt')).toHaveAttribute('data-kind', 'held');
@@ -679,6 +694,7 @@ test('a chip\'s hover never moves the column; where the margin holds no card the
   const g = await layout(page);
   expect(g.sheet).toEqual(wide.sheet);
   expect(g.receipt.left).toBeGreaterThanOrEqual((await boxOf(chip)).right);
+  await expect(chip).toHaveAttribute('aria-label', 'Receipt of cell 1\'s last run: prices, n — click for the receipt');
 });
 
 test('a click that keeps a run\'s receipt leaves it where it is, as wide, its chip still hidden', async ({ page }) => {
@@ -739,7 +755,8 @@ test('a run that binds hundreds of names lists eight, says how many more, and th
     }));
   });
   await boot(page, 1470, 820);
-  await run(page, 1);
+  await cell(page, 1).locator('.cm-line').first().click();
+  await page.keyboard.press('ControlOrMeta+Enter');
   const receipt = page.locator('#receipt');
   await expect(receipt).toHaveClass(/show/);
   await expect(receipt.locator('.r-vars tr')).toHaveCount(8);
@@ -751,6 +768,8 @@ test('a run that binds hundreds of names lists eight, says how many more, and th
   await receipt.locator('.r-more').click();
   await expect(receipt).toBeHidden();
   await expect(page.locator('#session')).toHaveClass(/floating/);
+  // The caret never left the cell, as with the pill.
+  expect(await page.evaluate(() => document.activeElement?.classList.contains('cm-content'))).toBe(true);
   await expect(page.locator('#session [data-tab="session"]')).toHaveAttribute('aria-selected', 'true');
   await expect(page.locator('#session .s-list .s-row')).toHaveCount(120);
   await page.keyboard.press('Escape');
@@ -817,8 +836,11 @@ test('a click anywhere on a fresh receipt keeps it, and the hint says click whil
   await page.keyboard.type('4');
   await expect(cell(page, 3).locator('.cm-content')).toHaveText('k = 34');
   await expect(receipt).toBeVisible();
-  await page.keyboard.press('Escape');
+  // Its ✕ (and its pin) take no focus either: typing still goes there.
+  await receipt.locator('.hb', { hasText: '✕' }).click();
   await expect(receipt).toBeHidden();
+  await page.keyboard.type('5');
+  await expect(cell(page, 3).locator('.cm-content')).toHaveText('k = 345');
 });
 
 test('the pill hides the least recently bound names, never those a receipt brings home', async ({ page }) => {
@@ -954,4 +976,182 @@ test('p while typing in a cell types a p and puts the receipt away', async ({ pa
   await page.keyboard.type('p');
   await expect(page.locator('#receipt')).toBeHidden();
   await expect(cell(page, 3).locator('.cm-content')).toHaveText('k = 3p');
+});
+
+/** "31 ms", "0.80 s": a receipt's time, in ms. */
+const msOf = (text: string) => (text.endsWith(' ms') ? parseFloat(text) : parseFloat(text) * 1000);
+
+test('runs queued behind a busy kernel credit each cell with its own names, and time each run alone', async ({ page }) => {
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  await page.addInitScript(() => {
+    sessionStorage.setItem('knuth-doc', JSON.stringify({
+      name: 'queued.py',
+      dirty: false,
+      text: ['# %%', 'time.sleep(0.8)', 'a = 1', '', '# %%', 'b = 2', 'c = 3', '', '# %%', 'd = 4', ''].join('\n'),
+    }));
+  });
+  await boot(page);
+  // Three runs asked for while the first is still going: the engine takes
+  // them in order, and the snapshot the first run's receipt asks for comes
+  // after the other two have run.
+  for (const i of [0, 1, 2]) await run(page, i);
+  const receipt = page.locator('#receipt');
+  await expect(receipt).toHaveAttribute('data-cell', (await cell(page, 2).getAttribute('data-cell'))!);
+  await expect(receipt.locator('.r-vars .n')).toHaveText(['d']);
+  // Its own time, not the wait behind the slow cell.
+  expect(msOf((await receipt.locator('.r-head .took').textContent())!)).toBeLessThan(500);
+  await page.keyboard.press('Escape');
+  await expect(receipt).toBeHidden();
+  // Each chip names its own cell's names, once every snapshot is in.
+  await expect.poll(() => page.evaluate(() => (window as typeof window & { __knuthRuns?: number }).__knuthRuns)).toBe(3);
+  await page.waitForTimeout(200);
+  const chips = [0, 1, 2].map((i) => cell(page, i).locator('.rchip'));
+  await expect(chips[0]).toHaveText('1');
+  await expect(chips[0]).toHaveAttribute('title', /^a — /);
+  await expect(chips[1]).toHaveText('2');
+  await expect(chips[1]).toHaveAttribute('title', /^b, c — /);
+  await expect(chips[2]).toHaveText('1');
+  await expect(chips[2]).toHaveAttribute('title', /^d — /);
+  // The second run's receipt: its names, its own time.
+  await chips[1].hover();
+  await expect(receipt).toHaveAttribute('data-kind', 'hover');
+  await expect(receipt.locator('.r-vars .n')).toHaveText(['b', 'c']);
+  expect(msOf((await receipt.locator('.r-head .took').textContent())!)).toBeLessThan(500);
+  await page.mouse.move(300, 850);
+  await expect(receipt).toBeHidden();
+  // The Session tab says which cell bound each, so "go there" goes there.
+  await page.locator('#session-pill').click();
+  const where = (name: string) => page.locator('#session .s-row', { has: page.locator('b', { hasText: new RegExp(`^${name}$`) }) }).locator('.cl');
+  await expect(where('a')).toHaveText('cell 1');
+  await expect(where('b')).toHaveText('cell 2');
+  await expect(where('c')).toHaveText('cell 2');
+  await expect(where('d')).toHaveText('cell 3');
+});
+
+test('typing on after a run at 1100: the column stays out while the keys come, and goes home at the pause', async ({ page }) => {
+  await boot(page, 1100, 760);
+  const before = await layout(page);
+  await cell(page, 3).locator('.cm-content').click();
+  await page.keyboard.press('ControlOrMeta+Enter');
+  await expect(page.locator('#receipt')).toHaveClass(/show/);
+  await expect(page.locator('#sheet')).not.toHaveClass(/slide/);
+  const slid = (await layout(page)).sheet.left;
+  expect(Math.abs(slid - before.contentLeft)).toBeLessThan(1);
+  // Two seconds of typing, past the 1.2 s return: nothing moves under it.
+  const stop = await traceColumn(page);
+  await page.keyboard.press('End');
+  await page.keyboard.type(' # wait a little', { delay: 130 });
+  expect(await stop()).toEqual([Math.round(slid)]);
+  const paused = Date.now();
+  await expect.poll(async () => (await layout(page)).sheet.left).toBeCloseTo(before.sheet.left, 0);
+  expect(Date.now() - paused).toBeGreaterThan(900);
+});
+
+test('a run still going keeps the column where the last card left it, and its card stands there', async ({ page }) => {
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  await boot(page, 1100, 760);
+  const before = await layout(page);
+  await cell(page, 3).locator('.cm-content').click();
+  await page.keyboard.press('ControlOrMeta+a');
+  await page.keyboard.type('k = 3  # time.sleep(2.4)');
+  await run(page, 0);
+  await expect(page.locator('#receipt')).toHaveClass(/show/);
+  const slid = (await layout(page)).sheet.left;
+  expect(Math.abs(slid - before.contentLeft)).toBeLessThan(1);
+  // The slow cell, then a few keys in it: the return falls due well before
+  // the run ends, and waits for it.
+  const stop = await traceColumn(page);
+  await cell(page, 3).locator('.cm-content').click();
+  await page.keyboard.press('ControlOrMeta+Enter');
+  await page.keyboard.press('End');
+  await page.keyboard.type('!', { delay: 100 });
+  const receipt = page.locator('#receipt');
+  await expect(receipt).toHaveAttribute('data-cell', (await cell(page, 3).getAttribute('data-cell'))!, { timeout: 5_000 });
+  await expect(receipt).toHaveClass(/show/);
+  expect(await stop()).toEqual([Math.round(slid)]);
+  await page.keyboard.press('Escape');
+  await expect.poll(async () => (await layout(page)).sheet.left).toBeCloseTo(before.sheet.left, 0);
+});
+
+test('the pin\'s fade waits for the chips beside the sliding column, never showing over them', async ({ page }) => {
+  await boot(page, 1100, 760);
+  const before = await layout(page);
+  await runAndFile(page, 1);
+  await expect.poll(async () => (await layout(page)).sheet.left).toBeCloseTo(before.sheet.left, 0);
+  await page.locator('#toggle-panel').click();
+  await expect(page.locator('#session')).toHaveClass(/floating/);
+  // Every frame from the pin's click: the card's opacity and left edge,
+  // and the chip's right edge.
+  await page.evaluate(() => {
+    const probe = window as typeof window & { __frames?: Array<{ o: number; left: number; chip: number }>; __tracing?: boolean };
+    probe.__frames = [];
+    const card = document.getElementById('session')!;
+    const chip = document.querySelector('#sheet .rchip')!;
+    const tick = () => {
+      if (!probe.__tracing) return;
+      probe.__frames!.push({ o: Number(getComputedStyle(card).opacity), left: card.getBoundingClientRect().left, chip: chip.getBoundingClientRect().right });
+      requestAnimationFrame(tick);
+    };
+    document.querySelector('#session [data-mode="pinned"]')!.addEventListener('click', () => {
+      probe.__tracing = true;
+      requestAnimationFrame(tick);
+    }, { capture: true, once: true });
+  });
+  await page.locator('#session [data-mode="pinned"]').click();
+  await expect(page.locator('#session')).toHaveClass(/docked/);
+  await expect(page.locator('#sheet')).not.toHaveClass(/slide/);
+  await page.locator('#session').evaluate((element) => Promise.all(element.getAnimations().map((a) => a.finished)));
+  const frames = await page.evaluate(() => {
+    const probe = window as typeof window & { __frames?: Array<{ o: number; left: number; chip: number }>; __tracing?: boolean };
+    probe.__tracing = false;
+    return probe.__frames!;
+  });
+  expect(frames.length).toBeGreaterThan(5);
+  const showing = frames.filter((f) => f.o > 0.02);
+  expect(showing.length).toBeGreaterThan(0);
+  for (const f of showing) expect(f.left, `at opacity ${f.o.toFixed(2)}`).toBeGreaterThanOrEqual(f.chip - 1);
+});
+
+test('source view by keyboard while a card is up leaves no lean behind: the column comes back centred', async ({ page }) => {
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  await boot(page, 1100, 760);
+  const before = await layout(page);
+  await run(page, 0);
+  await expect(page.locator('#receipt')).toHaveClass(/show/);
+  // A second card while the column is out for the first.
+  await run(page, 1);
+  await expect(page.locator('#receipt')).toHaveAttribute('data-cell', (await cell(page, 1).getAttribute('data-cell'))!);
+  await page.keyboard.press('ControlOrMeta+Shift+KeyE');
+  await expect(page.locator('body')).toHaveAttribute('data-view', 'source');
+  await page.keyboard.press('ControlOrMeta+Shift+KeyE');
+  await expect(page.locator('body')).not.toHaveAttribute('data-view', 'source');
+  await expect(page.locator('#receipt')).toBeHidden();
+  await expect.poll(async () => (await layout(page)).sheet.left, { timeout: 2_500 }).toBeCloseTo(before.sheet.left, 0);
+});
+
+test('a change in place made while runs are queued is credited to no cell, not to the next one', async ({ page }) => {
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  await page.addInitScript(() => {
+    sessionStorage.setItem('knuth-doc', JSON.stringify({
+      name: 'inplace.py',
+      dirty: false,
+      text: ['# %%', 'prices = read_csv("prices.csv")', '', '# %%', 'time.sleep(0.5)', 'prices["q"] = 1', '', '# %%', 'e = 5', ''].join('\n'),
+    }));
+  });
+  await boot(page);
+  await runAndFile(page, 0);
+  // The slow cell changes prices in place, which only a snapshot sees;
+  // the next is queued behind it, so neither gets a snapshot of its own.
+  await run(page, 1);
+  await run(page, 2);
+  const receipt = page.locator('#receipt');
+  await expect(receipt).toHaveAttribute('data-cell', (await cell(page, 2).getAttribute('data-cell'))!);
+  await page.waitForTimeout(300);
+  await expect(receipt.locator('.r-vars .n')).toHaveText(['e']);
+  await page.keyboard.press('Escape');
+  await expect(cell(page, 2).locator('.rchip')).toHaveAttribute('title', /^e — /);
+  await expect(cell(page, 1).locator('.rchip')).toHaveCount(0);
+  // Alone, the same change in place gets its receipt.
+  await runAndFile(page, 1);
+  await expect(cell(page, 1).locator('.rchip')).toHaveAttribute('title', /^prices — /);
 });

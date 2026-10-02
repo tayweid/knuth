@@ -258,11 +258,16 @@ class Session:
             except Exception:
                 pass
         try:
-            # A numpy scalar by its value (-0.4088817904210866, not
-            # np.float64(-0.4088817904210866)), as values.json has it
-            # (_persistable): the receipt's slim rows show values.
+            # A numpy scalar by its value, not np.float64(-0.40888…): the
+            # receipt's slim rows show values. Numbers and dates by numpy's
+            # own str (a float64 as repr(float) has it, np.float32(0.1) as
+            # 0.1, 2024-01-01T00:00:00.000000000, NaT), since item() turns
+            # a nanosecond datetime64 into an int and NaT into None; the
+            # rest (strings, bytes, objects) by their Python value's repr,
+            # quoted as Python shows them.
             if _is_numpy_scalar(value):
-                preview = repr(value.item())
+                kind = getattr(getattr(value, "dtype", None), "kind", "")
+                preview = str(value) if kind in ("b", "i", "u", "f", "c", "m", "M") else repr(value.item())
             else:
                 preview = repr(value)
         except Exception:

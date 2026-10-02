@@ -254,15 +254,16 @@ test('a reload re-reads only the document whose path it names, in place', async 
   await expect(page.locator('#toast')).toHaveText('Rewound by Plass to 1a2b3c4; the session is as it was, so every cell is stale');
 });
 
-test('a run that raised is recorded as one, numbered as its receipt is (code cells only)', async ({ page }) => {
-  // A text cell between: the raising cell is the second code cell, the
-  // third cell of the document.
+test('a run that raised is recorded as one, numbered as the history view numbers # %% blocks', async ({ page }) => {
+  // A text cell between: the raising cell is the third `# %%` block, the
+  // number the shell's history view gives the cell its commit lights (the
+  // receipt, counting code cells only, says Cell 2).
   await open(page, '# %%\nx = 1\n\n# %% [markdown]\n# Some words.\n\n# %%\nraise ValueError("no fit")\n');
   const triggers = async () => (await sent(page, 'autosave')).map((message) => message.trigger);
   await page.locator('.cell .run').nth(0).click();
   await expect.poll(triggers, { timeout: 5_000 }).toEqual(['cell run [1]']);
   await page.locator('.cell .run').nth(1).click();
-  await expect.poll(triggers, { timeout: 5_000 }).toEqual(['cell run [1]', 'cell run [2] (error)']);
+  await expect.poll(triggers, { timeout: 5_000 }).toEqual(['cell run [1]', 'cell run [3] (error)']);
 });
 
 test('File → History… asks the shell for the view, and says why when there is none', async ({ page }) => {

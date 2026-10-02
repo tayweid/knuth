@@ -56,12 +56,20 @@ question that still needs one.
   the last (it swung 88 px on every Shift-Enter at 1100), a chip's hover
   never moves it, a kept card stays where it was, numpy values show (to
   six digits in a slim row), a receipt of hundreds of names lists eight,
-  chips stay inside the lane (99 and a raised +), and the autosave
-  record's cell numbers are the receipt's. OPEN, per SESSION.md: the
-  receipt under about 1075 px (over the column's edge), the column's one
-  return under the text being typed, the room scrolling sideways when
-  docked under about 1085 px, chips lost when the document reloads from
-  disk, no hover card under about 1305 px, and round two's unbuilt parts.
+  and chips stay inside the lane (99 and a raised +). Fourth pass, on the
+  next verifier's: runs queued behind a busy kernel credit each cell with
+  its own names and time each run alone, the column goes home at a pause
+  in typing and waits for a run still going, the pin's fade waits for
+  the chips, 1300 no longer twitches 2 px, source view by keyboard leaves
+  no lean behind, numpy dates and float32s preview right, the receipt's
+  buttons keep the caret in the cell, and the autosave record numbers
+  cells as main and the history view do (every `# %%` block), the
+  receipt still counting code cells. OPEN, per SESSION.md: the receipt
+  under about 1075 px (over the column's edge), the column's one return
+  at a pause in typing, the room scrolling sideways when docked under
+  about 1085 px, chips lost when the document reloads from disk, no
+  hover card under about 1305 px, no snapshot per run for runs queued
+  together, and round two's unbuilt parts.
 
 - **Autosave: a git track of every edit** — PLANNED 2026-09-27, spec in
   AUTOSAVE.md (Claerbout-wide, Plass and Knuth alike). Every project

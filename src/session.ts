@@ -85,6 +85,10 @@ export const SLIDE_MS = 360;
  *  card has gone, unless another run comes first (stepping through cells
  *  slides it once, not per run; session.ts, cardGone). */
 export const RETURN_MS = 1200;
+/** Nor while a run is still going (its card stands where the last one did,
+ *  or ran sends the column home), up to this long after the last card
+ *  went: a slow job holds no empty gap for ever. */
+const HOLD_MS = 30_000;
 /** The chips' lane beside the column (6 + the chip + 6). */
 const CHIP_LANE = 46;
 /** The column (#sheet's 52rem), and the floor it narrows to while the
@@ -108,6 +112,9 @@ const CARD_MAX = 300;
 const CARD_SLIM = 270;
 const CARD_MIN = 200;
 const CARD_FLOOR = 160;
+/** A margin this much short of CARD_MIN still takes the card unslid (a
+ *  card 2 px narrower beats the whole column twitching 2 px per run). */
+const CARD_SLACK = 8;
 /** A value whose preview says it in this many characters shows in a slim
  *  card in place of its type ("n 1200", not "n int"); a float, to six
  *  significant digits (briefValue). */
@@ -336,8 +343,14 @@ export class Session {
   private rideTimer = 0;
   private returnTimer = 0;
   /** The lean a column that slid for a receipt keeps once the card has
-   *  gone, while receipts may still come (cardGone). */
+   *  gone, while receipts may still come (cardGone), and since when. */
   private linger = 0;
+  private lingerSince = 0;
+  /** Runs started and not yet finished, and those that started while
+   *  another was still going. The kernel takes requests in order, so a run
+   *  queued with others gets no snapshot of its own (ran, settled). */
+  private inFlight = 0;
+  private startedQueued = new Set<string>();
 
   private readonly pill: HTMLButtonElement;
   private readonly names: HTMLElement;
@@ -386,8 +399,9 @@ export class Session {
     this.receiptEl.addEventListener('mouseleave', () => this.lookAtCard(false));
     this.receiptEl.addEventListener('mousedown', (e) => {
       const target = e.target as Element;
-      // The card keeps no focus.
-      if (!target.closest('button')) e.preventDefault();
+      // The card keeps no focus, its buttons neither (their click still
+      // comes, and Tab still reaches them): the caret stays in the cell.
+      e.preventDefault();
       // A click anywhere on a run's or a chip's card keeps it, but on what
       // acts on its own click (its pin and ✕, a table or a figure to open).
       if (target.closest('button, tr.viewable, .r-fig')) return;
@@ -450,6 +464,13 @@ export class Session {
 
   /** A run finished: its receipt, and where it shows. */
   ran(run: RunInfo): void {
+    this.inFlight = Math.max(0, this.inFlight - 1);
+    // A run queued with others has no snapshot of its own: one asked for
+    // below comes after the runs behind it have run too, and the session
+    // as the page knows it before this run lacks what the snapshot would
+    // have shown of the runs before it. Its receipt keeps what it reported,
+    // never crediting it with their names or their changes (settled).
+    const queued = this.startedQueued.delete(run.id) || this.inFlight > 0;
     const before = new Map(this.snapshot);
     const receipt = receiptFromRun(run, before);
     this.snapshot = overlay(before, receipt);
@@ -486,14 +507,16 @@ export class Session {
     this.paintPill();
     this.paintCard();
     const endedAt = performance.now();
-    void this.kernel.namespace().then((vars) => this.settled(receipt, before, vars, late, endedAt));
+    void this.kernel.namespace().then((vars) => this.settled(receipt, before, vars, late, endedAt, queued));
   }
 
   /** A run is starting: a fresh receipt still up flies home first. A
    *  column that slid for a receipt stays slid for this run's: its card
    *  stands where the last one did, and if it makes none the column goes
    *  home then (ran, settled). */
-  runStarting(_id: string): void {
+  runStarting(id: string): void {
+    if (this.inFlight > 0) this.startedQueued.add(id);
+    this.inFlight++;
     if (this.card?.kind === 'fresh') this.tuck(true);
     else if (this.card?.kind === 'hover') this.hideCard(false, true);
     else if (!this.card) this.cardGone(true);
@@ -527,6 +550,8 @@ export class Session {
     this.boundAt.clear();
     this.unseen.clear();
     this.pending.clear();
+    this.inFlight = 0;
+    this.startedQueued.clear();
     this.fresh = true;
     this.band = null;
     this.hideCard();
@@ -616,19 +641,30 @@ export class Session {
    *  stepping to the next cell — its card stands where this one did, a run
    *  that makes none sends the column home itself (ran, settled), and if
    *  no run comes it goes after as long as a receipt stays (DWELL_MS).
-   *  Otherwise (typing, Esc, a click, the dwell) it goes RETURN_MS after.
-   *  Stepping through cells slides it once, when the first card needs it,
-   *  and back once you stop. */
+   *  Otherwise (Esc, a click, the dwell) it goes RETURN_MS after; typing
+   *  on, or a click in the column, starts that over, so it goes at a pause
+   *  rather than under a word. Stepping through cells slides it once, when
+   *  the first card needs it, and back once you stop. */
   private cardGone(forRun = false) {
     clearTimeout(this.returnTimer);
+    const was = this.linger;
     this.linger = this.card || this.docked ? 0 : this.column.lean;
-    if (this.linger > 0) this.returnTimer = window.setTimeout(() => this.goHome(), forRun ? DWELL_MS : RETURN_MS);
+    if (this.linger <= 0) return;
+    if (!was) this.lingerSince = performance.now();
+    this.returnTimer = window.setTimeout(() => this.goHome(), forRun ? DWELL_MS : RETURN_MS);
   }
 
   private goHome() {
     // Never out from under the pointer: a chip it rests on stays put.
     if (document.querySelector('.rchip:hover')) {
       this.returnTimer = window.setTimeout(() => this.goHome(), 300);
+      return;
+    }
+    // Nor while a run is still going: its card stands where the last one
+    // did, or, with none, ran sends the column home — not home and
+    // straight out again for a slow cell (HOLD_MS at the most).
+    if (this.inFlight > 0 && performance.now() - this.lingerSince < HOLD_MS) {
+      this.returnTimer = window.setTimeout(() => this.goHome(), 400);
       return;
     }
     this.linger = 0;
@@ -657,12 +693,12 @@ export class Session {
   /** The receipt card beside the column, in the viewport: as wide as the
    *  margin gives, up to 300.
    *
-   *  Over the lane ('lane': a run's card): a margin under 200 slides the
-   *  column left by the difference (as far as it is centred) for the
-   *  card's stay; still short once it has slid all the way, the card takes
-   *  what there is down to 160. Only a window too narrow even for that
-   *  (under about 1075 px) lays it, 160 wide, at the room's right edge over
-   *  the column's.
+   *  Over the lane ('lane': a run's card): a margin under 192 (200 less
+   *  CARD_SLACK) slides the column left for the card's stay, as far as it
+   *  is centred, until the card has 200; still short once it has slid all
+   *  the way, the card takes what there is down to 160. Only a window too
+   *  narrow even for that (under about 1075 px) lays it, 160 wide, at the
+   *  room's right edge over the column's.
    *
    *  Past the chip ('past': a chip's hover): the column stays where it
    *  stands, and a margin that leaves the card less than 160 gives no card
@@ -679,7 +715,7 @@ export class Session {
       return past.width >= CARD_FLOOR ? past : null;
     }
     const fit = at(CARD_TIE, 0);
-    if (fit.width >= CARD_MIN) return fit;
+    if (fit.width >= CARD_MIN - CARD_SLACK) return fit;
     const slid = at(CARD_TIE, CARD_TIE + CARD_MIN + CARD_GAP - f.padR - f.sb);
     if (slid.width >= CARD_FLOOR) return slid;
     const width = Math.min(CARD_FLOOR, f.box.width - 2 * CARD_GAP);
@@ -747,11 +783,13 @@ export class Session {
 
   /** The snapshot after a run is in: what the AST missed joins the
    *  receipt. `late`: the run's own report had nothing to show, so its card
-   *  waits for this. */
-  private settled(receipt: Receipt, before: Map<string, NamespaceVar>, vars: NamespaceVar[], late: boolean, endedAt: number) {
+   *  waits for this. `queued`: other runs were queued with this one, before
+   *  or behind it, so the snapshot is not this run's alone and the receipt
+   *  keeps the run's own report (nothing found: no owner, no late card). */
+  private settled(receipt: Receipt, before: Map<string, NamespaceVar>, vars: NamespaceVar[], late: boolean, endedAt: number, queued: boolean) {
     if (!this.hooks.ready()) return;
     const known = new Set(receipt.rows.map((row) => row.name));
-    settle(receipt, before, vars);
+    settle(receipt, before, vars, !queued);
     const found = receipt.rows.filter((row) => !known.has(row.name));
     for (const row of found) {
       if (receipt.id !== 'source') this.owner.set(row.name, receipt.id);
@@ -799,8 +837,11 @@ export class Session {
     if (kind === 'hover' && !past) return; // the chip's title names what it bound
     if (this.card?.kind === 'fresh' && this.card.id !== id) this.tuck();
     this.flightEnd?.();
-    // The column stays where it is for this card (or slides once for it).
+    // The column stays where it is for this card (or slides once for it):
+    // while it is up the card's own lean holds it, and once it goes
+    // cardGone works the linger out afresh.
     clearTimeout(this.returnTimer);
+    this.linger = 0;
     const previous = this.card?.id;
     this.card = { id, kind, place: past ? 'past' : 'lane', fromRun: kind === 'fresh' };
     clearTimeout(this.dwell);
@@ -1061,7 +1102,9 @@ export class Session {
     chip.replaceChildren(kind === 'figure' ? printMark() : glyph(kind === 'table' ? 'table' : 'braces'), el('span', count > 99 ? 'n over' : 'n', String(Math.min(count, 99))));
     // What hover does is known once the pointer has come (mouseenter).
     chip.title = this.chipTitle(receipt, chip.dataset.hover !== '0');
-    chip.setAttribute('aria-label', `Receipt of the last run: ${chip.title}`);
+    // Its accessible name offers no hover, which a keyboard never makes:
+    // Enter or Space opens the receipt kept.
+    chip.setAttribute('aria-label', `Receipt of cell ${this.cellName(id)}'s last run: ${this.chipTitle(receipt, false)}`);
   }
 
   // ---------- the band: the Session tab's top, docked ----------
@@ -1270,15 +1313,22 @@ export class Session {
       clearTimeout(this.returnTimer);
       this.linger = 0;
       const from = this.sheet.getBoundingClientRect().right;
+      // How far past the column the chips reach (they ride with it): the
+      // widest's right edge, inside the lane; none, or tucked inside the
+      // cells on a narrow window, and the column's own edge is what counts.
+      let reach = 0;
+      for (const chip of this.sheet.querySelectorAll<HTMLElement>('.rchip')) reach = Math.max(reach, chip.getBoundingClientRect().right - from);
       this.paintCard();
       this.layout(true);
       if (!reducedMotion()) {
-        // The board fades in once the sliding column has cleared the place
-        // it stands — when the column's right edge passes the board's left
-        // on the slide's own curve — never over the column mid-slide.
+        // The board fades in once the sliding column and its chips have
+        // cleared the place it stands — when the chips' right edge passes
+        // the board's left on the slide's own curve — never over either
+        // mid-slide.
         const boardLeft = this.cardEl.getBoundingClientRect().left;
         const to = boardLeft - CHIP_LANE;
-        const delay = from > boardLeft && from > to ? Math.round(slideTime((from - boardLeft) / (from - to)) * SLIDE_MS) : 0;
+        const edge = from + Math.min(reach, CHIP_LANE);
+        const delay = edge > boardLeft && from > to ? Math.round(slideTime(Math.min(1, (edge - boardLeft) / (from - to))) * SLIDE_MS) : 0;
         this.cardEl.animate(
           [{ opacity: 0, transform: 'translateY(-10px) scale(0.98)' }, { opacity: 1, transform: 'none' }],
           { duration: 220, delay, fill: 'backwards', easing: 'cubic-bezier(.2,.7,.2,1)' },
@@ -1774,6 +1824,10 @@ export class Session {
         // card rather than going home between them.
         if (this.card?.kind === 'fresh') this.tuck(shifted);
         else if (shifted && !this.card) this.cardGone(true);
+        // Typing on with the column still out for the last card: it goes
+        // home RETURN_MS after the last keystroke, at a pause, not under a
+        // word.
+        else if (typing && !this.card && this.linger > 0) this.cardGone();
       }
     }, { capture: true });
 
@@ -1794,6 +1848,10 @@ export class Session {
       if (this.card && !this.receiptEl.contains(target) && !onChip) {
         if (this.card.kind === 'fresh') this.tuck();
         else if (this.card.kind === 'hover' || !target.closest?.('#session')) this.hideCard();
+      } else if (!this.card && this.linger > 0 && !onChip && this.sheet.contains(target)) {
+        // A click into the column with it still out: as typing, the return
+        // starts over.
+        this.cardGone();
       }
       if (this.band?.held && !onChip && !this.cardEl.contains(target)) this.clearBand();
       if (this.floating && !this.cardEl.contains(target) && !this.pill.contains(target) &&
@@ -1827,7 +1885,11 @@ export class Session {
     // the column stands as those views have it, the pill rests.
     new MutationObserver(() => {
       if (this.away) {
+        // No cardGone: those views ignore the lean, and the column comes
+        // back centred, never to a lean nothing is left to send home.
         this.dropCard(true);
+        clearTimeout(this.returnTimer);
+        this.linger = 0;
         if (this.floating) this.closeCard();
       }
       this.layout();

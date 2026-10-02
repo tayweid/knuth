@@ -180,12 +180,24 @@ def test_numpy_scalars_preview_by_value(monkeypatch):
         "elasticity = np.float64(-0.4088817904210866)\n"
         "k = np.int64(7)\n"
         "flag = np.bool_(True)\n"
-        "arr = np.arange(3)\n",
+        "arr = np.arange(3)\n"
+        "narrow = np.float32(0.1)\n"
+        "when = np.datetime64('2024-01-01T00:00', 'ns')\n"
+        "never = np.datetime64('NaT', 'ns')\n"
+        "word = np.str_('abc')\n",
     )
     by_name = {entry["name"]: entry for entry in events[-1]["bound"]}
     assert by_name["elasticity"]["type"] == "float64", by_name
     assert by_name["elasticity"]["preview"] == "-0.4088817904210866", by_name
     assert by_name["k"]["preview"] == "7" and by_name["flag"]["preview"] == "True", by_name
+    # Numbers and dates by numpy's own str: item() would widen the float32
+    # (0.10000000149011612), turn the nanosecond date into an int and NaT
+    # into None. A string keeps Python's quotes.
+    assert by_name["narrow"]["preview"] == "0.1", by_name
+    assert by_name["when"]["type"] == "datetime64", by_name
+    assert by_name["when"]["preview"] == "2024-01-01T00:00:00.000000000", by_name
+    assert by_name["never"]["preview"] == "NaT", by_name
+    assert by_name["word"]["preview"] == "'abc'", by_name
     # An array is not a scalar: its repr stays.
     assert by_name["arr"]["preview"] == "array([0, 1, 2])", by_name
     snapshot = {v["name"]: v for v in s.snapshot()}

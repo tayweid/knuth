@@ -301,6 +301,8 @@ export class DocumentView {
   private nextId = 1;
   /** Inside a Run all / Run stale. */
   private batch = false;
+  /** When the last run's outcome came (runCell's receipt time). */
+  private lastRunEnd = 0;
 
   constructor(
     private container: HTMLElement,
@@ -765,10 +767,12 @@ export class DocumentView {
     working: (on: boolean) => void,
   ) => void;
 
-  /** A run completed, cleanly or not: the cell's number as the receipt
-   *  counts it (cellNumber: the code cells only, 1-based; 0 is the
-   *  preamble) and whether it finished cleanly. The shell's autosave
-   *  record is told (shell.ts, reportCellRun). */
+  /** A run completed, cleanly or not: the cell's number in the document
+   *  (1-based; 0 is the preamble) and whether it finished cleanly. The
+   *  shell's autosave record is told (shell.ts, reportCellRun). The
+   *  document's number, text cells counted, not the receipt's
+   *  (cellNumber): the shell's history view numbers every `# %%` block,
+   *  and names the cell a run's commit lit by it. */
   onRunDone?: (cell: number, ok: boolean) => void;
 
   /** Run one code cell; resolves true when it finished cleanly. */
@@ -818,6 +822,11 @@ export class DocumentView {
         preamble: this.doc.preamble.join('\n'),
       },
     );
+    // The run's own time: the kernel takes runs in order, so one queued
+    // behind another started when that one ended, not when it was asked.
+    const ended = performance.now();
+    const ms = ended - Math.max(started, this.lastRunEnd);
+    this.lastRunEnd = ended;
     if (outcome.ok && outcome.result !== null) {
       appendOutput((text === '' || text.endsWith('\n') ? '' : '\n') + outcome.result);
     }
@@ -844,7 +853,7 @@ export class DocumentView {
     if (outcome.ok && v.cell.kind === 'program') this.onProgramRun?.();
     this.onRun?.({
       id: v.id,
-      ms: performance.now() - started,
+      ms,
       ok: outcome.ok,
       scratch: v.cell.kind === 'scratch',
       bound: outcome.bound,
@@ -852,7 +861,7 @@ export class DocumentView {
       named: outcome.ok ? named : [],
       batch,
     });
-    this.onRunDone?.(this.cellNumber(v.id) ?? 0, outcome.ok);
+    this.onRunDone?.(v.isPreamble ? 0 : this.views.indexOf(v) + 1, outcome.ok);
     if (!outcome.ok && outcome.traceback) {
       this.onRunFailed?.(outcome.traceback, () => this.runCell(v), (on) => {
         v.working = on;

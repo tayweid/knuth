@@ -134,14 +134,11 @@ What landed, of the Decided section:
   `Claerbout Autosave <autosave@claerbout.local>`.
 - **The triggers.** Knuth sends `{type: 'autosave', trigger: 'cell run
   [n]'}` when a cell's run completes (`DocumentView.onRunDone` →
-  `reportCellRun` in `shell.ts`) — n the cell's number as its receipt
-  says it, the code cells counted and the text cells between not (cell
-  zero, the header, is 0; docs/SESSION.md) — once the run's writes have
-  landed: the document's autosave (1.2 s) and the project contract
-  (`values.json`, `figs/`; 300 ms), so the commit holds what the run
-  produced — a notice sent at completion found the tree unchanged and the
-  timer took the change a minute later, which the first smoke run
-  showed. Runs that
+  `reportCellRun` in `shell.ts`), once the run's writes have landed: the
+  document's autosave (1.2 s) and the project contract (`values.json`,
+  `figs/`; 300 ms), so the commit holds what the run produced — a notice
+  sent at completion found the tree unchanged and the timer took the
+  change a minute later, which the first smoke run showed. Runs that
   complete while those writes settle (a run-all) are reported together,
   `cell run [1, 2, 3]`, and since 2026-10-02 as `cell run [3] (error)`
   when any of them raised (an interrupt too), which the history view

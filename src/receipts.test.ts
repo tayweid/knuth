@@ -61,6 +61,17 @@ assert.deepEqual(r3.rows, []);
 assert.deepEqual(r3.unchanged, ['n']);
 assert.equal(chipKind(r3), null);
 
+// Runs queued behind a busy kernel: the first's snapshot comes after the
+// later ones ran, so it credits the run with nothing of theirs — its
+// names, values and `unchanged` stay as its own report had them.
+const queued = receiptFromRun(run('c1', [prices]), empty);
+settle(queued, empty, [{ ...prices, preview: '<df later>' }, demand, v('ax', 'Axes', '<Axes>', { figure: true })], false);
+assert.equal(queued.settled, true);
+assert.deepEqual(queued.rows.map((row) => `${row.mark}${row.name}`), ['+prices']);
+assert.equal(queued.rows[0].v.preview, '<df>');
+assert.deepEqual(queued.unchanged, []);
+assert.equal(chipKind(queued), 'table');
+
 // In a batch the next run is marked against the session plus what the
 // last one bound, before the snapshot has landed.
 const after1 = overlay(empty, receiptFromRun(run('c1', [prices]), empty));

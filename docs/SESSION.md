@@ -53,8 +53,8 @@ name bound inside an `if`, a frame changed in place (`prices['q'] = …`).
 the cell: right of the column, over the chips' lane (its own chip is
 hidden while it is up), its top on the cell's first line, in the frame's
 dark glass. Its width follows the room's margin, up to 300 px; a margin
-under 200 px slides the column left by the difference for the card's
-stay. It stays while you look —
+under 192 px slides the column left for the card's stay, until the card
+has 200. It stays while you look —
 the pointer on it holds it — and goes home into the session pill when
 you keep typing, press Esc, click elsewhere, start another run, or
 after six seconds. Going home is the flight: the card lifts and swings
@@ -62,8 +62,10 @@ along a curve into the pill, shrinking; the pill's names update as it
 lands, the new ones blue and lit for a moment, and the chip takes its
 place at the cell. The column, if it slid, stays while cards keep
 coming — the next run's card stands where this one did — and goes home
-1.2 s after the last has gone. A click anywhere on the card, `p` when
-the keystroke would not type into a cell (after clicking ▶), or the
+1.2 s after the last has gone; typing on, or a click in the column,
+starts the 1.2 s over, so it goes at a pause, and it waits for a run
+still going. A click anywhere on the card, `p` when the keystroke would
+not type into a cell (after clicking ▶), or the
 card's pin keeps it where it is, as it is, until it is closed (✕ or
 Esc); its hint says which works now ("type or esc ↗ · click to keep" in
 a cell, "· p keeps it" elsewhere). A run that bound more than nine names
@@ -158,20 +160,21 @@ the receipt away.
 | keeping a run's card | a click anywhere on it (but its pin, ✕, a table or the figure, which act on their own); `p` only when the keystroke would not type (focus off the text); the hint names what works now | after ⌘↩ the cursor stays in the cell, where a `p` must stay a `p`; Esc then P was weighed and left out, since Esc also closes the completion popup and the next `p` would be swallowed |
 | when a run gets a card | a single, clean run that bound or drew something; a run whose news only the snapshot saw gets its card when the snapshot lands, unless you carried on meanwhile | a card saying "nothing" is motion for nothing |
 | the chip's glyphs | white print = drew a figure; table = bound a DataFrame, Series or 2-D array; braces = names; the count = names bound (or figures drawn, for a figure alone), 99 with a raised + past that; 4 px in, 3 px apart, 38 px at the most | ledger-v2's tab, with braces for plain names; narrow enough that no chip reaches the docked card past the 46 px lane |
-| the column after a receipt | stays where the card slid it while cards keep coming: through a run (its card stands where the last one did) and through a Shift-Enter stepping to the next cell, up to 6 s if no run comes; 1.2 s after typing, Esc, a click or the dwell put the card away, or after a run that makes no card (silent, failed, a batch, nothing bound); never from under a pointer resting on a chip | the verifier's trace at 1100: 88 px each way on every Shift-Enter; stepping through cells now slides it once and back once |
+| the column after a receipt | stays where the card slid it while cards keep coming: through a run (its card stands where the last one did) and through a Shift-Enter stepping to the next cell, up to 6 s if no run comes; 1.2 s after typing, Esc, a click or the dwell put the card away, or after a run that makes no card (silent, failed, a batch, nothing bound); each keystroke, and each click in the column, starts the 1.2 s over, so it goes at a pause and not under a word; never while a run is still going (up to 30 s after the last card went), and never from under a pointer resting on a chip | the verifiers' traces at 1100: 88 px each way on every Shift-Enter; then 88 px under the line being typed, mid-word, and home and straight out again for a 7 s cell |
 | a chip's hover | a card past the chip, the column where it stands, when that leaves the card 160 px (a window of about 1305 px and more); else none, the title naming the run's names; a click opens it kept, past the chip where it fits, else over the lane as a run's card, the column sliding | hovering never moves the column; a click is a decision, as a run is |
 | a run that bound many names | the receipt card lists eight and "+N more · in the Session card" (it opens the Session tab); the docked band the same, its line scrolling to the list below | a loop of globals made a 10,634 px card |
-| a value in a narrow row | a float to six significant digits ("-0.408882"), whole in the tooltip and on a wide card; a numpy scalar is previewed by its value (`repr(value.item())`), as values.json has it | "elasticity float64" said nothing |
+| a value in a narrow row | a float to six significant digits ("-0.408882"), whole in the tooltip and on a wide card; a numpy scalar is previewed by its value: numbers and dates by numpy's own str (a float64 as Python's float says it, `0.1` for a float32, `2024-01-01T00:00:00.000000000`, `NaT`), strings, bytes and objects by their Python value's repr | "elasticity float64" said nothing; `item()` widened a float32 and turned a nanosecond date into an int and NaT into None |
 | what the receipt lists from the folder | the bound values values.json mirrors (`saved` from the kernel) and the run's `figs/<name>.svg` receipts; "no folder yet" when the document has no folder | both are what the page already writes; a scratch run lists none |
 | new names in the pill | blue until the next single run, or until the Session tab is opened; a batch's add up | round two's rule: opening the Session acknowledges, hovering does not |
-| the card beside the cell | a run's 6 px from the column (over the chips' lane), a chip's past its chip; as wide as the margin up to 300 px, 8 px in from the room's edge; slim under 270 px (a short value — a number, a string of 16 characters or fewer — in place of its kind, the kind in the tooltip); a margin under 200 slides the column left by the difference, and the card then takes down to 160 | about 280 px with previews at 1470–1500; 186 px slim at 1100 with the column all the way left |
+| the card beside the cell | a run's 6 px from the column (over the chips' lane), a chip's past its chip; as wide as the margin up to 300 px, 8 px in from the room's edge; slim under 270 px (a short value — a number, a string of 16 characters or fewer — in place of its kind, the kind in the tooltip); a margin under 192 slides the column left until the card has 200, and the card then takes down to 160 | about 280 px with previews at 1470–1500; 198 px at 1300 with the column where it stands (it slid 2 px per run for 200); 186 px slim at 1100 with the column all the way left |
 | the docked card | clamp(320, what is beside the column, 380) wide past the chips' lane, 10 px in from the room's right edge, the room's height less 24 px; inside the room | peek-v2's board |
 | the column, docked | margin-left max(0, min(centred, room − column − need)), need = the card, the lane and its gap less the room's own 24 px margin; narrows under about 1275 px to a 640 px floor; under about 1085 px the room's floor rises and it scrolls sideways | peek-v2's rule, and Taylor's "right beside the cells … just on the page" |
 | the slide | 0.36 s, cubic-bezier(.2,.7,.2,1), on the pin and for a receipt's stay (the card riding beside the column on the same curve); never on a resize, never on a run | peek-v2's timing |
-| cell numbers | the code cells only, 1-based (cell zero, the preamble, is 0); text cells uncounted; the autosave record's `cell run [n]` counts the same way | no number is drawn on the page, so a student counts the cells that run |
+| cell numbers | on the receipt, the band and the Session tab, the code cells only, 1-based (cell zero, the preamble, is 0), text cells uncounted; the autosave record's `cell run [n]` keeps main's count, the cell's place among the document's `# %%` blocks | no number is drawn on the page, so a student counts the cells that run; the record is read beside the shell's history view, which numbers every `# %%` block and lights the cell a run's commit changed by that number |
 | the floating card | 380 px, 10 px in from the room's top right | the tabs, the three modes and ✕ on one line |
 | a narrow room | under about a 1075 px window the receipt card, 160 px, lies at the room's right edge over the column's (after sliding it all the way left); the docked card never does: the room scrolls sideways, and the pin scrolls it to the card's controls | see *What is open*, 1 |
-| the pin's fade | the docked card fades in once the sliding column's right edge has passed its left, worked out on the slide's own curve (about 80 ms at 1500, 120 ms at 1100) | it showed over the column for the slide's first 150 ms |
+| the pin's fade | the docked card fades in once the chips riding beside the sliding column have passed its left (the column's own edge where there are none), worked out on the slide's own curve: about 65–80 ms at 1470–1500 and 120 ms at 1100 with no chips, 180–190 ms and 225 ms with them | it showed over the column for the slide's first 150 ms, and then over the chips for 100 ms |
+| runs queued behind a busy kernel | each receipt is what its run reported (`bound`): the snapshot after a run that had others queued with it, before or behind, is the session after them too, so it adds nothing to that receipt (no change in place found, no late card, no owner); a receipt's time counts from when the run before it ended | the snapshot credited each cell with the next cells' names ("6" and a figure on a DataFrame cell), and the queued cell's time with the wait |
 | a restart | the chips fade, the pill says "fresh session", the Session card empties | round two's default |
 | a deleted cell | its names stay, marked "deleted cell" | round one's default |
 | names bound before the page loaded (a resumed session) | in the pill and the Session tab, with no cell | round two's default |
@@ -275,11 +278,12 @@ app's default 1100 window was motion. In the verifier's order:
    stays where it was, as wide, still "this run", its chip still hidden.
    Before, it jumped 40 px to stand past the chip and turned slim.
 4. **Numpy scalars show their value.** The kernel previews a
-   zero-dimensional numpy value as `repr(value.item())`
-   (`python/knuth/session.py`, `_is_numpy_scalar`), as values.json has
-   it, so the elasticity reads `-0.4088817904210866`, not
-   `np.float64(-0.4088817904210866)`; a Python test beside the `bound`
-   test. A narrow row shows a float to six significant digits
+   zero-dimensional numpy value by its value (`python/knuth/session.py`,
+   `_is_numpy_scalar`), so the elasticity reads `-0.4088817904210866`,
+   not `np.float64(-0.4088817904210866)`; a Python test beside the
+   `bound` test. (The third pass used `repr(value.item())`; the fourth
+   takes numbers and dates by numpy's own str, below.) A narrow row
+   shows a float to six significant digits
    (`briefValue`, receipts.ts), whole in its tooltip and on a wide card,
    and the slim card's cells are a little tighter, so "elasticity
    -0.408882" sits whole on the 186 px card.
@@ -306,7 +310,7 @@ app's default 1100 window was motion. In the verifier's order:
     through a temporary link at `~/Projects/week-3` (removed
     afterwards), so the folder line reads like Taylor's own.
 
-Three small untruths the second pass left:
+Two small untruths the second pass left:
 
 - Its code commit (19a5175) says the column narrows while docked under
   about 1290 px. The code narrows under about 1275, as this record and
@@ -314,11 +318,6 @@ Three small untruths the second pass left:
   history and stays as it is.
 - The CSS comment on #doc's floor said the docked floor rises under about
   1080 px; measured, it is 1085. Fixed.
-- The autosave record's `cell run [n]` counted every cell, the receipt
-  only code cells. DocumentView.onRunDone now reports `cellNumber`: the
-  code cells only, cell zero 0. Main's test of a raising run puts a text
-  cell before it and expects `cell run [2] (error)`; AUTOSAVE.md says how
-  n is counted.
 
 Main merged again (ad1bbb1, and 56837e7 after it, a note in history.md):
 `src/place.ts`, the rewind's save and reload, the error run in the
@@ -356,6 +355,122 @@ cell 1, a text cell, code cells 2 to 5), sheet.left read every frame:
   84 px to the end, ✕ at 975 inside the room's 992, the card first
   showing at 174 ms with the edge (675) past it (677).
 
+## Fourth pass: the verifier's findings
+
+The third pass's verifier drove the checkout shell again (uv and
+Pyodide, at 1000, 1100, 1300 and 1470) and found the second pass's ten
+closed — stepping through cells slides the column once, a chip's hover
+never moves it, a kept card stays put, and the new tests fail on the old
+code and hold over four repeats — and ten problems more, two of them
+real. In its order:
+
+1. **Runs queued behind a busy kernel credited each cell with the next
+   cells' names.** Shift-Enter three times down a fresh pandas document:
+   cell 1's chip showed a figure and "6", and the Session tab said
+   elasticity came from cell 1, so "go there" went to the wrong cell. A
+   run is sent to the kernel when it is asked for, and the snapshot its
+   receipt asks for once it ends queues behind the runs after it, which
+   it then credited to this one. The session now counts the runs in
+   flight: a run that started while another was going, or ended with
+   others still queued behind it, keeps what it reported (`bound`), and
+   the snapshot adds nothing to its receipt (`settle`'s `alone`; no
+   change in place found, no late card, no owner). The verifier's fix
+   counted only the runs behind; the runs before count too, since the
+   session as the page knows it before such a run lacks what they changed
+   unseen, and the last of a queue took an earlier cell's change in
+   place. A receipt's time now counts from when the run before it ended
+   (`DocumentView.lastRunEnd`): a queued cell's read 5.45 s, its wait.
+2. **The column went home under the line being typed** (the third pass's
+   open item 2, measured): at 1100 it slid 88 px right 1.2 s into typing
+   in the next cell, mid-word. Each keystroke, and each click in the
+   column, now starts the 1.2 s over, so it goes home at a pause. The
+   verifier's other way, waiting until no editor has the focus, was not
+   taken: it would hold the column out for as long as one writes.
+3. **A slow cell sent the column home and straight back out** (the same
+   item's other half): a 7 s cell run 1.5 s after another's card let the
+   6 s timer send it home at 7.6 s, and its card slid it out at 8.6 s.
+   The return now waits while a run is still going (`goHome` looks again
+   every 400 ms), up to 30 s after the last card went; the run's card
+   then stands where the last one did, or a run with none sends the
+   column home 1.2 s after it.
+4. **The pin's fade began over the chips.** It waited for the column's
+   edge, not the chips riding beside it (24 px over at opacity 0.22, at
+   1100). It now waits for the widest chip's right edge, worked out on
+   the same curve: 225 ms at 1100 and 188 at 1470 with chips, as before
+   without. The verifier's formula used the lane's full 46 px, whose
+   edge meets the card only as the slide ends (a 360 ms wait).
+5. **1300 twitched 2 px a run**: the margin gave the card 198 px, under
+   200, and the column slid 2 px for it and back. A margin up to 8 px
+   short of 200 now takes the card where the column stands.
+6. **The autosave record's numbering went the wrong way.** The third pass
+   (fed3d0d) made `cell run [n]` count the code cells only, saying it
+   fixed a mismatch with the history view. The shell's history view
+   (claerbout's `history/history.html`, `cellsIn` and `cellAt`) numbers
+   every `# %%` block, markdown included, and lights the cell a run's
+   commit changed by that number, so the same row read `cell run [2]
+   (error)` beside "cell 3". `DocumentView.onRunDone` reports the cell's
+   place in the document again, as main does; `src/shell.ts` and
+   AUTOSAVE.md are main's again, and main's raising-run test keeps the
+   text cell the third pass put in and expects `cell run [3] (error)`.
+   The receipt still counts code cells. Counting them everywhere would
+   need `cellsIn` to skip `# %% [markdown]` blocks too: a change in the
+   shell, for Taylor.
+7. **A column could stay slid with no card up.** A run's card, a second
+   run's card while the column lingered for the first, then ⌘⇧E twice by
+   keyboard: the source view's observer put the card away without
+   `cardGone`, and the first card's stale lean held the column at 60 for
+   good. The observer now clears the lean and its timer (those views
+   ignore it, and the column comes back centred), and a card coming up
+   clears any lean it inherits.
+8. **A numpy scalar's preview was wrong past plain numbers.** `item()`
+   turns a nanosecond datetime64 (pandas < 3's default) into an int, NaT
+   into None, and widens a float32 to 0.10000000149011612. Numbers and
+   dates now preview by numpy's own str (a float64 as before, `0.1`,
+   `2024-01-01T00:00:00.000000000`, `NaT`), strings, bytes and objects
+   by their Python value's repr. The verifier's test of `kind in 'USb'`
+   also passes an empty kind, and would have taken objects (and
+   longdouble's `np.longdouble('1.5')`, by `item()`) the other way; this
+   names the numeric and date kinds. `_persistable` still writes a
+   nanosecond date to values.json as an int: main's code (*What is
+   open*, 10).
+9. **"+N more", the pin and ✕ took the focus**, so the caret left the
+   cell, where the pill, which opens the same card, keeps it. The
+   receipt now prevents the focus for every mousedown on it; its buttons
+   still get their click, and Tab still reaches them.
+10. **The chip's accessible name offered hover**, which a keyboard never
+    makes. It reads "Receipt of cell 1's last run: prices, n — click for
+    the receipt" at every width; Enter or Space opens it kept. Its title
+    is as it was.
+
+Every fix was taken; 2 took the verifier's first way, and 1, 4 and 8 go
+a little past its code, as said.
+
+### The traces, fourth pass
+
+The checkout shell on uv, `docs/mockups`' demand example (pandas and
+matplotlib from its header, a text cell, five code cells, the last a 7 s
+sleep), a fresh session, sheet.left read every frame:
+
+- **Shift-Enter three times, 300 ms apart, from the pandas cell** (1100):
+  chips "prices, n", "elasticity, demand" and "fig, ax", the Session tab
+  owning each name by its own cell; the receipts' times 8.21 s (the
+  environment and pandas), 69 ms and 2.49 s (matplotlib).
+- **⌘↩, a click into the next cell, and typing at 150 ms a key** (1100):
+  60 from the run through the last key (near 4170 ms), home from
+  5395 ms.
+- **The 7 s cell, run 1.5 s after another's card** (1100): 148 → 60 over
+  0–327 ms for that card, then 60 through the run to its card at
+  8561 ms ("7.01 s"). One slide.
+- **1300**: 248 throughout a run and its card's stay; the card 198 px.
+- **The pin, with chips**: at 1100 the card at opacity 0 until 246 ms,
+  the chips' right edge (761) then past its left (768); at 1470 until
+  213 ms (1070 against 1078). No frame shows it over a chip.
+- **⌘⇧E twice with a second card up** (1100): 60 with the card, 148 in
+  every sample after.
+- **The pin and ✕ of a fresh receipt after ⌘↩**: the caret stays in the
+  cell (the active element its cm-content after each).
+- The console: nothing.
+
 ## The record
 
 The screenshots are the checkout shell (`app/knuth.json` on
@@ -367,7 +482,7 @@ the name pill's folder line reads `~/Projects/week-3`. The page is laid
 out at 1500 × 940 and 1100 × 760 at 2× by device metrics emulation,
 since this screen is 1470 points wide; they are page captures, so the
 traffic lights are not in them. Taken after the third pass and its merge
-with main.
+with main; the fourth pass changes nothing they show.
 
 - `docs/session-receipt-1500.png`, `-1100.png`: the receipt beside the
   run cell (cell 3: three new names, the figure, figs/ax.svg to the
@@ -387,30 +502,38 @@ with main.
 
 ## Checks
 
-On `ux/session` after the third pass and its merge with main:
+On `ux/session` after the fourth pass:
 
-- `npm test`: green (receipts.test.ts adds `briefValue`).
+- `npm test`: green (receipts.test.ts adds a queued run's `settle`,
+  which keeps the run's own report).
 - `npm run build:engine`, `npm run check:web`: green; the committed app
   matches its sources.
-- `CI=1 npx playwright test`: 103 passed, on its own port 5198 (free, so
+- `CI=1 npx playwright test`: 109 passed, on its own port 5198 (free, so
   the embed test, which hardcodes 5198, ran too). `session.spec.ts` has
-  29: new are the stepping trace at 1100, a chip's hover at 1100 and
-  1470, the kept card at 1470 and 1100, the numpy value slim and wide,
-  the hundred-name receipt with its 99 chip against the docked card and
-  the docked band's eight, and the pin's fade delay; the slide rule's
-  1000 px case expects the pin to scroll the room, and the receipt's
-  return is waited for. `history.spec.ts`'s raising run is numbered past
-  a text cell.
+  35; its mock engine now answers one request at a time, in order, as
+  the engine does (a cell with `sleep(s)` takes s seconds). New: runs
+  queued behind a slow cell, each chip and the Session tab naming its
+  own cell's names and each receipt its own time; a change in place
+  while runs are queued credited to no cell; two seconds of typing after
+  a run at 1100 with the column still, then home after the pause; a run
+  still going holding the column for its card; the pin's fade never over
+  a chip, frame by frame; ⌘⇧E twice with a second card up. Changed: 1300
+  takes the 198 px card unslid; the hundred-name receipt runs from the
+  cell and keeps the caret through "+112 more"; a kept card's ✕ keeps it
+  too; the chip's aria-label at 1100 and 1470. `history.spec.ts`'s
+  raising run, past a text cell, is `cell run [3] (error)`. The new and
+  changed cases fail on the third pass's code (the in-flight hold's only
+  once the typing fix is in; the queued in-place case on the verifier's
+  fix alone).
 - The engine's tests: `cd python &&
-  ~/Projects/knuth/.venv/bin/python -m pytest tests -q`, 162 passed (a
-  worktree has no `python/.venv`; run from its own `python/`, the
-  worktree's knuth is the one imported).
+  ~/Projects/knuth/.venv/bin/python -m pytest tests -q`, 162 passed;
+  the numpy test adds a float32, a nanosecond datetime64, NaT and a
+  string (a worktree has no `python/.venv`; run from its own `python/`,
+  the worktree's knuth is the one imported).
 - The checkout-shell smoke, `node ~/Projects/claerbout/smoke.mjs --config
-  app/knuth.json browser` and `uv`. With `KNUTH_AUTOSAVE=0` both modes
-  pass every step up to the autosave record and stop there ("no `knuth:
-  session open` commit (it has: no branch)"), since the record is off.
-  With it on, in the smoke's throwaway folders, both are ok, the record
-  `knuth: cell run [1] | knuth: session open`.
+  app/knuth.json browser` and `uv`, autosave on, in the smoke's
+  throwaway folders: both ok, the record `knuth: cell run [1] | knuth:
+  session open`.
 
 ## What is open
 
@@ -420,10 +543,10 @@ On `ux/session` after the third pass and its merge with main:
    The way out is narrowing the column for the card, which rewraps the
    code twice in six seconds; left for Taylor's call.
 2. **The column's one return.** On a narrow window the column still goes
-   home once the cards stop: typing in the next cell after a run sends it
-   home 1.2 s later, under the text being typed (at 1100, 88 px). A run
-   that takes longer than six seconds lets it go home, and its card
-   slides it out again.
+   home once the cards stop: typing on after a run, it goes 1.2 s after
+   the last keystroke, at the pause but beside the text (at 1100, 88 px).
+   A run that takes longer than 30 s lets it go home, and its card slides
+   it out again.
 3. **Docked under about 1085 px** the room scrolls sideways to reach the
    card (the floor rises with it), where the first pass let the card lie
    over the column. The pin scrolls it there; a reload while docked opens
@@ -443,3 +566,13 @@ On `ux/session` after the third pass and its merge with main:
    redefines it always reads as rebound — true, if noisy.
 8. **The band's mini tables are asked of the kernel** once per receipt
    for each small table: one more message per small table per run.
+9. **Runs queued together get no snapshot of their own.** Their names,
+   owners and times are right, but what only a snapshot sees is lost for
+   them: a frame one of them changed in place shows on no receipt, a
+   name one bound inside an `if` is missing from its receipt (it joins
+   the pill unowned), and a queued run that failed shows an empty
+   receipt. A snapshot per run would need the kernel to send one with
+   each `done`.
+10. **values.json writes a nanosecond datetime64 as an int**
+    (`_persistable` unwraps numpy scalars by `item()`; main's code): the
+    receipt previews it right now, the folder's copy is not.

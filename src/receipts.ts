@@ -92,8 +92,19 @@ export function overlay(before: Map<string, NamespaceVar>, receipt: Receipt): Ma
 /** Read the snapshot taken after the run into its receipt: names the AST
  *  could not see (bound in an `if`, changed in place, a star import) join
  *  it, every row takes the fresher entry, and `unchanged` becomes what is
- *  really left. A failed run's receipt is built only here. */
-export function settle(receipt: Receipt, before: Map<string, NamespaceVar>, after: NamespaceVar[]): void {
+ *  really left. A failed run's receipt is built only here.
+ *
+ *  `alone`: no other run was queued with this one. When one was, behind
+ *  it the kernel took the snapshot after that ran too (it answers in
+ *  order), and before it `before` lacks what that one changed unseen, so
+ *  what the snapshot shows beyond the run's own report is theirs as much
+ *  as this run's: the receipt keeps the run's report as it was, its names,
+ *  values and `unchanged`, and only counts as settled. */
+export function settle(receipt: Receipt, before: Map<string, NamespaceVar>, after: NamespaceVar[], alone = true): void {
+  if (!alone) {
+    receipt.settled = true;
+    return;
+  }
   const rows = new Map(receipt.rows.map((row) => [row.name, row]));
   const present = new Set(after.map((v) => v.name));
   for (const v of after) {
