@@ -1,7 +1,8 @@
 // The page's side of the shell's history view (shell.ts, answerRewinds;
 // claerbout's README, "The history view"): a rewind's `save` answered with
 // `saved`, its `reload` re-reading only the document whose path it names,
-// the record told when a run raised, and File → History…. The shell is a
+// the record told when a run raised, and File → History… with the bar's
+// History tile beside the name pill (one way in). The shell is a
 // mock `window.claerbout` over an in-page disk, which the mock engine's
 // file requests share, as files.py and the shell share the real one.
 import { expect, test, type Page } from '@playwright/test';
@@ -140,16 +141,16 @@ test.beforeEach(async ({ page }) => {
 });
 
 /** Knuth.app's launch: the shell opens the page on a document by path. */
-async function open(page: Page, text: string) {
+async function open(page: Page, text: string, path = DOC) {
   await page.addInitScript(
     ({ path, text }) => {
       (window as unknown as ProbeWindow).__disk[path] = { text, modified: 1_000 };
     },
-    { path: DOC, text },
+    { path, text },
   );
-  await page.goto(`/?open=${encodeURIComponent(DOC)}`);
+  await page.goto(`/?open=${encodeURIComponent(path)}`);
   await expect(page.locator('#kernel-status')).toHaveText('Python');
-  await expect(page.locator('#file-name')).toHaveText('fit.py');
+  await expect(page.locator('#file-name')).toHaveText(path.split('/').pop()!);
 }
 
 const fire = (page: Page, event: string, detail: unknown) =>
@@ -278,14 +279,6 @@ test('File → History… asks the shell for the view, and says why when there i
   await page.waitForTimeout(300);
   await expect(page.locator('#toast')).toBeHidden();
 
-  // An older shell has no view.
-  await page.evaluate(() => {
-    (window as unknown as ProbeWindow).__historyAnswer = null;
-  });
-  await page.locator('#file-tile').click();
-  await item.click();
-  await expect(page.locator('#toast')).toHaveText('This Knuth.app has no history view: a newer shell brings it');
-
   // A shell that answers why, in the folder rule's words.
   await page.evaluate(() => {
     (window as unknown as ProbeWindow).__historyAnswer = { reason: 'refused', detail: '~/Desktop itself is never recorded' };
@@ -293,15 +286,168 @@ test('File → History… asks the shell for the view, and says why when there i
   await page.locator('#file-tile').click();
   await item.click();
   await expect(page.locator('#toast')).toHaveText('No history here: ~/Desktop itself is never recorded');
+  await expect(page.locator('#history-tile')).toBeVisible();
+
+  // An older shell has no view: said, and then the item goes, and the
+  // tile with it (one way in).
+  await page.evaluate(() => {
+    (window as unknown as ProbeWindow).__historyAnswer = null;
+  });
+  await page.locator('#file-tile').click();
+  await item.click();
+  await expect(page.locator('#toast')).toHaveText('This Knuth.app has no history view: a newer shell brings it');
+  await page.locator('#file-tile').click();
+  await expect(page.getByRole('menuitem', { name: 'Open…' })).toBeVisible();
+  await expect(page.locator('#open-history')).toBeHidden();
+  await expect(page.locator('#history-tile')).toBeHidden();
 });
 
-test('a plain tab has no History item', async ({ page }) => {
+type Box = { left: number; top: number; right: number; bottom: number };
+/** The bar's boxes, by id (the tile's glyph as `glyph`). */
+const bar = (page: Page) =>
+  page.evaluate(() => {
+    const at = (element: Element | null): Box | null => {
+      if (!element || !element.getClientRects().length) return null;
+      const r = element.getBoundingClientRect();
+      return { left: r.left, top: r.top, right: r.right, bottom: r.bottom };
+    };
+    const ids = ['toolbar', 'file-tile', 'doc-pod', 'file-name', 'doc-mark', 'doc-folder', 'history-tile', 'session-pill', 'kernel-status', 'layout'];
+    return {
+      ...Object.fromEntries(ids.map((id) => [id, at(document.getElementById(id))])),
+      glyph: at(document.querySelector('#history-tile svg')),
+    } as Record<string, Box | null>;
+  });
+
+test('the History tile stands right after the name pill, the File tile\'s twin, and moves nothing else in the bar', async ({ page }) => {
+  await page.setViewportSize({ width: 1100, height: 760 });
+  await open(page, '# %%\nx = 1\n');
+  const tile = page.locator('#history-tile');
+  await expect(tile).toBeVisible();
+  const after = await bar(page);
+  const pod = after['doc-pod']!;
+  const box = after['history-tile']!;
+  // Right after the pill, with the bar's 6 px gap; 32 × 32, level with the
+  // File tile (6 px under the 44 px bar's top, as the 30 px pills are 7).
+  expect(box.left).toBe(pod.right + 6);
+  expect({ width: box.right - box.left, top: box.top, bottom: box.bottom }).toEqual({ width: 32, top: 6, bottom: 38 });
+  // The glyph is 18 px, centred in it.
+  expect(after.glyph).toEqual({ left: box.left + 7, top: 13, right: box.left + 25, bottom: 31 });
+  // The frame spec's numbers (frame.spec.ts), unchanged: the File tile 6 px
+  // in (a tab has no lights' room), the pill after it with the bar's gap,
+  // 30 px tall; the session pill's right edge on the room's.
+  expect(after['file-tile']).toEqual({ left: 6, top: 6, right: 38, bottom: 38 });
+  expect(pod.left).toBe(44);
+  expect(pod.bottom - pod.top).toBe(30);
+  expect(after['toolbar']).toEqual({ left: 0, top: 0, right: 1100, bottom: 44 });
+  expect(after['layout']).toEqual({ left: 44, top: 44, right: 1092, bottom: 752 });
+  expect(after['session-pill']!.right).toBe(1092);
+  // And every other box in the bar is where it was without the tile: only
+  // its 32 px and a gap were inserted, after the pill.
+  await tile.evaluate((element) => { (element as HTMLElement).hidden = true; });
+  const before = await bar(page);
+  await tile.evaluate((element) => { (element as HTMLElement).hidden = false; });
+  expect(before['history-tile']).toBeNull();
+  const others = (boxes: Record<string, Box | null>) =>
+    Object.fromEntries(Object.entries(boxes).filter(([id]) => id !== 'history-tile' && id !== 'glyph'));
+  expect(others(after)).toEqual(others(before));
+
+  // The File tile's look: the same size, corners, glyph size and ink.
+  const look = (selector: string) =>
+    page.locator(selector).evaluate((element) => {
+      const style = getComputedStyle(element);
+      const glyph = element.querySelector('svg')!.getBoundingClientRect();
+      return {
+        width: style.width, height: style.height, radius: style.borderRadius, color: style.color,
+        background: style.backgroundColor, glyph: [glyph.width, glyph.height],
+      };
+    });
+  await page.mouse.move(600, 400);
+  const history = await look('#history-tile');
+  expect(history).toEqual(await look('#file-tile'));
+  expect(history.radius).toBe('9px');
+  expect(history.glyph).toEqual([18, 18]);
+  // Named for a screen reader, its key said in the tooltip; the caption,
+  // below it in the frame's dark glass, is the word, as File's is.
+  await expect(tile).toHaveAttribute('aria-label', 'History');
+  await expect(tile).toHaveAttribute('title', 'History (⇧⌘H)');
+  await expect(tile).toHaveAttribute('aria-keyshortcuts', 'Shift+Meta+H');
+  await expect(tile).toHaveAccessibleName('History');
+  await tile.hover();
+  const caption = tile.locator('.lbl');
+  await expect(caption).toHaveText('History');
+  await expect.poll(() => caption.evaluate((element) => getComputedStyle(element).opacity)).toBe('1');
+  const captionBox = await caption.evaluate((element) => {
+    const r = element.getBoundingClientRect();
+    return { top: r.top, middle: (r.left + r.right) / 2 };
+  });
+  expect(captionBox).toEqual({ top: box.bottom + 6, middle: (box.left + box.right) / 2 });
+  // The bar is the window's drag region in the shell; the tile is not.
+  expect(await tile.evaluate((element) => {
+    const style = getComputedStyle(element) as CSSStyleDeclaration & { appRegion?: string };
+    return style.getPropertyValue('-webkit-app-region') || style.appRegion;
+  })).toBe('no-drag');
+});
+
+test('the History tile sends the shell the history request, keeps the cell\'s focus, and goes after an older shell\'s null', async ({ page }) => {
+  await open(page, '# %%\nx = 1\n');
+  const tile = page.locator('#history-tile');
+  // Typing in a cell: a click on the tile asks for the view and leaves the
+  // focus where it was, as the File tile does.
+  await page.locator('.cell .cm-content').first().click();
+  await tile.click();
+  await expect.poll(() => sent(page, 'history')).toEqual([{ type: 'history', action: 'open' }]);
+  await expect(page.locator('.cell .cm-content').first()).toBeFocused();
+  await page.waitForTimeout(300);
+  await expect(page.locator('#toast')).toBeHidden();
+  // From the keyboard, the same request.
+  await tile.focus();
+  await page.keyboard.press('Enter');
+  await expect.poll(() => sent(page, 'history')).toHaveLength(2);
+
+  // An older shell answers null: the toast says so, as the menu item's
+  // does, and the tile and the item go.
+  await page.evaluate(() => {
+    (window as unknown as ProbeWindow).__historyAnswer = null;
+  });
+  await tile.click();
+  await expect(page.locator('#toast')).toHaveText('This Knuth.app has no history view: a newer shell brings it');
+  await expect(tile).toBeHidden();
+  await page.locator('#file-tile').click();
+  await expect(page.getByRole('menuitem', { name: 'Open…' })).toBeVisible();
+  await expect(page.locator('#open-history')).toBeHidden();
+  expect(await sent(page, 'history')).toHaveLength(3);
+});
+
+test('when the bar is short the name pill gives way, its max-width first; the History tile never does', async ({ page }) => {
+  const root = '/Users/someone/Library/CloudStorage/Dropbox/Research/econ/2026/wages-and-hours/drafts/chapter-three/analysis';
+  for (const width of [1100, 780]) {
+    await page.setViewportSize({ width, height: 760 });
+    await open(page, '# %%\nx = 1\n', `${root}/wages-and-hours.py`);
+    const after = await bar(page);
+    const pod = after['doc-pod']!;
+    const box = after['history-tile']!;
+    // The pill at its max-width, min(560px, 50vw), its folder cut; the
+    // tile whole right after it, clear of the session pill.
+    expect(pod.right - pod.left, `at ${width}`).toBe(Math.min(560, width / 2));
+    expect(await page.locator('#doc-folder').evaluate((element) => element.scrollWidth > element.clientWidth)).toBe(true);
+    expect(box.left).toBe(pod.right + 6);
+    expect(box.right - box.left).toBe(32);
+    expect(box.right + 6).toBeLessThanOrEqual(after['session-pill']!.left);
+    expect(after['session-pill']!.right).toBe(width - 8);
+  }
+});
+
+test('a plain tab has no History item and no History tile', async ({ page }) => {
   await page.addInitScript(() => {
     delete (window as { claerbout?: unknown }).claerbout;
   });
   await page.goto('/');
   await expect(page.locator('#kernel-status')).toHaveText('Python');
+  await expect(page.locator('#history-tile')).toBeHidden();
   await page.locator('#file-tile').click();
   await expect(page.getByRole('menuitem', { name: 'Open…' })).toBeVisible();
   await expect(page.locator('#open-history')).toBeHidden();
+  // The pill where it always was, after the File tile.
+  const pod = await page.locator('#doc-pod').evaluate((element) => element.getBoundingClientRect().left);
+  expect(pod).toBe(44);
 });

@@ -697,6 +697,16 @@ Plass's on its own `ux/history` (e37314a, merged in eb4ea89).
     is no record, and its window says why; a shell that answered with the
     reason instead (`unsaved`, `refused` with the folder rule's words,
     `off`, `no-git`) would have it said in the toast (`historyNote`).
+  - *Knuth and Plass, the evening of 2026-10-02*: also a **tile in the
+    bar**, right after the name pill (Taylor: "yeah i think it belongs as
+    a tile on the topbar beside the address"), the File tile's twin (32 px,
+    9 px corners, an 18 px glyph; "History (⇧⌘H)" as its tooltip), with
+    the record's river as its glyph, one SVG in both apps. The tile and
+    the menu item are one function (Knuth's `openHistory` in
+    `src/main.ts`); the item stays. In a browser tab neither shows; an
+    older shell's `null` is said once in the toast, and then the tile and
+    the item both go, in Knuth now as in Plass. The record:
+    `docs/ZEN-DRAFT.md`, *The History tile*.
   - *Plass, done 2026-10-02*: one **History…** entry after Save in the
     File menu, ⇧⌘H shown, only inside Plass.app; an older shell's `null`
     is said ("This Plass.app has no history view — File → Check for
