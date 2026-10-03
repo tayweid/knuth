@@ -232,7 +232,8 @@ What stays open, and why:
   unreleased until its next tag. Knuth's side landed 2026-10-02: it
   answers the rewind's `save` (written through ⌘S's write, the autosave
   held until the reload) and `reload` (re-read in place, the session
-  kept, every cell stale), and File → History… opens the view.
+  kept, every cell stale), and File → History… and the bar's History
+  tile lay the view over the room of the same window.
 - Smaller: a run in the browser tab (no shell) is not recorded; a nested
   repository inside the project is recorded as a gitlink, not its
   contents; the manifest and the `.gitignore` line show in the user's own

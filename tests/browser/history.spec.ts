@@ -2,9 +2,12 @@
 // claerbout's README, "The history view"): a rewind's `save` answered with
 // `saved`, its `reload` re-reading only the document whose path it names,
 // the record told when a run raised, and File → History… with the bar's
-// History tile beside the name pill (one way in). The shell is a
-// mock `window.claerbout` over an in-page disk, which the mock engine's
-// file requests share, as files.py and the shell share the real one.
+// History tile beside the name pill (one way in), which lay the shell's
+// History page over the room of the same window and put it away again.
+// The shell is a mock `window.claerbout` over an in-page disk, which the
+// mock engine's file requests share, as files.py and the shell share the
+// real one; its History view is a flag it says `history {kind: 'inline'}`
+// about, as the shell does.
 import { expect, test, type Page } from '@playwright/test';
 
 interface Disk {
@@ -14,7 +17,10 @@ interface Probe {
   __disk: Disk;
   __log: string[];
   __sent: Array<Record<string, unknown>>;
+  /** 'shell': answered as the shell answers, the view a flag; else the
+   *  answer itself, with no view. */
   __historyAnswer: unknown;
+  __inlineUp: boolean;
   __fire: (event: string, detail: unknown) => void;
 }
 type ProbeWindow = Window & Probe;
@@ -28,7 +34,8 @@ test.beforeEach(async ({ page }) => {
     probe.__disk = {};
     probe.__log = [];
     probe.__sent = [];
-    probe.__historyAnswer = { opened: true };
+    probe.__historyAnswer = 'shell';
+    probe.__inlineUp = false;
     let clock = 1_000;
     const write = (path: string, text: string) => {
       clock += 1_000;
@@ -59,8 +66,22 @@ test.beforeEach(async ({ page }) => {
             case 'saved':
               probe.__log.push(`saved ${String(message.id)}`);
               return null;
-            case 'history':
-              return probe.__historyAnswer;
+            case 'history': {
+              if (probe.__historyAnswer !== 'shell') return probe.__historyAnswer;
+              const tell = (state: string) => window.setTimeout(() => probe.__fire('history', { kind: 'inline', state }));
+              if (message.action === 'open' && message.inline) {
+                if (!probe.__inlineUp) tell('open');
+                probe.__inlineUp = true;
+                return { opened: true, inline: true };
+              }
+              if (message.action === 'close') {
+                if (probe.__inlineUp) tell('closed');
+                probe.__inlineUp = false;
+                return { closed: true };
+              }
+              if (message.action === 'bounds') return { ok: probe.__inlineUp };
+              return { opened: true };
+            }
             default:
               return null;
           }
@@ -267,26 +288,53 @@ test('a run that raised is recorded as one, numbered as the history view numbers
   await expect.poll(triggers, { timeout: 5_000 }).toEqual(['cell run [1]', 'cell run [3] (error)']);
 });
 
-test('File → History… asks the shell for the view, and says why when there is none', async ({ page }) => {
+const roomBox = (page: Page) =>
+  page.locator('#layout').evaluate((element) => {
+    const r = element.getBoundingClientRect();
+    return { x: r.x, y: r.y, width: r.width, height: r.height };
+  });
+const historySent = async (page: Page) =>
+  (await sent(page, 'history')).map(({ type: _type, ...rest }) => rest);
+
+test('File → History… lays the History view over the room, and says why when there is none', async ({ page }) => {
+  await page.setViewportSize({ width: 1100, height: 760 });
   await open(page, '# %%\nx = 1\n');
   const item = page.getByRole('menuitem', { name: 'History…' });
+  const tile = page.locator('#history-tile');
   await page.locator('#file-tile').click();
   await expect(item).toBeVisible();
   await expect(item.locator('kbd')).toHaveText('⇧⌘H');
   await item.click();
-  await expect.poll(() => sent(page, 'history')).toEqual([{ type: 'history', action: 'open' }]);
-  // Opened: the shell's window is the answer, nothing to say here.
+  const room = await roomBox(page);
+  expect(room).toEqual({ x: 44, y: 44, width: 1048, height: 708 });
+  await expect.poll(() => historySent(page)).toEqual([{ action: 'open', inline: room }]);
+  // Opened: the view is the answer, the tile pressed by the shell's word,
+  // nothing to say here.
+  await expect(tile).toHaveAttribute('aria-pressed', 'true');
   await page.waitForTimeout(300);
   await expect(page.locator('#toast')).toBeHidden();
+  // The File menu opens down over the room, under the view: the tile puts
+  // the view away first, and History… lays it again.
+  await page.locator('#file-tile').click();
+  await expect(item).toBeVisible();
+  await expect.poll(() => historySent(page)).toEqual([{ action: 'open', inline: room }, { action: 'close' }]);
+  await expect(tile).toHaveAttribute('aria-pressed', 'false');
+  await item.click();
+  await expect(tile).toHaveAttribute('aria-pressed', 'true');
+  expect((await historySent(page)).at(-1)).toEqual({ action: 'open', inline: room });
 
-  // A shell that answers why, in the folder rule's words.
+  // A shell that answers why, in the folder rule's words: no view.
   await page.evaluate(() => {
-    (window as unknown as ProbeWindow).__historyAnswer = { reason: 'refused', detail: '~/Desktop itself is never recorded' };
+    const probe = window as unknown as ProbeWindow;
+    probe.__fire('history', { kind: 'inline', state: 'closed' });
+    probe.__inlineUp = false;
+    probe.__historyAnswer = { reason: 'refused', detail: '~/Desktop itself is never recorded' };
   });
   await page.locator('#file-tile').click();
   await item.click();
   await expect(page.locator('#toast')).toHaveText('No history here: ~/Desktop itself is never recorded');
-  await expect(page.locator('#history-tile')).toBeVisible();
+  await expect(tile).toBeVisible();
+  await expect(tile).toHaveAttribute('aria-pressed', 'false');
 
   // An older shell has no view: said, and then the item goes, and the
   // tile with it (one way in).
@@ -299,7 +347,7 @@ test('File → History… asks the shell for the view, and says why when there i
   await page.locator('#file-tile').click();
   await expect(page.getByRole('menuitem', { name: 'Open…' })).toBeVisible();
   await expect(page.locator('#open-history')).toBeHidden();
-  await expect(page.locator('#history-tile')).toBeHidden();
+  await expect(tile).toBeHidden();
 });
 
 type Box = { left: number; top: number; right: number; bottom: number };
@@ -388,21 +436,55 @@ test('the History tile stands right after the name pill, the File tile\'s twin, 
   })).toBe('no-drag');
 });
 
-test('the History tile sends the shell the history request, keeps the cell\'s focus, and goes after an older shell\'s null', async ({ page }) => {
+test('the History tile toggles the view over the room, pressed by the shell\'s word only, and goes after an older shell\'s null', async ({ page }) => {
   await open(page, '# %%\nx = 1\n');
   const tile = page.locator('#history-tile');
-  // Typing in a cell: a click on the tile asks for the view and leaves the
-  // focus where it was, as the File tile does.
-  await page.locator('.cell .cm-content').first().click();
+  const cell = page.locator('.cell .cm-content').first();
+  const room = await roomBox(page);
+  await expect(tile).toHaveAttribute('aria-pressed', 'false');
+  // Typing in a cell: a click on the tile asks for the view over the
+  // room's box, and the tile is pressed when the shell says it is up.
+  await cell.click();
   await tile.click();
-  await expect.poll(() => sent(page, 'history')).toEqual([{ type: 'history', action: 'open' }]);
-  await expect(page.locator('.cell .cm-content').first()).toBeFocused();
+  await expect.poll(() => historySent(page)).toEqual([{ action: 'open', inline: room }]);
+  await expect(tile).toHaveAttribute('aria-pressed', 'true');
+  // The pressed look is the bar's lit tile, the File tile's with its menu.
+  await page.mouse.move(600, 400);
+  await expect.poll(() => tile.evaluate((element) => getComputedStyle(element).backgroundColor)).toBe('rgb(46, 46, 50)');
+  await expect.poll(() => tile.evaluate((element) => getComputedStyle(element).color)).toBe('rgb(255, 255, 255)');
+  // Under the view nothing holds the focus: a key pressed here edits no
+  // hidden cell.
+  expect(await page.evaluate(() => document.getElementById('layout')!.contains(document.activeElement))).toBe(false);
   await page.waitForTimeout(300);
   await expect(page.locator('#toast')).toBeHidden();
-  // From the keyboard, the same request.
+  // Again: `close`, un-pressed when the shell says it went, and the cell
+  // has the focus back.
+  await tile.click();
+  await expect.poll(() => historySent(page)).toEqual([{ action: 'open', inline: room }, { action: 'close' }]);
+  await expect(tile).toHaveAttribute('aria-pressed', 'false');
+  await expect(cell).toBeFocused();
+  // From the keyboard, the same toggle.
   await tile.focus();
   await page.keyboard.press('Enter');
-  await expect.poll(() => sent(page, 'history')).toHaveLength(2);
+  await expect(tile).toHaveAttribute('aria-pressed', 'true');
+  await page.keyboard.press('Enter');
+  await expect(tile).toHaveAttribute('aria-pressed', 'false');
+  expect(await historySent(page)).toHaveLength(4);
+
+  // The click alone never presses it: a shell that answers but lays no
+  // view (it said nothing) leaves it as it was; the shell's word presses
+  // it and un-presses it whoever moved the view (Escape in the view, its
+  // close tile, the window's page).
+  await page.evaluate(() => {
+    (window as unknown as ProbeWindow).__historyAnswer = { opened: true, inline: true };
+  });
+  await tile.click();
+  await page.waitForTimeout(300);
+  await expect(tile).toHaveAttribute('aria-pressed', 'false');
+  await fire(page, 'history', { kind: 'inline', state: 'open' });
+  await expect(tile).toHaveAttribute('aria-pressed', 'true');
+  await fire(page, 'history', { kind: 'inline', state: 'closed' });
+  await expect(tile).toHaveAttribute('aria-pressed', 'false');
 
   // An older shell answers null: the toast says so, as the menu item's
   // does, and the tile and the item go.
@@ -415,7 +497,118 @@ test('the History tile sends the shell the history request, keeps the cell\'s fo
   await page.locator('#file-tile').click();
   await expect(page.getByRole('menuitem', { name: 'Open…' })).toBeVisible();
   await expect(page.locator('#open-history')).toBeHidden();
-  expect(await sent(page, 'history')).toHaveLength(3);
+  expect(await historySent(page)).toHaveLength(6);
+});
+
+test('View › History… is the shell\'s toggle: the page does what its tile does', async ({ page }) => {
+  await open(page, '# %%\nx = 1\n');
+  const tile = page.locator('#history-tile');
+  await fire(page, 'history', { kind: 'toggle' });
+  await expect(tile).toHaveAttribute('aria-pressed', 'true');
+  expect(await historySent(page)).toEqual([{ action: 'open', inline: await roomBox(page) }]);
+  await fire(page, 'history', { kind: 'toggle' });
+  await expect(tile).toHaveAttribute('aria-pressed', 'false');
+  expect((await historySent(page)).at(-1)).toEqual({ action: 'close' });
+  // The shell's other History events are not the document page's.
+  await fire(page, 'history', { kind: 'commit', commits: [] });
+  await fire(page, 'history', { kind: 'focus', at: SHA });
+  await page.waitForTimeout(200);
+  expect(await historySent(page)).toHaveLength(2);
+});
+
+test('the view follows the room: bounds on a resize and when the scroll rail\'s gutter comes, none while it is down', async ({ page }) => {
+  await page.setViewportSize({ width: 1100, height: 760 });
+  await open(page, '# %%\nx = 1\n');
+  const tile = page.locator('#history-tile');
+  // Down: a resize sends nothing.
+  await page.setViewportSize({ width: 1180, height: 800 });
+  await page.waitForTimeout(200);
+  expect(await historySent(page)).toEqual([]);
+  await tile.click();
+  await expect(tile).toHaveAttribute('aria-pressed', 'true');
+  expect(await historySent(page)).toEqual([{ action: 'open', inline: { x: 44, y: 44, width: 1128, height: 748 } }]);
+  // A resize: one `bounds`, the room's new box.
+  await page.setViewportSize({ width: 1240, height: 820 });
+  await expect.poll(() => historySent(page)).toEqual([
+    { action: 'open', inline: { x: 44, y: 44, width: 1128, height: 748 } },
+    { action: 'bounds', inline: { x: 44, y: 44, width: 1188, height: 768 } },
+  ]);
+  expect(await roomBox(page)).toEqual({ x: 44, y: 44, width: 1188, height: 768 });
+
+  // A rewind under the view makes the document long: the scroll rail's
+  // gutter comes, the room 12 px narrower, and the view goes with it.
+  await fire(page, 'save', { id: 's', reason: 'rewind' });
+  const long = Array.from({ length: 40 }, (_, i) => `# %%\nv${i + 1} = ${i + 1}\n`).join('\n');
+  await page.evaluate(({ path, text }) => {
+    (window as unknown as ProbeWindow).__disk[path] = { text, modified: 50_000 };
+  }, { path: DOC, text: long });
+  await fire(page, 'reload', { id: 'r', paths: ['/private' + DOC], reason: 'rewind', to: SHA });
+  await expect(page.locator('#sheet > .cell-wrap')).toHaveCount(40);
+  await expect(page.locator('html')).toHaveClass(/has-rail/);
+  await expect.poll(async () => (await historySent(page)).at(-1)).toEqual({ action: 'bounds', inline: { x: 44, y: 44, width: 1176, height: 768 } });
+  expect(await roomBox(page)).toEqual({ x: 44, y: 44, width: 1176, height: 768 });
+  // Put away: a resize sends nothing again.
+  await tile.click();
+  await expect(tile).toHaveAttribute('aria-pressed', 'false');
+  const count = (await historySent(page)).length;
+  await page.setViewportSize({ width: 1100, height: 760 });
+  await page.waitForTimeout(300);
+  expect(await historySent(page)).toHaveLength(count);
+});
+
+test('whatever acts in the room puts the view away first; the bar\'s Escape does too', async ({ page }) => {
+  await open(page, '# %%\nx = 1\n');
+  const tile = page.locator('#history-tile');
+  const up = async () => {
+    await tile.click();
+    await expect(tile).toHaveAttribute('aria-pressed', 'true');
+  };
+  const closes = async () => {
+    await expect(tile).toHaveAttribute('aria-pressed', 'false');
+    expect((await historySent(page)).at(-1)).toEqual({ action: 'close' });
+  };
+  // A rail tile (the Session card would open under the view).
+  await up();
+  await page.locator('#toggle-panel').click();
+  await closes();
+  await expect(page.locator('#session')).toBeVisible();
+  await page.locator('#toggle-panel').click();
+  // The session pill.
+  await up();
+  await page.locator('#session-pill').click();
+  await closes();
+  await page.keyboard.press('Escape');
+  // Escape with the page's focus (on the bar), as Escape in the view.
+  await up();
+  await tile.focus();
+  await page.keyboard.press('Escape');
+  await closes();
+  // The name pill's rename keeps its own Escape.
+  await up();
+  const before = (await historySent(page)).length;
+  await page.locator('#file-name').click();
+  await expect(page.locator('#file-name input')).toBeFocused();
+  await page.keyboard.press('Escape');
+  await page.waitForTimeout(200);
+  expect(await historySent(page)).toHaveLength(before);
+  await expect(tile).toHaveAttribute('aria-pressed', 'true');
+});
+
+test('the document under the view answers a rewind\'s save and reload, and the view stays up', async ({ page }) => {
+  await open(page, '# %%\nx = 1\n');
+  const tile = page.locator('#history-tile');
+  await tile.click();
+  await expect(tile).toHaveAttribute('aria-pressed', 'true');
+  await fire(page, 'save', { id: 'under', reason: 'rewind' });
+  await expect.poll(() => sent(page, 'saved')).toEqual([{ type: 'saved', id: 'under', ok: true }]);
+  await page.evaluate((path) => {
+    (window as unknown as ProbeWindow).__disk[path] = { text: '# %%\nx = "rewound"\n', modified: 60_000 };
+  }, DOC);
+  await fire(page, 'reload', { id: 'r', paths: ['/private' + DOC], reason: 'rewind', to: SHA });
+  await expect(page.locator('#sheet > .cell-wrap').first()).toContainText('x = "rewound"');
+  await expect(page.locator('#sheet .cell.stale')).toHaveCount(1);
+  expect(await historySent(page)).toEqual([{ action: 'open', inline: await roomBox(page) }]);
+  await expect(tile).toHaveAttribute('aria-pressed', 'true');
 });
 
 test('when the bar is short the name pill gives way, its max-width first; the History tile never does', async ({ page }) => {

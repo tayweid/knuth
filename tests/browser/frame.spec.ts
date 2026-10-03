@@ -233,6 +233,70 @@ test('the Session tile is lit while the Session card shows', async ({ page }) =>
   await expect(tile).toHaveAttribute('aria-pressed', 'false');
 });
 
+test('the History view\'s box is the room\'s: the frame\'s numbers, the docked Session card moving none of it, the pressed tile nothing in the bar', async ({ page }) => {
+  // A shell that lays its view at once (history.spec.ts has the protocol).
+  await page.addInitScript(() => {
+    const sent: Array<Record<string, unknown>> = [];
+    const listeners = new Set<(detail: unknown) => void>();
+    let up = false;
+    const tell = (state: string) => window.setTimeout(() => listeners.forEach((listener) => listener({ kind: 'inline', state })));
+    (window as unknown as { __sent: typeof sent }).__sent = sent;
+    Object.defineProperty(window, 'claerbout', {
+      configurable: true,
+      value: {
+        request: async (message: Record<string, unknown>) => {
+          if (message.type !== 'history') return null;
+          sent.push(message);
+          if (message.action === 'open') {
+            if (!up) tell('open');
+            up = true;
+            return { opened: true, inline: true };
+          }
+          if (message.action === 'close') {
+            if (up) tell('closed');
+            up = false;
+            return { closed: true };
+          }
+          return { ok: up };
+        },
+        on: (event: string, listener: (detail: unknown) => void) => {
+          if (event !== 'history') return () => {};
+          listeners.add(listener);
+          return () => listeners.delete(listener);
+        },
+      },
+    });
+  });
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  await boot(page);
+  const tile = page.locator('#history-tile');
+  const sent = () => page.evaluate(() => (window as unknown as { __sent: Array<Record<string, unknown>> }).__sent);
+  const ids = ['toolbar', 'file-tile', 'doc-pod', 'history-tile', 'session-pill', 'layout', 'rail', 'doc'];
+  const boxes = () => Promise.all(ids.map((id) => box(page, `#${id}`)));
+  const rest = await boxes();
+  // The room: under the 44 px bar, right of the 44 px rail, 8 px from the
+  // window's right and bottom; its CSS box is what the shell is sent.
+  expect(await box(page, '#layout')).toEqual({ left: 44, top: 44, right: 1092, bottom: 752 });
+  await tile.click();
+  await expect(tile).toHaveAttribute('aria-pressed', 'true');
+  expect(await sent()).toEqual([{ type: 'history', action: 'open', inline: { x: 44, y: 44, width: 1048, height: 708 } }]);
+  // Pressed, the tile moves nothing in the bar, nor the room.
+  expect(await boxes()).toEqual(rest);
+  await tile.click();
+  await expect(tile).toHaveAttribute('aria-pressed', 'false');
+  // Docked, the Session card slides the column inside the room, never the
+  // room: the view's box is the same, and nothing is sent on the slide.
+  await page.locator('#toggle-panel').click();
+  await page.locator('#session [data-mode="pinned"]').click();
+  await expect(page.locator('#session')).toHaveClass(/docked/);
+  expect(await box(page, '#layout')).toEqual({ left: 44, top: 44, right: 1092, bottom: 752 });
+  await tile.click();
+  await expect(tile).toHaveAttribute('aria-pressed', 'true');
+  expect((await sent()).slice(2)).toEqual([{ type: 'history', action: 'open', inline: { x: 44, y: 44, width: 1048, height: 708 } }]);
+  await page.waitForTimeout(300);
+  expect(await sent()).toHaveLength(3);
+});
+
 test('the File tile opens Plass\'s text menu under it, and it closes on an item, a click elsewhere or Escape', async ({ page }) => {
   await boot(page);
   const tile = page.locator('#file-tile');

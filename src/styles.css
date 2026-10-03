@@ -285,8 +285,9 @@ body {
 
 /* The bar's tiles (File; History, right after the name pill with the
    bar's gap): bare, 32 px with 9 px corners and an 18 px glyph, lit while
-   a menu is open. They never shrink: when the bar is short the name pill
-   gives way (its max-width first, then its folder). */
+   a menu is open (File) or the History view is up over the room (History,
+   pressed: main.ts, inlineHistory). They never shrink: when the bar is
+   short the name pill gives way (its max-width first, then its folder). */
 #toolbar .tb-tile {
   flex: none;
   width: 32px;
@@ -305,7 +306,8 @@ body {
   background: rgba(255, 255, 255, 0.08);
 }
 
-#toolbar .tb-tile[aria-expanded='true'] {
+#toolbar .tb-tile[aria-expanded='true'],
+#toolbar .tb-tile[aria-pressed='true'] {
   color: #fff;
   background: var(--tile);
 }
