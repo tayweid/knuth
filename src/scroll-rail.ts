@@ -13,21 +13,29 @@
 // `stack` the column (#sheet, Plass's #stack).
 //
 // One fraction maps everything. A point of the document, y in the room's
-// scroll px (the column's own layout, the room's top padding above it and
-// its 40vh below), is y / the room's scroll height down the track, and the
-// track is exactly the room's height. The marks are placed by that
-// fraction in CSS (`top: calc(var(--f) * 100%)`), and the band, the visible
-// span, is the room's scrollTop and clientHeight over the same height, so
-// the two agree by construction. The 40vh is part of that height, so the
-// foot of the track is the empty run the room scrolls into under the last
-// cell, and a change of the window's height alone moves every mark a
-// little along the track (by the 40vh's share) though no cell moved; the
-// band moves with them. The band is drawn on its own layer: a scroll
-// writes its offset, a transform, in a frame (and its height, only when
-// the room's scroll range or size changed), and the marks inside it carry
-// the class `in` (a step brighter), set only on those that crossed the
-// band's edges since the last frame, usually none. Nothing a scroll writes
-// is inherited by the marks or lays the rail out.
+// scroll px, is y / the document's length down the track, and the track
+// is exactly the room's height. The document's length is the column's
+// end in those px (the room's top padding and the column): the room's
+// scroll less the 40vh under the last cell, which is room to type into
+// and to bring the last cell up the room, not document. It changes with
+// the column and never with the window's height, so the last cell's end
+// is the track's foot, and a change of the window's height alone moves
+// no mark. (Taylor, 2026-10-02: "can we fix the rail mark shifts? not a
+// big deal but those things add up". Over the room's whole scroll
+// height, the 40vh's share had moved every mark: the last tick of
+// rail.spec's notebook 0.872 of the way down at 600 tall, 0.834 at 940.)
+// The marks are placed by that fraction in CSS (`top: calc(var(--f) *
+// 100%)`), and the band, the visible span, is the room's scrollTop and
+// clientHeight over the same length, so the two agree by construction.
+// Scrolled on into the 40vh, the band's bottom stays at the foot while
+// its top keeps moving: it shrinks to what of the document is still in
+// the room, as a macOS scrollbar's thumb does past the end. The band is
+// drawn on its own layer: a scroll writes its offset, a transform, in a
+// frame (and its height only when the document's length or the room's
+// height changed, or in the 40vh, where it shrinks), and the marks inside
+// it carry the class `in` (a step brighter), set only on those that
+// crossed the band's edges since the last frame, usually none. Nothing a
+// scroll writes is inherited by the marks or lays the rail out.
 //
 // What differs from Plass, and why. Plass's paper is laid out once at
 // 816 px and drawn to the panel's width by a transform, so a resize moves
@@ -37,13 +45,18 @@
 // on both, coalesced into a frame) and when a run starts or ends, which
 // changes a tick's colour without changing a size. Never on a scroll, and
 // a keystroke writes nothing unless it changes the column's height (a new
-// line), which is the column settling. Knuth has no pages, so Plass's page
-// breaks, their numbers and the numbers' crowding rule are not here;
-// instead the code cells' ticks thin on a long notebook (TICK_ROOM). A mark
-// is reused across reads by its key, so the focus and the hover survive
-// the column settling under them; a heading's key is its place in its
-// cell, so one retyped to another level keeps its button and changes its
-// dot. Every place is read before any mark is written (build): a write
+// line), which is the column settling; the room's size changes the
+// track's px and the band, never a mark's fraction, so a read after it
+// writes no mark. Plass's panel scrolls only its paper, so its band is
+// over the panel's scroll height; Knuth's room scrolls 40vh past the
+// document, so its band is over the document's length and clipped at the
+// foot (above). Knuth has no pages, so Plass's page breaks, their numbers
+// and the numbers' crowding rule are not here; instead the code cells'
+// ticks thin on a long notebook (TICK_ROOM). A mark is reused across
+// reads by its key, so the focus and the hover survive the column
+// settling under them; a heading's key is its place in its cell, so one
+// retyped to another level keeps its button and changes its dot. Every
+// place is read before any mark is written (build): a write
 // between two reads lays the document out again, once per mark. Plass's
 // marks are new buttons not yet in the document, so it reads and writes
 // as it goes.
@@ -102,7 +115,9 @@ export interface SourceMark {
   /** The element whose top (or, `bottom`, bottom) the mark stands for. */
   el: HTMLElement;
   bottom?: boolean;
-  /** A code cell's last run raised; a code cell is running. */
+  /** A code cell's last run raised; a code cell is running. On the
+   *  cursor's bar, its cell's: the bar then stands above the cell's tick
+   *  (styles.css). */
   error?: boolean;
   running?: boolean;
   /** The label, asked when it shows (and for the button's name), so words
@@ -121,7 +136,7 @@ interface Mark {
   kind: MarkKind;
   key: string;
   src: SourceMark;
-  /** The room's scroll px, and that over the room's scroll height (its --f). */
+  /** The room's scroll px, and that over the document's length (its --f). */
   y: number;
   f: number;
   /** Inside the band (its class `in`), as last drawn. */
@@ -141,8 +156,9 @@ export interface ScrollRail {
   mode(away: boolean): void;
 }
 
-/** The caret's bar is drawn under the cell's own mark (styles.css), and
- *  sorted after it, so a tie at the cell's top goes to the cell. */
+/** The caret's bar is drawn under the cell's own mark, or above a red or
+ *  running tick, which would hide it (styles.css), and sorted after it,
+ *  so a tie at the cell's top goes to the cell. */
 const CLASSES: Record<MarkKind, string> = {
   title: 'sr-title',
   section: 'sr-section',
@@ -209,6 +225,9 @@ export function attachScrollRail(source: RailSource, panel: HTMLElement, stack: 
   let caretFrame = 0;
 
   const fraction = (y: number) => y / docH;
+  /** The document's length: the column's end in the room's scroll px (the
+   *  room's top padding and the column; not the 40vh under it). */
+  const end = () => layoutTop(stack, panel) + stack.offsetHeight;
   /** Where a mark stands, in the room's scroll px. */
   const placeOf = (src: SourceMark) => layoutTop(src.el, panel) + (src.bottom ? src.el.offsetHeight : 0);
   const inTrack = (y: number) => fraction(y) * trackH;
@@ -221,7 +240,7 @@ export function attachScrollRail(source: RailSource, panel: HTMLElement, stack: 
     // The column's end at the top of the scroll, against the room's
     // height: the room's 40vh under the column is room to type into, not
     // document, so a column that fits keeps the 8 px edge.
-    return layoutTop(stack, panel) + stack.offsetHeight > panel.clientHeight + 1;
+    return end() > panel.clientHeight + 1;
   }
 
   let pressed = false;
@@ -309,7 +328,7 @@ export function attachScrollRail(source: RailSource, panel: HTMLElement, stack: 
   }
 
   function build(): void {
-    docH = panel.scrollHeight || 1;
+    docH = end() || 1;
     const focused = marks.findIndex((m) => m.button === document.activeElement);
     const stop = marks.find((m) => m.button.tabIndex === 0) ?? null;
     // Every place read before any mark is written: a write between two
@@ -399,17 +418,19 @@ export function attachScrollRail(source: RailSource, panel: HTMLElement, stack: 
 
   /** The band's height and offset as last written: a scroll moves it and
    *  rewrites only the offset, a transform on the band's own layer, so the
-   *  frame neither lays out nor paints the rail. */
+   *  frame neither lays out nor paints the rail (in the 40vh under the
+   *  column, the band's height too, on its own layer). */
   let bandH = '';
   let bandY = '';
   const px = (v: number) => `${Math.round(v * 100) / 100}px`;
 
   function drawBand(): void {
     bandFrame = 0;
-    const H = panel.scrollHeight || 1;
+    // The document's length, as the marks were placed by: in the 40vh
+    // under the column the band's bottom stays at the foot.
     const top = panel.scrollTop;
-    span0 = top / H;
-    span1 = (top + panel.clientHeight) / H;
+    span0 = top / docH;
+    span1 = Math.min(1, (top + panel.clientHeight) / docH);
     // Never under 10 px tall, never past the track's ends.
     const h = Math.max(10, (span1 - span0) * trackH);
     const height = px(h);
@@ -442,9 +463,9 @@ export function attachScrollRail(source: RailSource, panel: HTMLElement, stack: 
   // The column settling: a cell's output arriving, a figure loading, a
   // cell added or removed, a line typed, the column rewrapping at a new
   // width; and the room's own size (the window, the gutter coming or
-  // going, the 40vh under the column with the window's height). One
-  // observer for both, coalesced into the frame's refresh, which reads the
-  // marks again. Plass observes only its panel (its marks come from the
+  // going), which changes the track's px and the band and moves no mark.
+  // One observer for both, coalesced into the frame's refresh, which reads
+  // the marks again. Plass observes only its panel (its marks come from the
   // settled layout pass, and a resize changes only the drawing).
   const settled = new ResizeObserver(schedule);
   settled.observe(stack);
@@ -575,7 +596,7 @@ export function attachScrollRail(source: RailSource, panel: HTMLElement, stack: 
 
   /** Empty track: that point of the document in the middle of the room. */
   function centre(y: number): void {
-    const top = (y / trackH) * panel.scrollHeight - panel.clientHeight / 2;
+    const top = (y / trackH) * docH - panel.clientHeight / 2;
     panel.scrollTo({ top: Math.max(0, top), behavior: smooth() });
   }
 
@@ -598,12 +619,12 @@ export function attachScrollRail(source: RailSource, panel: HTMLElement, stack: 
       // A press that moves scrubs the band from where it was, wherever it
       // was pressed (on a mark, on the band, on empty track), and jumps
       // nothing: the document follows the pointer by the track's
-      // proportion.
+      // proportion, so the band stays under it.
       if (!drag.moved && Math.abs(e.clientY - drag.y0) > DRAG) {
         drag.moved = true;
         rest();
       }
-      if (drag.moved) panel.scrollTop = drag.top0 + ((e.clientY - drag.y0) / trackH) * panel.scrollHeight;
+      if (drag.moved) panel.scrollTop = drag.top0 + ((e.clientY - drag.y0) / trackH) * docH;
       return;
     }
     // A button held from elsewhere (a selection dragged toward the edge):
@@ -628,8 +649,8 @@ export function attachScrollRail(source: RailSource, panel: HTMLElement, stack: 
     if (d.target) jump(d.target);
     else {
       // A click on the band itself is a grab that never moved: it stays.
-      const f0 = panel.scrollTop / panel.scrollHeight;
-      const f1 = (panel.scrollTop + panel.clientHeight) / panel.scrollHeight;
+      const f0 = panel.scrollTop / docH;
+      const f1 = Math.min(1, (panel.scrollTop + panel.clientHeight) / docH);
       const f = d.y / trackH;
       if (f < f0 || f > f1) centre(d.y);
     }
