@@ -3,8 +3,10 @@
 // window's right, there while the column runs past the room in the cell
 // view. The room gives the gutter 12 px of its width (W − 64 wide with it,
 // W − 52 without); the column keeps its own width rules. The marks are
-// placed by fraction of the room's scroll height down a track the room's
-// height: headings in text cells as dots by level, code cells as ticks (red
+// placed by fraction of the document's length (the column's end in the
+// room's scroll px: the room's scroll less the 40vh under the column, so
+// the window's height moves none) down a track the room's height:
+// headings in text cells as dots by level, code cells as ticks (red
 // when the last run raised, pulsing while it runs), figures as filled
 // squares and tables (a run that left a DataFrame) as open ones, the
 // cursor's cell as the blue bar. The mock engine answers a run as
@@ -168,13 +170,14 @@ const frame = (page: Page) =>
   });
 
 /** Where things should be on the rail, from the cells (their tops in the
- *  room's scroll px over its scroll height, down the track), and where the
- *  rail drew them, in track px. */
+ *  room's scroll px over the document's length, the room's scroll less the
+ *  40vh under the column, its bottom padding; down the track), and where
+ *  the rail drew them, in track px. */
 const geometry = (page: Page, tableCells: number[] = []) =>
   page.evaluate((tableCells) => {
     const doc = document.getElementById('doc')!;
     const d = doc.getBoundingClientRect();
-    const H = doc.scrollHeight;
+    const H = doc.scrollHeight - parseFloat(getComputedStyle(doc).paddingBottom);
     const track = document.querySelector('#scrollrail .sr-track')!.getBoundingClientRect();
     const at = (el: Element, bottom = false) => {
       const r = el.getBoundingClientRect();
@@ -198,7 +201,7 @@ const geometry = (page: Page, tableCells: number[] = []) =>
     });
     return {
       track: { top: track.top, height: track.height, left: track.left, right: track.right },
-      scrollHeight: H,
+      length: H,
       want: {
         title: want('.kind-text .ProseMirror h1'),
         section: want('.kind-text .ProseMirror h2'),
@@ -225,8 +228,29 @@ const geometry = (page: Page, tableCells: number[] = []) =>
 const scroller = (page: Page) =>
   page.evaluate(() => {
     const p = document.getElementById('doc')!;
-    return { top: p.scrollTop, height: p.scrollHeight, client: p.clientHeight };
+    return { top: p.scrollTop, height: p.scrollHeight, client: p.clientHeight, length: p.scrollHeight - parseFloat(getComputedStyle(p).paddingBottom) };
   });
+
+/** The band as drawn, and where it should be: its top at scrollTop over
+ *  the document's length, its bottom at scrollTop and the room's height
+ *  over it, never past the track's foot (in the 40vh under the column the
+ *  band shrinks); in track px. */
+const band = (page: Page) =>
+  page.evaluate(() => {
+    const doc = document.getElementById('doc')!;
+    const length = doc.scrollHeight - parseFloat(getComputedStyle(doc).paddingBottom);
+    const track = document.querySelector('#scrollrail .sr-track')!.getBoundingClientRect();
+    const b = document.querySelector('#scrollrail .sr-band')!.getBoundingClientRect();
+    return {
+      drawn: { top: b.top - track.top, bottom: b.bottom - track.top },
+      want: { top: (doc.scrollTop / length) * track.height, bottom: Math.min(1, (doc.scrollTop + doc.clientHeight) / length) * track.height },
+      track: track.height,
+    };
+  });
+const bandOff = async (page: Page) => {
+  const b = await band(page);
+  return Math.max(Math.abs(b.drawn.top - b.want.top), Math.abs(b.drawn.bottom - b.want.bottom));
+};
 
 const label = (page: Page) =>
   page.evaluate(() => {
@@ -401,7 +425,7 @@ test('marks sit at the cells\' tops: headings by level, a tick per code cell, a 
   await expect.poll(async () => (await geometry(page)).drawn.figure.length).toBe(1);
   await expect.poll(async () => (await geometry(page)).drawn.table.length).toBe(1);
   const after = await check(1, [1]);
-  expect(after.scrollHeight).toBeGreaterThan(before.scrollHeight + 140);
+  expect(after.length).toBeGreaterThan(before.length + 140);
   expect(after.drawn.code.at(-1)!).toBeGreaterThan(before.drawn.code.at(-1)! + 1);
   // The title is a 7 px dot, a section 5, a subsection 3, a tick 7 × 1, a
   // square 5.
@@ -486,7 +510,7 @@ test('the cursor\'s cell is the blue bar, and it moves with a click into another
     });
   const inTrack = async (y: number) => {
     const g = await geometry(page);
-    return (y / g.scrollHeight) * g.track.height;
+    return (y / g.length) * g.track.height;
   };
   await codeCell(page, 2).locator('.cm-content').click();
   await expect.poll(async () => {
@@ -507,6 +531,91 @@ test('the cursor\'s cell is the blue bar, and it moves with a click into another
   await cell(page, 0).evaluate((el) => el.scrollIntoView({ block: 'center' }));
   await cell(page, 0).locator('.ProseMirror p').first().click();
   await expect.poll(() => page.locator('#scrollrail .sr-caret').getAttribute('aria-label')).toBe('Cursor, Demand for coffee');
+});
+
+test('the cursor\'s bar is Plass\'s 8 × 2 px under its cell\'s tick; over its cell\'s red or running tick it stands above it, both whole', async ({ page }) => {
+  await boot(page);
+  await expect.poll(() => hasRail(page)).toBe(true);
+  /** The bar, and its cell's tick (by the cell's number), in track px. */
+  const marks = (n: number) =>
+    page.evaluate((n) => {
+      const track = document.querySelector('#scrollrail .sr-track')!.getBoundingClientRect();
+      const box = (el: HTMLElement | undefined) => {
+        if (!el) return null;
+        const r = el.getBoundingClientRect();
+        const style = getComputedStyle(el);
+        return {
+          top: r.top - track.top,
+          bottom: r.bottom - track.top,
+          mid: r.top + r.height / 2 - track.top,
+          x: r.left + r.width / 2,
+          size: [el.offsetWidth, el.offsetHeight],
+          colour: style.backgroundColor,
+          shown: style.visibility === 'visible' && style.opacity !== '0',
+        };
+      };
+      const caret = document.querySelector<HTMLElement>('#scrollrail .sr-caret') ?? undefined;
+      const tick = [...document.querySelectorAll<HTMLElement>('#scrollrail .sr-code')].find((el) => el.getAttribute('aria-label')!.startsWith(`Cell ${n},`));
+      return { caret: box(caret), tick: box(tick), stepped: !!caret && /\b(error|running)\b/.test(caret.className) };
+    }, n);
+  const BLUE = 'rgb(157, 184, 214)';
+  /** Under a plain tick: centred on it, 8 × 2. */
+  const under = async (n: number) => {
+    await expect.poll(async () => {
+      const m = await marks(n);
+      return m.caret && m.tick && !m.stepped ? Math.abs(m.caret.mid - m.tick.mid) : 99;
+    }, { message: `the bar on Cell ${n}'s tick` }).toBeLessThan(0.5);
+    const m = await marks(n);
+    expect(m.caret!.size).toEqual([8, 2]);
+    expect(m.caret!.colour).toBe(BLUE);
+  };
+  /** Over a loud tick (9 × 2, opaque, drawn over the bar): the bar above
+   *  it by its own height and a pixel, its middle 3 px up, the two boxes
+   *  apart, the bar centred over the tick. */
+  const above = async (n: number, colour: string) => {
+    await expect.poll(async () => (await marks(n)).stepped, { message: `the bar above Cell ${n}'s tick` }).toBe(true);
+    const m = await marks(n);
+    expect(m.caret!.size).toEqual([8, 2]);
+    expect(m.tick!.size).toEqual([9, 2]);
+    expect(m.caret!.bottom).toBeLessThanOrEqual(m.tick!.top);
+    expect(m.tick!.top - m.caret!.bottom).toBeCloseTo(1, 1);
+    expect(m.tick!.mid - m.caret!.mid).toBeCloseTo(3, 1);
+    expect(Math.abs(m.caret!.x - m.tick!.x)).toBeLessThan(0.5);
+    expect(m.caret!).toMatchObject({ colour: BLUE, shown: true });
+    expect(m.tick!).toMatchObject({ colour, shown: true });
+  };
+
+  await codeCell(page, 2).locator('.cm-content').click();
+  await under(2);
+  // Cell 4 raises, the cursor in it: the bar above the red tick.
+  await codeCell(page, 4).evaluate((el) => el.scrollIntoView({ block: 'center' }));
+  await runCell(page, 4);
+  await expect(page.locator('#scrollrail .sr-code.error')).toHaveCount(1);
+  await codeCell(page, 4).locator('.cm-content').click();
+  await expect.poll(async () => (await marks(4)).tick?.colour).toBe('rgb(205, 100, 82)');
+  await above(4, 'rgb(205, 100, 82)');
+  // Hovered there, the label names the cell (a tie at its top is the
+  // cell's), as it did under the tick.
+  const g = await geometry(page);
+  await page.mouse.move(1100 - GUTTER / 2, g.track.top + (await marks(4)).tick!.mid);
+  await expect.poll(async () => (await label(page)).k).toBe('Cell 4');
+  await page.mouse.move(600, 400);
+  // Into another cell: under its plain tick, centred again.
+  await codeCell(page, 5).locator('.cm-content').click();
+  await under(5);
+  // Cell 6 sleeps 1.5 s with the cursor in it: above the running tick
+  // while it runs (it pulses: its box, not its colour, is asked), then
+  // under the plain tick once it is done.
+  await codeCell(page, 6).evaluate((el) => el.scrollIntoView({ block: 'center' }));
+  await codeCell(page, 6).locator('.cm-content').click();
+  await runCell(page, 6);
+  await expect(page.locator('#scrollrail .sr-code.running')).toHaveCount(1);
+  await expect.poll(async () => (await marks(6)).stepped).toBe(true);
+  const m = await marks(6);
+  expect(m.caret!.bottom).toBeLessThanOrEqual(m.tick!.top);
+  expect(m.tick!.size).toEqual([9, 2]);
+  await expect(page.locator('#scrollrail .sr-code.running')).toHaveCount(0, { timeout: 5_000 });
+  await under(6);
 });
 
 test('a heading retyped to another level takes that level\'s dot', async ({ page }) => {
@@ -611,8 +720,8 @@ test('a click on a mark puts its cell\'s top an eighth of the way down the room;
   await expect.poll(async () => Math.abs((await scroller(page)).top - (results - client / 8))).toBeLessThan(1.5);
 
   // A press on a mark that drags scrubs the band from where it was: 100 px
-  // of drag is 100 / the track's height of the document, and nothing
-  // jumps.
+  // of drag is 100 / the track's height of the document's length, so the
+  // band stays under the pointer, and nothing jumps.
   await page.evaluate(() => (document.getElementById('doc')!.scrollTop = 0));
   await page.waitForTimeout(100);
   const start = await scroller(page);
@@ -623,7 +732,7 @@ test('a click on a mark puts its cell\'s top an eighth of the way down the room;
   await page.mouse.move(x, from + 100, { steps: 5 });
   expect(await page.evaluate(() => document.getElementById('scrollrail')!.classList.contains('dragging'))).toBe(true);
   await page.mouse.up();
-  const expected = start.top + (100 / g.track.height) * start.height;
+  const expected = start.top + (100 / g.track.height) * start.length;
   const dragged = (await scroller(page)).top;
   expect(Math.abs(dragged - expected)).toBeLessThan(2);
   await page.waitForTimeout(600);
@@ -636,27 +745,20 @@ test('a click on a mark puts its cell\'s top an eighth of the way down the room;
   await expect.poll(async () => (await scroller(page)).top - before).toBe(240);
 });
 
-test('the band is the visible span: the room\'s scrollTop and height over its scroll height; lit while the pointer is in the gutter and 0.9 s after a scroll', async ({ page }) => {
+test('the band is the visible span: the room\'s scrollTop and height over the document\'s length; lit while the pointer is in the gutter and 0.9 s after a scroll', async ({ page }) => {
   await boot(page);
   await expect.poll(() => hasRail(page)).toBe(true);
-  const track = (await geometry(page)).track;
   for (const at of [0, 0.25, 0.6, 1]) {
-    const s = await page.evaluate((at) => {
+    await page.evaluate((at) => {
       const p = document.getElementById('doc')!;
       p.scrollTop = (p.scrollHeight - p.clientHeight) * at;
-      return { top: p.scrollTop, height: p.scrollHeight, client: p.clientHeight };
     }, at);
-    const want = { top: (s.top / s.height) * track.height, height: Math.max(10, (s.client / s.height) * track.height) };
-    await expect
-      .poll(async () => {
-        const band = await page.evaluate(() => document.querySelector('#scrollrail .sr-band')!.getBoundingClientRect());
-        return Math.max(Math.abs(band.top - track.top - want.top), Math.abs(band.height - want.height));
-      }, { message: `at ${at}` })
-      .toBeLessThan(0.6);
+    await expect.poll(() => bandOff(page), { message: `at ${at}` }).toBeLessThan(0.6);
   }
-  // At the end the band's bottom is level with the room's bottom.
-  const band = await page.evaluate(() => document.querySelector('#scrollrail .sr-band')!.getBoundingClientRect());
-  expect(Math.abs(band.bottom - (760 - EDGE))).toBeLessThan(0.6);
+  // At the end (in the 40vh under the column) the band's bottom is level
+  // with the room's bottom.
+  const drawn = await page.evaluate(() => document.querySelector('#scrollrail .sr-band')!.getBoundingClientRect());
+  expect(Math.abs(drawn.bottom - (760 - EDGE))).toBeLessThan(0.6);
 
   const lit = () => page.evaluate(() => {
     const r = document.getElementById('scrollrail')!;
@@ -671,6 +773,79 @@ test('the band is the visible span: the room\'s scrollTop and height over its sc
   await expect.poll(() => page.locator('#scrollrail .sr-band').evaluate((el) => getComputedStyle(el).backgroundColor)).toBe('rgba(255, 255, 255, 0.075)');
   await page.mouse.move(600, 300);
   await expect.poll(async () => (await lit()).awake, { timeout: 3_000 }).toBe(false);
+});
+
+test('the window\'s height moves no mark: the track is the document, the column\'s end its foot, and in the 40vh under the column the band shrinks', async ({ page }) => {
+  await boot(page);
+  await expect.poll(() => hasRail(page)).toBe(true);
+  // Through the document once: CodeMirror measures a cell as it comes into
+  // view (a few px against its estimate), which is the column settling; a
+  // taller window brings more of it into view.
+  for (let top = 0; top < (await scroller(page)).height; top += 400) {
+    await page.evaluate((t) => (document.getElementById('doc')!.scrollTop = t), top);
+    await page.waitForTimeout(80);
+  }
+  const fractions = () =>
+    page.evaluate(() =>
+      Object.fromEntries(
+        [...document.querySelectorAll<HTMLElement>('#scrollrail .sr-mark')].map((b) => [`${b.className.split(' ')[1]} ${b.getAttribute('aria-label')}`, parseFloat(b.style.getPropertyValue('--f'))]),
+      ));
+  const scrollTo = (at: 'top' | 'mid' | 'end') =>
+    page.evaluate((at) => {
+      const p = document.getElementById('doc')!;
+      const length = p.scrollHeight - parseFloat(getComputedStyle(p).paddingBottom);
+      p.scrollTop = at === 'top' ? 0 : at === 'mid' ? (length - p.clientHeight) / 2 : p.scrollHeight - p.clientHeight;
+    }, at);
+  let first: Record<string, number> | null = null;
+  for (const height of [760, 600, 940]) {
+    await page.setViewportSize({ width: 1100, height });
+    await scrollTo('top');
+    await expect.poll(async () => (await band(page)).track, { message: `the track at ${height}` }).toBe(height - 44 - EDGE);
+    await expect.poll(() => bandOff(page), { message: `the band at the top, ${height} tall` }).toBeLessThan(0.6);
+    // Every mark where it was at 760, to the fourth decimal.
+    const f = await fractions();
+    expect(Object.keys(f).length).toBe(17);
+    first ??= f;
+    expect(Object.keys(f)).toEqual(Object.keys(first));
+    for (const [name, v] of Object.entries(first)) expect(f[name], `${name} at ${height}`).toBeCloseTo(v, 4);
+    // The column's end is the document's length, the track's foot.
+    const ends = await page.evaluate(() => {
+      const doc = document.getElementById('doc')!;
+      const sheet = document.getElementById('sheet')!.getBoundingClientRect();
+      return { end: sheet.bottom - doc.getBoundingClientRect().top - doc.clientTop + doc.scrollTop, length: doc.scrollHeight - parseFloat(getComputedStyle(doc).paddingBottom) };
+    });
+    expect(Math.abs(ends.end - ends.length)).toBeLessThan(1);
+    // The band: at the top its top is the track's; mid-document both
+    // edges inside; scrolled fully into the 40vh, its bottom at the foot
+    // and its top still the room's scroll, so it is shorter than the room's
+    // share of the document.
+    const b0 = await band(page);
+    expect(b0.drawn.top).toBeCloseTo(0, 1);
+    expect(b0.drawn.bottom).toBeLessThan(b0.track);
+    await scrollTo('mid');
+    await expect.poll(() => bandOff(page), { message: `the band mid-document, ${height} tall` }).toBeLessThan(0.6);
+    const mid = await band(page);
+    expect(mid.drawn.top).toBeGreaterThan(1);
+    expect(mid.drawn.bottom).toBeLessThan(mid.track - 1);
+    await scrollTo('end');
+    await expect.poll(() => bandOff(page), { message: `the band in the 40vh, ${height} tall` }).toBeLessThan(0.6);
+    const end = await band(page);
+    expect(Math.abs(end.drawn.bottom - end.track)).toBeLessThan(0.6);
+    expect(end.drawn.bottom - end.drawn.top).toBeLessThan(mid.drawn.bottom - mid.drawn.top - 20);
+    // The scroll itself moved no mark.
+    const scrolled = await fractions();
+    for (const [name, v] of Object.entries(f)) expect(scrolled[name], `${name} scrolled, ${height} tall`).toBeCloseTo(v, 4);
+  }
+  // Nor does the 40vh itself: a smaller pad under the column (the room
+  // reads its own size again) moves no mark, and the band, scrolled to the
+  // new end, still stops at the foot.
+  await page.evaluate(() => (document.getElementById('doc')!.style.paddingBottom = '120px'));
+  await scrollTo('end');
+  await expect.poll(() => bandOff(page)).toBeLessThan(0.6);
+  const f = await fractions();
+  for (const [name, v] of Object.entries(first!)) expect(f[name], `${name} with a 120 px pad`).toBeCloseTo(v, 4);
+  const b = await band(page);
+  expect(Math.abs(b.drawn.bottom - b.track)).toBeLessThan(0.6);
 });
 
 test('a scroll writes the band and the `in` of what it crosses, and a keystroke that keeps the column\'s height writes nothing to the rail', async ({ page }) => {
@@ -712,8 +887,9 @@ test('a scroll writes the band and the `in` of what it crosses, and a keystroke 
   // The marks inside the band carry `in`, the rest not.
   const wrong = await page.evaluate(() => {
     const p = document.getElementById('doc')!;
-    const f0 = p.scrollTop / p.scrollHeight;
-    const f1 = (p.scrollTop + p.clientHeight) / p.scrollHeight;
+    const length = p.scrollHeight - parseFloat(getComputedStyle(p).paddingBottom);
+    const f0 = p.scrollTop / length;
+    const f1 = Math.min(1, (p.scrollTop + p.clientHeight) / length);
     return [...document.querySelectorAll<HTMLElement>('#scrollrail .sr-mark')].filter((el) => {
       const f = parseFloat(el.style.getPropertyValue('--f'));
       return Math.abs(f - f0) > 1e-4 && Math.abs(f - f1) > 1e-4 && (f > f0 && f < f1) !== el.classList.contains('in');

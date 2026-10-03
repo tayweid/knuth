@@ -29,7 +29,10 @@ The scroll rail (branch `ux/rail`, the evening of 2026-10-02) maps the
 document in a 20 px gutter of the frame at the window's right while the
 column runs past the room: Plass's rail with Knuth's marks (below, *The
 scroll rail*; its record is `docs/zen-rail-1100.png` and
-`docs/zen-rail-1500.png`).
+`docs/zen-rail-1500.png`). Taylor's two calls on it (branch
+`ux/rail-tweaks`, later that evening): the cursor's bar Plass's 8 px,
+and marks that the window's height does not move (*What is open*, 4
+and 5).
 
 The History tile (branch `ux/history-tile`, later the same evening) puts
 the autosave record's way in on the bar, right after the name pill, in
@@ -63,9 +66,12 @@ view, the frame's right edge widens from 8 px to a 20 px gutter and the
 rail lives there, on the dark frame, outside the room. The room keeps
 its left, top and bottom edges and is 12 px narrower; the column keeps
 its own width rules (the 52rem measure at any usual width, so only its
-margins change). The rail stands for the whole document, its track
-exactly the room's height, so at the top the band's top is level with
-the room's top and at the end its bottom with the room's bottom. A
+margins change). The rail stands for the whole document, from the
+room's top to the column's end (not the 40vh the room scrolls on under
+the last cell), its track exactly the room's height, so at the top the
+band's top is level with the room's top and at the column's end its
+bottom with the room's bottom; scrolled on into the 40vh, the band's
+bottom stays there and the band shrinks. A
 document that fits the room, and the source and grid views, keep the
 8 px edge and no rail. On the rail, light marks on the dark, shown at
 rest:
@@ -82,8 +88,9 @@ rest:
   neither is dimmed outside the band or thinned;
 - a figure under a cell as a filled 5 px square at the figure's top, and
   a table as an open one, Plass's two squares;
-- the cursor's cell as the blue bar at the cell's top, under the cell's
-  own mark and wider than it, so it shows either side of a red tick;
+- the cursor's cell as the blue bar at the cell's top, Plass's 8 × 2 px,
+  under the cell's own mark; over its own cell's red or running tick,
+  which would hide it, it stands just above it;
 - the visible span as a lighter rounded band, the marks outside it a
   step quieter.
 
@@ -115,14 +122,16 @@ the session (`Session.tables`: the names a cell's last run left that
 are a DataFrame or a 2-D array). `src/scroll-rail.ts` is Plass's
 module, its structure and names kept so a fix carries across (its
 header says so): it places each mark at its element's top in the room's
-scroll px over the room's scroll height, written once as `--f` and
-placed by CSS, and the band at the room's scrollTop and height over the
-same scroll height, so the two agree by construction. The marks are
-read again when the column settles: one ResizeObserver on the column
-(`#sheet`) and the room (`#doc`), coalesced into a frame (an output
-arriving, a figure loading, a cell added or removed, a line typed, a
-rewrap at a new width, the window's height, which moves the 40vh under
-the column); and when a run starts or ends (`onRunStart`, `onRunDone`
+scroll px over the document's length (the column's end in those px: the
+room's scroll less the 40vh under the column), written once as `--f`
+and placed by CSS, and the band at the room's scrollTop and height over
+the same length, its bottom never past the track's foot, so the two
+agree by construction. The marks are read again when the column
+settles: one ResizeObserver on the column (`#sheet`) and the room
+(`#doc`), coalesced into a frame (an output arriving, a figure loading,
+a cell added or removed, a line typed, a rewrap at a new width; the
+room's own size, which changes the track and the band and rewrites no
+mark); and when a run starts or ends (`onRunStart`, `onRunDone`
 in main.ts), which changes a tick's colour without a size. A mark is
 reused by its key (the cell and the mark's place in it; a heading
 retyped to another level changes its dot), so a read writes only what
@@ -191,8 +200,9 @@ a table a 1.2 px line at .70; outside the band the marks at 60 %; the
 label rgba(27, 26, 30, .94), the heading 13 px STIX Two Text. Knuth's
 own: the code tick 7 × 1 px at rgba(240, 238, 233, .5); the red and the
 running tick 9 × 2 px at full strength (#cd6452; #6ea576 pulsing to 30 %
-over 1.1 s); the cursor's bar 12 × 2 px #9db8d6 (Plass's caret is
-8 px; open, below); a code line in the label 12 px mono, an error #e08a7b. The bar
+over 1.1 s); the cursor's bar Plass's 8 × 2 px #9db8d6 (3 px up, a
+pixel clear, over its cell's red or running tick: *What is open*, 4); a
+code line in the label 12 px mono, an error #e08a7b. The bar
 keeps its own 8 px at the right: the session pill ends at the window's
 edge less 8 whether the rail shows or not.
 
@@ -204,20 +214,20 @@ edge less 8 whether the rail shows or not.
   reflows and a cell grows as its output arrives, so the marks are read
   whenever the column or the room changes size, and when a run starts
   or ends; reusing each mark by its key keeps that cheap.
-- *What the track maps.* The room's whole scroll height: the 24 px above
-  the column and the 40vh under it are part of the scroll, so the band
-  can go there, and the bottom of the track is that empty run (about 7 %
-  of it on a forty-cell notebook at 1100 × 760, about a third on a
-  document just past the room; in Plass the marks run to the rail's
-  foot). The 40vh changes with the window's height, so a change of the
-  height alone moves every mark a little along the track though no cell
-  moved (forty cells: the last mark 0.909 of the way down at 760 tall,
-  0.898 at 900, 0.922 at 600, about 10 px of track); a change of width
-  moves a mark only where the column rewraps. Mapping the
-  column alone would keep the marks still and run them to the foot, but
-  the band could then not be the room's scroll: over the last 40vh it
-  would stop at the foot while the room still moved. Whether the rail
-  shows is asked of the column alone.
+- *What the track maps.* The document's length: the room's 24 px above
+  the column and the column, not the 40vh the room scrolls on under the
+  last cell (Plass's panel scrolls only its paper, so its scroll height
+  is the paper's). So the last cell's end is the track's foot, as the
+  paper's end is Plass's, and a change of the window's height moves no
+  mark; a change of width moves a mark only where the column rewraps.
+  The band reads the room's real scroll inside that length: its top is
+  scrollTop over the length, its bottom the room's bottom over it, at
+  most the foot, so past the column's end the band's top keeps moving
+  and the band shrinks to what of the document is still in the room, as
+  a macOS scrollbar's thumb does past the end. (Until `ux/rail-tweaks`
+  the track was the room's whole scroll height, the 40vh included, and
+  the window's height moved every mark by the 40vh's share: *What is
+  open*, 5.) Whether the rail shows is asked of the column alone.
 - *No pages.* Plass's page breaks, their numbers and the numbers'
   crowding rule have no place here; the code ticks thin instead.
 - *The landing.* CodeMirror lays out a cell far off screen from an
@@ -234,8 +244,8 @@ edge less 8 whether the rail shows or not.
 - *The cursor.* Plass's caret bar is the caret's line; Knuth's is the
   cursor's cell, at its top, and moves when the focus goes to another
   cell, not with the arrows inside one. It is drawn under the cell's
-  own mark and wider, and loses a tie at the cell's top to it, so a
-  hover there names the cell.
+  own mark (above a red or running tick, *What is open*, 4), and loses
+  a tie at the cell's top to it, so a hover there names the cell.
 - *The labels* lead with the cell's number and carry no page; a code line
   is in mono, an error in red; empty track names the cell or section
   there rather than a page.
@@ -257,15 +267,40 @@ edge less 8 whether the rail shows or not.
 3. *The cursor's bar at the cell's top* or at the cursor's line, as
    Plass's: the line would follow the arrows inside a long cell, and
    needs a hook on each editor's selection.
-4. *The cursor's bar's width*: 12 px, against Plass's 8, on the 14 px
-   band. It stands at the cell's top, where the cell's own tick is, and
-   is drawn under it, so it shows either side of the 9 px red tick of a
-   cell that raised, the cell you are most likely fixing; at Plass's
-   8 px it would vanish under that tick (and show half a pixel either
-   side of a plain one). One value in styles.css (`.sr-caret`).
-5. *The track's foot* (above, *What the track maps*): it is the empty
-   run under the last cell, so the marks stop short of the foot, and a
-   change of the window's height moves them by the 40vh's share.
+4. *The cursor's bar's width*: done (`ux/rail-tweaks`). Taylor: "lets
+   make the cursor's the same size". It is Plass's 8 × 2 px now; it was
+   12 so that it showed either side of the 9 × 2 px red tick drawn over
+   it. At 8 px it would vanish under its own cell's red tick, the cell
+   you are most likely fixing, and under the green one while that cell
+   runs (both are 9 × 2 and opaque). There the bar stands above the
+   tick by its own height and a pixel of the frame between (3 px up:
+   `margin-top: -3px` on `.sr-caret.error` and `.sr-caret.running`;
+   rail-marks.ts gives the bar its cell's two states), so both read
+   whole, the blue over the red, as Plass's would if it had an error
+   mark. Only where it is drawn moves: its place, its `in`, its label
+   and a hover (a tie at the cell's top is the cell's) are as they
+   were. Under a plain tick it is centred, the tick over it. Not
+   chosen: the red tick stepping aside (it is the mark that says where
+   the error is), or the bar beside it (8 + 9 px do not fit the 14 px
+   band).
+5. *The track's foot*: done (`ux/rail-tweaks`). Taylor: "can we fix the
+   rail mark shifts? not a big deal but those things add up". The track
+   maps the document's length, the column's end in the room's scroll px
+   (the room's scroll less the 40vh), not the room's whole scroll
+   height, so the window's height moves no mark and the last cell's end
+   is the foot (*What the track maps*). rail.spec's notebook at 1100
+   wide, the last tick's `--f` at 760, 600 and 940 tall: 0.853374,
+   0.871751 and 0.833605 before (each mark apart by up to 0.038 across
+   the three, the 40vh's share; the title 0.017519, 0.017896,
+   0.017113), 0.948332 at all three now, and all 17 marks the same to
+   the sixth decimal (the document 2732 px long at each height; the
+   room's scroll 3036, 2972 and 3108). The band reads the room's scroll
+   inside that length (its top scrollTop / length, its bottom
+   min(1, (scrollTop + the room's height) / length)): scrolled on into
+   the 40vh its bottom stays at the foot and its top keeps moving, so it
+   shrinks, to 105 px of the 708 px track at 1100 × 760 scrolled to the
+   end (184 mid-document). A drag and a click on empty track go by the
+   same length, so the band stays under the pointer.
 6. *Staleness* is not drawn (an amber tick would read the way the
    gutter's amber does); nor is uv's work for a cell (its spinner) a
    pulse, only a run.
@@ -319,9 +354,12 @@ each closed with a test in rail.spec that fails on 09c4456:
    line, red again when it raises.
 6. *The cursor's bar is 12 px, Plass's 8*: kept, and put to Taylor
    (*What is open*, 4), since at 8 px it vanishes under a red tick.
+   Taylor chose 8; the bar stands above a red or running tick.
 7. *A change of the window's height alone moves the marks*: kept, and
    said (*What the track maps*; *What is open*, 5), since mapping the
-   column alone would part the band from the room's scroll.
+   column alone would part the band from the room's scroll. Taylor
+   asked for it fixed: the track maps the column, and the band, clipped
+   at the foot, still reads the room's scroll (its top keeps moving).
 
 ## Checks (the scroll rail)
 
@@ -354,7 +392,8 @@ each closed with a test in rail.spec that fails on 09c4456:
   cell, a retyped first line, empty track and the track's ends; a click
   landing a cell's top an eighth down the room, a heading too; a drag
   scrubbing and jumping nothing; the wheel; the band's span against
-  scrollTop and scrollHeight at four places, lit while the pointer is in
+  scrollTop and the room's scroll height at four places (now the
+  document's length), lit while the pointer is in
   the gutter and 0.9 s after a scroll; a scroll writing only the band and
   `in`, a keystroke writing nothing to the rail, a new line moving the
   ticks; the keyboard; nothing waking during a selection dragged from a
@@ -375,6 +414,35 @@ each closed with a test in rail.spec that fails on 09c4456:
 - The record's run in the checkout shell: no console errors; the rail
   there at 1100 and 1500 with the room at (44, 44)–(1080, 752) and
   (44, 44)–(1480, 932).
+
+After Taylor's two calls (`ux/rail-tweaks`; *What is open*, 4 and 5):
+
+- `npm test`: green. `npm run build:engine` and `npm run check:web`:
+  green, the stamp committed.
+- rail.spec, 17 tests, two new. *The cursor's bar*: 8 × 2 px and centred
+  under its cell's plain tick; over its cell's red tick (Cell 4 raised,
+  the cursor in it) it stands above it, the two boxes a pixel apart,
+  its middle 3 px up, centred over the 9 × 2 tick, both in their
+  colours at full strength, a hover there still naming the cell; back
+  under the plain tick in the next cell; above the running tick while
+  Cell 6 runs with the cursor in it, under its tick once it is done.
+  *The window's height*: at 1100 wide and 760, 600 and 940 tall, all 17
+  marks' `--f` the same to the fourth decimal (they are the same to the
+  sixth), the column's end the document's length, and the band right at
+  the top, mid-document and scrolled fully into the 40vh (its bottom at
+  the track's foot, shorter than mid-document), no mark moved by those
+  scrolls; then the 40vh made a 120 px pad: no mark moved, the band at
+  the new end still at the foot. The band's four places, the drag, the
+  `in` check and the marks' places now read the document's length. Both
+  new tests, and the ones moved to the length, fail on f41c77c.
+- `CI=1 npx playwright test` on a spare port (a scratch config on 5491
+  with `--strictPort`, outside the checkout, deleted after): 125 passed
+  and one failed, `app.spec.ts`'s embed test, which hardcodes 5198 in
+  its iframe and so fails alone on any other port; nothing else retried.
+  rail, frame and session specs `--repeat-each=3` with no retries:
+  207 of 207.
+- `node ~/Projects/claerbout/smoke.mjs --config app/knuth.json browser`:
+  ok, with the autosave record's two subjects.
 
 ## The second pass
 

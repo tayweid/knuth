@@ -19,7 +19,9 @@
 //     figures, so the two squares of a cell that plots and leaves a table
 //     stand apart).
 //   - The cursor's cell as the blue bar, at the cell's top, under the
-//     cell's own mark; in a text cell its label is the cell's first block
+//     cell's own mark; above it when that is a red or a running tick,
+//     which would hide it (the bar carries the cell's error and running
+//     for styles.css); in a text cell its label is the cell's first block
 //     (its heading, else its first paragraph).
 //
 // The labels: a heading's words; a code cell's number as the receipt
@@ -122,6 +124,8 @@ export function cellMarks(docView: DocumentView, tablesOf: (id: string) => strin
         key: 'caret',
         kind: 'caret',
         el: c.row,
+        error: c.error,
+        running: c.running,
         say: (): Said => (c.kind === 'text' ? { k: 'Cursor', t: prose(c) } : { k: 'Cursor', t: cellName(c) }),
       };
     },

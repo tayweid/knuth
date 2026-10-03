@@ -951,13 +951,16 @@ body[data-view='source'] #view-toggle {
    running cell, the cursor's cell. Its track is exactly the room's height
    (the bar's bottom to the frame's edge above the window's bottom), so at
    the top of the document the band's top is level with the room's top
-   and at the end its bottom with the room's bottom. Everything on it is
-   placed by a fraction of the room's scroll height: --f on a mark
-   (written when the column settles); the band, the visible span, is moved
-   by a transform on its own layer (written in a frame after a scroll, on
-   the band alone: a variable on the rail would be inherited by every mark
-   and restyle them all on every frame of a scroll). There only while the
-   column runs past the room, in the cell view. */
+   and at the column's end its bottom with the room's bottom. Everything
+   on it is placed by a fraction of the document's length, the column's
+   end in the room's scroll px (not the 40vh under it, so the window's
+   height moves no mark): --f on a mark (written when the column
+   settles); the band, the visible span, clipped at the track's foot in
+   the 40vh, is moved by a transform on its own layer (written in a frame
+   after a scroll, on the band alone: a variable on the rail would be
+   inherited by every mark and restyle them all on every frame of a
+   scroll). There only while the column runs past the room, in the cell
+   view. */
 #scrollrail {
   position: fixed;
   top: var(--topbar);
@@ -1124,18 +1127,26 @@ body[data-view='source'] #view-toggle {
 }
 
 /* The cursor's cell: a bar in the frame's focus blue at the cell's top,
-   the one blue mark. Under the cell's own tick or dot (z-index), and wider
-   than them, so it shows either side of a red tick rather than hide it:
-   Plass's caret is 8 px, which would vanish under the 9 px red tick of
-   the cell you are fixing (open for Taylor in docs/ZEN-DRAFT.md, The
-   scroll rail; this width is the one switch). */
+   the one blue mark, Plass's 8 × 2 px caret (Taylor, 2026-10-02: "lets
+   make the cursor's the same size"). Under the cell's own tick or dot
+   (z-index), which it shows round. Over the 9 × 2 px tick of its own
+   cell when that raised or is running, it would vanish: there it stands
+   above the tick by its own height and a pixel of the frame between, so
+   both read whole, the blue over the red (rail-marks.ts gives the bar
+   its cell's error and running; only where it is drawn changes, not the
+   place it is read and targeted at). */
 .sr-caret {
   z-index: 0;
-  width: 12px;
+  width: 8px;
   height: 2px;
   border-radius: 1px;
   background: #9db8d6;
   opacity: 1;
+}
+
+.sr-caret.error,
+.sr-caret.running {
+  margin-top: -3px;
 }
 
 .sr-mark.hot {
