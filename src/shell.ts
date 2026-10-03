@@ -28,10 +28,20 @@
 // nothing to the page.
 //
 // The record's history view (the shell's README, "The history view";
-// docs/mockups/history.md) is the shell's own window: `history` ({action:
-// 'open'}) opens it for this window's project, answered {opened: true},
-// and a window with no record says why itself; an older shell answers
-// null. A rewind there asks every window on the project first, by the
+// docs/mockups/history.md) is the shell's own page, one copy for every
+// app. The History tile lays it over the room of this window: `history`
+// ({action: 'open', inline: {x, y, width, height}}, the room's box in CSS
+// px) has the shell put it there as a view of its own, answered {opened:
+// true, inline: true} (where there is no record it opens all the same and
+// says why); `bounds` (the same box) moves it as the room's box changes;
+// `close` puts it away. The page hears `history` ({kind: 'inline', state:
+// 'open' | 'closed'}) whenever it comes or goes, whoever moved it (Escape
+// and the close tile are the view's own), so the tile is pressed exactly
+// while it is up; and `history` ({kind: 'toggle'}) from View › History…,
+// which asks the page to do what its tile does (`inlineHistory`). A shell
+// before 0.2.3 answers `open` with {opened: true} and a window of its own;
+// one older still answers null. A rewind there asks every window on the
+// project first, by the
 // event `save` ({id, reason: 'rewind'}), to write its document, and waits
 // 3 seconds for `saved` ({id, ok, error?}; ok: false refuses the rewind);
 // then, by `reload` ({id, paths, reason, to, app?}: every file written or
@@ -46,7 +56,9 @@ export interface ShellMessage {
   type:
     | 'open' | 'saveAs' | 'read' | 'write' | 'stat' | 'rename' | 'remove' | 'choose' | 'status' | 'error'
     | 'ready' | 'update' | 'autosave' | 'history' | 'saved';
-  action?: 'install' | 'open';
+  action?: 'install' | 'open' | 'bounds' | 'close';
+  /** `history`: the room's box, CSS px, for the view over it. */
+  inline?: Box;
   path?: string;
   text?: string;
   name?: string;
@@ -62,7 +74,15 @@ export interface ShellMessage {
   error?: string;
 }
 
-export type ShellEvent = 'setup' | 'update' | 'save' | 'reload';
+export type ShellEvent = 'setup' | 'update' | 'save' | 'reload' | 'history';
+
+/** A box in the page's CSS px: the room's `getBoundingClientRect()`. */
+export interface Box {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
 
 /** A step of the app updating itself, as the shell reports it. */
 export interface UpdateStep {
@@ -187,8 +207,9 @@ export function answerRewinds(host: Shell, page: RewindPage): () => void {
 }
 
 /** The `history` request's answer as a sentence for the toast, or null
- *  when the view opened. Today's shell opens a window even where there is
- *  no record, and that window says why; a shell that answers with the
+ *  when the view opened (in the room, or an older shell's window). Today's
+ *  shell opens the view even where there is no record, and the view says
+ *  why; a shell that answers with the
  *  reason instead (its words: `unsaved`, `refused` with the folder rule,
  *  `off`, `no-git`) has it said here, and an older shell, with no view,
  *  answers null. */
@@ -207,6 +228,93 @@ export function historyNote(answer: { opened?: unknown; reason?: unknown; detail
     default:
       return answer ? 'No history view opened' : 'This Knuth.app has no history view: a newer shell brings it';
   }
+}
+
+/** The page's side of the History view in the room: the History tile,
+ *  File › History… and the shell's `toggle` (View › History…, ⇧⌘H) all
+ *  call `toggle`, which sends `open` with the room's box, or `close` while
+ *  the view is up. Whether it is up is the shell's word only (`history
+ *  {kind: 'inline', state}`), never the click's, so `paint` is told on
+ *  every one of those events and nothing else. `moved` is called when the
+ *  room's box may have changed (a ResizeObserver on the room, the window's
+ *  resize, a zoom step): while the view is up it sends `bounds`, once a
+ *  frame (`frame`), and only for a box that differs from the one last sent
+ *  (or at another device pixel ratio). `answered` gets `open`'s answer for
+ *  the page to say why there was no view (historyNote). */
+export interface InlineHistory {
+  readonly shown: boolean;
+  toggle(): Promise<void>;
+  /** Put the view away, if it is up. */
+  close(): void;
+  moved(): void;
+  dispose(): void;
+}
+
+export interface InlineHistoryPage {
+  room(): Box;
+  paint(shown: boolean): void;
+  answered(answer: { opened?: unknown; inline?: unknown; reason?: unknown; detail?: unknown } | null): void;
+  /** The device pixel ratio, which a zoom step changes. */
+  ratio?(): number;
+  frame?(run: () => void): void;
+}
+
+export function inlineHistory(host: Shell, page: InlineHistoryPage): InlineHistory {
+  const ratio = page.ratio ?? (() => (typeof window === 'undefined' ? 1 : window.devicePixelRatio));
+  const frame = page.frame ?? ((run: () => void) => void requestAnimationFrame(run));
+  let shown = false;
+  let sent = '';
+  let pending = false;
+  const measure = () => {
+    const r = page.room();
+    const box = { x: r.x, y: r.y, width: r.width, height: r.height };
+    return { box, key: `${box.x},${box.y},${box.width},${box.height}@${ratio()}` };
+  };
+  const place = () => {
+    if (!shown) return;
+    const { box, key } = measure();
+    if (key === sent) return;
+    sent = key;
+    void host.request({ type: 'history', action: 'bounds', inline: box });
+  };
+  const toggle = async () => {
+    if (shown) {
+      await host.request({ type: 'history', action: 'close' });
+      return;
+    }
+    const { box, key } = measure();
+    sent = key;
+    page.answered(await host.request({ type: 'history', action: 'open', inline: box }));
+  };
+  const off = host.on('history', (detail) => {
+    const { kind, state } = (detail ?? {}) as { kind?: unknown; state?: unknown };
+    if (kind === 'inline' && (state === 'open' || state === 'closed')) {
+      shown = state === 'open';
+      page.paint(shown);
+      // The room may have moved between the click and the view.
+      place();
+    } else if (kind === 'toggle') {
+      void toggle();
+    }
+  });
+  return {
+    get shown() {
+      return shown;
+    },
+    toggle,
+    close: () => {
+      if (shown) void host.request({ type: 'history', action: 'close' });
+    },
+    moved: () => {
+      if (!shown || pending) return;
+      pending = true;
+      frame(() => {
+        pending = false;
+        place();
+      });
+    },
+    dispose: off,
+  };
 }
 
 export const shell: Shell | null =

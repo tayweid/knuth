@@ -31,7 +31,7 @@ import { menus } from './menu.ts';
 import { icon } from './icons.ts';
 import { Onboarding } from './onboarding.ts';
 import { keepPlace } from './place.ts';
-import { answerRewinds, historyNote, reportCellRun, shell, type ShellMessage } from './shell.ts';
+import { answerRewinds, historyNote, inlineHistory, reportCellRun, shell, type ShellMessage } from './shell.ts';
 
 // The History tile's glyph: the record's river as the history view draws
 // it — time running down, three commits on one stream, the lowest filled,
@@ -229,11 +229,13 @@ menu.item(fileMenu, 'Open…', () => void fileManager.open(), { title: 'Open… 
 menu.item(fileMenu, 'Recent documents', () => {}, { title: 'Your documents', submenu: recentMenu });
 menu.item(fileMenu, 'Save', () => void fileManager.save(), { title: 'Save (⌘S)', shortcut: '⌘S' });
 // The project's autosave record as a path, with a rewind: the shell's own
-// window (its View › History…, on the same ⇧⌘H), so only inside Knuth.app,
-// from this item and from the bar's History tile beside the name pill —
-// one way in, two places (openHistory, below). The tile takes no focus
-// from a click, as the File tile does not: the cell keeps it.
-const historyItem = menu.item(fileMenu, 'History…', () => void openHistory(), {
+// page, laid over the room of this window (Taylor: "instead of a new
+// window, i just want it to open in the same window in the main area"), so
+// only inside Knuth.app, from this item and from the bar's History tile
+// beside the name pill — one way in, two places, and the shell's View ›
+// History… on the same ⇧⌘H a third (toggleHistory, below). The tile takes
+// no focus from a click, as the File tile does not: the cell keeps it.
+const historyItem = menu.item(fileMenu, 'History…', () => void toggleHistory(), {
   id: 'open-history',
   title: 'History… (⇧⌘H) — this project’s autosave record, and a rewind to any point on it',
   shortcut: '⇧⌘H',
@@ -241,7 +243,7 @@ const historyItem = menu.item(fileMenu, 'History…', () => void openHistory(), 
 const historyTile = $('history-tile') as HTMLButtonElement;
 historyItem.hidden = historyTile.hidden = !shell;
 historyTile.addEventListener('mousedown', (e) => e.preventDefault());
-historyTile.addEventListener('click', () => void openHistory());
+historyTile.addEventListener('click', () => void toggleHistory());
 const ioRule = menu.divider(fileMenu);
 const getItem = menu.item(fileMenu, 'Get Knuth for your Mac', () => {}, {
   id: 'get-app',
@@ -293,15 +295,65 @@ function askShell<T>(message: ShellMessage): Promise<T | null> {
 function askShellPath(message: ShellMessage): Promise<string | null> {
   return shell ? shell.pickPath(message) : Promise.resolve(null);
 }
-/** File → History… and the History tile, one path: the shell opens the
- *  view for this window's project, or says why there is none (shell.ts,
- *  historyNote). An older shell answers null: it has no view, so after
- *  saying so the tile and the item go, as Plass's item does. */
-async function openHistory() {
-  const answer = await askShell<{ opened?: boolean; reason?: string; detail?: string }>({ type: 'history', action: 'open' });
-  if (answer === null) historyItem.hidden = historyTile.hidden = true;
-  const note = historyNote(answer);
-  if (note) toast(note);
+/** File → History…, the History tile and the shell's View › History…,
+ *  one path (shell.ts, inlineHistory): the shell lays the History page
+ *  over the room's box and the tile is pressed while it is up, by the
+ *  shell's word; again, and it goes. Where there is no view the toast says
+ *  why (historyNote). An older shell answers null: it has no view, so
+ *  after saying so the tile and the item go, as Plass's item does.
+ *
+ *  The view is the shell's, above everything this page draws in the room.
+ *  So whatever acts in the room puts it away first: the File tile (its
+ *  menu opens down over the room), a rail tile, the session pill. The bar
+ *  above stays as it is, and Escape here (the bar holding the focus) puts
+ *  it away as Escape in the view does. The room's box is measured on a
+ *  ResizeObserver (the window's size; the scroll rail's gutter coming or
+ *  going, which narrows the room by 12 px) and on the window's resize
+ *  (a zoom step); the docked Session card slides the column inside the
+ *  room, never the room, so it moves nothing. */
+const room = $('layout');
+let focusUnder: HTMLElement | null = null;
+const historyView = shell
+  ? inlineHistory(shell, {
+    room: () => room.getBoundingClientRect(),
+    paint: (shown) => {
+      historyTile.setAttribute('aria-pressed', String(shown));
+      // Under the view nothing holds the focus, so a key pressed in this
+      // page while it is up edits no hidden cell; it comes back on close.
+      if (shown) {
+        const active = document.activeElement;
+        if (active instanceof HTMLElement && active !== document.body && room.contains(active)) {
+          focusUnder = active;
+          active.blur();
+        }
+      } else if (focusUnder) {
+        if (focusUnder.isConnected && document.activeElement === document.body) focusUnder.focus({ preventScroll: true });
+        focusUnder = null;
+      }
+    },
+    answered: (answer) => {
+      if (answer === null) historyItem.hidden = historyTile.hidden = true;
+      const note = historyNote(answer);
+      if (note) toast(note);
+    },
+  })
+  : null;
+function toggleHistory(): Promise<void> {
+  return historyView ? historyView.toggle() : Promise.resolve();
+}
+if (historyView) {
+  historyTile.setAttribute('aria-pressed', 'false');
+  new ResizeObserver(() => historyView.moved()).observe(room);
+  window.addEventListener('resize', () => historyView.moved());
+  for (const id of ['file-tile', 'rail', 'session-pill']) {
+    $(id).addEventListener('pointerdown', () => historyView.close(), true);
+  }
+  document.addEventListener('keydown', (event) => {
+    if (event.key !== 'Escape' || !historyView.shown || event.defaultPrevented) return;
+    const target = event.target as HTMLElement | null;
+    if (target?.closest('input, textarea, [contenteditable="true"]')) return;
+    historyView.close();
+  });
 }
 // Page failures reach the shell's log, which is what "Show Log" opens when
 // someone asks why the window is blank.

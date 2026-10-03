@@ -5,9 +5,11 @@ import {
   answerRewinds,
   connectShell,
   historyNote,
+  inlineHistory,
   reportCellRun,
   rewindNote,
   samePath,
+  type Box,
   type RewindPage,
   type ShellHost,
   type ShellMessage,
@@ -166,6 +168,110 @@ assert.equal(historyNote({ reason: 'refused' }), 'No history here: its folder is
 assert.equal(historyNote({ reason: 'off' }), 'No history: the autosave record is off');
 assert.equal(historyNote({ reason: 'no-git' }), 'No history: the record is kept with git, and this Mac has none');
 assert.equal(historyNote(null), 'This Knuth.app has no history view: a newer shell brings it');
+
+// The History view in the room (inlineHistory): `open` with the room's
+// box, `close` while it is up; pressed only by the shell's word; `bounds`
+// once a frame while it is up, for a box that changed; `toggle` from View ›
+// History… does what the tile does.
+{
+  const sent: ShellMessage[] = [];
+  const listeners = new Map<string, (detail: unknown) => void>();
+  let answer: unknown = { opened: true, inline: true };
+  const shell = connectShell({
+    claerbout: {
+      request: async (message) => {
+        sent.push(message);
+        return message.action === 'open' ? answer : message.action === 'close' ? { closed: true } : { ok: true };
+      },
+      on: (event, listener) => {
+        listeners.set(event, listener);
+        return () => listeners.delete(event);
+      },
+    },
+  })!;
+  let box: Box = { x: 44, y: 44, width: 1048, height: 708 };
+  let ratio = 2;
+  const painted: boolean[] = [];
+  const answers: unknown[] = [];
+  const frames: Array<() => void> = [];
+  const view = inlineHistory(shell, {
+    room: () => box,
+    paint: (shown) => painted.push(shown),
+    answered: (reply) => answers.push(reply),
+    ratio: () => ratio,
+    frame: (run) => frames.push(run),
+  });
+  const fire = (detail: unknown) => listeners.get('history')!(detail);
+  const flush = () => frames.splice(0).forEach((run) => run());
+
+  await view.toggle();
+  assert.deepEqual(sent, [{ type: 'history', action: 'open', inline: { x: 44, y: 44, width: 1048, height: 708 } }]);
+  assert.deepEqual(answers, [{ opened: true, inline: true }]);
+  // Not pressed by the click: only by the shell's word.
+  assert.equal(view.shown, false);
+  assert.deepEqual(painted, []);
+  view.moved();
+  assert.equal(frames.length, 0);
+  fire({ kind: 'inline', state: 'open' });
+  assert.equal(view.shown, true);
+  assert.deepEqual(painted, [true]);
+  // The room unchanged since the open: no bounds.
+  assert.equal(sent.length, 1);
+
+  // Moved: coalesced to a frame, the last box sent; the same box again,
+  // nothing; a zoom step (another ratio), sent again.
+  box = { x: 44, y: 44, width: 1100, height: 708 };
+  view.moved();
+  box = { x: 44, y: 44, width: 1136, height: 760 };
+  view.moved();
+  assert.equal(frames.length, 1);
+  flush();
+  assert.deepEqual(sent.slice(1), [{ type: 'history', action: 'bounds', inline: { x: 44, y: 44, width: 1136, height: 760 } }]);
+  view.moved();
+  flush();
+  assert.equal(sent.length, 2);
+  ratio = 2.4;
+  view.moved();
+  flush();
+  assert.equal(sent.length, 3);
+  assert.equal(sent[2].action, 'bounds');
+
+  // Again: close; closed by the shell's word (Escape in the view, too).
+  await view.toggle();
+  assert.deepEqual(sent[3], { type: 'history', action: 'close' });
+  assert.equal(view.shown, true);
+  fire({ kind: 'inline', state: 'closed' });
+  assert.equal(view.shown, false);
+  assert.deepEqual(painted, [true, false]);
+  view.moved();
+  assert.equal(frames.length, 0);
+  view.close();
+  assert.equal(sent.length, 4);
+
+  // View › History…: the page's own toggle, with its room's box; the room
+  // moved between the open and the view: placed when it comes.
+  fire({ kind: 'toggle' });
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  assert.deepEqual(sent[4], { type: 'history', action: 'open', inline: { x: 44, y: 44, width: 1136, height: 760 } });
+  box = { x: 44, y: 44, width: 1124, height: 760 };
+  fire({ kind: 'inline', state: 'open' });
+  assert.deepEqual(sent[5], { type: 'history', action: 'bounds', inline: { x: 44, y: 44, width: 1124, height: 760 } });
+  view.close();
+  assert.deepEqual(sent[6], { type: 'history', action: 'close' });
+  // Other history events are not the page's to act on.
+  fire({ kind: 'commit' });
+  fire(null);
+  assert.equal(sent.length, 7);
+  fire({ kind: 'inline', state: 'closed' });
+
+  // No view (an older shell's null, a reason): the answer is the page's to say.
+  answer = null;
+  await view.toggle();
+  assert.equal(answers.at(-1), null);
+  assert.equal(view.shown, false);
+  view.dispose();
+  assert.equal(listeners.has('history'), false);
+}
 
 // Without a shell the notice goes nowhere, and nothing throws.
 reportCellRun(null, [1]);

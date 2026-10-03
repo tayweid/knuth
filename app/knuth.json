@@ -38,7 +38,9 @@
     "run": "#run-all",
     "written": "values.json",
     "json": { "answer": 42 },
-    "autosave": ["knuth: session open", "knuth: cell run [1]"]
+    "autosave": ["knuth: session open", "knuth: cell run [1]"],
+    "history": "#history-tile",
+    "room": "#layout"
   },
   "documentTypes": [
     { "name": "Python cell document", "role": "Editor", "rank": "Alternate", "contentTypes": ["public.python-script"], "extensions": ["py"] },

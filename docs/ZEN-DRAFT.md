@@ -37,7 +37,9 @@ and 5).
 The History tile (branch `ux/history-tile`, later the same evening) puts
 the autosave record's way in on the bar, right after the name pill, in
 Knuth.app; Plass's bar has the same tile with the same glyph (below, *The
-History tile*).
+History tile*). Taylor then asked for it in the room rather than a window
+of its own (branch `ux/inline-history`; below, *The History view in the
+room*).
 
 ## The scroll rail
 
@@ -551,8 +553,9 @@ fullscreen, where the File tile stands over the rail's column):
   The rail-layout mockup's path, in the pill.
 - **History** (`#history-tile`, since the evening of 2026-10-02; below,
   *The History tile*) — inside Knuth.app only, a bar tile like File right
-  after the pill: the record's river as its glyph, a click opening the
-  shell's history view as File › History… does.
+  after the pill: the record's river as its glyph, a click laying the
+  shell's history view over the room as File › History… does, and taking
+  it away again; pressed while it is up.
 - At the right (`.tb-end`): the **kernel's status** (`#kernel-status`),
   a pill that matches the name pill, its right edge on the room's. It
   holds its words and nothing else (the smoke compares `uv` / `Pyodide`
@@ -854,3 +857,63 @@ the pill (138, 7)–(688, 37) at its 550 px max-width with a long scratch
 folder, the History tile (694, 6)–(726, 38), the session pill ending at
 1092; a click opened the History window (`_claerbout/history.html`,
 titled "History"), with no toast.
+
+## The History view in the room, 2026-10-02 night
+
+Given the tile, Taylor: "and instead of a new window, i just want it to
+open in the same window in the main area." So the tile toggles the
+shell's History page over the room of the same window (the shell's
+`ux/inline-history`, `f552530`; its README, "The history view" and "The
+protocol"). The shell owns the page, one copy for every app; Knuth only
+says where the room is and when.
+
+- **The toggle** (`inlineHistory` in `src/shell.ts`; `toggleHistory` in
+  `src/main.ts`, which the tile, File › History… and the shell's View ›
+  History… all reach): `{type: 'history', action: 'open', inline: {x, y,
+  width, height}}`, the room's (`#layout`) `getBoundingClientRect()` in
+  CSS px, or `{type: 'history', action: 'close'}` while the view is up.
+  The shell lays the view in DIP at the page's zoom; the document stays
+  loaded under it, so a rewind's `save` and `reload` reach it as before.
+- **Pressed by the shell's word only**: the tile's `aria-pressed` (and
+  the bar's lit look, the File tile's with its menu open) follows `history
+  {kind: 'inline', state: 'open' | 'closed'}`, never the click, so Escape
+  in the view, its close tile, View › History… or the window's page going
+  all un-press it. `history {kind: 'toggle'}` (⇧⌘H) does what a click
+  does, since the box is the page's.
+- **The room's box**, while the view is up: a ResizeObserver on the room
+  and the window's resize (a zoom step), coalesced to a frame, send
+  `bounds` when the box (or the device pixel ratio) changed. That covers
+  the window's size and the scroll rail's gutter coming or going (the room
+  12 px narrower; a rewind that lengthens the document under the view does
+  it). The docked Session card slides the column inside the room, never
+  the room, so it sends nothing.
+- **What the view hides.** The view is native, above everything the page
+  draws in the room, so whatever acts in the room puts it away first: the
+  File tile (its menu opens down over the room), a rail tile, the session
+  pill. Escape in this page (the bar holding the focus) puts it away as
+  Escape in the view does; the rename's own Escape stays the rename's.
+  While it is up nothing in the room holds the focus, so a key pressed in
+  the page edits no hidden cell; the focus comes back on close.
+- **Older shells**: one before 0.2.3 answers `open` with `{opened: true}`
+  and opens its window, which is fine; one older still answers null, and
+  the toast says so and the tile and the item go, as before.
+
+Checks: `src/shell.test.ts` (the toggle, the pressed state from the
+event, `bounds` coalesced and deduplicated, the toggle event);
+`tests/browser/history.spec.ts` (File › History… and the tile toggling,
+the box the room's rect, `bounds` after a resize and when the gutter
+comes, none while it is down, what acts in the room putting it away, the
+document under the view answering save and reload) and
+`tests/browser/frame.spec.ts` (the box is the frame's room, (44, 44)
+1048 × 708 at 1100 × 760, the docked card moving none of it, the pressed
+tile nothing in the bar). `app/knuth.json` names the tile and the room
+for the shell's smoke (`smoke.history`, `smoke.room`), which presses the
+tile and checks the view at the room's box, following the window, closed
+by Escape and View › History…, gone with a reload: ok against the
+shell's worktree. Live, in the shell's worktree on a project with three
+cell runs: the view at (44, 44) 1048 × 708 DIP, the room's box at zoom
+1; the window grown from 1100 × 760 to 1260 × 850 and the view at (44,
+44) 1208 × 798, the room's; a rewind from the view to the first run
+reloaded `fit.py` under it (`v = 3` to `v = 1`, every cell stale) with
+the view still up; Escape put the card away, a second Escape the view,
+the tile un-pressed and no inline webContents left.
