@@ -57,10 +57,19 @@ download button on knuth.tayweid.io gives the same app, which does this
 on its first launch. Run the same line again to
 update. Every deploy builds the app on a GitHub Mac from that deploy's site
 and publishes it beside the site, so the app and knuth.tayweid.io are
-always the same version. To build it yourself from a checkout: `npm run
-app:build`, which installs your build in Applications (after `npm run
-build:engine` if you changed `src/`); `npm run app` runs the shell straight
-from the checkout.
+always the same version.
+
+From a checkout, without GitHub: to run the checkout, `npm run app`, the
+shell straight from the checkout, in a state folder and port of its own
+beside an installed Knuth; to install the checkout's build as the app,
+`npm run install:local`, the deploy's own steps on this Mac: it builds the
+page, packages Knuth.app for this Mac's processor into a site folder under
+the temp folder, and installs it from there into Applications with the
+install line (quit Knuth first; `npm run install:local -- ~/Other/Knuth.app`
+installs elsewhere). Its build is the checkout's commit, `-dirty` with
+changes not committed; the app's Check for Updates… offers the site's
+build in its place whenever the two differ, and taking it goes back to the
+deployed app.
 
 Open it. The first launch asks one question, in the window: install
 Python? Knuth runs Python through [uv](https://docs.astral.sh/uv/), and

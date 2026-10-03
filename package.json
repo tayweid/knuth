@@ -11,6 +11,7 @@
     "build:engine": "npm run build && node scripts/stage-web.mjs",
     "preview": "vite preview",
     "app": "node app/run.mjs",
+    "install:local": "node app/install-local.mjs",
     "app:build": "node node_modules/claerbout/package.mjs --config app/knuth.json",
     "app:smoke": "node node_modules/claerbout/smoke.mjs --config app/knuth.json browser && node node_modules/claerbout/smoke.mjs --config app/knuth.json uv",
     "check:web": "node scripts/check-web-fresh.mjs",
