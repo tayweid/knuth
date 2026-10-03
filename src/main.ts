@@ -33,6 +33,19 @@ import { Onboarding } from './onboarding.ts';
 import { keepPlace } from './place.ts';
 import { answerRewinds, historyNote, reportCellRun, shell, type ShellMessage } from './shell.ts';
 
+// The History tile's glyph: the record's river as the history view draws
+// it — time running down, three commits on one stream, the lowest filled,
+// the mouth, now. Written whole rather than through icon(), because
+// Plass's bar draws the very same string: its copy is HISTORY_GLYPH in
+// plass/src/toolbar.ts, and the two stay byte-identical (a change is made
+// to both). Not a clock with an arrow: that is the Restart session tile's
+// arrow (icons.ts, `restart`) with hands, and the two would share a window
+// meaning different things. The nodes are r 2.25 at the icons' 1.7 stroke,
+// so at 18 px each ring keeps a hole 2.1 px across; the segments end
+// inside the rings' strokes, so the holes stay clear.
+const HISTORY_GLYPH =
+  '<svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="3.5" r="2.25"/><line x1="12" y1="6.25" x2="12" y2="9.25"/><circle cx="12" cy="12" r="2.25"/><line x1="12" y1="14.75" x2="12" y2="17.75"/><circle cx="12" cy="20.5" r="2.25" fill="currentColor"/></svg>';
+
 function labeled(id: string, glyph: string, label: string, title: string, className = 'tb-btn'): string {
   return `<button type="button" class="${className}" id="${id}" title="${title}">${glyph}<span class="lbl">${label}</span></button>`;
 }
@@ -41,7 +54,9 @@ function labeled(id: string, glyph: string, label: string, title: string, classN
 // holds the document's way in and out beside the traffic lights — the File
 // tile, whose text menu holds New, Open, Recent, Save and, where they
 // apply, Get Knuth, Install and the app's update (below); the name pill
-// with the save mark and the folder — and, at the right, the session pill
+// with the save mark and the folder; beside it, inside Knuth.app, the
+// History tile (Taylor: "it belongs as a tile on the topbar beside the
+// address"), Plass's too, the same glyph — and, at the right, the session pill
 // (session.ts, docs/SESSION.md): the kernel's status, then the session's
 // names in cell order. In Knuth.app the bar is the window's title bar
 // (styles.css).
@@ -50,6 +65,7 @@ toolbar.setAttribute('aria-label', 'Document');
 toolbar.innerHTML = `
   ${labeled('file-tile', icon('open'), 'File', 'File — new, open, recent, save', 'tb-btn tb-tile')}
   <div class="doc-pod" id="doc-pod"><span class="name" id="file-name" title="Click to rename">${DEFAULT_DOC_NAME}</span><span class="doc-mark" id="doc-mark" aria-hidden="true"></span><span class="doc-folder" id="doc-folder" hidden><span dir="ltr"></span></span></div>
+  <button type="button" class="tb-btn tb-tile" id="history-tile" title="History (⇧⌘H)" aria-label="History" aria-keyshortcuts="Shift+Meta+H">${HISTORY_GLYPH}<span class="lbl">History</span></button>
   <div class="tb-end">
     <button type="button" id="session-pill"><span id="kernel-status">connecting…</span><span class="sp-sep" aria-hidden="true"></span><span class="sp-mark" aria-hidden="true">${icon('braces')}</span><span class="sp-names"></span></button>
   </div>
@@ -213,12 +229,19 @@ menu.item(fileMenu, 'Open…', () => void fileManager.open(), { title: 'Open… 
 menu.item(fileMenu, 'Recent documents', () => {}, { title: 'Your documents', submenu: recentMenu });
 menu.item(fileMenu, 'Save', () => void fileManager.save(), { title: 'Save (⌘S)', shortcut: '⌘S' });
 // The project's autosave record as a path, with a rewind: the shell's own
-// window (its View › History…, on the same ⇧⌘H), so only inside Knuth.app.
-menu.item(fileMenu, 'History…', () => void openHistory(), {
+// window (its View › History…, on the same ⇧⌘H), so only inside Knuth.app,
+// from this item and from the bar's History tile beside the name pill —
+// one way in, two places (openHistory, below). The tile takes no focus
+// from a click, as the File tile does not: the cell keeps it.
+const historyItem = menu.item(fileMenu, 'History…', () => void openHistory(), {
   id: 'open-history',
   title: 'History… (⇧⌘H) — this project’s autosave record, and a rewind to any point on it',
   shortcut: '⇧⌘H',
-}).hidden = !shell;
+});
+const historyTile = $('history-tile') as HTMLButtonElement;
+historyItem.hidden = historyTile.hidden = !shell;
+historyTile.addEventListener('mousedown', (e) => e.preventDefault());
+historyTile.addEventListener('click', () => void openHistory());
 const ioRule = menu.divider(fileMenu);
 const getItem = menu.item(fileMenu, 'Get Knuth for your Mac', () => {}, {
   id: 'get-app',
@@ -270,10 +293,14 @@ function askShell<T>(message: ShellMessage): Promise<T | null> {
 function askShellPath(message: ShellMessage): Promise<string | null> {
   return shell ? shell.pickPath(message) : Promise.resolve(null);
 }
-/** File → History…: the shell opens the view for this window's project,
- *  or says why there is none (shell.ts, historyNote). */
+/** File → History… and the History tile, one path: the shell opens the
+ *  view for this window's project, or says why there is none (shell.ts,
+ *  historyNote). An older shell answers null: it has no view, so after
+ *  saying so the tile and the item go, as Plass's item does. */
 async function openHistory() {
-  const note = historyNote(await askShell<{ opened?: boolean; reason?: string; detail?: string }>({ type: 'history', action: 'open' }));
+  const answer = await askShell<{ opened?: boolean; reason?: string; detail?: string }>({ type: 'history', action: 'open' });
+  if (answer === null) historyItem.hidden = historyTile.hidden = true;
+  const note = historyNote(answer);
   if (note) toast(note);
 }
 // Page failures reach the shell's log, which is what "Show Log" opens when

@@ -138,7 +138,9 @@ body {
 /* One plain bar on the frame, a straight line across the top of the
    window. The document's way in and out sits on the left beside the
    traffic lights — the File tile with its menu, the name pill with the
-   save mark and the folder — and the session pill on the right (the
+   save mark and the folder, and in Knuth.app the History tile beside the
+   pill (Plass's too: one tile, one glyph) — and the session pill on the
+   right (the
    kernel's status, then the session's names), which ends where the room
    does (the bar's right padding is the frame's edge). The cell tools are
    on the rail.
@@ -281,8 +283,10 @@ body {
 .tb-btn[hidden] { display: none; }
 .tb-btn .ico { width: 19px; height: 19px; display: block; }
 
-/* The bar's tile (File): bare, a little larger than the rail's, lit while
-   its menu is open. */
+/* The bar's tiles (File; History, right after the name pill with the
+   bar's gap): bare, 32 px with 9 px corners and an 18 px glyph, lit while
+   a menu is open. They never shrink: when the bar is short the name pill
+   gives way (its max-width first, then its folder). */
 #toolbar .tb-tile {
   flex: none;
   width: 32px;

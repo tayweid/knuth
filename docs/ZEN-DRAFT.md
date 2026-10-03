@@ -31,6 +31,11 @@ column runs past the room: Plass's rail with Knuth's marks (below, *The
 scroll rail*; its record is `docs/zen-rail-1100.png` and
 `docs/zen-rail-1500.png`).
 
+The History tile (branch `ux/history-tile`, later the same evening) puts
+the autosave record's way in on the bar, right after the name pill, in
+Knuth.app; Plass's bar has the same tile with the same glyph (below, *The
+History tile*).
+
 ## The scroll rail
 
 Taylor, once Plass's rail was built (Plass's `docs/ZEN-DRAFT.md`, *The
@@ -476,6 +481,10 @@ fullscreen, where the File tile stands over the rail's column):
   an attached folder's name in a tab, or nothing. Only the folder gives
   way when the bar is short, from its start; it is hidden under 760 px.
   The rail-layout mockup's path, in the pill.
+- **History** (`#history-tile`, since the evening of 2026-10-02; below,
+  *The History tile*) — inside Knuth.app only, a bar tile like File right
+  after the pill: the record's river as its glyph, a click opening the
+  shell's history view as File › History… does.
 - At the right (`.tb-end`): the **kernel's status** (`#kernel-status`),
   a pill that matches the name pill, its right edge on the room's. It
   holds its words and nothing else (the smoke compares `uv` / `Pyodide`
@@ -710,3 +719,70 @@ title bar above it read heavier than the old glass did. Now: the bar is
 edge stays 8 px), the pills 30 px with 9 px corners, the bar's tiles
 32 px, and the traffic lights at {x: 14, y: 15} so their band is the bar
 (2·15 + 14 = 44). Plass takes the same numbers.
+
+## The History tile, 2026-10-02 evening
+
+Taylor asked where the autosave page's button is; it was File ›
+History… (⇧⌘H), and the answer was: "yeah i think it belongs as a tile on
+the topbar beside the address". So both apps have a History tile in the
+bar right after the name pill (the address: the document's name with its
+folder), before whatever follows it — in Knuth the session pill's end, in
+Plass the Export tile. The File menu keeps its History… item.
+
+- **The tile** (`#history-tile`): the File tile's twin, `.tb-tile` — 32 ×
+  32 px, 9 px corners, an 18 px glyph, the File tile's ink and hover;
+  `title` "History (⇧⌘H)", `aria-label` "History", `aria-keyshortcuts`
+  "Shift+Meta+H", and the word "History" as its caption below it in the
+  frame's dark glass. The key itself is the shell's View › History…, which
+  the native menu takes first. Like the File tile it takes no focus from a
+  click: the cell being typed in keeps it.
+- **One way in**: the tile and the item call the same function
+  (`openHistory`), which sends the shell `{type: 'history', action:
+  'open'}` and toasts `historyNote`'s sentence when the view did not open.
+  In a plain browser tab the tile is hidden, as the item is (no shell, no
+  view). An older shell answers `null`: the toast says so ("This Knuth.app
+  has no history view: a newer shell brings it") and then the tile and the
+  item both go, as Plass's item did already (before, Knuth's item stayed
+  and said it again on every click).
+- **The glyph**: the record's river, drawn the way the history view
+  draws it — time running down, three nodes on one vertical stream, the
+  lowest filled (the mouth: now). Rings of r 2.25 in the icons' 24-unit
+  box at their 1.7 stroke, so at 18 px each ring keeps a hole 2.1 px
+  across and reads on the Retina screen (and as a string of beads at
+  1x); the segments end inside the rings' strokes so the holes stay
+  clear. Not the clock with an arrow that the brief offered as the
+  fallback: that glyph is Knuth's Restart session tile (Feather's
+  rotate-ccw) with hands, and the two would share a window meaning
+  different things. It is one SVG string, byte-identical in both apps:
+  `HISTORY_GLYPH` in `src/main.ts`, whose comment names Plass's copy in
+  `plass/src/toolbar.ts`.
+- **The numbers**: nothing else in the bar moves. Only the tile's 32 px
+  and the bar's 6 px gap are inserted after the pill; the pill's left
+  edge (44 in a tab, the File tile's right edge and the gap in the app), the tiles'
+  sizes, the session pill and the bar's right end (the room's right edge)
+  are where they were — the test hides the tile and compares every other
+  box in the bar, and they match. At 1100 px in a tab, a document in
+  `~/Projects/week-3`: the pill (44, 7)–(241.94, 37), the tile
+  (247.94, 6)–(279.94, 38), its glyph 7 px in from each side; the session
+  pill (891.06, 7)–(1092, 37). The tile never shrinks: when the bar is
+  short the pill gives way first, by its `max-width: min(560px, 50vw)`
+  (550 px at 1100, 390 at 780 with a 110-character folder), then by its
+  folder, and the tile stays whole right after it.
+
+Checks: `tests/browser/history.spec.ts` — the tile's box against the
+pill's and the frame spec's numbers, the File tile's look, its name, key
+and caption, no-drag; a click and Enter sending the request with the
+cell keeping the focus; the null answer hiding the tile and the item
+after the toast; a long folder at 1100 and 780; a plain tab with neither.
+`npm test`, `npm run build:engine`, `npm run check:web`: green (the
+stylesheet's change is comments only, so the built CSS is unchanged).
+`CI=1 npx playwright test` on a spare port (a scratch config on 5271,
+deleted after): 126 passed and one failed, `app.spec.ts`'s embed test,
+which hardcodes 5198 in its iframe and so fails alone on any other port.
+`node ~/Projects/claerbout/smoke.mjs --config app/knuth.json browser`:
+ok. In the checkout shell (Playwright's `_electron`, the window's content
+1100 px wide, the lights' room to x 88): the File tile (100, 6)–(132, 38),
+the pill (138, 7)–(688, 37) at its 550 px max-width with a long scratch
+folder, the History tile (694, 6)–(726, 38), the session pill ending at
+1092; a click opened the History window (`_claerbout/history.html`,
+titled "History"), with no toast.
