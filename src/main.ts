@@ -33,18 +33,23 @@ import { Onboarding } from './onboarding.ts';
 import { keepPlace } from './place.ts';
 import { answerRewinds, historyNote, inlineHistory, reportCellRun, shell, type ShellMessage } from './shell.ts';
 
-// The History tile's glyph: the record's river as the history view draws
-// it — time running down, three commits on one stream, the lowest filled,
-// the mouth, now. Written whole rather than through icon(), because
-// Plass's bar draws the very same string: its copy is HISTORY_GLYPH in
-// plass/src/toolbar.ts, and the two stay byte-identical (a change is made
-// to both). Not a clock with an arrow: that is the Restart session tile's
-// arrow (icons.ts, `restart`) with hands, and the two would share a window
-// meaning different things. The nodes are r 2.25 at the icons' 1.7 stroke,
-// so at 18 px each ring keeps a hole 2.1 px across; the segments end
-// inside the rings' strokes, so the holes stay clear.
+// The History tile's glyph: the standard history icon, a clock face with a
+// counter-clockwise arrow around its left side (Material's "history" in the
+// icons' stroke) — the arc runs from nine o'clock over the top and round to
+// half past seven, and an arrowhead at nine points back down it; the hands
+// stand at twelve and four. Taylor asked for it by name ("the rewind clock
+// one you use"): it is the glyph people already read as history, where the
+// record's river it replaced had to be learned. Written whole rather than
+// through icon(), because Plass's bar draws the very same string: its copy
+// is HISTORY_GLYPH in plass/src/toolbar.ts, and the two stay byte-identical
+// (a change is made to both). It shares a window with the Restart session
+// tile's arrow round a circle (icons.ts, `restart`); the hands tell them
+// apart, so they stay long (4.5 and 4 units) to read at 18 px, and the
+// arrowhead sits at nine pointing down where Restart's corner is up at the
+// top left. The face is centred at x 13, as Material's is, to give the
+// arrowhead room inside the 24 box.
 const HISTORY_GLYPH =
-  '<svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="3.5" r="2.25"/><line x1="12" y1="6.25" x2="12" y2="9.25"/><circle cx="12" cy="12" r="2.25"/><line x1="12" y1="14.75" x2="12" y2="17.75"/><circle cx="12" cy="20.5" r="2.25" fill="currentColor"/></svg>';
+  '<svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12a8 8 0 1 1 2.34 5.66M2.2 9.8 5 12.6l2.8-2.8"/><polyline points="13 7.5 13 12 16.5 14"/></svg>';
 
 function labeled(id: string, glyph: string, label: string, title: string, className = 'tb-btn'): string {
   return `<button type="button" class="${className}" id="${id}" title="${title}">${glyph}<span class="lbl">${label}</span></button>`;

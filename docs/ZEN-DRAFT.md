@@ -553,7 +553,7 @@ fullscreen, where the File tile stands over the rail's column):
   The rail-layout mockup's path, in the pill.
 - **History** (`#history-tile`, since the evening of 2026-10-02; below,
   *The History tile*) — inside Knuth.app only, a bar tile like File right
-  after the pill: the record's river as its glyph, a click laying the
+  after the pill: a history clock as its glyph, a click laying the
   shell's history view over the room as File › History… does, and taking
   it away again; pressed while it is up.
 - At the right (`.tb-end`): the **kernel's status** (`#kernel-status`),
@@ -815,18 +815,31 @@ Plass the Export tile. The File menu keeps its History… item.
   has no history view: a newer shell brings it") and then the tile and the
   item both go, as Plass's item did already (before, Knuth's item stayed
   and said it again on every click).
-- **The glyph**: the record's river, drawn the way the history view
-  draws it — time running down, three nodes on one vertical stream, the
-  lowest filled (the mouth: now). Rings of r 2.25 in the icons' 24-unit
-  box at their 1.7 stroke, so at 18 px each ring keeps a hole 2.1 px
-  across and reads on the Retina screen (and as a string of beads at
-  1x); the segments end inside the rings' strokes so the holes stay
-  clear. Not the clock with an arrow that the brief offered as the
-  fallback: that glyph is Knuth's Restart session tile (Feather's
-  rotate-ccw) with hands, and the two would share a window meaning
-  different things. It is one SVG string, byte-identical in both apps:
+- **The glyph** (since 2026-10-04): the standard history icon, a clock
+  face with a counter-clockwise arrow round its left side — Material's
+  "history" drawn in the icons' stroke (24 units, 1.7, round caps and
+  joins). The arc runs from nine o'clock over the top and round to half
+  past seven; an arrowhead at nine points back down it; the hands stand
+  at twelve and four. Taylor: "lets make the icon look more like the
+  standard history icon, that rewind clock one you use." The first glyph
+  was the record's river (three nodes on a vertical stream, the lowest
+  filled), chosen so the tile would not look like the Restart session
+  tile; but the river had to be learned, and the clock is what people
+  already read as history. What keeps it apart from Restart (Feather's
+  rotate-ccw, an arrow round an empty circle with its corner up at the
+  top left) is the hands, so they are long — 4.5 and 4 units, 3.4 and 3
+  px at 18 px — and the face is unmistakably a clock; the arrowhead is
+  a chevron at nine pointing down, not Restart's corner. Rendered at 18
+  px side by side with Restart, the two read differently at a glance
+  (the clock's hands, the arrow's place). The face is centred at x 13,
+  as Material's is, to leave the arrowhead room in the box; the arc and
+  the chevron are one path, so the tip where they meet is drawn once (as
+  two elements their edges overlapped there in a brighter dot). The hands
+  were tried at twelve and two ("ten past"), and at that size the narrow
+  wedge reads as a tick rather than hands, so they open to twelve and
+  four. It is one SVG string, byte-identical in both apps:
   `HISTORY_GLYPH` in `src/main.ts`, whose comment names Plass's copy in
-  `plass/src/toolbar.ts`.
+  `plass/src/toolbar.ts`; `history.spec.ts` holds the string.
 - **The numbers**: nothing else in the bar moves. Only the tile's 32 px
   and the bar's 6 px gap are inserted after the pill; the pill's left
   edge (44 in a tab, the File tile's right edge and the gap in the app), the tiles'
