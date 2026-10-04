@@ -414,6 +414,19 @@ test('the History tile stands right after the name pill, the File tile\'s twin, 
   expect(history).toEqual(await look('#file-tile'));
   expect(history.radius).toBe('9px');
   expect(history.glyph).toEqual([18, 18]);
+  // The glyph: the standard history icon, a clock face with a
+  // counter-clockwise arrow round its left side — the one string Plass's
+  // bar draws too (HISTORY_GLYPH in both apps; Plass's frame.spec holds it
+  // as well). Its hands keep it apart from the Restart session tile's arrow
+  // round a circle, which shares the window.
+  const svgs = await page.evaluate(() => [
+    document.querySelector('#history-tile svg')!.outerHTML,
+    document.querySelector('#restart svg')!.innerHTML,
+  ]);
+  expect(svgs[0]).toBe(
+    '<svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12a8 8 0 1 1 2.34 5.66M2.2 9.8 5 12.6l2.8-2.8"></path><polyline points="13 7.5 13 12 16.5 14"></polyline></svg>',
+  );
+  expect(svgs[0]).not.toContain(svgs[1]);
   // Named for a screen reader, its key said in the tooltip; the caption,
   // below it in the frame's dark glass, is the word, as File's is.
   await expect(tile).toHaveAttribute('aria-label', 'History');
