@@ -83,7 +83,9 @@ export const FLY_MS = 460;
 export const SLIDE_MS = 360;
 /** A column that slid for a receipt goes home this long after the last
  *  card has gone, unless another run comes first (stepping through cells
- *  slides it once, not per run; session.ts, cardGone). */
+ *  slides it once, not per run; session.ts, cardGone). A card put away on
+ *  purpose (Esc, its ✕, a click outside the card and the column) sends it
+ *  home at once (dismiss). */
 export const RETURN_MS = 1200;
 /** Nor while a run is still going (its card stands where the last one did,
  *  or ran sends the column home), up to this long after the last card
@@ -651,17 +653,21 @@ export class Session {
    *  stepping to the next cell — its card stands where this one did, a run
    *  that makes none sends the column home itself (ran, settled), and if
    *  no run comes it goes after as long as a receipt stays (DWELL_MS).
-   *  Otherwise (Esc, a click, the dwell) it goes RETURN_MS after; typing
-   *  on, or a click in the column, starts that over, so it goes at a pause
-   *  rather than under a word. Stepping through cells slides it once, when
-   *  the first card needs it, and back once you stop. */
-  private cardGone(forRun = false) {
+   *  Otherwise (typing, a click in the column, the dwell) it goes
+   *  RETURN_MS after; typing on, or a click in the column, starts that
+   *  over, so it goes at a pause rather than under a word. Stepping through
+   *  cells slides it once, when the first card needs it, and back once you
+   *  stop. `now`: the card was put away on purpose (dismiss), and the
+   *  column starts home at once — but for a run still going, whose card is
+   *  coming (goHome waits for it). */
+  private cardGone(forRun = false, now = false) {
     clearTimeout(this.returnTimer);
     const was = this.linger;
     this.linger = this.card || this.docked ? 0 : this.column.lean;
     if (this.linger <= 0) return;
     if (!was) this.lingerSince = performance.now();
-    this.returnTimer = window.setTimeout(() => this.goHome(), forRun ? DWELL_MS : RETURN_MS);
+    if (now) this.goHome();
+    else this.returnTimer = window.setTimeout(() => this.goHome(), forRun ? DWELL_MS : RETURN_MS);
   }
 
   private goHome() {
@@ -899,11 +905,11 @@ export class Session {
    *  pill, along a curve, shrinking, seen all the way in; the pill's names
    *  update as it arrives, the chip takes its place at the cell, and the
    *  column, if it slid for the card, slides back. */
-  private tuck(forRun = false) {
+  private tuck(forRun = false, now = false) {
     if (!this.card) return;
     const { id, kind } = this.card;
     if (kind !== 'fresh') {
-      this.hideCard(false, forRun);
+      this.hideCard(false, forRun, now);
       return;
     }
     this.card = null;
@@ -919,15 +925,16 @@ export class Session {
     };
     const card = this.receiptEl;
     if (reducedMotion() || !card.animate || card.hidden) {
-      this.hideCard(true, forRun);
+      this.hideCard(true, forRun, now);
       land();
       return;
     }
     card.classList.remove('riding');
     const from = card.getBoundingClientRect();
     // The column, if it slid for the card, stays while receipts keep
-    // coming, and goes home well after the card has flown.
-    this.cardGone(forRun);
+    // coming, and goes home well after the card has flown — or, the card
+    // put away on purpose, slides home under the flight as it lifts.
+    this.cardGone(forRun, now);
     const target = (this.names.getClientRects().length && this.names.getBoundingClientRect().width > 0 ? this.names : this.pill).getBoundingClientRect();
     const dx = target.left - from.left;
     const dy = target.top - from.top;
@@ -1016,9 +1023,22 @@ export class Session {
   /** Put the card away without the flight (a chip's, a held one, a cell
    *  gone); the column, if it slid for the card, goes home as after a
    *  flight (cardGone). */
-  private hideCard(quiet = false, forRun = false) {
+  private hideCard(quiet = false, forRun = false, now = false) {
     this.dropCard(quiet);
-    this.cardGone(forRun);
+    this.cardGone(forRun, now);
+  }
+
+  /** The card put away on purpose — Esc with it up, its ✕, a click outside
+   *  both the card and the column: a fresh one flies home as ever, and a
+   *  column that slid for it starts home at once, not RETURN_MS after
+   *  (Taylor: "id love it to just go back right away"). A run still going
+   *  keeps the hold, its card being on the way. The implicit ways a card
+   *  goes — the dwell, the next run, typing, a click in the column, a
+   *  view switch — keep the linger, so stepping through cells still slides
+   *  the column once. */
+  private dismiss() {
+    if (this.card?.kind === 'fresh') this.tuck(false, true);
+    else this.hideCard(false, false, true);
   }
 
   // ---------- the chips ----------
@@ -1624,7 +1644,7 @@ export class Session {
       const close = el('button', 'hb', '✕');
       close.type = 'button';
       close.title = context === 'fresh' ? 'Put it away (Esc)' : 'Close (Esc)';
-      close.addEventListener('click', () => (context === 'fresh' ? this.tuck() : this.hideCard()));
+      close.addEventListener('click', () => this.dismiss());
       head.append(pin, close);
     }
     box.append(head);
@@ -1814,8 +1834,7 @@ export class Session {
       if (e.key === 'Escape') {
         this.carriedAt = performance.now();
         // Never prevented: in a cell, Esc also arms the kind chord.
-        if (this.card?.kind === 'fresh') this.tuck();
-        else if (this.card) this.hideCard();
+        if (this.card) this.dismiss();
         else if (this.band?.held) this.clearBand();
         else if (this.floating) this.closeCard();
         return;
@@ -1856,8 +1875,12 @@ export class Session {
       this.carriedAt = performance.now();
       const onChip = !!target.closest?.('.rchip');
       if (this.card && !this.receiptEl.contains(target) && !onChip) {
-        if (this.card.kind === 'fresh') this.tuck();
-        else if (this.card.kind === 'hover' || !target.closest?.('#session')) this.hideCard();
+        // A click in the column is carrying on (into the next cell, its ▶):
+        // the column lingers as for typing. Anywhere else it is putting the
+        // card away, and the column goes home with it (dismiss).
+        const away = !this.sheet.contains(target);
+        if (this.card.kind === 'fresh') this.tuck(false, away);
+        else if (this.card.kind === 'hover' || !target.closest?.('#session')) this.hideCard(false, false, away);
       } else if (!this.card && this.linger > 0 && !onChip && this.sheet.contains(target)) {
         // A click into the column with it still out: as typing, the return
         // starts over.
