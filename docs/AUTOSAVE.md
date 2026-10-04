@@ -17,7 +17,7 @@ Every project in Plass and Knuth keeps a full, unpruned git record of every edit
 - Skip the autosave if a merge or rebase is in progress, or if `index.lock` exists.
 
 ### untracked/ directory
-- The app creates `untracked/` automatically and adds it to `.gitignore`. It holds large data, caches, and scratch files.
+- `untracked/` holds large data, caches, and scratch files. It is the user's choice, not the app's: the record writes nothing into a project by itself (shell 0.2.5; Taylor, 2026-10-04: the folder, its manifest and the `.gitignore` line were "adding a lot of clutter across my repos"). The History view's Whole project scope has the one box that makes the folder, unchecked by default.
 - Keep a tracked manifest (e.g. `.claerbout/untracked.json`) with each file's path, size, modified time, and SHA-256. Rewrite it before every autosave.
 - Only rehash a file when its size or modified time has changed.
 - untracked/ must not become a loophole: the manifest keeps it inside the track.
@@ -76,7 +76,7 @@ happened. `"autosave": true` in an app's config turns it on; Knuth's
 What landed, of the Decided section:
 
 - **The project.** The repository the document's folder is in, wherever
-  that is. A folder in none gets one (with `untracked/` ignored), but only
+  that is. A folder in none gets one, but only
   in a project's folder: never the home folder or a folder it is in,
   never `~/Desktop`, `Documents`, `Downloads`, `Movies`, `Music`,
   `Pictures`, `Public` or `Library` themselves, a cloud-synced root (iCloud
@@ -123,10 +123,11 @@ What landed, of the Decided section:
   equals the tip's. The second review added: nothing while the branch is
   being rebased in any working tree or is a symbolic ref, and every guard
   is asked again just before the ref moves, since a fill takes seconds. In
-  the working tree it writes `untracked/`, a `.gitignore` line (`/untracked/`,
-  anchored, so only the project's own folder is ignored) and
-  `.claerbout/untracked.json`, which show in the user's `git status`, and
-  never through a symbolic link: a link at any of those names turns the
+  the working tree it writes nothing unless the project keeps an
+  `untracked/` folder (the Whole project box in the History view); then a
+  `.gitignore` line (`/untracked/`, anchored, so only the project's own
+  folder is ignored) and `.claerbout/untracked.json`, which show in the
+  user's `git status`, and never through a symbolic link: a link at any of those names turns the
   manifest off for that project, said once. A file git cannot read is left out (named once in
   the log) and the rest recorded; a nested repository without a commit is
   left out until it has one, then recorded as a gitlink. Messages are
@@ -148,7 +149,7 @@ What landed, of the Decided section:
   window on a project; one job at a time per project. Quitting closes
   every session and waits for every queued job, bounded at 20 s. Each
   commits only if something changed.
-- **untracked/.** Created in the project with a `.gitignore` entry (`/untracked/`); the
+- **untracked/.** Made only when asked (the Whole project box in the History view; unticking an empty one removes it, the manifest and the record's `.gitignore` lines), with a `.gitignore` entry (`/untracked/`); the
   manifest `.claerbout/untracked.json` (path, size, mtime, SHA-256 per
   file, hashed again only when size or mtime changed, the hashes cached
   in the app's state folder) is rewritten before every commit and always
@@ -236,8 +237,9 @@ What stays open, and why:
   tile lay the view over the room of the same window.
 - Smaller: a run in the browser tab (no shell) is not recorded; a nested
   repository inside the project is recorded as a gitlink, not its
-  contents; the manifest and the `.gitignore` line show in the user's own
-  `git status` as untracked and modified, which the spec accepts; a file
+  contents; where a project keeps `untracked/`, the manifest and the
+  `.gitignore` line show in the user's own `git status` as untracked and
+  modified, which the spec accepts; a file
   the user tracks although an ignore rule matches it (`git add -f`) is
   left out of the record, since the temporary index starts from the
   working tree, not from HEAD.

@@ -78,9 +78,9 @@ question that still needs one.
   written with git plumbing to one autosave branch per repository so
   the person's own branch and staging area are never touched; messages
   name the app and the trigger (`knuth: cell run [4]`). Large data goes
-  in an ignored `untracked/`, kept inside the track by a hashed
-  manifest. The autosave branch is pushed regularly, since the remote
-  is what pins the times. For Knuth this lands mostly for free: the
+  in an `untracked/` the project chooses to keep (ignored by git, kept
+  inside the track by a hashed manifest). The autosave branch stays
+  local: Taylor declined a push (2026-10-02). For Knuth this lands mostly for free: the
   receipts and the uv header are already in the file, so each run is a
   diffable change, and values.json and figs/ ride along. OPEN, per the
   spec: outside edits and gaps, preregistration as the first commit, a
