@@ -1,4 +1,4 @@
-import{n as e,t}from"./index-BNS2-_N7.js";var n=/^\s*#\s*[%!]\s*pip\s+install\s+(.+?)\s*$/;function r(e){let t=[];for(let r of e.split(`
+import{n as e,t}from"./index-CdN37z-J.js";var n=/^\s*#\s*[%!]\s*pip\s+install\s+(.+?)\s*$/;function r(e){let t=[];for(let r of e.split(`
 `)){let e=n.exec(r);if(e)for(let n of e[1].split(/\s+/))n&&!n.startsWith(`-`)&&!t.includes(n)&&t.push(n)}return t}var i=`from .session import Session
 
 __all__ = ["Session"]

@@ -64,7 +64,9 @@ place at the cell. The column, if it slid, stays while cards keep
 coming — the next run's card stands where this one did — and goes home
 1.2 s after the last has gone; typing on, or a click in the column,
 starts the 1.2 s over, so it goes at a pause, and it waits for a run
-still going. A click anywhere on the card, `p` when the keystroke would
+still going. A card put away on purpose — Esc, its ✕, a click outside
+it and the column — takes the column home with it, at once (*Fifth
+pass*). A click anywhere on the card, `p` when the keystroke would
 not type into a cell (after clicking ▶), or the
 card's pin keeps it where it is, as it is, until it is closed (✕ or
 Esc); its hint says which works now ("type or esc ↗ · click to keep" in
@@ -172,7 +174,7 @@ the receipt away.
 | keeping a run's card | a click anywhere on it (but its pin, ✕, a table or the figure, which act on their own); `p` only when the keystroke would not type (focus off the text); the hint names what works now | after ⌘↩ the cursor stays in the cell, where a `p` must stay a `p`; Esc then P was weighed and left out, since Esc also closes the completion popup and the next `p` would be swallowed |
 | when a run gets a card | a single, clean run that bound or drew something; a run whose news only the snapshot saw gets its card when the snapshot lands, unless you carried on meanwhile | a card saying "nothing" is motion for nothing |
 | the chip's glyphs | white print = drew a figure; table = bound a DataFrame, Series or 2-D array; braces = names; the count = names bound (or figures drawn, for a figure alone), 99 with a raised + past that; 4 px in, 3 px apart, 38 px at the most | ledger-v2's tab, with braces for plain names; narrow enough that no chip reaches the docked card past the 46 px lane |
-| the column after a receipt | stays where the card slid it while cards keep coming: through a run (its card stands where the last one did) and through a Shift-Enter stepping to the next cell, up to 6 s if no run comes; 1.2 s after typing, Esc, a click or the dwell put the card away, or after a run that makes no card (silent, failed, a batch, nothing bound); each keystroke, and each click in the column, starts the 1.2 s over, so it goes at a pause and not under a word; never while a run is still going (up to 30 s after the last card went), and never from under a pointer resting on a chip | the verifiers' traces at 1100: 88 px each way on every Shift-Enter; then 88 px under the line being typed, mid-word, and home and straight out again for a 7 s cell |
+| the column after a receipt | stays where the card slid it while cards keep coming: through a run (its card stands where the last one did) and through a Shift-Enter stepping to the next cell, up to 6 s if no run comes; at once when the card is put away on purpose (Esc with it up, its ✕, a click outside the card and the column), but for a run still going (*Fifth pass*); 1.2 s after typing, a click into the column or the dwell put the card away, or after a run that makes no card (silent, failed, a batch, nothing bound); each keystroke, and each click in the column, starts the 1.2 s over, so it goes at a pause and not under a word; never while a run is still going (up to 30 s after the last card went), and never from under a pointer resting on a chip | the verifiers' traces at 1100: 88 px each way on every Shift-Enter; then 88 px under the line being typed, mid-word, and home and straight out again for a 7 s cell; Taylor, on the 1.2 s after a dismissal: "the margin takes a second to return" |
 | a chip's hover | a card past the chip, the column where it stands, when that leaves the card 160 px (a window of about 1305 px and more); else none, the title naming the run's names; a click opens it kept, past the chip where it fits, else over the lane as a run's card, the column sliding | hovering never moves the column; a click is a decision, as a run is |
 | a run that bound many names | the receipt card lists eight and "+N more · in the Session card" (it opens the Session tab); the docked band the same, its line scrolling to the list below | a loop of globals made a 10,634 px card |
 | a value in a narrow row | a float to six significant digits ("-0.408882"), whole in the tooltip and on a wide card; a numpy scalar is previewed by its value: numbers and dates by numpy's own str (a float64 as Python's float says it, `0.1` for a float32, `2024-01-01T00:00:00.000000000`, `NaT`), strings, bytes and objects by their Python value's repr | "elasticity float64" said nothing; `item()` widened a float32 and turned a nanosecond date into an int and NaT into None |
@@ -483,6 +485,66 @@ sleep), a fresh session, sheet.left read every frame:
   cell (the active element its cm-content after each).
 - The console: nothing.
 
+## Fifth pass: a dismissal goes home at once
+
+Taylor, at the app's default window: "when i close a receipt after it
+made space next to the cell, the margin takes a second to return to the
+original alignment. id love it to just go back right away." The fourth
+pass held the column out 1.2 s after every way a card goes, so that
+stepping through cells slides it once; a card put away on purpose waited
+the same 1.2 s, which reads as lag.
+
+**The rule.** An explicit dismissal brings the column home at once: the
+0.36 s slide starts on the dismissal, with no 1.2 s wait and no 6 s
+hold. The explicit ways are Esc with a card up (a run's, a kept one, a
+chip's), the card's ✕, and a click outside both the card and the column
+(the room's margin, the bar, the pill, the rail). A run's card flies
+home as ever; the column slides home under the flight as it lifts (the
+card flies above it), where the second pass waited for the card to clear
+and the third made that moot with the 1.2 s. The one exception is a run
+still going when the card is put away — its card is on the way and will
+stand where this one did — so the column keeps the hold for it
+(`goHome` waits for the run, up to HOLD_MS, as before). The card's pin
+only keeps; there is no "keep" to turn off, so it is not a way out.
+
+The implicit ways keep the fourth pass's rules exactly: the flight at
+the end of the dwell (1.2 s after it), the next run tucking the card
+(`runStarting`; the column waits for its card), typing in a cell (1.2 s
+after the last key), a view switch (the lean dropped, as the fourth
+pass's 7 has it). A click **into the column** — into the next cell, its
+▶ — counts as carrying on, as typing does, not as a dismissal: the third
+pass's trace clicks into cells 2, 3 and 4 and runs each with ⌘↩, and
+the column has to stay out through that, not swing home at each click
+and out again at each run. Opening the Session card from "+N more", a
+table or a figure on the card is going somewhere, and keeps the linger.
+
+In the code: `dismiss()` puts the card away (a fresh one by `tuck`, else
+`hideCard`) with `now`, which `cardGone` passes on to `goHome` at once
+rather than setting the timer; Esc and ✕ call it, and the document's
+mousedown passes `now` when the click is outside `#sheet`.
+
+### The traces, fifth pass
+
+`session.spec.ts` against the mock engine (Chromium, 60 frames a
+second), 1100 × 760, sheet.left every frame as [ms from the dismissal,
+left] wherever it changed:
+
+- **Esc on a run's card**: [-19,60] [31,75] [47,90] [64,103] [81,114]
+  … [247,146] [281,147] [314,148]. Moving on the second frame after the
+  key, home at 314 ms.
+- **The card's ✕**, fresh: [27,75] … [310,148]; kept: [29,75] …
+  [312,148].
+- **A click on the room's margin**: [17,74] … [301,148].
+- **A click into the next cell** (carrying on): 60 until [1231,75],
+  home at 1514 ms — the 1.2 s, as before.
+- **The dwell** (from the card's flight beginning): 60 until [1219,75],
+  home at 1502 ms — the 1.2 s, as before.
+- **Shift-Enter three times** from cell 1, 400 ms after each card, then
+  Esc: 148 → 60 over 117–401 ms, 60 through the three cards, and home
+  over 1517–1800 ms, from the Esc. One slide out, one back.
+- **Esc on a kept card while a slow cell is running**: 60 in every frame
+  through to that cell's card.
+
 ## The record
 
 The screenshots are the checkout shell (`app/knuth.json` on
@@ -513,6 +575,17 @@ with main; the fourth pass changes nothing they show.
   narrowed to 656 px beside it, the chips between.
 
 ## Checks
+
+On `ux/receipt-return` after the fifth pass: `npm test` green; `npm run
+build:engine`, `npm run check:web` green (the committed app rebuilt);
+`CI=1 npx playwright test tests/browser/session.spec.ts
+tests/browser/frame.spec.ts`, 59 passed on 5198 (`session.spec.ts` 41,
+six new: Esc, ✕ fresh and kept, a click outside against a click into a
+cell, Esc on a kept card while a run is going, the dwell's 1.2 s, and
+Shift-Enter stepping once; the stepping test's Esc now comes home in
+under 900 ms, where it asserted over). The four dismissal cases fail on
+the fourth pass's code; the dwell, Shift-Enter and in-flight cases pass
+on both, guarding what stays. The checkout-shell smoke, `browser`: ok.
 
 On `ux/session` after the fourth pass:
 

@@ -654,11 +654,211 @@ test('stepping through cells at 1100 slides the column once, not per run, and it
     await page.waitForTimeout(300);
   }
   expect(await stop()).toEqual([Math.round(slid)]);
-  // Once the cards stop, it comes home — after the flight, not during it.
+  // Esc puts the last one away on purpose: the column comes home with it,
+  // not RETURN_MS later (the traces below time it frame by frame).
   const stopped = Date.now();
   await page.keyboard.press('Escape');
-  await expect.poll(async () => (await layout(page)).sheet.left).toBeCloseTo(before.sheet.left, 0);
-  expect(Date.now() - stopped).toBeGreaterThan(900);
+  await expect.poll(async () => (await layout(page)).sheet.left, { intervals: [50] }).toBeCloseTo(before.sheet.left, 0);
+  expect(Date.now() - stopped).toBeLessThan(900);
+});
+
+type Sample = { t: number; left: number };
+/** #sheet's left edge every frame, with when the first `event` on
+ *  `selector` (window for keys) came — the dismissal — and when the
+ *  receipt began its flight home and went hidden, if it did. */
+async function traceFrom(page: Page, event: string, selector?: string) {
+  await page.evaluate(({ event, selector }) => {
+    const probe = window as typeof window & { __samples?: Array<{ t: number; left: number }>; __tracing?: boolean; __at?: number; __hidden?: number; __flying?: number };
+    probe.__samples = [];
+    probe.__tracing = true;
+    delete probe.__at;
+    delete probe.__hidden;
+    delete probe.__flying;
+    const sheet = document.getElementById('sheet')!;
+    const receipt = document.getElementById('receipt')!;
+    const target: EventTarget = selector ? document.querySelector(selector)! : window;
+    target.addEventListener(event, () => (probe.__at ??= performance.now()), { capture: true, once: true });
+    new MutationObserver(() => {
+      if (receipt.classList.contains('flying')) probe.__flying ??= performance.now();
+      if (receipt.hidden) probe.__hidden ??= performance.now();
+    }).observe(receipt, { attributes: true, attributeFilter: ['hidden', 'class'] });
+    const tick = (t: number) => {
+      if (!probe.__tracing) return;
+      probe.__samples!.push({ t, left: Math.round(sheet.getBoundingClientRect().left) });
+      requestAnimationFrame(tick);
+    };
+    requestAnimationFrame(tick);
+  }, { event, selector });
+  return async () => page.evaluate(() => {
+    const probe = window as typeof window & { __samples?: Array<{ t: number; left: number }>; __tracing?: boolean; __at?: number; __hidden?: number; __flying?: number };
+    probe.__tracing = false;
+    return { samples: probe.__samples!, at: probe.__at ?? null, hidden: probe.__hidden ?? null, flying: probe.__flying ?? null };
+  });
+}
+
+/** The trace relative to `zero`: [ms, left] wherever the left changes. */
+const changes = (samples: Sample[], zero: number) =>
+  samples.filter((s, i) => i === 0 || s.left !== samples[i - 1].left).map((s) => [Math.round(s.t - zero), s.left]);
+
+/** Ms from `zero` to the first frame off `from`, and to the first at `to`. */
+function timing(samples: Sample[], zero: number, from: number, to: number) {
+  const after = samples.filter((s) => s.t >= zero);
+  const moved = after.find((s) => s.left !== from);
+  const home = after.find((s) => s.left === to);
+  return { moved: moved ? moved.t - zero : Infinity, home: home ? home.t - zero : Infinity };
+}
+
+/** A run's card at 1100, and the column slid all the way left for it. */
+async function slidForCard(page: Page) {
+  await boot(page, 1100, 760);
+  const before = await layout(page);
+  await run(page, 0);
+  const receipt = page.locator('#receipt');
+  await expect(receipt).toHaveClass(/show/);
+  await expect(page.locator('#sheet')).not.toHaveClass(/slide/);
+  const slid = Math.round((await layout(page)).sheet.left);
+  expect(Math.abs(slid - before.contentLeft)).toBeLessThan(1);
+  const home = Math.round(before.sheet.left);
+  expect(home).toBe(148);
+  return { slid, home };
+}
+
+test('Esc on a receipt at 1100 brings the column home at once: the slide starts with the dismissal', async ({ page }) => {
+  const { slid, home } = await slidForCard(page);
+  const stop = await traceFrom(page, 'keydown');
+  await page.keyboard.press('Escape');
+  await expect(page.locator('#receipt')).toBeHidden();
+  await expect.poll(async () => (await layout(page)).sheet.left, { intervals: [50] }).toBeCloseTo(home, 0);
+  await page.waitForTimeout(100);
+  const { samples, at } = await stop();
+  const { moved, home: landed } = timing(samples, at!, slid, home);
+  console.log('Esc at 1100:', JSON.stringify(changes(samples, at!)));
+  // Moving by the frame after the key (a frame is ~17 ms; the first frame
+  // after it starts the transition), home with the 0.36 s slide.
+  expect(moved).toBeLessThan(50);
+  expect(landed).toBeLessThan(450);
+  // One way only: out → home, never back.
+  expect(samples.filter((s) => s.t > at! + landed).every((s) => s.left === home)).toBe(true);
+});
+
+test('the receipt\'s ✕ at 1100 brings the column home at once, a fresh card or a kept one', async ({ page }) => {
+  for (const kept of [false, true]) {
+    const { slid, home } = await slidForCard(page);
+    const label = kept ? 'kept' : 'fresh';
+    if (kept) {
+      await page.locator('#receipt .r-head .t').click();
+      await expect(page.locator('#receipt')).toHaveAttribute('data-kind', 'held');
+    }
+    const stop = await traceFrom(page, 'click', '#receipt');
+    await page.locator('#receipt .hb', { hasText: '✕' }).click();
+    await expect(page.locator('#receipt')).toBeHidden();
+    await expect.poll(async () => (await layout(page)).sheet.left, { intervals: [50] }).toBeCloseTo(home, 0);
+    await page.waitForTimeout(100);
+    const { samples, at } = await stop();
+    const { moved, home: landed } = timing(samples, at!, slid, home);
+    console.log(`✕ (${label}) at 1100:`, JSON.stringify(changes(samples, at!)));
+    expect(moved, label).toBeLessThan(50);
+    expect(landed, label).toBeLessThan(450);
+  }
+});
+
+test('a click outside the card and the column brings the column home at once; a click into a cell lingers', async ({ page }) => {
+  const { slid, home } = await slidForCard(page);
+  // Into the next cell: carrying on, as typing — the column waits.
+  const stop = await traceFrom(page, 'mousedown', '#sheet');
+  await cell(page, 1).locator('.cm-content').click();
+  await expect(page.locator('#receipt')).toBeHidden();
+  await expect.poll(async () => (await layout(page)).sheet.left, { intervals: [50] }).toBeCloseTo(home, 0);
+  const into = await stop();
+  console.log('a click into the next cell at 1100:', JSON.stringify(changes(into.samples, into.at!)));
+  expect(timing(into.samples, into.at!, slid, home).moved).toBeGreaterThan(1150);
+
+  // On the room's margin, past the column: putting it away.
+  await run(page, 0);
+  await expect(page.locator('#receipt')).toHaveClass(/show/);
+  await expect(page.locator('#sheet')).not.toHaveClass(/slide/);
+  const away = await traceFrom(page, 'mousedown', '#layout');
+  const room = await box(page, '#layout');
+  const spot = { x: room.right - 30, y: room.bottom - 30 };
+  expect(await page.evaluate(({ x, y }) => {
+    const hit = document.elementFromPoint(x, y);
+    return !!hit?.closest('#layout') && !hit.closest('#sheet') && !hit.closest('#receipt');
+  }, spot)).toBe(true);
+  await page.mouse.click(spot.x, spot.y);
+  await expect(page.locator('#receipt')).toBeHidden();
+  await expect.poll(async () => (await layout(page)).sheet.left, { intervals: [50] }).toBeCloseTo(home, 0);
+  await page.waitForTimeout(100);
+  const out = await away();
+  const t = timing(out.samples, out.at!, slid, home);
+  console.log('a click on the room at 1100:', JSON.stringify(changes(out.samples, out.at!)));
+  expect(t.moved).toBeLessThan(50);
+  expect(t.home).toBeLessThan(450);
+});
+
+test('Esc on a kept receipt while a run is going keeps the column out for that run\'s card', async ({ page }) => {
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  await boot(page, 1100, 760);
+  await cell(page, 3).locator('.cm-content').click();
+  await page.keyboard.press('ControlOrMeta+a');
+  await page.keyboard.type('k = 3  # time.sleep(1.5)');
+  await run(page, 0);
+  await expect(page.locator('#receipt')).toHaveClass(/show/);
+  const slid = Math.round((await layout(page)).sheet.left);
+  // Kept (p, the focus on ▶), then the slow cell run by keyboard, the kept
+  // card still up; Esc puts it away while that run is going.
+  await page.keyboard.press('p');
+  await expect(page.locator('#receipt')).toHaveAttribute('data-kind', 'held');
+  await cell(page, 3).locator('.cm-content').evaluate((element) => (element as HTMLElement).focus());
+  const stop = await traceColumn(page);
+  await page.keyboard.press('ControlOrMeta+Enter');
+  await page.keyboard.press('Escape');
+  await expect(page.locator('#receipt')).toBeHidden();
+  const receipt = page.locator('#receipt');
+  await expect(receipt).toHaveAttribute('data-cell', (await cell(page, 3).getAttribute('data-cell'))!, { timeout: 5_000 });
+  await expect(receipt).toHaveClass(/show/);
+  expect(await stop()).toEqual([slid]);
+});
+
+test('a receipt that goes by its dwell still leaves the column out for 1.2 s', async ({ page }) => {
+  test.setTimeout(30_000);
+  const { slid, home } = await slidForCard(page);
+  await page.mouse.move(400, 740);
+  const stop = await traceFrom(page, 'never-fired');
+  await expect(page.locator('#receipt')).toBeHidden({ timeout: 8_000 });
+  await expect.poll(async () => (await layout(page)).sheet.left, { intervals: [50], timeout: 4_000 }).toBeCloseTo(home, 0);
+  await page.waitForTimeout(100);
+  const { samples, flying } = await stop();
+  const { moved, home: landed } = timing(samples, flying!, slid, home);
+  console.log('the dwell at 1100 (from the flight):', JSON.stringify(changes(samples, flying!)));
+  // RETURN_MS from the card's going (its flight), then the 0.36 s slide.
+  expect(moved).toBeGreaterThan(1150);
+  expect(landed).toBeGreaterThan(1450);
+});
+
+test('stepping with Shift-Enter at 1100 slides the column once out and once home', async ({ page }) => {
+  await boot(page, 1100, 760);
+  const home = Math.round((await layout(page)).sheet.left);
+  const stop = await traceFrom(page, 'never-fired');
+  await cell(page, 0).locator('.cm-content').click();
+  for (const i of [0, 1, 2]) {
+    await page.keyboard.press('Shift+Enter');
+    const id = await cell(page, i).getAttribute('data-cell');
+    await expect(page.locator('#receipt')).toHaveAttribute('data-cell', id!);
+    await expect(page.locator('#receipt')).toHaveClass(/show/);
+    await page.waitForTimeout(400);
+  }
+  await page.keyboard.press('Escape');
+  await expect.poll(async () => (await layout(page)).sheet.left, { intervals: [50] }).toBeCloseTo(home, 0);
+  await page.waitForTimeout(100);
+  const { samples } = await stop();
+  const lefts = samples.map((s) => s.left).filter((left, i, all) => i === 0 || left !== all[i - 1]);
+  console.log('Shift-Enter ×3 at 1100:', JSON.stringify(changes(samples, samples[0].t)));
+  // Down to its slid edge once, then up to home once: no turn but one.
+  const turn = lefts.indexOf(Math.min(...lefts));
+  expect(lefts[0]).toBe(home);
+  expect(lefts.at(-1)).toBe(home);
+  for (let i = 1; i <= turn; i++) expect(lefts[i]).toBeLessThan(lefts[i - 1]);
+  for (let i = turn + 1; i < lefts.length; i++) expect(lefts[i]).toBeGreaterThan(lefts[i - 1]);
 });
 
 test('a chip\'s hover never moves the column; where the margin holds no card the chip\'s click opens it', async ({ page }) => {
