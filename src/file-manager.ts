@@ -151,6 +151,14 @@ function slimNotebook(raw: string): string {
     return raw;
   }
 }
+
+/** Nothing written in it: no line but blank ones, before the cells, in
+ *  them or in their outputs (a new document, or one emptied again). */
+export function isBlankDocument(doc: KnuthDocument): boolean {
+  const blank = (lines: readonly string[]) => lines.every((line) => !line.trim());
+  return blank(doc.preamble) && doc.cells.every((cell) => blank(cell.source) && blank(cell.output));
+}
+
 /** The default document name. It is what the browser tab shows, so it says
  *  which app the tab is rather than that the file is nameless. */
 export const DEFAULT_DOC_NAME = 'Knuth.py';
@@ -340,6 +348,53 @@ export class FileManager {
     if (this.flushing) await this.flushing;
     if (!this.dirty) return null;
     return this.flushPath();
+  }
+
+  /** What closing the window now would lose (the shell's close guard and a
+   *  tab's "Leave site?"; shell.ts, unsavedReporter): unsaved while an edit
+   *  is not on disk, except in a document with no file and nothing written
+   *  in it, which closes without asking. Save writes quietly when the
+   *  document has a file and asks where when it has none. Knuth never
+   *  offers `none`: it does not hold a file changed outside it while the
+   *  document is dirty — its autosave writes over it (pollDisk, last
+   *  writer wins), and a close's write is that same write. */
+  closeState(): { unsaved: boolean; save: 'quiet' | 'choose' } {
+    const homeless = !this.path && !this.handle;
+    return {
+      unsaved: this.dirty && !(homeless && isBlankDocument(this.hooks.getDoc())),
+      save: homeless ? 'choose' : 'quiet',
+    };
+  }
+
+  /** The shell's close (⌘W, the close button, quit): the document written
+   *  now, so the window can go. Null once the disk holds it (at once when
+   *  nothing is unsaved), else why not, and the window stays. `choose` is
+   *  the close dialog's Save: a document with no file asks where, through
+   *  ⌘S's save (the shell's save panel). Without it, such a document says
+   *  it has no file, and the shell asks the person. Nothing is held, unlike
+   *  a rewind's save: the window is going, or its person stayed to type. */
+  async saveForClose(choose: boolean): Promise<string | null> {
+    clearTimeout(this.saveTimer);
+    this.saveTimer = 0;
+    if (this.flushing) await this.flushing;
+    if (!this.dirty) return null;
+    // The rewind's reload replaces whatever was typed since its save; a
+    // write now would put back the file it is restoring.
+    if (this.held) return 'a rewind is restoring it; close again in a moment';
+    if (this.path) return this.flushPath();
+    if (this.handle) {
+      try {
+        await this.write(this.handle);
+      } catch (error) {
+        return error instanceof Error ? error.message : String(error);
+      }
+      this.dirty = false;
+      this.hooks.onState();
+      return null;
+    }
+    if (!choose) return `${this.name} is not saved to a file yet`;
+    await this.save();
+    return (this.path || this.handle) && !this.dirty ? null : `${this.name} was not saved`;
   }
 
   /** The rewind is over: edits made meanwhile are written as usual. */

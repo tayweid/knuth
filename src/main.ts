@@ -31,7 +31,15 @@ import { menus } from './menu.ts';
 import { icon } from './icons.ts';
 import { Onboarding } from './onboarding.ts';
 import { keepPlace } from './place.ts';
-import { answerRewinds, historyNote, inlineHistory, reportCellRun, shell, type ShellMessage } from './shell.ts';
+import {
+  answerRewinds,
+  historyNote,
+  inlineHistory,
+  reportCellRun,
+  shell,
+  unsavedReporter,
+  type ShellMessage,
+} from './shell.ts';
 
 // The History tile's glyph: the standard history icon, a clock face with a
 // counter-clockwise arrow around its left side (Material's "history" in the
@@ -700,6 +708,32 @@ const kernel = makeKernel((state, resumed) => {
 
 let fileManager: FileManager;
 
+// Closing with unsaved work (shell.ts, unsavedReporter; claerbout's README,
+// "The protocol"): the shell is told, whenever it changes, whether
+// closing now would lose work, and asks before it does — a document with a
+// file is written quietly and the window goes; one with no file gets the
+// shell's Save… / Don't Save / Cancel. A new document nobody has written in
+// closes without asking. Reported on every name/dirty change (repaintName)
+// and every edit, since an edit can turn an empty new document into one
+// with something in it while it is already dirty.
+const closeGuard = unsavedReporter(shell);
+function reportUnsaved() {
+  if (!fileManager) return;
+  closeGuard.report({ ...fileManager.closeState(), name: fileManager.name });
+}
+// A plain tab has no shell to ask: Chrome's own "Leave site?" does, while
+// closing would lose work. Never inside the shell, whose window would then
+// refuse to close without a word (Electron shows no beforeunload dialog),
+// even under an older shell that does not guard. Knuth's tab never reloads
+// itself, so nothing deliberate needs to pass it.
+if (!shell) {
+  window.addEventListener('beforeunload', (event) => {
+    if (!fileManager?.closeState().unsaved) return;
+    event.preventDefault();
+    event.returnValue = '';
+  });
+}
+
 /** .ipynb → percent text through the one converter, waiting briefly for a
  *  kernel that is still connecting (a launch converts at boot). */
 async function convertWhenReady(text: string): Promise<ConvertResult | null> {
@@ -892,7 +926,10 @@ async function loadFigureFromDir(path: string): Promise<string | null> {
 const docView = new DocumentView(
   $('sheet'),
   kernel,
-  () => fileManager?.noteChange(),
+  () => {
+    fileManager?.noteChange();
+    reportUnsaved();
+  },
   syncArtifacts,
   (run) => session?.ran(run),
   (restore, message) => {
@@ -1075,6 +1112,7 @@ function repaintName() {
   // Just the file name: the installed app's window prepends its own
   // app name, so anything more reads twice.
   document.title = fileManager.name;
+  reportUnsaved();
 }
 
 /** A folder as a person reads it: their home as ~. The page has no way to
@@ -1207,6 +1245,14 @@ if (shell) {
   answerRewinds(shell, {
     path: () => fileManager.path,
     save: () => fileManager.saveForRewind(),
+    // The close dialog's Save says why it did not save here, in the window
+    // that stays open; a cancelled save panel needs no word, and a write
+    // that failed has said so already (saveAs).
+    saveForClose: async (choose) => {
+      const error = await fileManager.saveForClose(choose);
+      if (error && choose && fileManager.path) toast(`Could not save ${fileManager.name}: ${error}`);
+      return error;
+    },
     release: () => fileManager.release(),
     reload: async (rewound) => {
       const error = await fileManager.reloadFromDisk();

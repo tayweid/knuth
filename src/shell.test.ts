@@ -9,6 +9,7 @@ import {
   reportCellRun,
   rewindNote,
   samePath,
+  unsavedReporter,
   type Box,
   type RewindPage,
   type ShellHost,
@@ -95,6 +96,10 @@ assert.equal(connectShell({}), null);
       calls.push('save');
       return saveAnswer();
     },
+    saveForClose: (choose) => {
+      calls.push(`close ${choose}`);
+      return saveAnswer();
+    },
     release: () => void calls.push('release'),
     reload: async (rewound) => void calls.push(`reload: ${rewound}`),
   };
@@ -125,6 +130,32 @@ assert.equal(connectShell({}), null);
   assert.deepEqual(calls, ['save', 'save', 'save']);
   calls.length = 0;
 
+  // A close's save (reason 'close'): saveForClose, never the rewind's
+  // save and its hold; `choose` only when the close dialog's Save asked
+  // for it (anything but true is a quiet write).
+  saveAnswer = async () => null;
+  await fire('save', { id: 'c1', reason: 'close', choose: false });
+  assert.deepEqual(sent.at(-1), { type: 'saved', id: 'c1', ok: true });
+  saveAnswer = async () => 'fit.py is not saved to a file yet';
+  await fire('save', { id: 'c2', reason: 'close' });
+  assert.deepEqual(sent.at(-1), { type: 'saved', id: 'c2', ok: false, error: 'fit.py is not saved to a file yet' });
+  await fire('save', { id: 'c3', reason: 'close', choose: 'yes' });
+  saveAnswer = async () => null;
+  await fire('save', { id: 'c4', reason: 'close', choose: true });
+  assert.deepEqual(sent.at(-1), { type: 'saved', id: 'c4', ok: true });
+  saveAnswer = async () => {
+    throw new Error('the save panel failed');
+  };
+  await fire('save', { id: 'c5', reason: 'close', choose: true });
+  assert.deepEqual(sent.at(-1), { type: 'saved', id: 'c5', ok: false, error: 'the save panel failed' });
+  // Any reason but 'close' is a rewind's, as before there were closes.
+  saveAnswer = async () => null;
+  await fire('save', { id: 'r0', reason: 'other', choose: true });
+  assert.deepEqual(sent.at(-1), { type: 'saved', id: 'r0', ok: true });
+  assert.deepEqual(calls, ['close false', 'close false', 'close false', 'close true', 'close true', 'save']);
+  calls.length = 0;
+  const answered = sent.length;
+
   // A reload that names this document re-reads it; git's /private/tmp is
   // the /tmp the page was given, and the other way round.
   const to = '1a2b3c4d5e6f708192a3b4c5d6e7f80912a3b4c5';
@@ -144,7 +175,7 @@ assert.equal(connectShell({}), null);
     'release',
     'release',
   ]);
-  assert.equal(sent.length, before);
+  assert.equal(sent.length, answered);
 
   off();
   assert.equal(listeners.size, 0);
@@ -273,7 +304,107 @@ assert.equal(historyNote(null), 'This Knuth.app has no history view: a newer she
   assert.equal(listeners.has('history'), false);
 }
 
+// The close guard's report (unsavedReporter): `unsaved` with the page's
+// state, sent only when it changed; the first waits for the shell's
+// answer, and the latest state follows it.
+{
+  const sent: ShellMessage[] = [];
+  let answer: (reply: unknown) => void = () => undefined;
+  const shell = connectShell({
+    claerbout: {
+      request: (message) => {
+        sent.push(message);
+        return message.type === 'unsaved' ? new Promise((resolve) => (answer = resolve)) : Promise.resolve(null);
+      },
+      on: () => () => undefined,
+    },
+  })!;
+  const settle = () => new Promise((resolve) => setTimeout(resolve, 0));
+  const reporter = unsavedReporter(shell);
+  assert.equal(reporter.guarded, null);
+  // Once after load: a new document, nothing to lose.
+  reporter.report({ unsaved: false, name: 'Knuth.py', save: 'choose' });
+  assert.deepEqual(sent, [{ type: 'unsaved', unsaved: false, name: 'Knuth.py', save: 'choose' }]);
+  // While the answer is on its way, nothing more is sent; only the latest
+  // state is kept for after it.
+  reporter.report({ unsaved: true, name: 'Knuth.py', save: 'choose' });
+  reporter.report({ unsaved: true, name: 'fit.py', save: 'quiet' });
+  assert.equal(sent.length, 1);
+  answer({ guarded: true });
+  await settle();
+  assert.equal(reporter.guarded, true);
+  assert.deepEqual(sent.at(-1), { type: 'unsaved', unsaved: true, name: 'fit.py', save: 'quiet' });
+  assert.equal(sent.length, 2);
+  // The same state again (every keystroke reports): nothing sent.
+  reporter.report({ unsaved: true, name: 'fit.py', save: 'quiet' });
+  assert.equal(sent.length, 2);
+  // Guarded: each change goes at once, without waiting for its answer.
+  reporter.report({ unsaved: false, name: 'fit.py', save: 'quiet' });
+  reporter.report({ unsaved: true, name: 'fit.py', save: 'quiet' });
+  assert.deepEqual(
+    sent.slice(2).map((message) => message.unsaved),
+    [false, true],
+  );
+  // A label and a detail ride along only when the page has them.
+  reporter.report({ unsaved: true, name: 'fit.py', save: 'choose', label: 'Save to a Folder…', detail: 'fit.py was moved.' });
+  assert.deepEqual(sent.at(-1), {
+    type: 'unsaved',
+    unsaved: true,
+    name: 'fit.py',
+    save: 'choose',
+    label: 'Save to a Folder…',
+    detail: 'fit.py was moved.',
+  });
+  // The first answer the same as what was sent: no second report.
+  const quiet = unsavedReporter(shell);
+  quiet.report({ unsaved: false, name: 'Knuth.py', save: 'choose' });
+  const count = sent.length;
+  answer({ guarded: true });
+  await settle();
+  assert.equal(sent.length, count);
+}
+
+// An older shell answers null (it has no close guard): the page stops
+// telling it, whatever changes after.
+{
+  const sent: ShellMessage[] = [];
+  const shell = connectShell({
+    claerbout: {
+      request: async (message) => {
+        sent.push(message);
+        return null;
+      },
+      on: () => () => undefined,
+    },
+  })!;
+  const reporter = unsavedReporter(shell);
+  reporter.report({ unsaved: false, name: 'Knuth.py', save: 'choose' });
+  reporter.report({ unsaved: true, name: 'Knuth.py', save: 'choose' });
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  assert.equal(reporter.guarded, false);
+  reporter.report({ unsaved: true, name: 'fit.py', save: 'quiet' });
+  reporter.report({ unsaved: false, name: 'fit.py', save: 'quiet' });
+  assert.deepEqual(sent, [{ type: 'unsaved', unsaved: false, name: 'Knuth.py', save: 'choose' }]);
+  // A bridge that fails reads as no answer, the same.
+  const failing = unsavedReporter(
+    connectShell({
+      claerbout: {
+        request: async () => {
+          throw new Error('no handler');
+        },
+        on: () => () => undefined,
+      },
+    }),
+  );
+  failing.report({ unsaved: true, name: 'Knuth.py', save: 'choose' });
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  assert.equal(failing.guarded, false);
+}
+
 // Without a shell the notice goes nowhere, and nothing throws.
 reportCellRun(null, [1]);
+const tab = unsavedReporter(null);
+tab.report({ unsaved: true, name: 'Knuth.py', save: 'choose' });
+assert.equal(tab.guarded, false);
 
 console.log('shell: ok');

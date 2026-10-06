@@ -417,10 +417,53 @@ Steps 1-3 landed 2026-09-29, the same night as the plan; 4 and 6 on
    The page then does the actual open or save over the socket. With an
    engine, the shell reads a document only to open it (above) and never
    writes one.
-4. Mirror the page's `<title>` into the window title. Close (⌘W) closes the
-   window; the engine reaps that session after its grace period as it does
-   for a closed tab.
-5. On quit, terminate the child engine if the shell started it.
+4. Mirror the page's `<title>` into the window title. Close (⌘W, the close
+   button, File › Close) asks first when closing would lose work (below,
+   "Closing with unsaved work"); then it closes the window, and the engine
+   reaps that session after its grace period as it does for a closed tab.
+5. On quit, terminate the child engine if the shell started it — after
+   every window with unsaved work has been asked, one at a time, the same
+   way; a Cancel in any of them cancels the quit (and an update's
+   relaunch) with the engine still running.
+
+## Closing with unsaved work (2026-10-06)
+
+Closing a Knuth.app window used to lose what was not on disk: a document
+never saved lived only in the window's sessionStorage, and an edit within
+the autosave's 1.2 s was still in the editor. Taylor's answers: a document
+with a file is saved quietly, as a Mac app with autosave does; one with no
+file gets the standard sheet, "Do you want to save the changes you made to
+“Knuth.py”?" with Save… / Don't Save / Cancel; a new document nobody has
+written in closes without asking; ⌘Q and an update's relaunch ask for each
+window in turn; a browser tab asks with Chrome's "Leave site?".
+
+The shell decides at close time from what the page last told it, so
+nothing in the page has to run while the window is going (claerbout's
+README, "The protocol"; the page's side is `src/shell.ts`,
+`unsavedReporter` and `answerRewinds`):
+
+- The page sends `unsaved` ({unsaved, name, save: 'quiet' | 'choose' |
+  'none', label?, detail?}) once after load and whenever it changes —
+  `FileManager.closeState()`: unsaved while an edit is not on disk, except
+  a document with no file and nothing in it; `quiet` with a file,
+  `choose` without one. Knuth never says `none`: it does not hold a file
+  changed outside it while the document is dirty (the autosave's last
+  writer wins), so a close's write is the write the autosave would make.
+  The shell answers {guarded: true}. An older shell answers null, and the
+  page stops sending.
+- The shell asks with the rewind's event, `save` ({id, reason: 'close',
+  choose}), answered `saved` ({id, ok, error?}). `choose: false` is the
+  quiet write (`FileManager.saveForClose`): a document with a file is
+  written now; one without says it has no file, and the shell shows its
+  sheet. `choose: true` is the sheet's Save: a document with no file goes
+  through ⌘S's save, the shell's save panel, and is answered ok only once
+  it is on disk; a cancelled panel keeps the window. Neither holds the
+  autosave as a rewind's save does. During a rewind's hold the close's
+  write is refused: the rewind's reload is about to replace the document.
+- A browser tab registers `beforeunload` while closing would lose work.
+  Never inside the shell: Electron shows no dialog for it and silently
+  refuses the close (and ⌘Q), even under an older shell that does not
+  guard.
 
 ## Protocol additions (v2, additive)
 
