@@ -155,7 +155,7 @@ test('the frame is Zen\'s: a dark edge all round a rounded room, a 44 px rail, t
 
 test('the controls are where the frame puts them, with every id the tests and the smoke use', async ({ page }) => {
   await boot(page);
-  for (const id of ['cells-pod', 'add-code', 'add-scratch', 'add-text', 'run-pod', 'run-stale', 'run-all', 'stop', 'restart', 'toggle-panel', 'view-toggle']) {
+  for (const id of ['cells-pod', 'add-code', 'add-scratch', 'add-text', 'run-pod', 'run-stale', 'run-all', 'stop', 'clear-outputs', 'restart', 'toggle-panel', 'view-toggle']) {
     await expect(page.locator(`#rail #${id}`), id).toHaveCount(1);
   }
   for (const id of ['doc-pod', 'file-tile', 'file-name', 'doc-mark', 'doc-folder', 'session-pill', 'kernel-status']) {
@@ -494,7 +494,7 @@ test('source view keeps the frame: the bar and the switch lit, the room One Dark
   // Plass's rule: the tools that cannot act here rest, dim, in their
   // places — the rail reads as the rail in every view.
   await expect(page.locator('#rail .tb-rule')).toBeVisible();
-  for (const id of ['add-code', 'add-scratch', 'add-text', 'run-stale', 'run-all', 'stop', 'restart', 'toggle-panel']) {
+  for (const id of ['add-code', 'add-scratch', 'add-text', 'run-stale', 'run-all', 'stop', 'clear-outputs', 'restart', 'toggle-panel']) {
     const tile = page.locator(`#${id}`);
     await expect(tile, id).toBeVisible();
     await expect(tile, id).toHaveAttribute('aria-disabled', 'true');
@@ -532,7 +532,7 @@ test('a script with no cells keeps a whole rail, every tile resting, the switch 
   await boot(page);
   await expect(page.locator('body')).toHaveAttribute('data-view', 'source');
   const tiles = page.locator('#rail .tb-btn');
-  await expect(tiles).toHaveCount(9);
+  await expect(tiles).toHaveCount(10);
   for (const tile of await tiles.all()) {
     await expect(tile).toBeVisible();
     await expect(tile).toHaveAttribute('aria-disabled', 'true');
@@ -598,7 +598,7 @@ test('a short window cuts the cell tools under a fade and keeps the Session tile
   for (const tile of await pinned()) expect(tile).toEqual({ id: tile.id, scrolls: false, belowCut: true, inWindow: true });
   // A tile Tab reaches under the fade scrolls into view, clear of it: the
   // last one, Restart, to the end of the groups, where the fade is gone.
-  await page.locator('#stop').focus();
+  await page.locator('#clear-outputs').focus();
   await page.keyboard.press('Tab');
   await expect(page.locator('#restart')).toBeFocused();
   await expect.poll(cue).toEqual({ above: true, below: false });

@@ -106,6 +106,7 @@ rail.innerHTML = `
       ${labeled('run-stale', icon('play'), 'Run stale', 'Run stale program cells in order')}
       ${labeled('run-all', icon('playall'), 'Run all', 'Run all program cells from the top')}
       ${labeled('stop', icon('stop'), 'Stop', 'Interrupt the running cell')}
+      ${labeled('clear-outputs', icon('clear'), 'Clear outputs', 'Clear every cell’s output (Esc then O clears one cell’s)')}
       ${labeled('restart', icon('restart'), 'Restart session', 'Fresh session (kernel process replaced)')}
     </div>
   </div>
@@ -152,7 +153,7 @@ rail.addEventListener('focusin', (e) => placeRailCaption(e.target));
 // view. A click on a resting tile does nothing, and its caption stays
 // hidden (styles.css). The body's data-view, data-cells and data-grid are
 // the document view's (DocumentView.syncView); written only on change.
-const CELL_TOOLS = ['add-code', 'add-scratch', 'add-text', 'run-stale', 'run-all', 'stop', 'restart', 'toggle-panel'];
+const CELL_TOOLS = ['add-code', 'add-scratch', 'add-text', 'run-stale', 'run-all', 'stop', 'clear-outputs', 'restart', 'toggle-panel'];
 function rest(tile: HTMLElement, resting: boolean) {
   if ((tile.getAttribute('aria-disabled') === 'true') === resting) return;
   if (resting) tile.setAttribute('aria-disabled', 'true');
@@ -978,6 +979,7 @@ docView.onDocument = () => session?.documentChanged();
 // below), as does the cursor moving to another cell and the view switch.
 // Typing writes nothing to it.
 const scrollRail = attachScrollRail(cellMarks(docView, (id) => session?.tables(id) ?? []), $('doc'), $('sheet'));
+docView.onOutputsCleared = () => scrollRail.cells();
 docView.onRunStart = (id) => {
   session?.runStarting(id);
   scrollRail.cells();
@@ -1312,6 +1314,28 @@ $('add-text').addEventListener('click', () => docView.insertRelative('text'));
 $('run-all').addEventListener('click', () => void docView.runAllProgram());
 $('run-stale').addEventListener('click', () => void docView.runStale());
 $('stop').addEventListener('click', () => kernel.interrupt());
+$('clear-outputs').addEventListener('click', () => docView.clearOutputs());
+
+// A right click on a code cell: its output, or every cell's, cleared (the
+// rail's tile and Esc then O do the same). The shell gives the page no
+// menu of its own, so nothing is lost over the code.
+const cellMenu = menu.context('Cell');
+let menuCell: string | null = null;
+const clearOne = menu.item(cellMenu, 'Clear output', () => menuCell && docView.clearOutputOf(menuCell), {
+  title: 'Clear this cell’s output (Esc then O)',
+});
+const clearAll = menu.item(cellMenu, 'Clear all outputs', () => docView.clearOutputs(), {
+  title: 'Clear every cell’s output',
+});
+$('sheet').addEventListener('contextmenu', (e) => {
+  const at = docView.codeCellAt(e.target as Node);
+  if (!at) return;
+  e.preventDefault();
+  menuCell = at.id;
+  clearOne.disabled = !at.hasOutput;
+  clearAll.disabled = !docView.hasOutputs;
+  menu.openAt(cellMenu, e.clientX, e.clientY);
+});
 $('restart').addEventListener('click', () => {
   void kernel.restart().then(() => {
     docView.markAllStale();

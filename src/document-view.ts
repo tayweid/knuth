@@ -314,7 +314,8 @@ export class DocumentView {
   private gridHistory = new GridHistory();
   private endZone!: HTMLElement;
   private lastFocused: CellView | null = null;
-  /** Esc arms a brief chord: the next key can switch the cell's kind. */
+  /** Esc arms a brief chord: the next key can switch the cell's kind
+   *  (Y/S/M) or clear its output (O). */
   private armed: { v: CellView; until: number } | null = null;
   /** Cell identities (CellView.id), by the Cell they belong to. */
   private ids = new WeakMap<Cell, string>();
@@ -340,7 +341,7 @@ export class DocumentView {
     /** Resolve a figs/<name>.svg receipt to SVG text (project folder). */
     private loadFigure?: (path: string) => Promise<string | null>,
   ) {
-    // The armed Esc chord (Esc, then Y/S/M) is resolved here so it works
+    // The armed Esc chord (Esc, then Y/S/M, or O) is resolved here so it works
     // regardless of which element ends up with the key event.
     window.addEventListener(
       'keydown',
@@ -356,7 +357,11 @@ export class DocumentView {
                 : null;
         const { v } = this.armed;
         this.disarm();
-        if (kind) {
+        if (e.key === 'o') {
+          e.preventDefault();
+          e.stopPropagation();
+          this.clearOutputs([v]);
+        } else if (kind) {
           e.preventDefault();
           e.stopPropagation();
           this.convertKind(v, kind);
@@ -709,6 +714,80 @@ export class DocumentView {
       this.batch = false;
     }
   }
+
+  /** Clear the stored and shown output of the given cells (all of them by
+   *  default) — a running cell keeps its live readout. ⌘Z puts the output
+   *  back for any cell still there; the source is never touched, so edits
+   *  made in between survive the restore. */
+  clearOutputs(only?: CellView[]) {
+    const saved: Array<{ v: CellView; stored: string | null; shown: string; error: boolean; figs?: string[] }> = [];
+    for (const v of only ?? this.allRunnable()) {
+      if (v.running || v.cell.kind === 'text') continue;
+      if (!this.showsOutput(v)) continue;
+      saved.push({
+        v,
+        stored: v.cell.output.length > 0 ? outputText(v.cell) : null,
+        shown: v.outEl.textContent ?? '',
+        error: v.outEl.classList.contains('error'),
+        figs: v.figSvgs,
+      });
+      if (!v.isPreamble) setOutput(v.cell, null);
+      v.outEl.textContent = '';
+      v.outEl.hidden = true;
+      v.outEl.classList.remove('error');
+      clearSafeSvgImages(v.figsEl);
+      v.figsEl.hidden = true;
+      v.figSvgs = undefined;
+    }
+    if (saved.length === 0) return;
+    this.onChange();
+    this.onOutputsCleared?.();
+    this.onUndoable?.(() => {
+      let restored = false;
+      for (const { v, stored, shown, error, figs } of saved) {
+        // Gone, or run again since: what is there now is newer.
+        if (!this.allRunnable().includes(v) || v.running || v.cell.output.length > 0 || !v.outEl.hidden) continue;
+        if (stored !== null && !v.isPreamble) setOutput(v.cell, stored);
+        v.outEl.textContent = shown;
+        v.outEl.hidden = shown === '';
+        v.outEl.classList.toggle('error', error);
+        // Figures come back as they were shown; a cell whose figures were
+        // only receipts (never drawn this session) re-reads them.
+        if (figs?.length) this.renderFigures(v, figs);
+        else if (stored !== null) this.hydrateOutputs(v);
+        restored = true;
+      }
+      if (!restored) return;
+      this.onChange();
+      this.onOutputsCleared?.();
+    }, saved.length === 1 && only ? 'Output cleared — ⌘Z restores it' : 'Outputs cleared — ⌘Z restores them');
+  }
+
+  /** The code cell a right click landed in, and whether it has output to
+   *  clear; null outside one (a text cell, the strips between cells). */
+  codeCellAt(node: Node): { id: string; hasOutput: boolean } | null {
+    const v = this.allRunnable().find((view) => view.row.contains(node));
+    if (!v || v.cell.kind === 'text') return null;
+    return { id: v.id, hasOutput: this.showsOutput(v) };
+  }
+
+  /** Any cell with output to clear (Clear all outputs rests without). */
+  get hasOutputs(): boolean {
+    return this.allRunnable().some((v) => v.cell.kind !== 'text' && this.showsOutput(v));
+  }
+
+  clearOutputOf(id: string) {
+    const v = this.allRunnable().find((view) => view.id === id);
+    if (v) this.clearOutputs([v]);
+  }
+
+  private showsOutput(v: CellView): boolean {
+    return v.cell.output.length > 0 || !v.outEl.hidden || !v.figsEl.hidden;
+  }
+
+  /** Outputs were cleared or restored outside a run (the scroll rail
+   *  repaints its marks). */
+  onOutputsCleared?: () => void;
 
   async runStale() {
     this.batch = true;

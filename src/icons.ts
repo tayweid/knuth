@@ -18,6 +18,8 @@ export const ICONS: Record<string, string> = {
   play: '<polygon points="7 4.5 19 12 7 19.5"/>',
   playall: '<polygon points="3.5 5 11 12 3.5 19"/><polygon points="13 5 20.5 12 13 19"/>',
   stop: '<rect x="6.5" y="6.5" width="11" height="11" rx="1.5"/>',
+  // Clear outputs: lines of output struck through by an eraser's slash.
+  clear: '<line x1="4" y1="7" x2="13" y2="7"/><line x1="4" y1="12" x2="10" y2="12"/><line x1="4" y1="17" x2="8" y2="17"/><line x1="13" y1="20" x2="20" y2="11"/><line x1="13" y1="11" x2="20" y2="20"/>',
   restart: '<polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"/>',
   panel: '<rect x="3" y="3" width="18" height="18" rx="2"/><line x1="15" y1="3" x2="15" y2="21"/>',
   // The session (session.ts): the pill's mark, the pin, and the kinds a
