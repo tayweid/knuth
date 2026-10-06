@@ -2079,14 +2079,6 @@ body[data-view='source'] .cell .run-num { visibility: visible; }
 .rv .r-also code,
 .rv .r-folder code { font: 11.5px var(--mono); }
 .rv > :last-child { padding-bottom: 0.55rem; }
-.rv .r-hint {
-  padding: 0.35rem 0.75rem 0.55rem;
-  font: 11px/1.5 var(--sans);
-  color: rgba(143, 141, 136, 0.85);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
 .rv.past { opacity: 0.55; }
 
 /* The chip: the receipt folded to a tab at the cell's right corner, in

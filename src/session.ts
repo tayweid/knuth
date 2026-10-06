@@ -52,8 +52,12 @@ import {
   type ReceiptRow,
 } from './receipts.ts';
 
-/** How a run's receipt shows when the card is not docked. */
-export type Mode = 'peek' | 'silent';
+/** How a run's receipt shows when the card is not docked: peek, beside
+ *  the cell and straight up into the pill, the column never moving for it;
+ *  float, kept beside the cell, the column sliding to make room, until it
+ *  is put away (Esc, its ✕, a click outside the column) or the next run's
+ *  takes its place; silent, no card at all. */
+export type Mode = 'peek' | 'float' | 'silent';
 type Tab = 'session' | 'data' | 'figures';
 /** fresh: a run's, about to fly; hover: a chip's, read-only; held: kept in
  *  place (a click, p, its pin, or a chip's click) until it is put away. */
@@ -73,10 +77,12 @@ interface Card {
 }
 type FigureRef = { name: string } | { cell: string };
 
-/** How long a fresh receipt stays when nothing else puts it away. */
+/** Float: how long a column out for a receipt waits for a run that
+ *  Shift-Enter or a ▶ is starting before it goes home anyway. */
 export const DWELL_MS = 6000;
-/** After the pointer leaves a fresh receipt it was resting on. */
-const DWELL_AFTER_LOOK_MS = 2000;
+/** Peek: the fresh receipt flies as soon as it has eased in (#receipt's
+ *  0.24 s show), seen arriving and then going, with no pause between. */
+export const SHOW_MS = 240;
 /** The flight up into the pill. */
 export const FLY_MS = 460;
 /** The column's slide, on the pin or for a receipt (peek-v2's 0.36 s). */
@@ -159,14 +165,6 @@ function printMark(): HTMLElement {
   const mark = el('i', 'pm');
   mark.innerHTML = '<svg viewBox="0 0 11 8" aria-hidden="true"><polyline points="2 6 4.5 3.5 6.5 5 9 2"/></svg>';
   return mark;
-}
-
-function isTextEntry(target: Element | null): boolean {
-  return !!target && (
-    target instanceof HTMLInputElement ||
-    target instanceof HTMLTextAreaElement ||
-    (target instanceof HTMLElement && target.isContentEditable)
-  );
 }
 
 /** A value its preview says in a few characters: a number (a float to six
@@ -374,7 +372,8 @@ export class Session {
     this.room = document.getElementById('layout')!;
     this.doc = document.getElementById('doc')!;
     this.sheet = document.getElementById('sheet')!;
-    this.mode = readStore(() => localStorage, MODE_KEY) === 'silent' ? 'silent' : 'peek';
+    const stored = readStore(() => localStorage, MODE_KEY);
+    this.mode = stored === 'silent' || stored === 'float' ? stored : 'peek';
     // Pinned is per window (a reload keeps it); a new window starts as the
     // last one was left.
     const pinned = readStore(() => sessionStorage, PINNED_KEY) ?? readStore(() => localStorage, PINNED_KEY);
@@ -422,7 +421,8 @@ export class Session {
           <button type="button" role="tab" data-tab="figures">Figures</button>
         </div>
         <div class="s-modes" role="radiogroup" aria-label="When a cell runs">
-          <button type="button" role="radio" data-mode="peek" title="Peek: the run's receipt beside the cell, then up into the pill">Peek</button>
+          <button type="button" role="radio" data-mode="peek" title="Peek: the run's receipt beside the cell and straight up into the pill; a chip's click opens it over the page">Peek</button>
+          <button type="button" role="radio" data-mode="float" title="Float: the run's receipt stays beside the cell until you carry on, the column making room">Float</button>
           <button type="button" role="radio" data-mode="silent" title="Silent: no card, no motion — the chip and the pill update quietly">Silent</button>
           <button type="button" role="radio" data-mode="pinned" title="Pinned: the session beside the column, the last run on top">${icon('pin')}<span>Pinned</span></button>
         </div>
@@ -487,7 +487,7 @@ export class Session {
     if (!run.batch) this.unseen.clear();
     const added = receipt.rows.filter((row) => row.mark === '+').map((row) => row.name);
     for (const name of added) this.unseen.add(name);
-    const peek = !this.docked && this.mode === 'peek' && !run.batch && run.ok;
+    const peek = !this.docked && this.mode !== 'silent' && !run.batch && run.ok;
     const late = peek && !this.hasContent(receipt);
     if (this.band) {
       const was = this.band.id;
@@ -731,11 +731,15 @@ export class Session {
       return past.width >= CARD_FLOOR ? past : null;
     }
     const fit = at(CARD_TIE, 0);
+    const width = Math.min(CARD_FLOOR, f.box.width - 2 * CARD_GAP);
+    const over = (lean: number) => ({ left: f.box.right - CARD_GAP - width, width, lean, tie: null });
+    // Peek: the column never moves for a receipt; short of a margin, the
+    // card lies over the column's right edge.
+    if (this.mode !== 'float') return fit.width >= CARD_FLOOR ? fit : over(0);
     if (fit.width >= CARD_MIN - CARD_SLACK) return fit;
     const slid = at(CARD_TIE, CARD_TIE + CARD_MIN + CARD_GAP - f.padR - f.sb);
     if (slid.width >= CARD_FLOOR) return slid;
-    const width = Math.min(CARD_FLOOR, f.box.width - 2 * CARD_GAP);
-    return { left: f.box.right - CARD_GAP - width, width, lean: slid.lean, tie: null };
+    return over(slid.lean);
   }
 
   /** Its top on the cell's first line, kept inside the room. While the
@@ -819,7 +823,7 @@ export class Session {
     const current = this.receipts.get(receipt.id) === receipt;
     // A run whose news only the snapshot saw (a change in place) still
     // gets its card, unless the person has carried on since.
-    if (current && late && !this.card && found.length && this.last === receipt.id && this.carriedAt < endedAt && !this.docked && this.mode === 'peek') {
+    if (current && late && !this.card && found.length && this.last === receipt.id && this.carriedAt < endedAt && !this.docked && this.mode !== 'silent') {
       this.pending = new Set(found.filter((row) => row.mark === '+').map((row) => row.name));
       this.showCard(receipt.id, 'fresh');
     } else if (this.card?.id === receipt.id) {
@@ -868,9 +872,14 @@ export class Session {
     if (!this.card) return; // its cell is not on screen
     void this.receiptEl.offsetWidth;
     this.receiptEl.classList.add('show');
-    if (kind === 'fresh') this.dwell = window.setTimeout(() => this.tuck(), DWELL_MS);
     if (previous && previous !== id) this.paintChip(previous);
     this.paintChip(id);
+    // Float keeps a run's card where it stands; Peek's flies home as soon
+    // as it is in.
+    if (kind === 'fresh') {
+      if (this.mode === 'float') this.holdCard();
+      else this.dwell = window.setTimeout(() => this.tuck(), SHOW_MS);
+    }
   }
 
   /** The receipt, in the card: a run's (fresh), a chip's (hover) or held. */
@@ -884,19 +893,10 @@ export class Session {
     this.receiptEl.append(this.receiptView(receipt, this.card.kind, this.card.fromRun));
   }
 
-  /** What keeps a run's card, as it can be done now: `p` only when the
-   *  keystroke would not type (focus off the text), a click always. */
-  private hint(): string {
-    return isTextEntry(document.activeElement) ? 'type or esc ↗ · click to keep' : 'type or esc ↗ · p keeps it';
-  }
-
   private lookAtCard(looking: boolean) {
     if (!this.card) return;
     clearTimeout(this.hoverTimer);
-    if (this.card.kind === 'fresh') {
-      clearTimeout(this.dwell);
-      if (!looking) this.dwell = window.setTimeout(() => this.tuck(), DWELL_AFTER_LOOK_MS);
-    } else if (this.card.kind === 'hover' && !looking) {
+    if (this.card.kind === 'hover' && !looking) {
       this.hoverTimer = window.setTimeout(() => this.hideCard(), 180);
     }
   }
@@ -1213,7 +1213,7 @@ export class Session {
       span.dataset.name = name;
       if (this.unseen.has(name)) span.classList.add('new');
       if (v.scratch) span.classList.add('scratch');
-      if (landing?.includes(name) && this.mode === 'peek') span.classList.add('land');
+      if (landing?.includes(name) && this.mode !== 'silent') span.classList.add('land');
       spans.push(span);
     }
     const more = el('span', 'sp-more');
@@ -1227,7 +1227,7 @@ export class Session {
     const figures = names.filter((name) => this.snapshot.get(name)?.figure).length;
     const count = `The session: ${names.length} name${names.length === 1 ? '' : 's'}${figures ? `, ${figures} figure${figures === 1 ? '' : 's'}` : ''}`;
     this.pill.title = away ? `${count} — ${this.awayTitle()}` : `${count} — click to ${this.visible ? 'close' : 'open'} it`;
-    if (landing && this.mode === 'peek') {
+    if (landing && this.mode !== 'silent') {
       this.pill.classList.remove('got');
       void this.pill.offsetWidth;
       this.pill.classList.add('got');
@@ -1332,8 +1332,8 @@ export class Session {
     writeStore(() => localStorage, PINNED_KEY, on ? '1' : '0');
   }
 
-  /** The header's segmented control: Peek and Silent are how a run's
-   *  receipt shows (remembered); Pinned docks the card (per window). */
+  /** The header's segmented control: Peek, Float and Silent are how a
+   *  run's receipt shows (remembered); Pinned docks the card (per window). */
   private setMode(mode: Mode | 'pinned') {
     if (mode === 'pinned') {
       if (this.docked) return;
@@ -1372,6 +1372,11 @@ export class Session {
     }
     this.mode = mode;
     writeStore(() => localStorage, MODE_KEY, mode);
+    // Only Float leaves the column out for a receipt.
+    if (mode !== 'float') {
+      clearTimeout(this.returnTimer);
+      this.linger = 0;
+    }
     if (this.docked) {
       this.setDocked(false);
       this.floating = true;
@@ -1635,15 +1640,14 @@ export class Session {
     if (!receipt.ok) what.append(' · failed');
     head.append(what);
     head.append(el('span', 'took', took(receipt.ms)));
-    if (context === 'fresh' || context === 'held') {
-      const pin = el('button', `hb${context === 'held' ? ' on' : ''}`);
+    if (context === 'held') {
+      const pin = el('button', 'hb on');
       pin.type = 'button';
       pin.innerHTML = icon('pin');
-      pin.title = context === 'held' ? 'Kept here until you close it' : 'Keep it here (a click, or p)';
-      pin.addEventListener('click', () => this.holdCard());
+      pin.title = 'Kept here until you close it';
       const close = el('button', 'hb', '✕');
       close.type = 'button';
-      close.title = context === 'fresh' ? 'Put it away (Esc)' : 'Close (Esc)';
+      close.title = 'Close (Esc)';
       close.addEventListener('click', () => this.dismiss());
       head.append(pin, close);
     }
@@ -1699,7 +1703,6 @@ export class Session {
 
     const folder = this.folderView(receipt);
     if (folder) box.append(folder);
-    if (context === 'fresh') box.append(el('div', 'r-hint', this.hint()));
     return box;
   }
 
@@ -1839,11 +1842,6 @@ export class Session {
         else if (this.floating) this.closeCard();
         return;
       }
-      if (plain && (e.key === 'p' || e.key === 'P') && this.card?.kind === 'fresh' && !isTextEntry(document.activeElement)) {
-        e.preventDefault();
-        this.holdCard();
-        return;
-      }
       const typing = plain && (e.key.length === 1 || ['Enter', 'Backspace', 'Delete', 'Tab'].includes(e.key));
       const shifted = e.shiftKey && !e.metaKey && !e.ctrlKey && e.key === 'Enter';
       if (typing || shifted) {
@@ -1860,31 +1858,25 @@ export class Session {
       }
     }, { capture: true });
 
-    // The fresh card's hint follows the focus: "p keeps it" only while p
-    // would not type.
-    const rehint = () => {
-      if (this.card?.kind !== 'fresh') return;
-      const hint = this.receiptEl.querySelector('.r-hint');
-      if (hint) hint.textContent = this.hint();
-    };
-    document.addEventListener('focusin', rehint);
-    document.addEventListener('focusout', rehint);
-
     document.addEventListener('mousedown', (e) => {
       const target = e.target as Element;
       this.carriedAt = performance.now();
       const onChip = !!target.closest?.('.rchip');
+      // A click on a cell's ▶ is a run coming: the column holds for its
+      // card, as for Shift-Enter. Any other click puts the card away and
+      // sends the column home at once — clicking back into the text is
+      // getting on with it (Taylor, 2026-10-06: "basically instantly").
+      const run = this.sheet.contains(target) && !!target.closest?.('.run');
       if (this.card && !this.receiptEl.contains(target) && !onChip) {
-        // A click in the column is carrying on (into the next cell, its ▶):
-        // the column lingers as for typing. Anywhere else it is putting the
-        // card away, and the column goes home with it (dismiss).
-        const away = !this.sheet.contains(target);
-        if (this.card.kind === 'fresh') this.tuck(false, away);
-        else if (this.card.kind === 'hover' || !target.closest?.('#session')) this.hideCard(false, false, away);
+        // Float's run card stays through clicks in the column: back into
+        // the text, or a ▶ whose own card will take its place.
+        const kept = this.card.fromRun && this.mode === 'float' && this.sheet.contains(target);
+        if (this.card.kind === 'fresh') this.tuck(run, !run);
+        else if (!kept && (this.card.kind === 'hover' || !target.closest?.('#session'))) this.hideCard(false, run, !run);
       } else if (!this.card && this.linger > 0 && !onChip && this.sheet.contains(target)) {
-        // A click into the column with it still out: as typing, the return
-        // starts over.
-        this.cardGone();
+        // A click into the column with it still out (the card went with
+        // typing): home now, or held for the run a ▶ starts.
+        this.cardGone(run, !run);
       }
       if (this.band?.held && !onChip && !this.cardEl.contains(target)) this.clearBand();
       if (this.floating && !this.cardEl.contains(target) && !this.pill.contains(target) &&

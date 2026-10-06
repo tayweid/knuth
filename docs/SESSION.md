@@ -49,29 +49,32 @@ the page marks new against rebound from its last snapshot, then reads
 the snapshot after the run, which adds what the AST could not see — a
 name bound inside an `if`, a frame changed in place (`prices['q'] = …`).
 
-**The receipt card** (Peek mode). After a run, the card appears beside
-the cell: right of the column, over the chips' lane (its own chip is
-hidden while it is up), its top on the cell's first line, in the frame's
-dark glass. Its width follows the room's margin, up to 300 px; a margin
-under 192 px slides the column left for the card's stay, until the card
-has 200. It stays while you look —
-the pointer on it holds it — and goes home into the session pill when
-you keep typing, press Esc, click elsewhere, start another run, or
-after six seconds. Going home is the flight: the card lifts and swings
-along a curve into the pill, shrinking; the pill's names update as it
-lands, the new ones blue and lit for a moment, and the chip takes its
-place at the cell. The column, if it slid, stays while cards keep
-coming — the next run's card stands where this one did — and goes home
-1.2 s after the last has gone; typing on, or a click in the column,
-starts the 1.2 s over, so it goes at a pause, and it waits for a run
-still going. A card put away on purpose — Esc, its ✕, a click outside
-it and the column — takes the column home with it, at once (*Fifth
-pass*). A click anywhere on the card, `p` when the keystroke would
-not type into a cell (after clicking ▶), or the
-card's pin keeps it where it is, as it is, until it is closed (✕ or
-Esc); its hint says which works now ("type or esc ↗ · click to keep" in
-a cell, "· p keeps it" elsewhere). A run that bound more than nine names
-lists eight and "+393 more · in the Session card", which opens the
+**The receipt card.** After a run, the card appears beside the cell:
+right of the column, over the chips' lane (its own chip hidden while it
+is up), its top on the cell's first line, in the frame's dark glass, its
+width following the room's margin up to 300 px. What happens next is the
+mode's (*Sixth pass*, 2026-10-06):
+
+- **Peek** (the default): as soon as it has eased in (0.24 s) it flies
+  home into the session pill, whatever the pointer or the keys do. The
+  column never moves for it: a margin under 160 px lays the card over the
+  column's right edge for its moment. Going home is the flight: the card
+  lifts and swings along a curve into the pill, shrinking; the pill's
+  names update as it lands, the new ones blue and lit for a moment, and
+  the chip takes its place at the cell. A chip's click opens its receipt
+  over the page as it stands, past the chip where the margin holds it,
+  else over the lane or the column's edge — never moving the column.
+- **Float**: the card stays, kept (its pin lit), until Esc, its ✕ or a
+  click outside it and the column puts it away, or the next run's card
+  takes its place; typing and clicks back into the text leave it. A
+  margin under 192 px slides the column left for the card's stay, until
+  the card has 200. The column stays out while cards keep coming, and a
+  card put away takes it home at once; after a run that makes no card it
+  goes 1.2 s later (typing on starts that over), and it waits for a run
+  still going. A chip's click slides it the same way.
+
+A click on a chip's hover card keeps it. A run that bound more than nine
+names lists eight and "+393 more · in the Session card", which opens the
 Session tab. A Run all or Run stale never puts up a card.
 
 **The chip.** Once a receipt has flown, a small chip stays at the cell's
@@ -115,7 +118,9 @@ Session tile (`#toggle-panel`, lit while the card shows).
 
 **The modes**, a segmented control in the card's header:
 
-- **Peek** (the default): the receipt card and the flight, as above.
+- **Peek** (the default): the receipt card, straight up into the pill.
+- **Float**: the receipt card kept beside the cell, the column making
+  room.
 - **Silent**: no card, no motion; the chip appears and the pill's names
   change quietly.
 - **Pinned**: the card docks beside the column, on the page, in its own
@@ -124,10 +129,10 @@ Session tile (`#toggle-panel`, lit while the card shows).
   under about 1275 px). A run's receipt goes straight into its band,
   lit for a moment; no card beside the cell; the chip still appears, and
   its hover or click shows its cell's receipt in the band ("Earlier run ·
-  cell 2"). Choosing Peek or Silent unpins it back to floating; closing
+  cell 2"). Choosing Peek, Float or Silent unpins it back to floating; closing
   it unpins it.
 
-Peek or Silent is remembered (localStorage `knuth-receipts`); Pinned is
+Peek, Float or Silent is remembered (localStorage `knuth-receipts`); Pinned is
 remembered per window (sessionStorage `knuth-session-pinned`, with the
 last choice in localStorage as a new window's start).
 
@@ -168,13 +173,13 @@ the receipt away.
 
 | | default | why |
 |---|---|---|
-| the receipt card's dwell | **6 s**; the pointer on it holds it, 2 s after it leaves | Taylor's "about six seconds"; long enough to read four lines, short enough not to be furniture |
+| the receipt card's stay | Peek: **0.24 s**, its ease-in, then the flight; Float: until put away or replaced (*Sixth pass*) | Taylor, 2026-10-06: the flight up "as the default behavior but with no pause", and floating receipts "that change the margin and don't go away" as the option; the first passes' 6 s dwell, the pointer holding it, and `p` to keep it are gone |
 | the flight | **460 ms**, a quadratic curve that lifts first and swings across into the pill, shrinking to the names' box, above the bar; opaque until it is seven eighths of the way, the names lighting then (at 60 % of the time) while it still shows, gone only as it settles into them | peek-v2's 380 ms read as a blink on a real window; the curve is the "sends it up" Taylor liked; the first pass faded it before it reached the pill |
-| what puts the card away | typing (a printable key, Enter, Backspace, Delete, Tab), Esc, a click elsewhere, another run, the dwell | peek-v2's "carrying on is the acknowledgement" |
+| what puts the card away | Peek: nothing, it goes at once; Float: Esc, its ✕, a click outside it and the column, the next run's card | Taylor: clicking back into the text should not move the margin |
 | keeping a run's card | a click anywhere on it (but its pin, ✕, a table or the figure, which act on their own); `p` only when the keystroke would not type (focus off the text); the hint names what works now | after ⌘↩ the cursor stays in the cell, where a `p` must stay a `p`; Esc then P was weighed and left out, since Esc also closes the completion popup and the next `p` would be swallowed |
 | when a run gets a card | a single, clean run that bound or drew something; a run whose news only the snapshot saw gets its card when the snapshot lands, unless you carried on meanwhile | a card saying "nothing" is motion for nothing |
 | the chip's glyphs | white print = drew a figure; table = bound a DataFrame, Series or 2-D array; braces = names; the count = names bound (or figures drawn, for a figure alone), 99 with a raised + past that; 4 px in, 3 px apart, 38 px at the most | ledger-v2's tab, with braces for plain names; narrow enough that no chip reaches the docked card past the 46 px lane |
-| the column after a receipt | stays where the card slid it while cards keep coming: through a run (its card stands where the last one did) and through a Shift-Enter stepping to the next cell, up to 6 s if no run comes; at once when the card is put away on purpose (Esc with it up, its ✕, a click outside the card and the column), but for a run still going (*Fifth pass*); 1.2 s after typing, a click into the column or the dwell put the card away, or after a run that makes no card (silent, failed, a batch, nothing bound); each keystroke, and each click in the column, starts the 1.2 s over, so it goes at a pause and not under a word; never while a run is still going (up to 30 s after the last card went), and never from under a pointer resting on a chip | the verifiers' traces at 1100: 88 px each way on every Shift-Enter; then 88 px under the line being typed, mid-word, and home and straight out again for a 7 s cell; Taylor, on the 1.2 s after a dismissal: "the margin takes a second to return" |
+| the column after a receipt | Peek: never moves. Float: stays where the card slid it while cards keep coming: through a run (its card stands where the last one did) and through a Shift-Enter stepping to the next cell, up to 6 s if no run comes; at once when the card is put away on purpose (Esc with it up, its ✕, a click outside the card and the column), but for a run still going (*Fifth pass*); 1.2 s after typing, a click into the column or the dwell put the card away, or after a run that makes no card (silent, failed, a batch, nothing bound); each keystroke, and each click in the column, starts the 1.2 s over, so it goes at a pause and not under a word; never while a run is still going (up to 30 s after the last card went), and never from under a pointer resting on a chip | the verifiers' traces at 1100: 88 px each way on every Shift-Enter; then 88 px under the line being typed, mid-word, and home and straight out again for a 7 s cell; Taylor, on the 1.2 s after a dismissal: "the margin takes a second to return" |
 | a chip's hover | a card past the chip, the column where it stands, when that leaves the card 160 px (a window of about 1305 px and more); else none, the title naming the run's names; a click opens it kept, past the chip where it fits, else over the lane as a run's card, the column sliding | hovering never moves the column; a click is a decision, as a run is |
 | a run that bound many names | the receipt card lists eight and "+N more · in the Session card" (it opens the Session tab); the docked band the same, its line scrolling to the list below | a loop of globals made a 10,634 px card |
 | a value in a narrow row | a float to six significant digits ("-0.408882"), whole in the tooltip and on a wide card; a numpy scalar is previewed by its value: numbers and dates by numpy's own str (a float64 as Python's float says it, `0.1` for a float32, `2024-01-01T00:00:00.000000000`, `NaT`), strings, bytes and objects by their Python value's repr | "elasticity float64" said nothing; `item()` widened a float32 and turned a nanosecond date into an int and NaT into None |
@@ -661,3 +666,25 @@ On `ux/session` after the fourth pass:
 10. **values.json writes a nanosecond datetime64 as an int**
     (`_persistable` unwraps numpy scalars by `item()`; main's code): the
     receipt previews it right now, the folder's copy is not.
+
+## Sixth pass: Peek goes up at once, Float keeps the card (2026-10-06)
+
+Taylor, on the column taking a moment to come back after a click into a
+cell: the receipt going up into the pill and the page settling after it
+should be the default, "but with no pause", and a chip's click should
+"just pop up over what's there". The old behaviour, the column making
+room, stays as an option whose cards "don't go away".
+
+- **Peek** shows the card for its 0.24 s ease-in and flies it; the
+  column never moves for a receipt, and a chip's click opens a kept card
+  over the page (past the chip, over the lane, or over the column's right
+  edge on a narrow window). Over a card that is leaving, the pointer
+  holds nothing; once it lands, a chip come up under the pointer opens
+  its hover card, as any chip does.
+- **Float** keeps every run's card (kept from the start: pin lit, ✕),
+  the column sliding for it as before. Typing and clicks back into the
+  column leave it; Esc, ✕ or a click outside both put it away and take
+  the column home at once; the next run's card takes its place with the
+  column still out.
+- Gone with the dwell: the 6 s timer, the pointer holding a fresh card,
+  `p` to keep it, and the card's hint line.
