@@ -2181,8 +2181,6 @@ body[data-view='source'] .cell .run-num { visibility: visible; }
   border-bottom: 1px solid rgba(255, 255, 255, 0.06);
 }
 
-.s-tabs { flex: 1 0 auto; display: flex; gap: 1px; }
-.s-tabs button,
 .s-modes button,
 .s-close {
   border: 0;
@@ -2191,9 +2189,6 @@ body[data-view='source'] .cell .run-num { visibility: visible; }
   cursor: pointer;
   white-space: nowrap;
 }
-.s-tabs button { font: 12px var(--sans); padding: 4px 8px; border-radius: 6px; }
-.s-tabs button:hover { color: var(--room-ink); }
-.s-tabs button.on { color: var(--room-ink); background: rgba(255, 255, 255, 0.08); }
 
 /* The modes: Peek, Silent, Pinned (the pin itself). */
 .s-modes {
@@ -2213,9 +2208,8 @@ body[data-view='source'] .cell .run-num { visibility: visible; }
   border-radius: 5px;
 }
 .s-modes button .ico { width: 11px; height: 11px; display: block; }
-/* A card under 370 px (the docked card on most windows): the tabs, the
-   modes and ✕ on one line, Pinned as its pin alone (its title says it). */
-#session.tight .s-tabs button { padding: 4px 6px; }
+/* A card under 370 px (the docked card on most windows): the modes and
+   ✕ on one line, Pinned as its pin alone (its title says it). */
 #session.tight .s-modes button { padding: 4px 6px; }
 #session.tight .s-modes [data-mode='pinned'] span { display: none; }
 .s-modes button:hover { color: var(--room-ink); }
@@ -2223,13 +2217,41 @@ body[data-view='source'] .cell .run-num { visibility: visible; }
 .s-modes button[data-mode='pinned'].on { color: #9db8d6; }
 .s-modes button[data-mode='pinned'].on .ico { fill: currentColor; }
 .s-close { width: 24px; height: 24px; border-radius: 6px; font-size: 12px; }
+.s-head .s-close { margin-left: auto; }
 .s-close:hover { color: var(--room-ink); background: rgba(255, 255, 255, 0.08); }
-#session :is(.s-tabs, .s-modes, .s-pick) button:focus-visible,
+#session :is(.s-fold, .s-modes, .s-pick) button:focus-visible,
+#session .s-fold:focus-visible,
 #session .s-close:focus-visible,
 #receipt button:focus-visible { outline: 2px solid #9db8d6; outline-offset: 1px; }
 
-.s-body { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; }
-.s-pane { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; }
+/* Session, Data and Figures, one under another, each folding to its
+   header; when they do not all fit, session.ts (fitParts) gives each its
+   height and each scrolls inside itself. */
+.s-body { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; overflow: hidden; }
+.s-part { flex: none; display: flex; flex-direction: column; min-height: 0; }
+.s-part + .s-part { border-top: 1px solid rgba(255, 255, 255, 0.06); }
+.s-fold {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  padding: 6px 10px 6px 8px;
+  border: 0;
+  background: rgba(255, 255, 255, 0.015);
+  color: var(--room-ink-soft);
+  font: 500 11px/1.4 var(--sans);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  text-align: left;
+  cursor: pointer;
+}
+.s-fold:hover { color: var(--room-ink); }
+.s-fold.on { color: var(--room-ink); }
+.s-fold .ico { width: 12px; height: 12px; flex: none; transition: transform 0.16s ease; }
+.s-fold[aria-expanded='false'] .ico { transform: rotate(-90deg); }
+.s-fold .c { margin-left: auto; letter-spacing: 0.02em; font-weight: 400; }
+.s-pane { flex: none; min-height: 0; display: flex; flex-direction: column; overflow: hidden; }
 .s-pane[hidden] { display: none; }
 .s-pane[data-pane='session'] { display: block; overflow-y: auto; overscroll-behavior: contain; }
 .s-pane[data-pane='session'][hidden] { display: none; }

@@ -552,7 +552,7 @@ test('a table pages in the Data tab, and a figure opens in the Figures tab', asy
   await runAndFile(page, 1);
   await page.locator('#session-pill').click();
   await page.locator('#session .s-row', { hasText: 'prices' }).click();
-  await expect(page.locator('#session [data-tab="data"]')).toHaveAttribute('aria-selected', 'true');
+  await expect(page.locator('#session [data-tab="data"]')).toHaveClass(/\bon\b/);
   const table = page.locator('#session .viewer .data-table');
   await expect(table).toBeVisible();
   await expect(table.locator('tbody tr')).toHaveCount(100);
@@ -566,9 +566,9 @@ test('a table pages in the Data tab, and a figure opens in the Figures tab', asy
   await expect(page.locator('#session .viewer-foot')).toHaveText('250 rows');
   const requests = await page.evaluate(() => (window as Probe).__knuthTableRequests ?? []);
   expect(requests.filter((r) => r.name === 'prices').map((r) => r.offset)).toEqual([0, 100, 200]);
-  // The picker holds every table; the Figures tab the figure, as an image.
+  // The picker holds every table; the Figures part, under it, the figure,
+  // as an image.
   await expect(page.locator('#session [data-pane="data"] .s-pick button')).toHaveText(['prices', 'demand', 'elasticity']);
-  await page.locator('#session [data-tab="figures"]').click();
   await expect(page.locator('#session [data-pane="figures"] .viewer .figure img')).toBeVisible();
   await expect(page.locator('#session [data-pane="figures"] .viewer .figure svg')).toHaveCount(0);
 });
@@ -937,7 +937,7 @@ test('a run that binds hundreds of names lists eight, says how many more, and th
   await expect(page.locator('#session')).toHaveClass(/floating/);
   // The caret never left the cell, as with the pill.
   expect(await page.evaluate(() => document.activeElement?.classList.contains('cm-content'))).toBe(true);
-  await expect(page.locator('#session [data-tab="session"]')).toHaveAttribute('aria-selected', 'true');
+  await expect(page.locator('#session [data-tab="session"]')).toHaveClass(/\bon\b/);
   await expect(page.locator('#session .s-list .s-row')).toHaveCount(120);
   await page.keyboard.press('Escape');
   // The chip: 99 and a raised +, as narrow as two digits, so the docked
@@ -1028,13 +1028,15 @@ test('Pinned: a chip\'s hover shows its receipt in the docked card\'s band, and 
   await expect(band.locator('.r-head .t')).toHaveText('Earlier run · cell 1');
   await page.keyboard.press('Escape');
   await expect(band.locator('.r-head .t')).toHaveText('Last run · cell 2');
-  // A hover from the Data tab shows the band and goes back when it ends.
-  await page.locator('#session [data-tab="data"]').click();
+  // A hover while the Data part has the height gives it to the band, and
+  // back when it ends.
+  await page.locator('#session .s-row', { hasText: 'prices' }).click();
+  await expect(page.locator('#session [data-tab="data"]')).toHaveClass(/\bon\b/);
   await chip.hover();
-  await expect(page.locator('#session [data-tab="session"]')).toHaveAttribute('aria-selected', 'true');
+  await expect(page.locator('#session [data-tab="session"]')).toHaveClass(/\bon\b/);
   await expect(band.locator('.r-head .t')).toHaveText('Earlier run · cell 1');
   await page.mouse.move(300, 850);
-  await expect(page.locator('#session [data-tab="data"]')).toHaveAttribute('aria-selected', 'true');
+  await expect(page.locator('#session [data-tab="data"]')).toHaveClass(/\bon\b/);
 });
 
 test('the docked band keeps the values: a short table whole, the figure at its width', async ({ page }) => {
@@ -1268,4 +1270,58 @@ test('a change in place made while runs are queued is credited to no cell, not t
   // Alone, the same change in place gets its receipt.
   await runAndFile(page, 1);
   await expect(cell(page, 1).locator('.rchip')).toHaveAttribute('title', /^prices — /);
+});
+
+test('Session, Data and Figures share one card: each folds to its header, and an open part keeps a quarter of the height', async ({ page }) => {
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  await boot(page, 1500, 760);
+  await page.locator('#run-all').click();
+  await expect(cell(page, 3).locator('.rchip')).toBeVisible();
+  await page.locator('#session-pill').click();
+  const card = page.locator('#session');
+  const fold = (tab: string) => card.locator(`[data-tab="${tab}"]`);
+  const pane = (tab: string) => card.locator(`[data-pane="${tab}"]`);
+  for (const tab of ['session', 'data', 'figures']) {
+    await expect(fold(tab)).toHaveAttribute('aria-expanded', 'true');
+    await expect(pane(tab)).toBeVisible();
+  }
+  await expect(fold('session').locator('.c')).toHaveText('6');
+  await expect(fold('data').locator('.c')).toHaveText('3');
+  await expect(fold('figures').locator('.c')).toHaveText('1');
+  await expect(pane('figures').locator('.viewer .figure img')).toBeVisible();
+
+  // A table opened: Data has first claim; the others keep a quarter each
+  // (or what they hold, if less), and the card stays in the room.
+  await pane('data').locator('.s-pick button', { hasText: 'prices' }).click();
+  await expect(pane('data').locator('.data-table')).toBeVisible();
+  await expect(fold('data')).toHaveClass(/\bon\b/);
+  const heights = async () => card.evaluate((element) => {
+    const height = (sel: string) => (element.querySelector(sel) as HTMLElement).getBoundingClientRect().height;
+    const body = element.getBoundingClientRect().height - height('.s-head');
+    return { body, session: height('[data-pane="session"]'), data: height('[data-pane="data"]'), figures: height('[data-pane="figures"]'), bottom: element.getBoundingClientRect().bottom };
+  });
+  const h = await heights();
+  expect(h.bottom).toBeLessThanOrEqual((await box(page, '#layout')).bottom);
+  expect(h.session).toBeGreaterThanOrEqual(Math.floor(h.body / 4) - 2);
+  expect(h.figures).toBeGreaterThanOrEqual(Math.floor(h.body / 4) - 2);
+  expect(h.data).toBeGreaterThan(h.session);
+
+  // Folded, a part is its header alone, and Data takes the room; folds are
+  // remembered.
+  await fold('session').click();
+  await expect(fold('session')).toHaveAttribute('aria-expanded', 'false');
+  await expect(pane('session')).toBeHidden();
+  expect((await heights()).data).toBeGreaterThan(h.data);
+  await page.reload();
+  await expect(page.locator('#kernel-status')).toHaveText('Python');
+  await page.locator('#session-pill').click();
+  await expect(fold('session')).toHaveAttribute('aria-expanded', 'false');
+  // Opened again, it has first claim; pinned, the same parts fold.
+  await fold('session').click();
+  await expect(pane('session')).toBeVisible();
+  await expect(fold('session')).toHaveClass(/\bon\b/);
+  await card.locator('[data-mode="pinned"]').click();
+  await expect(card).toHaveClass(/docked/);
+  await fold('figures').click();
+  await expect(pane('figures')).toBeHidden();
 });

@@ -137,6 +137,15 @@ const MINI_ROWS = 6;
 const MINI_COLS = 6;
 const MODE_KEY = 'knuth-receipts';
 const PINNED_KEY = 'knuth-session-pinned';
+const FOLD_KEY = 'knuth-session-folded';
+/** An open part keeps at least this share of the card's height when the
+ *  three do not all fit (less only when it holds less). */
+const PART_FLOOR = 0.25;
+
+/** A part's header: a click folds it to that line, or opens it again. */
+function fold(tab: Tab, label: string): string {
+  return `<button type="button" class="s-fold" data-tab="${tab}" aria-controls="s-pane-${tab}">${icon('chevron')}<span class="l">${label}</span><span class="c"></span></button>`;
+}
 
 export interface SessionHooks {
   /** The kernel is connected and past ready. */
@@ -316,7 +325,10 @@ export class Session {
   private mode: Mode;
   private docked: boolean;
   private floating = false;
+  /** The part last opened or used: it has first claim on the height. */
   private tab: Tab = 'session';
+  /** The parts folded to their headers (remembered). */
+  private folded = new Set<Tab>();
   private card: Card | null = null;
   /** Docked: the cell whose receipt the band shows in place of the last
    *  run's (a chip hovered, or clicked: held), and the tab to go back to
@@ -378,6 +390,8 @@ export class Session {
     // last one was left.
     const pinned = readStore(() => sessionStorage, PINNED_KEY) ?? readStore(() => localStorage, PINNED_KEY);
     this.docked = pinned === '1';
+    const folded = readStore(() => localStorage, FOLD_KEY)?.split(',') ?? [];
+    for (const tab of folded) if (tab === 'session' || tab === 'data' || tab === 'figures') this.folded.add(tab);
 
     // The pill: the kernel's status (#kernel-status, untouched: the shell's
     // smoke reads its words), a hairline, the session's mark and its names.
@@ -415,11 +429,6 @@ export class Session {
     this.cardEl.setAttribute('aria-label', 'Session');
     this.cardEl.innerHTML = `
       <div class="s-head">
-        <div class="s-tabs" role="tablist">
-          <button type="button" role="tab" data-tab="session">Session</button>
-          <button type="button" role="tab" data-tab="data">Data</button>
-          <button type="button" role="tab" data-tab="figures">Figures</button>
-        </div>
         <div class="s-modes" role="radiogroup" aria-label="When a cell runs">
           <button type="button" role="radio" data-mode="peek" title="Peek: the run's receipt beside the cell and straight up into the pill; a chip's click opens it over the page">Peek</button>
           <button type="button" role="radio" data-mode="float" title="Float: the run's receipt stays beside the cell until you carry on, the column making room">Float</button>
@@ -429,9 +438,9 @@ export class Session {
         <button type="button" class="s-close" title="Close (Esc)" aria-label="Close">✕</button>
       </div>
       <div class="s-body">
-        <div class="s-pane" data-pane="session" role="tabpanel"></div>
-        <div class="s-pane" data-pane="data" role="tabpanel"><div class="s-pick"></div><div class="s-view"></div><div class="s-note"></div></div>
-        <div class="s-pane" data-pane="figures" role="tabpanel"><div class="s-pick"></div><div class="s-view"></div><div class="s-note"></div></div>
+        <div class="s-part" data-part="session">${fold('session', 'Session')}<div class="s-pane" data-pane="session" id="s-pane-session"></div></div>
+        <div class="s-part" data-part="data">${fold('data', 'Data')}<div class="s-pane" data-pane="data" id="s-pane-data"><div class="s-pick"></div><div class="s-view"></div><div class="s-note"></div></div></div>
+        <div class="s-part" data-part="figures">${fold('figures', 'Figures')}<div class="s-pane" data-pane="figures" id="s-pane-figures"><div class="s-pick"></div><div class="s-view"></div><div class="s-note"></div></div></div>
       </div>`;
     document.body.append(this.cardEl);
     this.panes = {
@@ -449,8 +458,18 @@ export class Session {
       this.paintCard();
     });
     for (const button of this.cardEl.querySelectorAll<HTMLButtonElement>('[data-tab]')) {
-      button.addEventListener('click', () => this.showTab(button.dataset.tab as Tab));
+      button.addEventListener('mousedown', (e) => e.preventDefault());
+      button.addEventListener('click', () => this.toggleFold(button.dataset.tab as Tab));
     }
+    // The parts share the card's height (fitParts): whatever changes what
+    // one holds — a table paging in, a figure loading — sizes them again.
+    let fitFrame = 0;
+    const refit = () => {
+      cancelAnimationFrame(fitFrame);
+      fitFrame = requestAnimationFrame(() => this.fitParts());
+    };
+    new MutationObserver(refit).observe(this.cardEl.querySelector('.s-body')!, { childList: true, subtree: true, characterData: true });
+    this.cardEl.addEventListener('load', refit, true);
     for (const button of this.cardEl.querySelectorAll<HTMLButtonElement>('[data-mode]')) {
       button.addEventListener('click', () => this.setMode(button.dataset.mode as Mode | 'pinned'));
     }
@@ -645,6 +664,7 @@ export class Session {
     const sliding = this.setColumn(board?.need ?? 0, lean, board?.floor ?? 0, slide);
     if (this.card && fit) this.placeCard(f, fit, sliding ? from : null);
     this.placeSessionCard(f, board);
+    this.fitParts();
   }
 
   /** The receipt card has gone (flown, put away, or never came): a column
@@ -1150,6 +1170,9 @@ export class Session {
     this.band = { id, held, back };
     this.landedAt = performance.now();
     this.tab = 'session';
+    // A chip's click opens the Session part if it was folded; a hover
+    // leaves the folds as they are.
+    if (held && this.folded.delete('session')) this.saveFolds();
     this.paintCard();
     this.panes.session.scrollTop = 0;
     if (previous && previous !== id) this.paintChip(previous);
@@ -1286,7 +1309,7 @@ export class Session {
   private openSessionTab() {
     if (this.card?.kind === 'fresh') this.tuck();
     else this.hideCard();
-    if (this.tab !== 'session') this.showTab('session');
+    this.showTab('session');
     if (!this.visible) this.openFloating();
   }
 
@@ -1297,7 +1320,7 @@ export class Session {
   }
 
   private showSessionCard(animate = false) {
-    if (this.tab === 'session') this.unseen.clear();
+    if (!this.folded.has('session')) this.unseen.clear();
     this.cardEl.hidden = false;
     this.paintCard();
     this.layout(animate);
@@ -1309,6 +1332,11 @@ export class Session {
     }
     this.paintToggle();
     this.paintPill();
+    // Its height is known once it is placed (layout).
+    this.fitParts();
+    // The figure the Figures part follows is drawn once there is a part to
+    // draw it in.
+    if (this.shows('figures') && this.figure && !this.figs.showing) void this.renderFigure();
   }
 
   private closeCard() {
@@ -1389,22 +1417,94 @@ export class Session {
     this.toggle.setAttribute('aria-pressed', String(this.visible));
   }
 
+  /** Open a part (unfolded) and give it first claim on the height. */
   private showTab(tab: Tab) {
     this.tab = tab;
     if (this.band && !this.band.held) this.band.back = undefined;
+    if (this.folded.delete(tab)) this.saveFolds();
     if (tab === 'session') this.unseen.clear();
     this.paintCard();
     this.paintPill();
     if (tab === 'figures' && this.figure) void this.renderFigure();
   }
 
+  /** A part's header: fold it to that line, or open it again (then it is
+   *  the one that has first claim on the height). */
+  private toggleFold(tab: Tab) {
+    if (this.folded.has(tab)) {
+      this.showTab(tab);
+      return;
+    }
+    this.folded.add(tab);
+    this.saveFolds();
+    if (this.tab === tab) this.tab = (['session', 'data', 'figures'] as Tab[]).find((t) => !this.folded.has(t)) ?? tab;
+    this.paintCard();
+  }
+
+  private saveFolds() {
+    writeStore(() => localStorage, FOLD_KEY, [...this.folded].join(','));
+  }
+
+  /** Whether a part shows: the card up and the part open. */
+  private shows(tab: Tab): boolean {
+    return !this.cardEl.hidden && !this.folded.has(tab);
+  }
+
+  /** The open parts share the card's height. When all of them fit, each
+   *  is as tall as what it holds. When they do not, each keeps a quarter
+   *  of the card (or what it holds, if less), the part last opened or
+   *  used takes what it needs of the rest, and the others share what is
+   *  left; each scrolls inside itself. Read and written in one pass,
+   *  scroll positions kept. */
+  private fitParts() {
+    if (this.cardEl.hidden) return;
+    const body = this.cardEl.querySelector<HTMLElement>('.s-body')!;
+    const open = (['session', 'data', 'figures'] as Tab[]).filter((t) => !this.folded.has(t));
+    const panes = open.map((t) => this.panes[t]);
+    const scrolls = panes.map((pane) => [...pane.querySelectorAll<HTMLElement>('*'), pane].filter((n) => n.scrollTop > 0).map((n) => [n, n.scrollTop] as const));
+    for (const pane of panes) pane.style.height = '';
+    const max = parseFloat(this.cardEl.style.maxHeight) || this.cardEl.clientHeight;
+    const head = this.cardEl.querySelector<HTMLElement>('.s-head')!.offsetHeight;
+    const headers = [...body.querySelectorAll<HTMLElement>('.s-fold')].reduce((sum, h) => sum + h.offsetHeight, 0);
+    const room = Math.max(0, max - head - headers - 2);
+    const natural = panes.map((pane) => pane.scrollHeight);
+    if (natural.reduce((a, b) => a + b, 0) > room + 1) {
+      const floor = (max - head) * PART_FLOOR;
+      const give = natural.map((n) => Math.min(n, floor));
+      let spare = room - give.reduce((a, b) => a + b, 0);
+      if (spare < 0) {
+        // Too short even for the floors: each gives way in proportion.
+        const scale = room / (room - spare);
+        for (let i = 0; i < give.length; i++) give[i] *= scale;
+        spare = 0;
+      }
+      const first = Math.max(0, open.indexOf(this.tab));
+      const order = [first, ...open.map((_, i) => i).filter((i) => i !== first)];
+      for (const i of order) {
+        const more = Math.min(spare, natural[i] - give[i]);
+        give[i] += more;
+        spare -= more;
+      }
+      panes.forEach((pane, i) => (pane.style.height = `${Math.floor(give[i])}px`));
+    }
+    for (const kept of scrolls) for (const [node, top] of kept) node.scrollTop = top;
+  }
+
   /** Repaint whatever the card shows. */
   private paintCard() {
     if (this.cardEl.hidden) return;
+    const counts: Record<Tab, number> = {
+      session: this.snapshot.size,
+      data: this.ordered().filter((name) => isTabular(this.snapshot.get(name)!)).length,
+      figures: this.figureRefs().length,
+    };
     for (const button of this.cardEl.querySelectorAll<HTMLButtonElement>('[data-tab]')) {
-      const on = button.dataset.tab === this.tab;
-      button.setAttribute('aria-selected', String(on));
-      button.classList.toggle('on', on);
+      const tab = button.dataset.tab as Tab;
+      const open = !this.folded.has(tab);
+      button.setAttribute('aria-expanded', String(open));
+      button.classList.toggle('on', open && tab === this.tab);
+      button.title = open ? 'Fold it to this line' : 'Open it';
+      button.querySelector('.c')!.textContent = counts[tab] ? String(counts[tab]) : '';
     }
     const current = this.docked ? 'pinned' : this.mode;
     for (const button of this.cardEl.querySelectorAll<HTMLButtonElement>('[data-mode]')) {
@@ -1412,10 +1512,11 @@ export class Session {
       button.setAttribute('aria-checked', String(on));
       button.classList.toggle('on', on);
     }
-    for (const [tab, pane] of Object.entries(this.panes)) pane.hidden = tab !== this.tab;
-    if (this.tab === 'session') this.paintSessionPane();
-    else if (this.tab === 'data') this.paintDataPane();
-    else this.paintFiguresPane();
+    for (const [tab, pane] of Object.entries(this.panes)) pane.hidden = this.folded.has(tab as Tab);
+    if (!this.folded.has('session')) this.paintSessionPane();
+    if (!this.folded.has('data')) this.paintDataPane();
+    if (!this.folded.has('figures')) this.paintFiguresPane();
+    this.fitParts();
   }
 
   /** The band on top (the last run's receipt, or the one a chip asked
@@ -1578,13 +1679,14 @@ export class Session {
       return;
     }
     this.figure = ref;
-    if (!this.cardEl.hidden && this.tab === 'figures') void this.renderFigure();
+    if (this.shows('figures')) void this.renderFigure();
   }
 
   private async openTable(name: string) {
     if (this.away) return;
     this.dataName = name;
     this.tab = 'data';
+    if (this.folded.delete('data')) this.saveFolds();
     if (this.band && !this.band.held) this.band.back = undefined;
     if (!this.visible) this.openFloating();
     this.paintCard();
@@ -1598,6 +1700,7 @@ export class Session {
     this.figure = ref;
     if (chosen && this.figWaiting) this.figWaiting = null;
     this.tab = 'figures';
+    if (this.folded.delete('figures')) this.saveFolds();
     if (this.band && !this.band.held) this.band.back = undefined;
     if (!this.visible) this.openFloating();
     this.paintCard();
@@ -1823,7 +1926,7 @@ export class Session {
     held.set(row.name, 'wait');
     void this.kernel.table(row.name, 0, MINI_ROWS).then((win) => {
       held!.set(row.name, win && !win.error && win.rows?.length ? win : null);
-      if (win && !this.cardEl.hidden && this.tab === 'session') this.paintCard();
+      if (win && this.shows('session')) this.paintCard();
     });
     return null;
   }

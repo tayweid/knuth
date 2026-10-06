@@ -104,7 +104,9 @@ the status did. In source and grid views it rests, its title saying
 why (there are no cells for the card to stand beside).
 
 **The Session card.** From the pill, a rounded dark-glass card at the
-room's top right, with three tabs: **Session** (the band: the last
+room's top right, holding three parts one under another, each with a
+header that folds it to that line (and the count of what it holds):
+**Session** (the band: the last
 run's receipt on top behind a blue rule, "Last run · cell 3", each name
 with its kind and its value under it — a table of six rows or fewer
 whole, the figure at the card's width; then every name with its kind
@@ -112,7 +114,12 @@ glyph, type, preview and the cell that bound it; a table's or figure's
 name opens it, "cell 4" goes to the cell), **Data** (a chip per table, and the table
 viewer, paging 100 rows at a time as the panel did), **Figures** (a chip
 per figure, and the figure viewer; it follows each new figure unless
-held, and a held one shows "New: …" for the one waiting). A click
+held, and a held one shows "New: …" for the one waiting). When the
+open parts do not all fit, each keeps a quarter of the card's height
+(or what it holds, if less), the part last opened or used — the table
+just picked, a header just opened — takes what it needs of the rest,
+and each scrolls inside itself. The folds are remembered (localStorage
+`knuth-session-folded`), floating or pinned alike. A click
 anywhere outside closes it, as does Esc; so does the pill and the rail's
 Session tile (`#toggle-panel`, lit while the card shows).
 
@@ -190,7 +197,7 @@ the receipt away.
 | the column, docked | margin-left max(0, min(centred, room − column − need)), need = the card, the lane and its gap less the room's own 24 px margin; narrows under about 1275 px to a 640 px floor; under about 1085 px the room's floor rises and it scrolls sideways | peek-v2's rule, and Taylor's "right beside the cells … just on the page" |
 | the slide | 0.36 s, cubic-bezier(.2,.7,.2,1), on the pin and for a receipt's stay (the card riding beside the column on the same curve); never on a resize, never on a run | peek-v2's timing |
 | cell numbers | on the receipt, the band and the Session tab, the code cells only, 1-based (cell zero, the preamble, is 0), text cells uncounted; the autosave record's `cell run [n]` keeps main's count, the cell's place among the document's `# %%` blocks | no number is drawn on the page, so a student counts the cells that run; the record is read beside the shell's history view, which numbers every `# %%` block and lights the cell a run's commit changed by that number |
-| the floating card | 380 px, 10 px in from the room's top right | the tabs, the three modes and ✕ on one line |
+| the floating card | 380 px, 10 px in from the room's top right | the four modes and ✕ on one line |
 | a narrow room | under about a 1075 px window the receipt card, 160 px, lies at the room's right edge over the column's (after sliding it all the way left); the docked card never does: the room scrolls sideways, and the pin scrolls it to the card's controls | see *What is open*, 1 |
 | the pin's fade | the docked card fades in once the chips riding beside the sliding column have passed its left (the column's own edge where there are none), worked out on the slide's own curve: about 65–80 ms at 1470–1500 and 120 ms at 1100 with no chips, 180–190 ms and 225 ms with them | it showed over the column for the slide's first 150 ms, and then over the chips for 100 ms |
 | runs queued behind a busy kernel | each receipt is what its run reported (`bound`): the snapshot after a run that had others queued with it, before or behind, is the session after them too, so it adds nothing to that receipt (no change in place found, no late card, no owner); a receipt's time counts from when the run before it ended | the snapshot credited each cell with the next cells' names ("6" and a figure on a DataFrame cell), and the queued cell's time with the wait |
@@ -688,3 +695,15 @@ room, stays as an option whose cards "don't go away".
   column still out.
 - Gone with the dwell: the 6 s timer, the pointer holding a fresh card,
   `p` to keep it, and the card's hint line.
+
+## Seventh pass: one card, three parts (2026-10-06)
+
+Taylor: the card "shouldn't bury the three kinds of thing behind tabs"
+— Session, Data and Figures all in one panel; when there is not room for
+everything, the others give way "a little" to the one being looked at;
+any of the three can be folded, floating or pinned; "maybe a minimum of
+1/4 of the space" for an open one. Built as said: the tabs are headers,
+a click folds or opens a part, the part last opened or used has first
+claim on the height, and the others keep a quarter each unless they
+hold less (fitParts, session.ts). The Data and Figures parts' hints
+("Pick a table…") now show whenever the card does.
