@@ -29,6 +29,9 @@ export interface ItemOptions {
 
 export interface Menus {
   create(name: string, anchor: HTMLButtonElement, parent?: Menu): Menu;
+  /** A menu with no tile: opened at the pointer (openAt), by a right click. */
+  context(name: string): Menu;
+  openAt(menu: Menu, x: number, y: number): void;
   item(parent: Menu | HTMLElement, label: string, run: () => void, options?: ItemOptions): HTMLButtonElement;
   divider(menu: Menu): HTMLElement;
   heading(menu: Menu, label: string): HTMLElement;
@@ -57,7 +60,7 @@ export function menus(): Menus {
   const buttons = (menu: Menu) =>
     [...menu.element.querySelectorAll<HTMLButtonElement>('button:not(:disabled):not([hidden])')]
       .filter((button) => !button.closest('[hidden]:not(.tb-menu)'));
-  const show = (menu: Menu, focus = false) => {
+  const show = (menu: Menu, focus = false, point?: { x: number; y: number }) => {
     if (!openMenu) {
       const held = document.activeElement;
       returnFocus = held instanceof HTMLElement ? held : null;
@@ -73,16 +76,19 @@ export function menus(): Menus {
     menu.element.hidden = false;
     menu.anchor.setAttribute('aria-expanded', 'true');
     menu.anchor.setAttribute('aria-controls', menu.element.id);
-    // Under its tile in the bar. Geometry is read only when a menu opens.
+    // Under its tile in the bar, or at the pointer for a right click (up
+    // from it when there is no room below). Geometry is read only when a
+    // menu opens.
     const rect = menu.anchor.getBoundingClientRect();
     const { style } = menu.element;
-    const top = rect.bottom + 10;
+    let top = point ? point.y + 2 : rect.bottom + 10;
+    if (point && top + menu.element.offsetHeight > window.innerHeight - 8) top = Math.max(8, point.y - menu.element.offsetHeight - 2);
     style.top = `${top}px`;
     style.maxHeight = `${Math.max(80, window.innerHeight - top - 8)}px`;
-    style.left = `${Math.max(8, Math.min(rect.left, window.innerWidth - menu.element.offsetWidth - 8))}px`;
+    style.left = `${Math.max(8, Math.min(point ? point.x + 2 : rect.left, window.innerWidth - menu.element.offsetWidth - 8))}px`;
     if (focus) buttons(menu)[0]?.focus();
   };
-  const create = (name: string, anchor: HTMLButtonElement, parent?: Menu): Menu => {
+  const create = (name: string, anchor: HTMLButtonElement, parent?: Menu, tile = true): Menu => {
     const element = document.createElement('div');
     element.id = `tb-menu-${name.toLowerCase().replaceAll(' ', '-')}`;
     element.className = 'tb-menu';
@@ -91,7 +97,7 @@ export function menus(): Menus {
     element.hidden = true;
     document.body.append(element);
     const menu: Menu = { element, anchor, parent };
-    if (!parent) {
+    if (!parent && tile) {
       anchor.setAttribute('aria-haspopup', 'menu');
       anchor.setAttribute('aria-expanded', 'false');
       anchor.setAttribute('aria-controls', element.id);
@@ -227,5 +233,9 @@ export function menus(): Menus {
     item(menu, `‹ ${label}`, () => show(parent, true), { title: `Back to ${label}`, stay: true });
     divider(menu);
   };
-  return { create, item, divider, heading, hint, back, close: (restoreFocus = false) => close(restoreFocus) };
+  // Its anchor is a button nowhere in the page: closing hands the focus
+  // back to wherever it was (the cell), never to a tile.
+  const context = (name: string) => create(name, document.createElement('button'), undefined, false);
+  const openAt = (menu: Menu, x: number, y: number) => show(menu, false, { x, y });
+  return { create, context, openAt, item, divider, heading, hint, back, close: (restoreFocus = false) => close(restoreFocus) };
 }

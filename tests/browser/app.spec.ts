@@ -328,7 +328,7 @@ test('a file opened from a folder Knuth already holds does not ask again', async
 async function expectSourceFrame(page: Page) {
   await expect(page.locator('#toolbar')).toBeVisible();
   await expect(page.locator('#file-name')).toBeVisible();
-  for (const id of ['add-code', 'add-scratch', 'add-text', 'run-stale', 'run-all', 'stop', 'restart', 'toggle-panel']) {
+  for (const id of ['add-code', 'add-scratch', 'add-text', 'run-stale', 'run-all', 'stop', 'clear-outputs', 'restart', 'toggle-panel']) {
     await expect(page.locator(`#${id}`), `#${id} acts on cells`).toBeVisible();
     await expect(page.locator(`#${id}`), `#${id} acts on cells`).toHaveAttribute('aria-disabled', 'true');
   }
@@ -438,4 +438,57 @@ test('an untouched document names the tab after the app', async ({ page }) => {
 
   await expect(page).toHaveTitle('Knuth.py');
   await expect(page.locator('#file-name')).toHaveText('Knuth.py');
+});
+
+test('outputs clear from the rail or one cell at a time, and ⌘Z brings them back', async ({ page }) => {
+  await page.addInitScript(() => {
+    sessionStorage.setItem('knuth-doc', JSON.stringify({
+      name: 'outputs.py',
+      dirty: false,
+      text: '# %%\nx = 42\nprint(x)\n#-> 42\n\n# %%\nprint(x + 1)\n#-> 43\n',
+    }));
+  });
+  await page.goto('/');
+  await expect(page.locator('#kernel-status')).toHaveText('Python');
+  const outputs = page.locator('.cell .output');
+  await expect(outputs.nth(0)).toHaveText('42');
+  await expect(outputs.nth(1)).toHaveText('43');
+  const stored = () => page.evaluate(() => JSON.parse(sessionStorage.getItem('knuth-doc') ?? '{}').text as string);
+
+  // Esc then O: only the cell the cursor is in.
+  await page.locator('.cell .cm-content').nth(1).click();
+  await page.keyboard.press('Escape');
+  await page.keyboard.press('o');
+  await expect(outputs.nth(1)).toBeHidden();
+  await expect(outputs.nth(0)).toHaveText('42');
+  await expect.poll(stored).toBe('# %%\nx = 42\nprint(x)\n#-> 42\n\n# %%\nprint(x + 1)\n');
+  await page.keyboard.press('ControlOrMeta+z');
+  await expect(outputs.nth(1)).toHaveText('43');
+  await expect.poll(stored).toContain('#-> 43');
+
+  // The rail: every cell, the file keeping its blank line between cells.
+  await page.locator('#clear-outputs').click();
+  await expect(outputs.nth(0)).toBeHidden();
+  await expect(outputs.nth(1)).toBeHidden();
+  await expect.poll(stored).toBe('# %%\nx = 42\nprint(x)\n\n# %%\nprint(x + 1)\n');
+  await page.keyboard.press('ControlOrMeta+z');
+  await expect(outputs.nth(0)).toHaveText('42');
+  await expect(outputs.nth(1)).toHaveText('43');
+  await expect.poll(stored).toBe('# %%\nx = 42\nprint(x)\n#-> 42\n\n# %%\nprint(x + 1)\n#-> 43\n');
+
+  // A right click on a cell: its output, or all of them.
+  const menu = page.locator('#tb-menu-cell');
+  await outputs.nth(0).click({ button: 'right' });
+  await expect(menu).toBeVisible();
+  await page.screenshot({ path: '/private/tmp/claude-501/-Users-taylorjweidman-Projects-knuth/2cc8490a-c2b7-43ac-9a74-f7924a61c17e/scratchpad/cell-menu.png' });
+  await menu.getByRole('menuitem', { name: 'Clear output', exact: true }).click();
+  await expect(menu).toBeHidden();
+  await expect(outputs.nth(0)).toBeHidden();
+  await expect(outputs.nth(1)).toHaveText('43');
+  // Its own output gone, the item rests; the code takes the click too.
+  await page.locator('.cell .cm-content').nth(0).click({ button: 'right' });
+  await expect(menu.getByRole('menuitem', { name: 'Clear output', exact: true })).toBeDisabled();
+  await menu.getByRole('menuitem', { name: 'Clear all outputs' }).click();
+  await expect(outputs.nth(1)).toBeHidden();
+  await expect.poll(stored).toBe('# %%\nx = 42\nprint(x)\n\n# %%\nprint(x + 1)\n');
 });

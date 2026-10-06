@@ -52,8 +52,12 @@ import {
   type ReceiptRow,
 } from './receipts.ts';
 
-/** How a run's receipt shows when the card is not docked. */
-export type Mode = 'peek' | 'silent';
+/** How a run's receipt shows when the card is not docked: peek, beside
+ *  the cell and straight up into the pill, the column never moving for it;
+ *  float, kept beside the cell, the column sliding to make room, until it
+ *  is put away (Esc, its ✕, a click outside the column) or the next run's
+ *  takes its place; silent, no card at all. */
+export type Mode = 'peek' | 'float' | 'silent';
 type Tab = 'session' | 'data' | 'figures';
 /** fresh: a run's, about to fly; hover: a chip's, read-only; held: kept in
  *  place (a click, p, its pin, or a chip's click) until it is put away. */
@@ -73,10 +77,12 @@ interface Card {
 }
 type FigureRef = { name: string } | { cell: string };
 
-/** How long a fresh receipt stays when nothing else puts it away. */
+/** Float: how long a column out for a receipt waits for a run that
+ *  Shift-Enter or a ▶ is starting before it goes home anyway. */
 export const DWELL_MS = 6000;
-/** After the pointer leaves a fresh receipt it was resting on. */
-const DWELL_AFTER_LOOK_MS = 2000;
+/** Peek: the fresh receipt flies as soon as it has eased in (#receipt's
+ *  0.24 s show), seen arriving and then going, with no pause between. */
+export const SHOW_MS = 240;
 /** The flight up into the pill. */
 export const FLY_MS = 460;
 /** The column's slide, on the pin or for a receipt (peek-v2's 0.36 s). */
@@ -131,6 +137,15 @@ const MINI_ROWS = 6;
 const MINI_COLS = 6;
 const MODE_KEY = 'knuth-receipts';
 const PINNED_KEY = 'knuth-session-pinned';
+const FOLD_KEY = 'knuth-session-folded';
+/** An open part keeps at least this share of the card's height when the
+ *  three do not all fit (less only when it holds less). */
+const PART_FLOOR = 0.25;
+
+/** A part's header: a click folds it to that line, or opens it again. */
+function fold(tab: Tab, label: string): string {
+  return `<button type="button" class="s-fold" data-tab="${tab}" aria-controls="s-pane-${tab}">${icon('chevron')}<span class="l">${label}</span><span class="c"></span></button>`;
+}
 
 export interface SessionHooks {
   /** The kernel is connected and past ready. */
@@ -159,14 +174,6 @@ function printMark(): HTMLElement {
   const mark = el('i', 'pm');
   mark.innerHTML = '<svg viewBox="0 0 11 8" aria-hidden="true"><polyline points="2 6 4.5 3.5 6.5 5 9 2"/></svg>';
   return mark;
-}
-
-function isTextEntry(target: Element | null): boolean {
-  return !!target && (
-    target instanceof HTMLInputElement ||
-    target instanceof HTMLTextAreaElement ||
-    (target instanceof HTMLElement && target.isContentEditable)
-  );
 }
 
 /** A value its preview says in a few characters: a number (a float to six
@@ -318,7 +325,10 @@ export class Session {
   private mode: Mode;
   private docked: boolean;
   private floating = false;
+  /** The part last opened or used: it has first claim on the height. */
   private tab: Tab = 'session';
+  /** The parts folded to their headers (remembered). */
+  private folded = new Set<Tab>();
   private card: Card | null = null;
   /** Docked: the cell whose receipt the band shows in place of the last
    *  run's (a chip hovered, or clicked: held), and the tab to go back to
@@ -374,11 +384,14 @@ export class Session {
     this.room = document.getElementById('layout')!;
     this.doc = document.getElementById('doc')!;
     this.sheet = document.getElementById('sheet')!;
-    this.mode = readStore(() => localStorage, MODE_KEY) === 'silent' ? 'silent' : 'peek';
+    const stored = readStore(() => localStorage, MODE_KEY);
+    this.mode = stored === 'silent' || stored === 'float' ? stored : 'peek';
     // Pinned is per window (a reload keeps it); a new window starts as the
     // last one was left.
     const pinned = readStore(() => sessionStorage, PINNED_KEY) ?? readStore(() => localStorage, PINNED_KEY);
     this.docked = pinned === '1';
+    const folded = readStore(() => localStorage, FOLD_KEY)?.split(',') ?? [];
+    for (const tab of folded) if (tab === 'session' || tab === 'data' || tab === 'figures') this.folded.add(tab);
 
     // The pill: the kernel's status (#kernel-status, untouched: the shell's
     // smoke reads its words), a hairline, the session's mark and its names.
@@ -416,22 +429,18 @@ export class Session {
     this.cardEl.setAttribute('aria-label', 'Session');
     this.cardEl.innerHTML = `
       <div class="s-head">
-        <div class="s-tabs" role="tablist">
-          <button type="button" role="tab" data-tab="session">Session</button>
-          <button type="button" role="tab" data-tab="data">Data</button>
-          <button type="button" role="tab" data-tab="figures">Figures</button>
-        </div>
         <div class="s-modes" role="radiogroup" aria-label="When a cell runs">
-          <button type="button" role="radio" data-mode="peek" title="Peek: the run's receipt beside the cell, then up into the pill">Peek</button>
+          <button type="button" role="radio" data-mode="peek" title="Peek: the run's receipt beside the cell and straight up into the pill; a chip's click opens it over the page">Peek</button>
+          <button type="button" role="radio" data-mode="float" title="Float: the run's receipt stays beside the cell until you carry on, the column making room">Float</button>
           <button type="button" role="radio" data-mode="silent" title="Silent: no card, no motion — the chip and the pill update quietly">Silent</button>
           <button type="button" role="radio" data-mode="pinned" title="Pinned: the session beside the column, the last run on top">${icon('pin')}<span>Pinned</span></button>
         </div>
         <button type="button" class="s-close" title="Close (Esc)" aria-label="Close">✕</button>
       </div>
       <div class="s-body">
-        <div class="s-pane" data-pane="session" role="tabpanel"></div>
-        <div class="s-pane" data-pane="data" role="tabpanel"><div class="s-pick"></div><div class="s-view"></div><div class="s-note"></div></div>
-        <div class="s-pane" data-pane="figures" role="tabpanel"><div class="s-pick"></div><div class="s-view"></div><div class="s-note"></div></div>
+        <div class="s-part" data-part="session">${fold('session', 'Session')}<div class="s-pane" data-pane="session" id="s-pane-session"></div></div>
+        <div class="s-part" data-part="data">${fold('data', 'Data')}<div class="s-pane" data-pane="data" id="s-pane-data"><div class="s-pick"></div><div class="s-view"></div><div class="s-note"></div></div></div>
+        <div class="s-part" data-part="figures">${fold('figures', 'Figures')}<div class="s-pane" data-pane="figures" id="s-pane-figures"><div class="s-pick"></div><div class="s-view"></div><div class="s-note"></div></div></div>
       </div>`;
     document.body.append(this.cardEl);
     this.panes = {
@@ -449,8 +458,18 @@ export class Session {
       this.paintCard();
     });
     for (const button of this.cardEl.querySelectorAll<HTMLButtonElement>('[data-tab]')) {
-      button.addEventListener('click', () => this.showTab(button.dataset.tab as Tab));
+      button.addEventListener('mousedown', (e) => e.preventDefault());
+      button.addEventListener('click', () => this.toggleFold(button.dataset.tab as Tab));
     }
+    // The parts share the card's height (fitParts): whatever changes what
+    // one holds — a table paging in, a figure loading — sizes them again.
+    let fitFrame = 0;
+    const refit = () => {
+      cancelAnimationFrame(fitFrame);
+      fitFrame = requestAnimationFrame(() => this.fitParts());
+    };
+    new MutationObserver(refit).observe(this.cardEl.querySelector('.s-body')!, { childList: true, subtree: true, characterData: true });
+    this.cardEl.addEventListener('load', refit, true);
     for (const button of this.cardEl.querySelectorAll<HTMLButtonElement>('[data-mode]')) {
       button.addEventListener('click', () => this.setMode(button.dataset.mode as Mode | 'pinned'));
     }
@@ -487,7 +506,7 @@ export class Session {
     if (!run.batch) this.unseen.clear();
     const added = receipt.rows.filter((row) => row.mark === '+').map((row) => row.name);
     for (const name of added) this.unseen.add(name);
-    const peek = !this.docked && this.mode === 'peek' && !run.batch && run.ok;
+    const peek = !this.docked && this.mode !== 'silent' && !run.batch && run.ok;
     const late = peek && !this.hasContent(receipt);
     if (this.band) {
       const was = this.band.id;
@@ -645,6 +664,7 @@ export class Session {
     const sliding = this.setColumn(board?.need ?? 0, lean, board?.floor ?? 0, slide);
     if (this.card && fit) this.placeCard(f, fit, sliding ? from : null);
     this.placeSessionCard(f, board);
+    this.fitParts();
   }
 
   /** The receipt card has gone (flown, put away, or never came): a column
@@ -731,11 +751,15 @@ export class Session {
       return past.width >= CARD_FLOOR ? past : null;
     }
     const fit = at(CARD_TIE, 0);
+    const width = Math.min(CARD_FLOOR, f.box.width - 2 * CARD_GAP);
+    const over = (lean: number) => ({ left: f.box.right - CARD_GAP - width, width, lean, tie: null });
+    // Peek: the column never moves for a receipt; short of a margin, the
+    // card lies over the column's right edge.
+    if (this.mode !== 'float') return fit.width >= CARD_FLOOR ? fit : over(0);
     if (fit.width >= CARD_MIN - CARD_SLACK) return fit;
     const slid = at(CARD_TIE, CARD_TIE + CARD_MIN + CARD_GAP - f.padR - f.sb);
     if (slid.width >= CARD_FLOOR) return slid;
-    const width = Math.min(CARD_FLOOR, f.box.width - 2 * CARD_GAP);
-    return { left: f.box.right - CARD_GAP - width, width, lean: slid.lean, tie: null };
+    return over(slid.lean);
   }
 
   /** Its top on the cell's first line, kept inside the room. While the
@@ -819,7 +843,7 @@ export class Session {
     const current = this.receipts.get(receipt.id) === receipt;
     // A run whose news only the snapshot saw (a change in place) still
     // gets its card, unless the person has carried on since.
-    if (current && late && !this.card && found.length && this.last === receipt.id && this.carriedAt < endedAt && !this.docked && this.mode === 'peek') {
+    if (current && late && !this.card && found.length && this.last === receipt.id && this.carriedAt < endedAt && !this.docked && this.mode !== 'silent') {
       this.pending = new Set(found.filter((row) => row.mark === '+').map((row) => row.name));
       this.showCard(receipt.id, 'fresh');
     } else if (this.card?.id === receipt.id) {
@@ -868,9 +892,14 @@ export class Session {
     if (!this.card) return; // its cell is not on screen
     void this.receiptEl.offsetWidth;
     this.receiptEl.classList.add('show');
-    if (kind === 'fresh') this.dwell = window.setTimeout(() => this.tuck(), DWELL_MS);
     if (previous && previous !== id) this.paintChip(previous);
     this.paintChip(id);
+    // Float keeps a run's card where it stands; Peek's flies home as soon
+    // as it is in.
+    if (kind === 'fresh') {
+      if (this.mode === 'float') this.holdCard();
+      else this.dwell = window.setTimeout(() => this.tuck(), SHOW_MS);
+    }
   }
 
   /** The receipt, in the card: a run's (fresh), a chip's (hover) or held. */
@@ -884,19 +913,10 @@ export class Session {
     this.receiptEl.append(this.receiptView(receipt, this.card.kind, this.card.fromRun));
   }
 
-  /** What keeps a run's card, as it can be done now: `p` only when the
-   *  keystroke would not type (focus off the text), a click always. */
-  private hint(): string {
-    return isTextEntry(document.activeElement) ? 'type or esc ↗ · click to keep' : 'type or esc ↗ · p keeps it';
-  }
-
   private lookAtCard(looking: boolean) {
     if (!this.card) return;
     clearTimeout(this.hoverTimer);
-    if (this.card.kind === 'fresh') {
-      clearTimeout(this.dwell);
-      if (!looking) this.dwell = window.setTimeout(() => this.tuck(), DWELL_AFTER_LOOK_MS);
-    } else if (this.card.kind === 'hover' && !looking) {
+    if (this.card.kind === 'hover' && !looking) {
       this.hoverTimer = window.setTimeout(() => this.hideCard(), 180);
     }
   }
@@ -1150,6 +1170,9 @@ export class Session {
     this.band = { id, held, back };
     this.landedAt = performance.now();
     this.tab = 'session';
+    // A chip's click opens the Session part if it was folded; a hover
+    // leaves the folds as they are.
+    if (held && this.folded.delete('session')) this.saveFolds();
     this.paintCard();
     this.panes.session.scrollTop = 0;
     if (previous && previous !== id) this.paintChip(previous);
@@ -1213,7 +1236,7 @@ export class Session {
       span.dataset.name = name;
       if (this.unseen.has(name)) span.classList.add('new');
       if (v.scratch) span.classList.add('scratch');
-      if (landing?.includes(name) && this.mode === 'peek') span.classList.add('land');
+      if (landing?.includes(name) && this.mode !== 'silent') span.classList.add('land');
       spans.push(span);
     }
     const more = el('span', 'sp-more');
@@ -1227,7 +1250,7 @@ export class Session {
     const figures = names.filter((name) => this.snapshot.get(name)?.figure).length;
     const count = `The session: ${names.length} name${names.length === 1 ? '' : 's'}${figures ? `, ${figures} figure${figures === 1 ? '' : 's'}` : ''}`;
     this.pill.title = away ? `${count} — ${this.awayTitle()}` : `${count} — click to ${this.visible ? 'close' : 'open'} it`;
-    if (landing && this.mode === 'peek') {
+    if (landing && this.mode !== 'silent') {
       this.pill.classList.remove('got');
       void this.pill.offsetWidth;
       this.pill.classList.add('got');
@@ -1286,7 +1309,7 @@ export class Session {
   private openSessionTab() {
     if (this.card?.kind === 'fresh') this.tuck();
     else this.hideCard();
-    if (this.tab !== 'session') this.showTab('session');
+    this.showTab('session');
     if (!this.visible) this.openFloating();
   }
 
@@ -1297,7 +1320,7 @@ export class Session {
   }
 
   private showSessionCard(animate = false) {
-    if (this.tab === 'session') this.unseen.clear();
+    if (!this.folded.has('session')) this.unseen.clear();
     this.cardEl.hidden = false;
     this.paintCard();
     this.layout(animate);
@@ -1309,6 +1332,11 @@ export class Session {
     }
     this.paintToggle();
     this.paintPill();
+    // Its height is known once it is placed (layout).
+    this.fitParts();
+    // The figure the Figures part follows is drawn once there is a part to
+    // draw it in.
+    if (this.shows('figures') && this.figure && !this.figs.showing) void this.renderFigure();
   }
 
   private closeCard() {
@@ -1332,8 +1360,8 @@ export class Session {
     writeStore(() => localStorage, PINNED_KEY, on ? '1' : '0');
   }
 
-  /** The header's segmented control: Peek and Silent are how a run's
-   *  receipt shows (remembered); Pinned docks the card (per window). */
+  /** The header's segmented control: Peek, Float and Silent are how a
+   *  run's receipt shows (remembered); Pinned docks the card (per window). */
   private setMode(mode: Mode | 'pinned') {
     if (mode === 'pinned') {
       if (this.docked) return;
@@ -1372,6 +1400,11 @@ export class Session {
     }
     this.mode = mode;
     writeStore(() => localStorage, MODE_KEY, mode);
+    // Only Float leaves the column out for a receipt.
+    if (mode !== 'float') {
+      clearTimeout(this.returnTimer);
+      this.linger = 0;
+    }
     if (this.docked) {
       this.setDocked(false);
       this.floating = true;
@@ -1384,22 +1417,94 @@ export class Session {
     this.toggle.setAttribute('aria-pressed', String(this.visible));
   }
 
+  /** Open a part (unfolded) and give it first claim on the height. */
   private showTab(tab: Tab) {
     this.tab = tab;
     if (this.band && !this.band.held) this.band.back = undefined;
+    if (this.folded.delete(tab)) this.saveFolds();
     if (tab === 'session') this.unseen.clear();
     this.paintCard();
     this.paintPill();
     if (tab === 'figures' && this.figure) void this.renderFigure();
   }
 
+  /** A part's header: fold it to that line, or open it again (then it is
+   *  the one that has first claim on the height). */
+  private toggleFold(tab: Tab) {
+    if (this.folded.has(tab)) {
+      this.showTab(tab);
+      return;
+    }
+    this.folded.add(tab);
+    this.saveFolds();
+    if (this.tab === tab) this.tab = (['session', 'data', 'figures'] as Tab[]).find((t) => !this.folded.has(t)) ?? tab;
+    this.paintCard();
+  }
+
+  private saveFolds() {
+    writeStore(() => localStorage, FOLD_KEY, [...this.folded].join(','));
+  }
+
+  /** Whether a part shows: the card up and the part open. */
+  private shows(tab: Tab): boolean {
+    return !this.cardEl.hidden && !this.folded.has(tab);
+  }
+
+  /** The open parts share the card's height. When all of them fit, each
+   *  is as tall as what it holds. When they do not, each keeps a quarter
+   *  of the card (or what it holds, if less), the part last opened or
+   *  used takes what it needs of the rest, and the others share what is
+   *  left; each scrolls inside itself. Read and written in one pass,
+   *  scroll positions kept. */
+  private fitParts() {
+    if (this.cardEl.hidden) return;
+    const body = this.cardEl.querySelector<HTMLElement>('.s-body')!;
+    const open = (['session', 'data', 'figures'] as Tab[]).filter((t) => !this.folded.has(t));
+    const panes = open.map((t) => this.panes[t]);
+    const scrolls = panes.map((pane) => [...pane.querySelectorAll<HTMLElement>('*'), pane].filter((n) => n.scrollTop > 0).map((n) => [n, n.scrollTop] as const));
+    for (const pane of panes) pane.style.height = '';
+    const max = parseFloat(this.cardEl.style.maxHeight) || this.cardEl.clientHeight;
+    const head = this.cardEl.querySelector<HTMLElement>('.s-head')!.offsetHeight;
+    const headers = [...body.querySelectorAll<HTMLElement>('.s-fold')].reduce((sum, h) => sum + h.offsetHeight, 0);
+    const room = Math.max(0, max - head - headers - 2);
+    const natural = panes.map((pane) => pane.scrollHeight);
+    if (natural.reduce((a, b) => a + b, 0) > room + 1) {
+      const floor = (max - head) * PART_FLOOR;
+      const give = natural.map((n) => Math.min(n, floor));
+      let spare = room - give.reduce((a, b) => a + b, 0);
+      if (spare < 0) {
+        // Too short even for the floors: each gives way in proportion.
+        const scale = room / (room - spare);
+        for (let i = 0; i < give.length; i++) give[i] *= scale;
+        spare = 0;
+      }
+      const first = Math.max(0, open.indexOf(this.tab));
+      const order = [first, ...open.map((_, i) => i).filter((i) => i !== first)];
+      for (const i of order) {
+        const more = Math.min(spare, natural[i] - give[i]);
+        give[i] += more;
+        spare -= more;
+      }
+      panes.forEach((pane, i) => (pane.style.height = `${Math.floor(give[i])}px`));
+    }
+    for (const kept of scrolls) for (const [node, top] of kept) node.scrollTop = top;
+  }
+
   /** Repaint whatever the card shows. */
   private paintCard() {
     if (this.cardEl.hidden) return;
+    const counts: Record<Tab, number> = {
+      session: this.snapshot.size,
+      data: this.ordered().filter((name) => isTabular(this.snapshot.get(name)!)).length,
+      figures: this.figureRefs().length,
+    };
     for (const button of this.cardEl.querySelectorAll<HTMLButtonElement>('[data-tab]')) {
-      const on = button.dataset.tab === this.tab;
-      button.setAttribute('aria-selected', String(on));
-      button.classList.toggle('on', on);
+      const tab = button.dataset.tab as Tab;
+      const open = !this.folded.has(tab);
+      button.setAttribute('aria-expanded', String(open));
+      button.classList.toggle('on', open && tab === this.tab);
+      button.title = open ? 'Fold it to this line' : 'Open it';
+      button.querySelector('.c')!.textContent = counts[tab] ? String(counts[tab]) : '';
     }
     const current = this.docked ? 'pinned' : this.mode;
     for (const button of this.cardEl.querySelectorAll<HTMLButtonElement>('[data-mode]')) {
@@ -1407,10 +1512,11 @@ export class Session {
       button.setAttribute('aria-checked', String(on));
       button.classList.toggle('on', on);
     }
-    for (const [tab, pane] of Object.entries(this.panes)) pane.hidden = tab !== this.tab;
-    if (this.tab === 'session') this.paintSessionPane();
-    else if (this.tab === 'data') this.paintDataPane();
-    else this.paintFiguresPane();
+    for (const [tab, pane] of Object.entries(this.panes)) pane.hidden = this.folded.has(tab as Tab);
+    if (!this.folded.has('session')) this.paintSessionPane();
+    if (!this.folded.has('data')) this.paintDataPane();
+    if (!this.folded.has('figures')) this.paintFiguresPane();
+    this.fitParts();
   }
 
   /** The band on top (the last run's receipt, or the one a chip asked
@@ -1573,13 +1679,14 @@ export class Session {
       return;
     }
     this.figure = ref;
-    if (!this.cardEl.hidden && this.tab === 'figures') void this.renderFigure();
+    if (this.shows('figures')) void this.renderFigure();
   }
 
   private async openTable(name: string) {
     if (this.away) return;
     this.dataName = name;
     this.tab = 'data';
+    if (this.folded.delete('data')) this.saveFolds();
     if (this.band && !this.band.held) this.band.back = undefined;
     if (!this.visible) this.openFloating();
     this.paintCard();
@@ -1593,6 +1700,7 @@ export class Session {
     this.figure = ref;
     if (chosen && this.figWaiting) this.figWaiting = null;
     this.tab = 'figures';
+    if (this.folded.delete('figures')) this.saveFolds();
     if (this.band && !this.band.held) this.band.back = undefined;
     if (!this.visible) this.openFloating();
     this.paintCard();
@@ -1635,15 +1743,14 @@ export class Session {
     if (!receipt.ok) what.append(' · failed');
     head.append(what);
     head.append(el('span', 'took', took(receipt.ms)));
-    if (context === 'fresh' || context === 'held') {
-      const pin = el('button', `hb${context === 'held' ? ' on' : ''}`);
+    if (context === 'held') {
+      const pin = el('button', 'hb on');
       pin.type = 'button';
       pin.innerHTML = icon('pin');
-      pin.title = context === 'held' ? 'Kept here until you close it' : 'Keep it here (a click, or p)';
-      pin.addEventListener('click', () => this.holdCard());
+      pin.title = 'Kept here until you close it';
       const close = el('button', 'hb', '✕');
       close.type = 'button';
-      close.title = context === 'fresh' ? 'Put it away (Esc)' : 'Close (Esc)';
+      close.title = 'Close (Esc)';
       close.addEventListener('click', () => this.dismiss());
       head.append(pin, close);
     }
@@ -1699,7 +1806,6 @@ export class Session {
 
     const folder = this.folderView(receipt);
     if (folder) box.append(folder);
-    if (context === 'fresh') box.append(el('div', 'r-hint', this.hint()));
     return box;
   }
 
@@ -1820,7 +1926,7 @@ export class Session {
     held.set(row.name, 'wait');
     void this.kernel.table(row.name, 0, MINI_ROWS).then((win) => {
       held!.set(row.name, win && !win.error && win.rows?.length ? win : null);
-      if (win && !this.cardEl.hidden && this.tab === 'session') this.paintCard();
+      if (win && this.shows('session')) this.paintCard();
     });
     return null;
   }
@@ -1839,11 +1945,6 @@ export class Session {
         else if (this.floating) this.closeCard();
         return;
       }
-      if (plain && (e.key === 'p' || e.key === 'P') && this.card?.kind === 'fresh' && !isTextEntry(document.activeElement)) {
-        e.preventDefault();
-        this.holdCard();
-        return;
-      }
       const typing = plain && (e.key.length === 1 || ['Enter', 'Backspace', 'Delete', 'Tab'].includes(e.key));
       const shifted = e.shiftKey && !e.metaKey && !e.ctrlKey && e.key === 'Enter';
       if (typing || shifted) {
@@ -1860,31 +1961,25 @@ export class Session {
       }
     }, { capture: true });
 
-    // The fresh card's hint follows the focus: "p keeps it" only while p
-    // would not type.
-    const rehint = () => {
-      if (this.card?.kind !== 'fresh') return;
-      const hint = this.receiptEl.querySelector('.r-hint');
-      if (hint) hint.textContent = this.hint();
-    };
-    document.addEventListener('focusin', rehint);
-    document.addEventListener('focusout', rehint);
-
     document.addEventListener('mousedown', (e) => {
       const target = e.target as Element;
       this.carriedAt = performance.now();
       const onChip = !!target.closest?.('.rchip');
+      // A click on a cell's ▶ is a run coming: the column holds for its
+      // card, as for Shift-Enter. Any other click puts the card away and
+      // sends the column home at once — clicking back into the text is
+      // getting on with it (Taylor, 2026-10-06: "basically instantly").
+      const run = this.sheet.contains(target) && !!target.closest?.('.run');
       if (this.card && !this.receiptEl.contains(target) && !onChip) {
-        // A click in the column is carrying on (into the next cell, its ▶):
-        // the column lingers as for typing. Anywhere else it is putting the
-        // card away, and the column goes home with it (dismiss).
-        const away = !this.sheet.contains(target);
-        if (this.card.kind === 'fresh') this.tuck(false, away);
-        else if (this.card.kind === 'hover' || !target.closest?.('#session')) this.hideCard(false, false, away);
+        // Float's run card stays through clicks in the column: back into
+        // the text, or a ▶ whose own card will take its place.
+        const kept = this.card.fromRun && this.mode === 'float' && this.sheet.contains(target);
+        if (this.card.kind === 'fresh') this.tuck(run, !run);
+        else if (!kept && (this.card.kind === 'hover' || !target.closest?.('#session'))) this.hideCard(false, run, !run);
       } else if (!this.card && this.linger > 0 && !onChip && this.sheet.contains(target)) {
-        // A click into the column with it still out: as typing, the return
-        // starts over.
-        this.cardGone();
+        // A click into the column with it still out (the card went with
+        // typing): home now, or held for the run a ▶ starts.
+        this.cardGone(run, !run);
       }
       if (this.band?.held && !onChip && !this.cardEl.contains(target)) this.clearBand();
       if (this.floating && !this.cardEl.contains(target) && !this.pill.contains(target) &&
