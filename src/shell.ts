@@ -49,13 +49,28 @@
 // document if its path is among them. `reload` is not answered
 // (`answerRewinds`).
 //
+// Closing a window (⌘W, the close button, File › Close; ⌘Q and an
+// update's relaunch ask every window in turn the same way): the page keeps
+// the shell told, by `unsaved` ({unsaved, name, save, label?, detail?};
+// `unsavedReporter`), whether closing now would lose work and what the
+// close dialog's Save can do: `quiet`, write the file it has; `choose`, ask
+// where (it has none); `none`, no Save. The shell answers {guarded: true};
+// an older shell answers null, and the page stops telling it. A window
+// with unsaved work is not closed at once: the shell first asks for a
+// quiet write, by the same `save` event as a rewind with `reason:
+// 'close'` and `choose: false`, and closes without a word when it lands;
+// otherwise it shows its sheet (Save / Don't Save / Cancel), and Save is
+// `save` ({reason: 'close', choose: true}), which may ask where, answered
+// ok only once the document is on disk. Neither holds the autosave as a
+// rewind's does.
+//
 // A plain browser tab has no shell: `shell` is null and the page keeps the
-// File System Access flow.
+// File System Access flow, and Chrome's own "Leave site?" (main.ts).
 
 export interface ShellMessage {
   type:
     | 'open' | 'saveAs' | 'read' | 'write' | 'stat' | 'rename' | 'remove' | 'choose' | 'status' | 'error'
-    | 'ready' | 'update' | 'autosave' | 'history' | 'saved';
+    | 'ready' | 'update' | 'autosave' | 'history' | 'saved' | 'unsaved';
   action?: 'install' | 'open' | 'bounds' | 'close';
   /** `history`: the room's box, CSS px, for the view over it. */
   inline?: Box;
@@ -72,6 +87,31 @@ export interface ShellMessage {
   id?: string;
   ok?: boolean;
   error?: string;
+  /** `unsaved` (UnsavedState): whether closing now would lose work, and
+   *  what the close dialog's Save can do. */
+  unsaved?: boolean;
+  save?: CloseSave;
+  label?: string;
+  detail?: string;
+}
+
+/** What the close dialog's Save can do: write the document's file without
+ *  asking, ask where it goes, or nothing (no Save offered). */
+export type CloseSave = 'quiet' | 'choose' | 'none';
+
+/** The `unsaved` report: what closing the window now would lose. */
+export interface UnsavedState {
+  /** Closing now would lose work. A new document nobody has written in
+   *  would not: it closes without asking. */
+  unsaved: boolean;
+  /** The document's name with its extension, as the dialog says it. */
+  name: string;
+  save: CloseSave;
+  /** The Save button's own words, when the shell's default ("Save…" to
+   *  choose, "Save" to write quietly) is not right. */
+  label?: string;
+  /** The dialog's detail line, when the shell's default is not right. */
+  detail?: string;
 }
 
 export type ShellEvent = 'setup' | 'update' | 'save' | 'reload' | 'history';
@@ -148,7 +188,57 @@ export function reportCellRun(host: Shell | null, cells: readonly number[], rais
   host.notify({ type: 'autosave', trigger: `cell run [${cells.join(', ')}]${raised ? ' (error)' : ''}` });
 }
 
-/** What the page does for a rewind in the history view. */
+/** The page's side of the close guard: `report` is called with the page's
+ *  state whenever it may have changed, and the shell is told only when it
+ *  differs from what it was last told. The first report waits for the
+ *  shell's answer: {guarded: true}, and every later change is sent (the
+ *  latest state, if it changed while the answer was on its way); an older
+ *  shell's null, and nothing more is sent. Without a shell, nothing. */
+export interface UnsavedReporter {
+  report(state: UnsavedState): void;
+  /** Whether the shell guards this window's close: null until its first
+   *  answer, false for an older shell (or none). */
+  readonly guarded: boolean | null;
+}
+
+export function unsavedReporter(host: Shell | null): UnsavedReporter {
+  let guarded: boolean | null = host ? null : false;
+  let latest: UnsavedState | null = null;
+  let told = '';
+  let asking = false;
+  const key = (state: UnsavedState) =>
+    JSON.stringify([state.unsaved, state.name, state.save, state.label ?? '', state.detail ?? '']);
+  const tell = (state: UnsavedState) => {
+    told = key(state);
+    const message: ShellMessage = { type: 'unsaved', unsaved: state.unsaved, name: state.name, save: state.save };
+    if (state.label) message.label = state.label;
+    if (state.detail) message.detail = state.detail;
+    return host!.request<{ guarded?: unknown }>(message);
+  };
+  const report = (state: UnsavedState) => {
+    latest = state;
+    if (!host || guarded === false || asking || key(state) === told) return;
+    if (guarded) {
+      void tell(state);
+      return;
+    }
+    asking = true;
+    void tell(state).then((answer) => {
+      asking = false;
+      guarded = answer?.guarded === true;
+      if (guarded && latest) report(latest);
+    });
+  };
+  return {
+    report,
+    get guarded() {
+      return guarded;
+    },
+  };
+}
+
+/** What the page does for a rewind in the history view, and for the
+ *  shell's close. */
 export interface RewindPage {
   /** The open document's absolute path; null when it has none. */
   path(): string | null;
@@ -156,6 +246,11 @@ export interface RewindPage {
    *  until the rewind's `reload` (or `release`): null once the disk holds
    *  it (at once when nothing is unsaved), else why it could not. */
   save(): Promise<string | null>;
+  /** The window is closing: write the document now, holding nothing.
+   *  `choose` is the close dialog's Save, which may ask where a document
+   *  with no file goes; without it such a document says it has none. Null
+   *  once the disk holds it, else why not (the window stays open). */
+  saveForClose(choose: boolean): Promise<string | null>;
   /** The rewind is over and did not touch this document: autosave again. */
   release(): void;
   /** Re-read the document from disk and replace it in place; `rewound`
@@ -180,16 +275,16 @@ export function rewindNote(to: unknown, app?: unknown): string {
   return `Rewound${by}${target}`;
 }
 
-/** The page's side of a rewind: every `save` answered with `saved` (ok,
- *  or ok: false and why), every `reload` naming this document's path
- *  re-reads it; any other `reload` only ends the hold the save began.
- *  Returns the unsubscribe. */
+/** The page's side of a rewind and of a close: every `save` answered with
+ *  `saved` (ok, or ok: false and why) — a close's (`reason: 'close'`) by
+ *  `saveForClose`, any other by the rewind's `save` — and every `reload`
+ *  naming this document's path re-reads it; any other `reload` only ends
+ *  the hold the save began. Returns the unsubscribe. */
 export function answerRewinds(host: Shell, page: RewindPage): () => void {
   const offSave = host.on('save', (detail) => {
-    const id = (detail as { id?: unknown } | null)?.id;
+    const { id, reason, choose } = (detail ?? {}) as { id?: unknown; reason?: unknown; choose?: unknown };
     if (typeof id !== 'string') return;
-    void page
-      .save()
+    void (reason === 'close' ? page.saveForClose(choose === true) : page.save())
       .catch((error: unknown) => (error instanceof Error ? error.message : String(error)))
       .then((error) => host.notify(error === null ? { type: 'saved', id, ok: true } : { type: 'saved', id, ok: false, error }));
   });

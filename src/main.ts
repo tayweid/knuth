@@ -31,7 +31,15 @@ import { menus } from './menu.ts';
 import { icon } from './icons.ts';
 import { Onboarding } from './onboarding.ts';
 import { keepPlace } from './place.ts';
-import { answerRewinds, historyNote, inlineHistory, reportCellRun, shell, type ShellMessage } from './shell.ts';
+import {
+  answerRewinds,
+  historyNote,
+  inlineHistory,
+  reportCellRun,
+  shell,
+  unsavedReporter,
+  type ShellMessage,
+} from './shell.ts';
 
 // The History tile's glyph: the standard history icon, a clock face with a
 // counter-clockwise arrow around its left side (Material's "history" in the
@@ -700,6 +708,50 @@ const kernel = makeKernel((state, resumed) => {
 
 let fileManager: FileManager;
 
+// Closing with unsaved work (shell.ts, unsavedReporter; claerbout's README,
+// "The protocol"): the shell is told, whenever it changes, whether
+// closing now would lose work, and asks before it does — a document with a
+// file is written quietly and the window goes; one with no file gets the
+// shell's Save… / Don't Save / Cancel. A new document nobody has written in
+// closes without asking. Reported on every name/dirty change (repaintName)
+// and every edit, since an edit can turn an empty new document into one
+// with something in it while it is already dirty.
+const closeGuard = unsavedReporter(shell);
+function reportUnsaved() {
+  if (!fileManager) return;
+  closeGuard.report({ ...fileManager.closeState(), name: fileManager.name });
+}
+// A plain tab has no shell to ask: Chrome's own "Leave site?" does, while
+// closing would lose work. Never inside the shell, whose window would then
+// refuse to close without a word (Electron shows no beforeunload dialog),
+// even under an older shell that does not guard. Knuth's tab never reloads
+// itself, so nothing deliberate needs to pass it.
+if (!shell) {
+  window.addEventListener('beforeunload', (event) => {
+    if (!fileManager?.closeState().unsaved) return;
+    event.preventDefault();
+    event.returnValue = '';
+  });
+}
+// A file dropped where no editor takes it would navigate the window to the
+// file: a tab leaves the document, and the shell, which refuses that
+// navigation, may forget what the page told it about closing. Knuth opens
+// documents by path, never by a drop on the page (claerbout's `openBy`),
+// so such a drop is refused; an editor's own drop (CodeMirror, the prose
+// cells) has already been handled, and is left alone.
+const carriesFiles = (event: DragEvent) => !!event.dataTransfer?.types.includes('Files');
+const inEditor = (target: EventTarget | null) =>
+  target instanceof Element && !!target.closest('[contenteditable="true"], input, textarea');
+window.addEventListener('dragover', (event) => {
+  if (event.defaultPrevented || !carriesFiles(event) || inEditor(event.target)) return;
+  event.preventDefault();
+  event.dataTransfer!.dropEffect = 'none';
+});
+window.addEventListener('drop', (event) => {
+  if (event.defaultPrevented || !carriesFiles(event)) return;
+  event.preventDefault();
+});
+
 /** .ipynb → percent text through the one converter, waiting briefly for a
  *  kernel that is still connecting (a launch converts at boot). */
 async function convertWhenReady(text: string): Promise<ConvertResult | null> {
@@ -892,7 +944,10 @@ async function loadFigureFromDir(path: string): Promise<string | null> {
 const docView = new DocumentView(
   $('sheet'),
   kernel,
-  () => fileManager?.noteChange(),
+  () => {
+    fileManager?.noteChange();
+    reportUnsaved();
+  },
   syncArtifacts,
   (run) => session?.ran(run),
   (restore, message) => {
@@ -1075,6 +1130,7 @@ function repaintName() {
   // Just the file name: the installed app's window prepends its own
   // app name, so anything more reads twice.
   document.title = fileManager.name;
+  reportUnsaved();
 }
 
 /** A folder as a person reads it: their home as ~. The page has no way to
@@ -1207,6 +1263,9 @@ if (shell) {
   answerRewinds(shell, {
     path: () => fileManager.path,
     save: () => fileManager.saveForRewind(),
+    // The close dialog's Save: a write that failed falls back to the save
+    // panel, and says so itself (saveForClose, saveAs).
+    saveForClose: (choose) => fileManager.saveForClose(choose),
     release: () => fileManager.release(),
     reload: async (rewound) => {
       const error = await fileManager.reloadFromDisk();
