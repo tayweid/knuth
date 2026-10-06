@@ -354,25 +354,37 @@ export class FileManager {
    *  tab's "Leave site?"; shell.ts, unsavedReporter): unsaved while an edit
    *  is not on disk, except in a document with no file and nothing written
    *  in it, which closes without asking. Save writes quietly when the
-   *  document has a file and asks where when it has none. Knuth never
-   *  offers `none`: it does not hold a file changed outside it while the
-   *  document is dirty — its autosave writes over it (pollDisk, last
-   *  writer wins), and a close's write is that same write. */
-  closeState(): { unsaved: boolean; save: 'quiet' | 'choose' } {
+   *  document has a file and asks where when it has none — or when its
+   *  file could not be written the last time (its folder moved or deleted,
+   *  a full or read-only disk), so the close dialog's Save can put it
+   *  somewhere else. Knuth never offers `none`: it does not hold a file
+   *  changed outside it while the document is dirty — its autosave writes
+   *  over it (pollDisk, last writer wins), and a close's write is that
+   *  same write. */
+  closeState(): { unsaved: boolean; save: 'quiet' | 'choose'; detail?: string } {
     const homeless = !this.path && !this.handle;
-    return {
-      unsaved: this.dirty && !(homeless && isBlankDocument(this.hooks.getDoc())),
-      save: homeless ? 'choose' : 'quiet',
-    };
+    const unsaved = this.dirty && !(homeless && isBlankDocument(this.hooks.getDoc()));
+    const failed = this.path && this.writeFailure?.path === this.path ? this.writeFailure.error : null;
+    if (failed && unsaved) {
+      return {
+        unsaved,
+        save: 'choose',
+        detail: `The last save failed (${failed}). Save… tries again, then asks where to keep your changes.`,
+      };
+    }
+    return { unsaved, save: homeless ? 'choose' : 'quiet' };
   }
 
   /** The shell's close (⌘W, the close button, quit): the document written
    *  now, so the window can go. Null once the disk holds it (at once when
    *  nothing is unsaved), else why not, and the window stays. `choose` is
-   *  the close dialog's Save: a document with no file asks where, through
-   *  ⌘S's save (the shell's save panel). Without it, such a document says
-   *  it has no file, and the shell asks the person. Nothing is held, unlike
-   *  a rewind's save: the window is going, or its person stayed to type. */
+   *  the close dialog's Save: a document with no file, or whose file could
+   *  not be written, asks where through the shell's save panel (⌘S's save
+   *  as). Without it, such a document says why not, and the shell asks the
+   *  person. Nothing is held, unlike a rewind's save: the window is going,
+   *  or its person stayed to type — and then, if it was not written, the
+   *  autosave goes on as before (an edit typed into the close's round trip
+   *  is written again before the answer, never left behind). */
   async saveForClose(choose: boolean): Promise<string | null> {
     clearTimeout(this.saveTimer);
     this.saveTimer = 0;
@@ -380,21 +392,66 @@ export class FileManager {
     if (!this.dirty) return null;
     // The rewind's reload replaces whatever was typed since its save; a
     // write now would put back the file it is restoring.
-    if (this.held) return 'a rewind is restoring it; close again in a moment';
-    if (this.path) return this.flushPath();
-    if (this.handle) {
-      try {
-        await this.write(this.handle);
-      } catch (error) {
-        return error instanceof Error ? error.message : String(error);
+    if (this.held) {
+      const error = 'a rewind is restoring it; close again in a moment';
+      if (choose) this.hooks.message(`Could not save ${this.name}: ${error}`);
+      return error;
+    }
+    let error = this.path || this.handle ? await this.writeForClose() : `${this.name} is not saved to a file yet`;
+    // Asking where is for a document with no file, or one whose file the
+    // disk refused — not for a missing engine, which no other place fixes.
+    let asked = false;
+    if (error !== null && choose && !this.handle) {
+      const homeless = !this.path;
+      if (this.hooks.pickSavePath && (homeless || this.writeFailure?.path === this.path)) {
+        asked = true;
+        const path = await this.hooks.pickSavePath(this.name);
+        const saved = !!path && (await this.saveAs(path));
+        error = !saved ? `${this.name} was not saved` : this.dirty ? await this.writeForClose() : null;
+      } else if (homeless) {
+        asked = true;
+        await this.save();
+        error = (this.path || this.handle) && !this.dirty ? null : `${this.name} was not saved`;
       }
+    }
+    if (error !== null) {
+      // The window stays: the dialog's Save says why here, unless the
+      // person was asked where (a Cancel needs no word; a failed write
+      // after it has said so, saveAs). A close that did not happen leaves
+      // the document dirty and autosaving (the next change would re-arm
+      // it; a cancelled close may have none).
+      if (choose && !asked) this.hooks.message(`Could not save ${this.name}: ${error}`);
+      this.scheduleFlush();
+    }
+    return error;
+  }
+
+  /** The close's write to the document's own file: written again while an
+   *  edit typed during the round trip keeps it dirty, a few times, then
+   *  why not. Null once the disk holds what is on screen. */
+  private async writeForClose(): Promise<string | null> {
+    for (let attempt = 0; attempt < 3; attempt++) {
+      const error = this.path ? await this.flushPath() : await this.writeHandle();
+      if (error !== null) return error;
+      if (!this.dirty) return null;
+    }
+    return `${this.name} kept changing while it was saved`;
+  }
+
+  /** Handle mode's write, clean only if no edit arrived meanwhile. */
+  private async writeHandle(): Promise<string | null> {
+    if (!this.handle) return 'it has no file';
+    const before = this.changes;
+    try {
+      await this.write(this.handle);
+    } catch (error) {
+      return error instanceof Error ? error.message : String(error);
+    }
+    if (this.changes === before) {
       this.dirty = false;
       this.hooks.onState();
-      return null;
     }
-    if (!choose) return `${this.name} is not saved to a file yet`;
-    await this.save();
-    return (this.path || this.handle) && !this.dirty ? null : `${this.name} was not saved`;
+    return null;
   }
 
   /** The rewind is over: edits made meanwhile are written as usual. */
@@ -585,23 +642,34 @@ export class FileManager {
   }
 
   private saveFailedNotified = false;
+  /** The last write to the document's path failed, and why: until a write
+   *  there succeeds, the close dialog's Save asks where (closeState). Kept
+   *  with its path, so a document opened or saved elsewhere since is not
+   *  taken for it. A missing engine is not a failed write. */
+  private writeFailure: { path: string; error: string } | null = null;
 
   /** Null once the disk holds what was on screen when it began, else why
    *  not (a rewind's save answers with it). */
   private async flushPath(): Promise<string | null> {
-    if (!this.path || !this.hooks.savePath) return 'it has no file';
+    const path = this.path;
+    if (!path || !this.hooks.savePath) return 'it has no file';
     const text = serializeDocument(this.hooks.getDoc());
     const before = this.changes;
-    const saved = await this.hooks.savePath(this.path, text);
+    const saved = await this.hooks.savePath(path, text);
     if (!saved) return 'the engine is not running'; // the next change retries
     if (saved.error) {
       if (!this.saveFailedNotified) {
         this.saveFailedNotified = true;
         this.hooks.message(`Could not save: ${saved.error}`);
       }
+      const told = this.writeFailure?.path === path && this.writeFailure.error === saved.error;
+      this.writeFailure = { path, error: saved.error };
+      if (!told) this.hooks.onState();
       return saved.error;
     }
     this.saveFailedNotified = false;
+    const failed = this.writeFailure !== null;
+    this.writeFailure = null;
     if (typeof saved.modified === 'number') this.diskModified = saved.modified;
     // A new file gets its header from the engine: what is on disk is the
     // text plus that block, so the page adopts it rather than writing the
@@ -611,6 +679,8 @@ export class FileManager {
     // stays dirty and reschedules.
     if (this.changes === before) {
       this.dirty = false;
+      this.hooks.onState();
+    } else if (failed) {
       this.hooks.onState();
     }
     return null;
@@ -669,6 +739,7 @@ export class FileManager {
       this.dirty = true;
       this.diskModified = 0;
       this.saveFailedNotified = false;
+      this.writeFailure = null;
       this.hooks.onState();
       const note = reply.commented ? `, ${reply.commented} line(s) commented out` : '';
       this.hooks.message(
@@ -685,6 +756,7 @@ export class FileManager {
     this.diskModified = reply.modified ?? 0;
     this.dirty = false;
     this.saveFailedNotified = false;
+    this.writeFailure = null;
     this.hooks.onState();
     this.hooks.message(`Opened ${this.name}`);
     this.addRecentPath(reply.path, this.name);
@@ -697,6 +769,7 @@ export class FileManager {
   async saveAs(path: string): Promise<boolean> {
     if (!this.hooks.savePath) return false;
     const text = serializeDocument(this.hooks.getDoc());
+    const before = this.changes;
     const saved = await this.hooks.savePath(path, text);
     if (!saved || saved.error) {
       this.hooks.message(`Could not save: ${saved?.error ?? 'the engine is not running'}`);
@@ -709,8 +782,14 @@ export class FileManager {
     this.root = dirname(this.path);
     this.name = basename(this.path);
     this.diskModified = saved.modified ?? 0;
-    this.dirty = false;
+    this.writeFailure = null;
+    this.saveFailedNotified = false;
+    // Only what was written is clean (as flushPath): an edit during the
+    // round trip stays dirty, and the autosave, now that there is a file,
+    // writes it.
+    this.dirty = this.changes !== before;
     if (saved.header) this.spliceHeader(saved.header, saved.modified);
+    if (this.dirty) this.scheduleFlush();
     this.hooks.onState();
     this.hooks.message(`Saved ${this.name}`);
     this.addRecentPath(this.path, this.name);

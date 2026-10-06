@@ -437,6 +437,13 @@ file gets the standard sheet, "Do you want to save the changes you made to
 written in closes without asking; ⌘Q and an update's relaunch ask for each
 window in turn; a browser tab asks with Chrome's "Leave site?".
 
+**Needs Claerbout 0.2.8.** The asking is the shell's, and only a shell
+from 0.2.8 on answers `unsaved`. Knuth still pins v0.2.6 (package.json's
+`claerbout`), which answers null: the page then stops telling it, and ⌘W,
+⌘Q and a relaunch close without asking, as before. Steps 4-5 above take
+effect when the pin moves to 0.2.8, in the change that relies on it. A
+browser tab's "Leave site?" needs no shell and works now.
+
 The shell decides at close time from what the page last told it, so
 nothing in the page has to run while the window is going (claerbout's
 README, "The protocol"; the page's side is `src/shell.ts`,
@@ -446,20 +453,31 @@ README, "The protocol"; the page's side is `src/shell.ts`,
   'none', label?, detail?}) once after load and whenever it changes —
   `FileManager.closeState()`: unsaved while an edit is not on disk, except
   a document with no file and nothing in it; `quiet` with a file,
-  `choose` without one. Knuth never says `none`: it does not hold a file
-  changed outside it while the document is dirty (the autosave's last
-  writer wins), so a close's write is the write the autosave would make.
+  `choose` without one — or with one whose last write failed (its folder
+  moved or deleted, a full or read-only disk), with a `detail` that says
+  so, until a write there succeeds. Knuth never says `none`: it does not
+  hold a file changed outside it while the document is dirty (the
+  autosave's last writer wins), so a close's write is the write the
+  autosave would make.
   The shell answers {guarded: true}. An older shell answers null, and the
   page stops sending.
 - The shell asks with the rewind's event, `save` ({id, reason: 'close',
   choose}), answered `saved` ({id, ok, error?}). `choose: false` is the
   quiet write (`FileManager.saveForClose`): a document with a file is
   written now; one without says it has no file, and the shell shows its
-  sheet. `choose: true` is the sheet's Save: a document with no file goes
-  through ⌘S's save, the shell's save panel, and is answered ok only once
-  it is on disk; a cancelled panel keeps the window. Neither holds the
-  autosave as a rewind's save does. During a rewind's hold the close's
-  write is refused: the rewind's reload is about to replace the document.
+  sheet. `choose: true` is the sheet's Save: a document with a file is
+  written again, and if that fails, or it has no file, it goes through
+  ⌘S's save as, the shell's save panel, and is answered ok only once it is
+  on disk; a cancelled panel keeps the window. An edit typed while a
+  close's write is on its way is written too before the answer (a few
+  writes at most), so ok never leaves a keystroke behind. Neither holds
+  the autosave as a rewind's save does, and a close that did not happen
+  re-arms it. During a rewind's hold the close's write is refused: the
+  rewind's reload is about to replace the document.
+- A file dropped on the page where no editor takes it is refused, not
+  opened as the window's new page: Knuth opens by path, never by a drop
+  (claerbout's `openBy`), and a navigation the shell refuses must not cost
+  the page its standing in the close guard.
 - A browser tab registers `beforeunload` while closing would lose work.
   Never inside the shell: Electron shows no dialog for it and silently
   refuses the close (and ⌘Q), even under an older shell that does not

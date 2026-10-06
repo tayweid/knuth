@@ -733,6 +733,24 @@ if (!shell) {
     event.returnValue = '';
   });
 }
+// A file dropped where no editor takes it would navigate the window to the
+// file: a tab leaves the document, and the shell, which refuses that
+// navigation, may forget what the page told it about closing. Knuth opens
+// documents by path, never by a drop on the page (claerbout's `openBy`),
+// so such a drop is refused; an editor's own drop (CodeMirror, the prose
+// cells) has already been handled, and is left alone.
+const carriesFiles = (event: DragEvent) => !!event.dataTransfer?.types.includes('Files');
+const inEditor = (target: EventTarget | null) =>
+  target instanceof Element && !!target.closest('[contenteditable="true"], input, textarea');
+window.addEventListener('dragover', (event) => {
+  if (event.defaultPrevented || !carriesFiles(event) || inEditor(event.target)) return;
+  event.preventDefault();
+  event.dataTransfer!.dropEffect = 'none';
+});
+window.addEventListener('drop', (event) => {
+  if (event.defaultPrevented || !carriesFiles(event)) return;
+  event.preventDefault();
+});
 
 /** .ipynb → percent text through the one converter, waiting briefly for a
  *  kernel that is still connecting (a launch converts at boot). */
@@ -1245,14 +1263,9 @@ if (shell) {
   answerRewinds(shell, {
     path: () => fileManager.path,
     save: () => fileManager.saveForRewind(),
-    // The close dialog's Save says why it did not save here, in the window
-    // that stays open; a cancelled save panel needs no word, and a write
-    // that failed has said so already (saveAs).
-    saveForClose: async (choose) => {
-      const error = await fileManager.saveForClose(choose);
-      if (error && choose && fileManager.path) toast(`Could not save ${fileManager.name}: ${error}`);
-      return error;
-    },
+    // The close dialog's Save: a write that failed falls back to the save
+    // panel, and says so itself (saveForClose, saveAs).
+    saveForClose: (choose) => fileManager.saveForClose(choose),
     release: () => fileManager.release(),
     reload: async (rewound) => {
       const error = await fileManager.reloadFromDisk();

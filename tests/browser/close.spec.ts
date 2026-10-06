@@ -22,6 +22,12 @@ interface Probe {
   __guard: unknown;
   /** The save panel's answer: a path, or null for Cancel. */
   __savePanel: string | null;
+  /** Paths whose writes fail, as a gone folder's do. */
+  __failWrites: string[];
+  /** How long the engine takes to answer a save, ms. */
+  __saveDelay: number;
+  /** The disk as it was when each `saved` answer reached the shell. */
+  __atAnswer: Record<string, Disk>;
   __fire: (event: string, detail: unknown) => void;
 }
 type ProbeWindow = Window & Probe;
@@ -38,6 +44,9 @@ async function mock(page: Page, { shell = true, guard = { guarded: true } as unk
       probe.__sent = [];
       probe.__guard = guard;
       probe.__savePanel = null;
+      probe.__failWrites = [];
+      probe.__saveDelay = 0;
+      probe.__atAnswer = {};
       let clock = 1_000;
       const write = (path: string, text: string) => {
         clock += 1_000;
@@ -55,6 +64,7 @@ async function mock(page: Page, { shell = true, guard = { guarded: true } as unk
           value: {
             request: async (message: Record<string, unknown>) => {
               probe.__sent.push(message);
+              if (message.type === 'saved') probe.__atAnswer[message.id as string] = structuredClone(probe.__disk);
               const path = message.path as string;
               switch (message.type) {
                 case 'read': {
@@ -64,6 +74,7 @@ async function mock(page: Page, { shell = true, guard = { guarded: true } as unk
                     : { error: `${path} does not exist` };
                 }
                 case 'write':
+                  if (probe.__failWrites.includes(path)) return { error: `${path.split('/').pop()} could not be saved: No such file or directory` };
                   return { path, ...write(path, message.text as string) };
                 case 'saveAs':
                   return { path: probe.__savePanel };
@@ -110,8 +121,15 @@ async function mock(page: Page, { shell = true, guard = { guarded: true } as unk
               this.reply({ type: 'done', id: msg.id, result: null });
               break;
             case 'save': {
-              const saved = write(msg.path, msg.text);
-              this.reply({ type: 'saved', id: msg.id, path: msg.path, modified: saved.modified });
+              if (probe.__failWrites.includes(msg.path)) {
+                const error = `${msg.path.split('/').pop()} could not be saved: No such file or directory`;
+                this.reply({ type: 'saved', id: msg.id, error }, probe.__saveDelay);
+                break;
+              }
+              window.setTimeout(() => {
+                const saved = write(msg.path, msg.text);
+                this.reply({ type: 'saved', id: msg.id, path: msg.path, modified: saved.modified });
+              }, probe.__saveDelay);
               break;
             }
             case 'stat': {
@@ -138,10 +156,10 @@ async function mock(page: Page, { shell = true, guard = { guarded: true } as unk
           this.dispatchEvent(new CloseEvent('close'));
         }
 
-        private reply(message: object) {
+        private reply(message: object, delay = 0) {
           window.setTimeout(() => {
             this.dispatchEvent(new MessageEvent('message', { data: JSON.stringify(message) }));
-          });
+          }, delay);
         }
       }
       Object.defineProperty(window, 'WebSocket', { configurable: true, value: MockWebSocket });
@@ -339,4 +357,144 @@ test('a plain tab closes without asking when a new document was written in and e
   await expect.poll(() => wouldAsk(page)).toBe(false);
   expect(await closeAsked(page)).toEqual([]);
   expect(page.isClosed()).toBe(true);
+});
+
+const setProbe = (page: Page, values: Partial<Pick<Probe, '__failWrites' | '__saveDelay' | '__savePanel'>>) =>
+  page.evaluate((values) => Object.assign(window as unknown as ProbeWindow, values), values);
+
+test('a file that cannot be written: the shell is told Save must ask where, and the dialog’s Save puts the document somewhere new', async ({ page }) => {
+  await mock(page);
+  await open(page, '# %%\nx = 1\n');
+  await expect.poll(() => told(page)).toEqual({ type: 'unsaved', unsaved: false, name: 'fit.py', save: 'quiet' });
+
+  // Its folder is gone: the autosave fails, and the shell hears that Save
+  // can no longer write quietly, and why.
+  await setProbe(page, { __failWrites: [DOC] });
+  await typeInFirstCell(page, ' + 1');
+  const detail =
+    'The last save failed (fit.py could not be saved: No such file or directory). Save… tries again, then asks where to keep your changes.';
+  await expect.poll(() => told(page), { timeout: 5_000 }).toEqual({
+    type: 'unsaved',
+    unsaved: true,
+    name: 'fit.py',
+    save: 'choose',
+    detail,
+  });
+
+  // A quiet close cannot write it: the window stays.
+  await fire(page, 'save', { id: 'f1', reason: 'close', choose: false });
+  await expect.poll(() => sent(page, 'saved')).toEqual([
+    { type: 'saved', id: 'f1', ok: false, error: 'fit.py could not be saved: No such file or directory' },
+  ]);
+  expect(await sent(page, 'saveAs')).toEqual([]);
+
+  // Save, with the panel cancelled: tried again, then asked where; not
+  // saved, and the window stays.
+  await fire(page, 'save', { id: 'f2', reason: 'close', choose: true });
+  await expect.poll(async () => (await sent(page, 'saved')).at(-1)).toEqual({
+    type: 'saved',
+    id: 'f2',
+    ok: false,
+    error: 'fit.py was not saved',
+  });
+  expect(await sent(page, 'saveAs')).toEqual([{ type: 'saveAs', name: 'fit.py' }]);
+
+  // Save, with a new place chosen: written there, ok, and the document
+  // is now that file, with nothing to lose and a quiet Save again.
+  await setProbe(page, { __savePanel: '/tmp/week-4/fit.py' });
+  await fire(page, 'save', { id: 'f3', reason: 'close', choose: true });
+  await expect.poll(async () => (await sent(page, 'saved')).at(-1)).toEqual({ type: 'saved', id: 'f3', ok: true });
+  expect(await disk(page, '/tmp/week-4/fit.py')).toMatch(/^# %%\nx = 1 \+ 1\n/);
+  await expect.poll(() => told(page)).toEqual({ type: 'unsaved', unsaved: false, name: 'fit.py', save: 'quiet' });
+  await expect(page.locator('#doc-folder')).toContainText('week-4');
+});
+
+test('a close that could not write keeps autosaving: when the disk comes back, the edit lands without another keystroke', async ({ page }) => {
+  await mock(page);
+  await open(page, '# %%\nx = 1\n');
+  await setProbe(page, { __failWrites: [DOC] });
+  await typeInFirstCell(page, ' + 1');
+  await fire(page, 'save', { id: 'k1', reason: 'close', choose: false });
+  await expect.poll(() => sent(page, 'saved')).toEqual([
+    { type: 'saved', id: 'k1', ok: false, error: 'fit.py could not be saved: No such file or directory' },
+  ]);
+  // The person pressed Cancel and typed nothing more; the folder is back.
+  await setProbe(page, { __failWrites: [] });
+  await expect.poll(() => disk(page), { timeout: 5_000 }).toMatch(/^# %%\nx = 1 \+ 1\n/);
+  await expect.poll(() => told(page)).toEqual({ type: 'unsaved', unsaved: false, name: 'fit.py', save: 'quiet' });
+});
+
+test('a keystroke typed while a close’s write is on its way is written too before the shell is told ok', async ({ page }) => {
+  await mock(page);
+  await open(page, '# %%\nx = 1\n');
+  await typeInFirstCell(page, ' + 1');
+  await expect.poll(() => told(page)).toEqual({ type: 'unsaved', unsaved: true, name: 'fit.py', save: 'quiet' });
+  // A slow disk: each write takes 400 ms to answer.
+  await setProbe(page, { __saveDelay: 400 });
+  const writes = (await log(page)).length;
+  await fire(page, 'save', { id: 't1', reason: 'close', choose: false });
+  await page.keyboard.type(' + 2');
+  await expect.poll(() => sent(page, 'saved'), { timeout: 5_000 }).toEqual([{ type: 'saved', id: 't1', ok: true }]);
+  // When ok reached the shell (which closes the window on it), the disk
+  // held the keystroke: the close wrote twice, and the autosave none.
+  const atAnswer = await page.evaluate(
+    (path) => (window as unknown as ProbeWindow).__atAnswer.t1[path]?.text,
+    DOC,
+  );
+  expect(atAnswer).toMatch(/^# %%\nx = 1 \+ 1 \+ 2\n/);
+  expect((await log(page)).length).toBe(writes + 2);
+});
+
+/** A file dragged from the Finder and dropped at a point of the page, by
+ *  the browser's own drag pipeline (CDP), as a person's drop arrives. */
+async function dropFile(page: Page, file: string, x: number, y: number) {
+  const cdp = await page.context().newCDPSession(page);
+  const data = { items: [], files: [file], dragOperationsMask: 1 | 2 | 16 };
+  for (const type of ['dragEnter', 'dragOver', 'drop'] as const) {
+    await cdp.send('Input.dispatchDragEvent', { type, x, y, data });
+  }
+  await cdp.detach();
+}
+
+test('a file dropped on the page where no editor takes it is refused, so it cannot navigate the window away; a cell still takes one', async ({
+  page,
+}, testInfo) => {
+  const file = testInfo.outputPath('dropped.py');
+  const { writeFileSync } = await import('node:fs');
+  writeFileSync(file, 'print("dropped")\n');
+
+  await mock(page, { shell: false });
+  await blank(page);
+  await typeInFirstCell(page, 'y = 2');
+  const app = page.url();
+  // Whether each drag event was refused, seen after the page's own
+  // listeners. (Headless Chromium never navigates on a drop, so what is
+  // checked is what keeps a real window from it: the page refusing.)
+  await page.evaluate(() => {
+    const seen: string[] = ((window as unknown as { __drag: string[] }).__drag = []);
+    for (const type of ['dragover', 'drop']) {
+      window.addEventListener(type, (event) => seen.push(`${type} ${event.defaultPrevented ? 'refused' : 'open'}`));
+    }
+  });
+  const drags = () => page.evaluate(() => (window as unknown as { __drag: string[] }).__drag.splice(0));
+
+  // The page's own background, beside the column, far from any editor.
+  const viewport = page.viewportSize()!;
+  const [x, y] = [8, viewport.height - 8];
+  expect(
+    await page.evaluate(([x, y]) => !!document.elementFromPoint(x, y)?.closest('[contenteditable="true"], input, textarea'), [x, y]),
+  ).toBe(false);
+  await dropFile(page, file, x, y);
+  const background = await drags();
+  expect(background.length).toBeGreaterThan(0);
+  expect(background.filter((seen) => !seen.endsWith('refused'))).toEqual([]);
+  expect(page.url()).toBe(app);
+
+  // A cell's editor (CodeMirror) still takes a dropped file, as before.
+  const cell = page.locator('.cell .cm-content').first();
+  const box = (await cell.boundingBox())!;
+  await dropFile(page, file, box.x + box.width / 2, box.y + box.height / 2);
+  await expect(cell).toContainText('print("dropped")');
+  await expect(cell).toContainText('y = 2');
+  expect(page.url()).toBe(app);
 });
