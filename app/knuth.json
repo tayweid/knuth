@@ -26,7 +26,8 @@
     "minHeight": 360,
     "titleBarStyle": "hiddenInset",
     "trafficLightPosition": { "x": 14, "y": 15 },
-    "//": "No followZoom, on purpose: that is for a page laid out as a fixed-width paper (Plass). Knuth's room is fluid (the column has a max-width and rewraps), so a zoom step rewraps it inside the same window; the bar still follows the lights' band through env(titlebar-area-height)."
+    "zoom": "page",
+    "//": "zoom: the View menu's Zoom In / Out / Actual Size tell the page (shell 0.2.11), which zooms the column alone (src/column-zoom.ts); the bar, the rail and the cards beside the column keep their size."
   },
   "icon": "../python/knuth/web/icons/knuth-tiles-512.png",
   "copyright": "© 2026 Taylor J Weidman. MIT License.",

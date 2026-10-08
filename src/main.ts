@@ -31,6 +31,7 @@ import { menus } from './menu.ts';
 import { icon } from './icons.ts';
 import { Onboarding } from './onboarding.ts';
 import { keepPlace } from './place.ts';
+import { zoomColumn } from './column-zoom.ts';
 import {
   answerRewinds,
   historyNote,
@@ -1253,6 +1254,14 @@ void (async () => {
     });
   }
 })();
+
+// Knuth.app's View › Zoom In / Zoom Out / Actual Size (shell 0.2.11,
+// app/knuth.json `zoom: "page"`): the column drawn larger or smaller and
+// nothing else (column-zoom.ts); the toast says where it is.
+shell?.on('zoom', (detail) => {
+  const step = (detail as { step?: unknown } | null)?.step;
+  if (step === 1 || step === -1 || step === 0) toast(`Zoom ${Math.round(zoomColumn(step, $('doc')) * 100)}%`);
+});
 
 // A rewind in the shell's history view (shell.ts, answerRewinds): asked
 // to save, the document is written through ⌘S's write (ok: false, with

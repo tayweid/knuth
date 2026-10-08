@@ -1325,3 +1325,89 @@ test('Session, Data and Figures share one card: each folds to its header, and an
   await fold('figures').click();
   await expect(pane('figures')).toBeHidden();
 });
+
+test('Knuth.app\'s View › Zoom draws the column larger in a measure widened by as much, nothing round it moving; the docked card keeps beside it; remembered', async ({ page }) => {
+  // The stand-in shell (0.2.11): Chromium's zoom held at 1, the View
+  // menu's steps sent to the page as `zoom {step}`.
+  await page.addInitScript(() => {
+    const listeners = new Set<(detail: unknown) => void>();
+    (window as unknown as { __zoom: (step: number) => void }).__zoom = (step) => listeners.forEach((listener) => listener({ step }));
+    Object.defineProperty(window, 'claerbout', {
+      configurable: true,
+      value: {
+        request: async () => null,
+        on: (event: string, listener: (detail: unknown) => void) => {
+          if (event !== 'zoom') return () => {};
+          listeners.add(listener);
+          return () => listeners.delete(listener);
+        },
+      },
+    });
+  });
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  await boot(page);
+  await page.evaluate(() => localStorage.removeItem('knuth-column-zoom'));
+  const zoom = (step: number) => page.evaluate((step) => (window as unknown as { __zoom: (step: number) => void }).__zoom(step), step);
+  const frame = () => Promise.all(['#toolbar', '#rail', '#layout', '#session-pill', '#doc'].map((selector) => box(page, selector)));
+  const lineHeight = () => boxOf(page.locator('#sheet .cm-line')).then((b) => b.bottom - b.top);
+  const before = await layout(page);
+  const frameBefore = await frame();
+  const lineBefore = await lineHeight();
+  expect(before.sheet.width).toBe(832);
+
+  // In two steps: 125%, the measure 1040 px and centred, the code drawn
+  // 1.25 as tall, the bar, the rail, the room and the pill where they were.
+  await zoom(1);
+  await expect(page.locator('#toast')).toHaveText('Zoom 110%');
+  await zoom(1);
+  await expect(page.locator('#toast')).toHaveText('Zoom 125%');
+  const zoomed = await layout(page);
+  expect(zoomed.sheet.width).toBe(1040);
+  expect(Math.abs(zoomed.sheet.left - centredLeft(zoomed))).toBeLessThan(1);
+  expect((await lineHeight()) / lineBefore).toBeCloseTo(1.25, 1);
+  expect(await frame()).toEqual(frameBefore);
+
+  // A click lands on the character drawn under it: CodeMirror reads the
+  // zoomed column's coordinates.
+  const target = await page.evaluate(() => {
+    const lines = [...document.querySelectorAll('#sheet .cm-line')];
+    const index = lines.findIndex((el) => (el.textContent ?? '').length >= 6);
+    const line = lines[index];
+    const walker = document.createTreeWalker(line, NodeFilter.SHOW_TEXT);
+    const text = walker.nextNode() as Text;
+    const range = document.createRange();
+    range.setStart(text, 3);
+    range.setEnd(text, 4);
+    const r = range.getBoundingClientRect();
+    return { index, x: r.left + 1, y: (r.top + r.bottom) / 2, before: line.textContent ?? '', at: (line.textContent ?? '').indexOf(text.data) + 3 };
+  });
+  await page.mouse.click(target.x, target.y);
+  await page.keyboard.type('Q');
+  await expect(page.locator('#sheet .cm-line').nth(target.index)).toHaveText(target.before.slice(0, target.at) + 'Q' + target.before.slice(target.at));
+  await page.keyboard.press('Backspace');
+
+  // Docked, the Session card stands past the chips' lane beside the
+  // zoomed column, which gives it only what it lacks.
+  await page.locator('#session-pill').click();
+  await page.locator('#session [data-mode="pinned"]').click();
+  await expect(page.locator('#session')).toHaveClass(/docked/);
+  const docked = await layout(page);
+  expect(docked.session.left).toBeGreaterThanOrEqual(docked.sheet.right + 45);
+  expect(docked.sheet.width).toBeGreaterThanOrEqual(800);
+  await page.locator('#session [data-mode="peek"]').click();
+  await page.locator('#session .s-close').click();
+
+  // Out to 90%, remembered across a reload; Actual Size is the 52rem.
+  await zoom(-1);
+  await zoom(-1);
+  await zoom(-1);
+  await expect(page.locator('#toast')).toHaveText('Zoom 90%');
+  await page.reload();
+  await expect(page.locator('#kernel-status')).toHaveText('Python');
+  expect(Math.abs((await layout(page)).sheet.width - 832 * 0.9)).toBeLessThan(1);
+  await zoom(0);
+  await expect(page.locator('#toast')).toHaveText('Zoom 100%');
+  // Where it stood and as wide (its height is the edited document's).
+  const home = (await layout(page)).sheet;
+  expect([home.left, home.width, home.top]).toEqual([before.sheet.left, before.sheet.width, before.sheet.top]);
+});
