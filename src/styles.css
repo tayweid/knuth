@@ -90,9 +90,8 @@
   --pill: #232326;
   --tile: #2e2e32;
   /* The bar's height is the traffic lights' band, which the shell
-     publishes as the Window Controls Overlay (in CSS px, so a zoom step
-     keeps the bar's row on the lights); 60 px in a tab, the PWA and
-     fullscreen. */
+     publishes as the Window Controls Overlay; 60 px in a tab, the PWA
+     and fullscreen. */
   --topbar: env(titlebar-area-height, 44px);
   /* The frame's one width: the window's edge round the room, and the gap
      either side of a rail tile. */
@@ -1348,8 +1347,18 @@ body[data-view='source'] #view-toggle {
      never on a resize, and a run never changes it. */
   --need: 0px;
   --lean: 0px;
-  max-width: max(min(40rem, 100%), min(52rem, 100% - var(--need)));
-  margin: 0 auto 0 max(0px, min((100% - 52rem) / 2, 100% - 52rem - max(var(--need), var(--lean))));
+  /* The measure and its floor, times the View menu's zoom
+     (column-zoom.ts; session.ts columnAt works out the same). */
+  --measure: calc(52rem * var(--column-zoom, 1));
+  max-width: max(min(calc(40rem * var(--column-zoom, 1)), 100%), min(var(--measure), 100% - var(--need)));
+  margin: 0 auto 0 max(0px, min((100% - var(--measure)) / 2, 100% - var(--measure) - max(var(--need), var(--lean))));
+}
+
+/* Knuth.app's View › Zoom (column-zoom.ts): the cells drawn larger or
+   smaller in a measure widened by as much, so they wrap as they would on
+   a larger screen; nothing round the column changes size. */
+#sheet > * {
+  zoom: var(--column-zoom, 1);
 }
 
 #sheet.slide {

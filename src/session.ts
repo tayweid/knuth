@@ -32,6 +32,7 @@
 
 import type { Kernel, NamespaceVar, TableWindow } from './kernel/kernel.ts';
 import type { DocumentView, RunInfo } from './document-view.ts';
+import { columnZoom, onColumnZoom } from './column-zoom.ts';
 import { icon } from './icons.ts';
 import { clearSafeSvgImages, createSafeSvgImage } from './safe-svg.ts';
 import { Viewer, isTabular } from './viewers.ts';
@@ -100,7 +101,8 @@ const HOLD_MS = 30_000;
 /** The chips' lane beside the column (6 + the chip + 6). */
 const CHIP_LANE = 46;
 /** The column (#sheet's 52rem), and the floor it narrows to while the
- *  Session card is docked. */
+ *  Session card is docked, at zoom 1: both times the column's zoom
+ *  (column-zoom.ts) where they are used. */
 const COLUMN = 832;
 const COLUMN_FLOOR = 640;
 /** The docked card: clamp(320, what is beside the column, 380) wide, 10 px
@@ -244,6 +246,9 @@ interface Frame {
   /** The doc's width before a docked card's floor: the room's, or main's
    *  640 px floor's when the window is under it. */
   width: number;
+  /** The column's measure and its floor, at the column's zoom. */
+  column: number;
+  columnFloor: number;
 }
 
 /** Where the column stands in a doc `width` wide — #sheet's CSS rule, worked
@@ -253,8 +258,8 @@ interface Frame {
  *  what a receipt card needs, which only slides it. */
 function columnAt(f: Frame, width: number, need: number, lean: number) {
   const content = width - f.padL - f.padR - f.sb;
-  const col = Math.min(content, Math.max(Math.min(COLUMN_FLOOR, content), Math.min(COLUMN, content - need)));
-  const margin = Math.max(0, Math.min((content - COLUMN) / 2, content - COLUMN - Math.max(need, lean)));
+  const col = Math.min(content, Math.max(Math.min(f.columnFloor, content), Math.min(f.column, content - need)));
+  const margin = Math.max(0, Math.min((content - f.column) / 2, content - f.column - Math.max(need, lean)));
   return { content, col, margin, right: f.padL + margin + col };
 }
 
@@ -265,10 +270,10 @@ function columnAt(f: Frame, width: number, need: number, lean: number) {
  *  scrolls sideways rather than the card lie over the column. */
 function boardAt(f: Frame) {
   const content = f.width - f.padL - f.padR - f.sb;
-  const free = f.width - BOARD_GAP - f.padL - Math.min(COLUMN, content) - CHIP_LANE;
+  const free = f.width - BOARD_GAP - f.padL - Math.min(f.column, content) - CHIP_LANE;
   const width = Math.round(Math.max(BOARD_MIN, Math.min(free, BOARD_MAX)));
   const need = CHIP_LANE + width + BOARD_GAP - f.padR - f.sb;
-  const floor = f.padL + COLUMN_FLOOR + CHIP_LANE + width + BOARD_GAP;
+  const floor = f.padL + f.columnFloor + CHIP_LANE + width + BOARD_GAP;
   const column = columnAt(f, Math.max(f.width, floor), need, 0);
   return { width, need, floor: floor > f.width ? floor : 0, left: column.right + CHIP_LANE };
 }
@@ -628,6 +633,8 @@ export class Session {
       padR: parseFloat(style.paddingRight) || 0,
       sb: Math.max(0, this.doc.offsetWidth - this.doc.clientWidth),
       width: Math.max(box.width, floor),
+      column: COLUMN * columnZoom(),
+      columnFloor: COLUMN_FLOOR * columnZoom(),
     };
   }
 
@@ -2009,6 +2016,7 @@ export class Session {
     }, { passive: true });
     window.addEventListener('resize', reflow);
     new ResizeObserver(reflow).observe(this.doc);
+    onColumnZoom(reflow);
     // Source and grid views have no cells to stand beside: the cards go,
     // the column stands as those views have it, the pill rests.
     new MutationObserver(() => {

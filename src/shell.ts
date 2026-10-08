@@ -114,7 +114,9 @@ export interface UnsavedState {
   detail?: string;
 }
 
-export type ShellEvent = 'setup' | 'update' | 'save' | 'reload' | 'history';
+/** `zoom` {step: 1, -1, 0}: the View menu's Zoom In / Out / Actual Size
+ *  (shell 0.2.11; column-zoom.ts). */
+export type ShellEvent = 'setup' | 'update' | 'save' | 'reload' | 'history' | 'zoom';
 
 /** A box in the page's CSS px: the room's `getBoundingClientRect()`. */
 export interface Box {
