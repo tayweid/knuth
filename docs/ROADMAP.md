@@ -225,9 +225,10 @@ and sockets. The browser side is thinner:
   merge nodes and diff page of COAUTHOR.md fall away for live partners
   (its "new since you looked" mark stays, for the edit made while one
   was away). DECIDED (Taylor, 2026-10-11): **Knuth never shares kernel
-  access.** Sharing is editing the file and nothing else: the relay
-  moves document bytes, only the owner runs, and outputs and figures
-  travel as read-only state. That is Colab's model (one notebook,
+  access.** Taylor: "the kernel is owned by the computer. the outputs
+  and text and code are shared. plass keeps it simpler with just the
+  text." The relay moves document bytes, only the owner runs, and
+  outputs and figures travel as read-only state. That is Colab's model (one notebook,
   everyone on their own runtime; here only the owner has one), not
   Deepnote's, Hex's, CoCalc's or JupyterLab RTC's, where the people in
   a notebook share one kernel. OPEN: whether sharing a Knuth document
