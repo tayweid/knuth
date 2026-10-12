@@ -211,3 +211,36 @@ and sockets. The browser side is thinner:
   resting tiles' 40 % against Plass's 25 %, the switch's glyph, the
   hosted demo's door now a File item); the bar beside the lights needs
   shell v0.2.1 tagged and pinned.
+- **Live coauthoring, Overleaf's way** — HORIZON 2026-10-11, one design
+  for Plass and Knuth (Plass's ROADMAP.md carries the same entry). The
+  idea, from a chat of Taylor's: the document shared live through a
+  CRDT (Yjs, whose y-prosemirror and y-codemirror.next bind to the two
+  editors both apps already use), relayed and kept by a Cloudflare
+  Durable Object (one per document, WebSockets; y-partyserver is the
+  relay in a few dozen lines). The owner registers once and sets it up
+  at the front; a coauthor joins by link with a name and no account, and
+  sees the other's cursor and edits as they land. The git record stays
+  underneath, untouched: the owner's shell commits the owner's working
+  tree as now, so the research track survives, and the conflict frames,
+  merge nodes and diff page of COAUTHOR.md fall away for live partners
+  (its "new since you looked" mark stays, for the edit made while one
+  was away). DECIDED (Taylor, 2026-10-11): **Knuth never shares kernel
+  access.** Sharing is editing the file and nothing else: the relay
+  moves document bytes, only the owner runs, and outputs and figures
+  travel as read-only state. That is Colab's model (one notebook,
+  everyone on their own runtime; here only the owner has one), not
+  Deepnote's, Hex's, CoCalc's or JupyterLab RTC's, where the people in
+  a notebook share one kernel. OPEN: whether sharing a Knuth document
+  live makes sense at all (Taylor: "i'm not even sure it makes sense to
+  share it like that"); the answer is Plass's to give first, since a
+  paper is what two people write at once. Plass's one ProseMirror
+  document binds to y-prosemirror as it is; Knuth's column of cells
+  needs a shared shape (an array of cells, each a text or a prose
+  fragment, the `.py` serialized from it on the owner's side), which is
+  most of the work. The way to find out, as COAUTHOR.md said: two shells
+  on one Mac with their own state folders, a local relay (`wrangler
+  dev`), a morning of writing in both. Costs on record: a hosted
+  service is a new dependency for a local-first suite (AUTOSAVE.md's
+  anti-pruning remote already contemplates one); per-line authorship in
+  the record blurs to the owner, with coauthors named in the commit
+  message; a coauthor without the app needs a hosted edit-only page.
