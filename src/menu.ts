@@ -25,6 +25,9 @@ export interface ItemOptions {
   submenu?: Menu;
   /** Runs without closing the menu (the way back from a submenu). */
   stay?: boolean;
+  /** A checkbox item (Plass's): aria-checked from this, read each time
+   *  its menu opens, with the label's check mark (styles.css). */
+  checked?: () => boolean;
 }
 
 export interface Menus {
@@ -44,6 +47,8 @@ export interface Menus {
 export function menus(): Menus {
   let openMenu: Menu | null = null;
   let returnFocus: HTMLElement | null = null;
+  /** The checked items of each menu, refreshed when it opens. */
+  const checks = new Map<HTMLElement, Array<() => void>>();
 
   const close = (restoreFocus = false, toAnchor = false) => {
     if (!openMenu) return;
@@ -72,6 +77,7 @@ export function menus(): Menus {
       returnFocus = keep;
     }
     menu.refresh?.();
+    for (const check of checks.get(menu.element) ?? []) check();
     openMenu = menu;
     menu.element.hidden = false;
     menu.anchor.setAttribute('aria-expanded', 'true');
@@ -168,7 +174,7 @@ export function menus(): Menus {
     button.type = 'button';
     button.className = 'tb-menu-item';
     button.tabIndex = -1;
-    button.setAttribute('role', 'menuitem');
+    button.setAttribute('role', options.checked ? 'menuitemcheckbox' : 'menuitem');
     if (options.id) button.id = options.id;
     button.title = options.title ?? label;
     const text = document.createElement('span');
@@ -201,6 +207,16 @@ export function menus(): Menus {
         run();
       }
     });
+    const checked = options.checked;
+    if (checked) {
+      // Read when the menu opens, not here: the menu is built before the
+      // state it reads exists (main.ts builds it ahead of the file manager).
+      const check = () => button.setAttribute('aria-checked', String(checked()));
+      button.setAttribute('aria-checked', 'false');
+      const list = checks.get(host(parent)) ?? [];
+      list.push(check);
+      checks.set(host(parent), list);
+    }
     host(parent).append(button);
     return button;
   };

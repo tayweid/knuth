@@ -243,6 +243,24 @@ menu.item(fileMenu, 'New window', () => void window.open(location.pathname, '_bl
 menu.item(fileMenu, 'Open…', () => void fileManager.open(), { title: 'Open… (⌘O)', shortcut: '⌘O' });
 menu.item(fileMenu, 'Recent documents', () => {}, { title: 'Your documents', submenu: recentMenu });
 menu.item(fileMenu, 'Save', () => void fileManager.save(), { title: 'Save (⌘S)', shortcut: '⌘S' });
+// Autosave, checked: the document written 1.2 s after each edit
+// (file-manager.ts). Off, for this document and remembered by its path,
+// only ⌘S and a close write, and the dot stays red until then (Taylor,
+// 2026-10-11: ManimLive reloads a manim scene's viewer on every write,
+// "so it gets kind of annoying"). The project's autosave record (History)
+// is the shell's and commits what is on disk, so it then sees ⌘S's writes.
+menu.item(
+  fileMenu,
+  'Autosave',
+  () => {
+    fileManager.setAutosave(!fileManager.autosave);
+    toast(fileManager.autosave ? 'Autosave on' : `Autosave off for ${fileManager.name} — ⌘S saves`);
+  },
+  {
+    checked: () => fileManager.autosave,
+    title: 'Autosave — write this document to disk as you type. Off, only ⌘S and closing write it (remembered for this file).',
+  },
+);
 // The project's autosave record as a path, with a rewind: the shell's own
 // page, laid over the room of this window (Taylor: "instead of a new
 // window, i just want it to open in the same window in the main area"), so
@@ -1120,7 +1138,11 @@ function repaintName() {
   const pod = $('doc-pod');
   pod.classList.toggle('doc-saved', !unsaved);
   pod.classList.toggle('doc-unsaved', unsaved);
-  $('doc-mark').title = homeless ? 'Not saved yet — ⌘S picks its folder' : unsaved ? 'Unsaved changes' : 'Saved';
+  $('doc-mark').title = homeless
+    ? 'Not saved yet — ⌘S picks its folder'
+    : unsaved
+      ? fileManager.autosave ? 'Unsaved changes' : 'Unsaved changes — autosave is off, ⌘S saves'
+      : 'Saved';
   // The folder beside the name, in a sibling so the name's own text stays
   // exactly the name: the path's folder (home as ~), or an attached
   // folder's name, or nothing. It is what gives way when the pill is short,

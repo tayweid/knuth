@@ -433,6 +433,12 @@ body {
   cursor: default;
 }
 
+/* A checkbox item (Autosave): the mark after its label, Plass's. */
+.tb-menu-item[aria-checked='true'] .tb-menu-label::after {
+  content: ' ✓';
+  font-size: 11px;
+}
+
 .tb-menu-item kbd {
   flex: none;
   color: var(--menu-ink-soft);

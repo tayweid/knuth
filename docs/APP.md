@@ -483,6 +483,30 @@ README, "The protocol"; the page's side is `src/shell.ts`,
   refuses the close (and ⌘Q), even under an older shell that does not
   guard.
 
+## Autosave off, per document (2026-10-11)
+
+Taylor: "i'd like to add a way to turn off autosave in knuth. when editing
+manim files it reloads the viewer whenever it saves, so it gets kind of
+annoying." The autosave here is the page's write to disk, 1.2 s after each
+edit and when the window is hidden (`FileManager.scheduleFlush`), which
+ManimLive's watcher takes as a change to the scene. The File menu's
+Autosave, checked by default, turns it off for the document in the window:
+only ⌘S, a close (quietly, as above) and a rewind's save write it, and
+the name's dot stays red until one does, with "autosave is off" in its
+title. The choice is kept by the document's path (localStorage,
+`knuth-autosave-off`, the exceptions only), so the scene file stays off
+the next time it opens and other documents are untouched; a document with
+no file keeps the window's choice and carries it to the file ⌘S gives it;
+a rename moves it. Turning it back on writes what is unsaved at once.
+
+Two things follow and are left as they fall. The shell's autosave record
+(the History view) commits what is on disk, so with the write off it sees
+⌘S's writes and nothing between: the record thins to the person's saves,
+which for a scene being watched is the right grain. And a document that
+stays dirty for longer does not reload an outside change to its file
+(`pollDisk`, last writer wins, as ever); nothing else writes a scene file,
+so that is not a loss here.
+
 ## Protocol additions (v2, additive)
 
 Per-document environments (docs/ENVIRONMENT.md, engine side on the

@@ -122,6 +122,28 @@ const PY_TYPE: FilePickerType[] = [
 
 const NEW_DOC = '# %%\n';
 
+/** The documents whose autosave is off, by path (setAutosave). Off is
+ *  the exception, so only those are kept. */
+const AUTOSAVE_OFF = 'knuth-autosave-off';
+
+function readAutosaveOff(): Set<string> {
+  try {
+    const list = JSON.parse(localStorage.getItem(AUTOSAVE_OFF) ?? '[]') as unknown;
+    return new Set(Array.isArray(list) ? list.filter((p): p is string => typeof p === 'string') : []);
+  } catch {
+    return new Set();
+  }
+}
+
+function writeAutosaveOff(off: Set<string>) {
+  try {
+    if (off.size === 0) localStorage.removeItem(AUTOSAVE_OFF);
+    else localStorage.setItem(AUTOSAVE_OFF, JSON.stringify([...off]));
+  } catch (e) {
+    console.warn('Could not persist the autosave setting', e);
+  }
+}
+
 /** The longest a rewind holds the autosave when its reload never comes
  *  (refused after the save, or a shell that stopped): the record's own
  *  commits before and after the write take seconds on a large project. */
@@ -211,6 +233,15 @@ export class FileManager {
   root: string | null = null;
   name = DEFAULT_DOC_NAME;
   dirty = false;
+  /** Whether edits reach the disk by themselves (scheduleFlush, 1.2 s
+   *  after each, and when the window is hidden). Off, only ⌘S, a close
+   *  and a rewind's save write, and the document stays dirty meanwhile:
+   *  for a file something else watches and reloads on every write
+   *  (Taylor, 2026-10-11: ManimLive's viewer under a manim scene, "so it
+   *  gets kind of annoying"). Per document, remembered by its path
+   *  (setAutosave); a document with no file keeps the window's choice
+   *  and carries it to the file ⌘S gives it. */
+  autosave = true;
   /** Last session's file awaiting a permission re-grant (needs a user
    *  gesture) — the document on screen IS this file's latest state. */
   pendingHandle: FileSystemFileHandle | null = null;
@@ -236,7 +267,7 @@ export class FileManager {
 
   constructor(private hooks: FileHooks) {
     document.addEventListener('visibilitychange', () => {
-      if (document.visibilityState === 'hidden') void this.flush();
+      if (document.visibilityState === 'hidden' && this.autosave) void this.flush();
       // Coming back from the outside editor is exactly when a disk
       // change is most likely — don't make the return wait for a tick.
       else void this.pollDisk();
@@ -325,12 +356,39 @@ export class FileManager {
   }
 
   private scheduleFlush() {
-    if ((!this.handle && !this.path) || this.held) return;
+    if ((!this.handle && !this.path) || this.held || !this.autosave) return;
     clearTimeout(this.saveTimer);
     this.saveTimer = window.setTimeout(() => {
       this.saveTimer = 0;
       void this.flush();
     }, 1200);
+  }
+
+  /** The File menu's Autosave. Turned back on, what is unsaved is written
+   *  now. The choice is kept for the document's path, so the file stays
+   *  the way it was set the next time it opens; off for a document with
+   *  no file is the window's until ⌘S gives it one (saveAs). */
+  setAutosave(on: boolean) {
+    if (this.autosave === on) return;
+    this.autosave = on;
+    if (this.path) this.rememberAutosave(this.path);
+    if (on && this.dirty) void this.flush();
+    this.hooks.onState();
+  }
+
+  /** The stored choice for `path` into `autosave` (a document opened or
+   *  restored there). */
+  private readAutosave(path: string | null) {
+    this.autosave = !path || !readAutosaveOff().has(path);
+  }
+
+  /** The current choice stored for `path`, moved from `from` on a rename. */
+  private rememberAutosave(path: string, from?: string) {
+    const off = readAutosaveOff();
+    if (from) off.delete(from);
+    if (this.autosave) off.delete(path);
+    else off.add(path);
+    writeAutosaveOff(off);
   }
 
   /** A rewind's `save` (the shell's history view; main.ts): the document
@@ -555,6 +613,7 @@ export class FileManager {
       this.name = snap.name;
       this.path = typeof snap.path === 'string' ? snap.path : null;
       this.root = typeof snap.root === 'string' ? snap.root : null;
+      this.readAutosave(this.path);
       this.diskModified = typeof snap.modified === 'number' ? snap.modified : 0;
       this.hooks.setDoc(parseDocument(snap.text));
       this.dirty = snap.dirty;
@@ -735,6 +794,7 @@ export class FileManager {
       const existing = await this.hooks.statPath?.(reply.path);
       const free = !!existing && !existing.error && existing.modified == null;
       this.path = free ? reply.path : null;
+      this.readAutosave(this.path);
       this.hooks.setDoc(parseDocument(reply.text));
       this.dirty = true;
       this.diskModified = 0;
@@ -752,6 +812,7 @@ export class FileManager {
       return true;
     }
     this.path = reply.path;
+    this.readAutosave(this.path);
     this.hooks.setDoc(parseDocument(reply.text));
     this.diskModified = reply.modified ?? 0;
     this.dirty = false;
@@ -781,6 +842,8 @@ export class FileManager {
     this.path = saved.path ?? path;
     this.root = dirname(this.path);
     this.name = basename(this.path);
+    if (this.autosave) this.readAutosave(this.path);
+    else this.rememberAutosave(this.path);
     this.diskModified = saved.modified ?? 0;
     this.writeFailure = null;
     this.saveFailedNotified = false;
@@ -1063,8 +1126,10 @@ export class FileManager {
         this.hooks.message(`Could not rename: ${renamed?.error ?? 'the engine is not running'}`);
         return false;
       }
+      const from = this.path;
       this.path = renamed.path;
       this.name = renamed.name ?? newName;
+      if (!this.autosave) this.rememberAutosave(this.path, from);
       if (typeof renamed.modified === 'number') this.diskModified = renamed.modified;
       this.addRecentPath(this.path, this.name);
       this.hooks.onState();
