@@ -480,7 +480,6 @@ test('outputs clear from the rail or one cell at a time, and ⌘Z brings them ba
   const menu = page.locator('#tb-menu-cell');
   await outputs.nth(0).click({ button: 'right' });
   await expect(menu).toBeVisible();
-  await page.screenshot({ path: '/private/tmp/claude-501/-Users-taylorjweidman-Projects-knuth/2cc8490a-c2b7-43ac-9a74-f7924a61c17e/scratchpad/cell-menu.png' });
   await menu.getByRole('menuitem', { name: 'Clear output', exact: true }).click();
   await expect(menu).toBeHidden();
   await expect(outputs.nth(0)).toBeHidden();

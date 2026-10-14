@@ -315,12 +315,13 @@ test('the File tile opens Plass\'s text menu under it, and it closes on an item,
   // (Never closer than 8 px to the window's edge: the tile is 6 px in, in
   // a tab; beside the lights it is the tile's own left.)
   expect(at.left).toBe(Math.max(8, anchor.left));
-  // A vertical text menu: New window, Open…, Recent documents ›, Save, in
-  // Plass's dark glass. In a locally served tab with no install offered,
+  // A vertical text menu: New window, Open…, Recent documents ›, Save,
+  // Autosave (checked, with no shortcut), in Plass's dark glass. In a locally served tab with no install offered,
   // Get Knuth, Install and the update are away, and so is their rule.
   const items = file.locator('.tb-menu-item:visible');
-  await expect(items.locator('.tb-menu-label')).toHaveText(['New window', 'Open…', 'Recent documents', 'Save']);
+  await expect(items.locator('.tb-menu-label')).toHaveText(['New window', 'Open…', 'Recent documents', 'Save', 'Autosave']);
   await expect(items.locator('kbd')).toHaveText(['⌘O', '›', '⌘S']);
+  await expect(file.getByRole('menuitemcheckbox', { name: 'Autosave' })).toHaveAttribute('aria-checked', 'true');
   await expect(file.locator('.tb-menu-divider')).toBeHidden();
   await expect(items.first()).toBeFocused();
   const look = await file.evaluate((element) => {
@@ -352,7 +353,7 @@ test('the File tile opens Plass\'s text menu under it, and it closes on an item,
   await page.keyboard.press('ArrowDown');
   await expect(page.getByTitle('Open… (⌘O)')).toBeFocused();
   await page.keyboard.press('End');
-  await expect(page.getByTitle('Save (⌘S)')).toBeFocused();
+  await expect(page.getByTitle(/^Autosave/)).toBeFocused();
   await page.keyboard.press('Home');
   await expect(page.getByTitle(/^New document/)).toBeFocused();
   await page.keyboard.press('r');
