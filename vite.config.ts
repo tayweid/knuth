@@ -8,6 +8,13 @@ const engine = process.env.KNUTH_ENGINE ?? 'http://127.0.0.1:5197';
 
 export default defineConfig({
   base: './',
+  // Every asset ships as a file on the page's own origin. Vite's default
+  // inlines anything under 4 KiB as a data: URL, which caught KaTeX's Size3
+  // woff2 (3.6 KiB) and wrote it into the CSS as data:font/woff2 — and the
+  // page's policy (index.html) says font-src 'self', so the shell refused
+  // the font. A file is what the policy already allows; the limit goes to
+  // 0 rather than the policy being loosened.
+  build: { assetsInlineLimit: 0 },
   // Fixed port, one below Plass's 5199 — failing beats silently coming up
   // on another port once file-handler/PWA testing points at this origin.
   server: {
