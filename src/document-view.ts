@@ -21,11 +21,9 @@ import {
 } from '@codemirror/view';
 import { Compartment, RangeSet, RangeSetBuilder, type Extension } from '@codemirror/state';
 import { autocompletion, type CompletionContext, type CompletionResult } from '@codemirror/autocomplete';
-import { foldGutter, foldKeymap, indentUnit } from '@codemirror/language';
+import { foldGutter, foldKeymap, indentUnit, type LanguageDescription } from '@codemirror/language';
 import { indentationMarkers } from '@replit/codemirror-indentation-markers';
-import { python, pythonLanguage } from '@codemirror/lang-python';
-import { yaml, yamlFrontmatter, yamlLanguage } from '@codemirror/lang-yaml';
-import { markdown } from '@codemirror/lang-markdown';
+import { python } from '@codemirror/lang-python';
 import { oneDark } from '@codemirror/theme-one-dark';
 import {
   EditorView as PMEditorView,
@@ -57,31 +55,8 @@ import type { Kernel, NamespaceVar } from './kernel/kernel.ts';
 import { findHeader, headerPackages } from './header.ts';
 import { GridView, GridHistory } from './grid.ts';
 import { icon } from './icons.ts';
+import { indentOf } from './plain-file.ts';
 import { clearSafeSvgImages, createSafeSvgImage } from './safe-svg.ts';
-
-/** Markdown as Quarto/R Markdown write it: a YAML front matter block
- *  over the prose, and code fences whose info string is braced —
- *  ```{python} — so the fence's language is read with the braces (and
- *  any chunk options after a comma or space) stripped. */
-function quartoMarkdown(): Extension {
-  const content = markdown({
-    codeLanguages: (info) => {
-      const lang = info.replace(/^\{/, '').split(/[\s,}]/)[0].toLowerCase();
-      if (lang === 'python' || lang === 'py') return pythonLanguage;
-      if (lang === 'yaml' || lang === 'yml') return yamlLanguage;
-      return null;
-    },
-  });
-  return yamlFrontmatter({ content });
-}
-
-/** The grammar for a plain (non-.py) file, by its name — null when the
- *  editor has none for it and the file is numbered, wrapped text. */
-export function plainLanguageFor(name: string): Extension | null {
-  if (/\.ya?ml$/i.test(name)) return yaml();
-  if (/\.(md|markdown|qmd|rmd)$/i.test(name)) return quartoMarkdown();
-  return null;
-}
 
 // Stored-output cap (the DESIGN.md truncation policy).
 const MAX_OUTPUT_LINES = 40;
@@ -302,8 +277,11 @@ export class DocumentView {
   /** A non-.py file: always the plain source editor, never the cell
    *  workbench — even if its text happens to contain "# %%" lines. */
   private plainFile = false;
-  /** A plain file's grammar (plainLanguageFor), when the editor has one. */
-  private plainLanguage: Extension | null = null;
+  /** A plain file's grammar (plainGrammarFor), when the editor has one;
+   *  its `support` is unset until the grammar's chunk has loaded. */
+  private plainGrammar: LanguageDescription | null = null;
+  /** A plain file's indent unit, read from the file (indentOf). */
+  private plainIndent = '  ';
   /** A .csv/.tsv: its delimiter, and with it a grid view on offer. */
   private gridDelimiter: string | null = null;
   /** Whether this document offers the toggle between grid and source. */
@@ -432,9 +410,9 @@ export class DocumentView {
     // it along: numbers, fold arrows (Python's own parser says what
     // folds — bodies of defs, classes, loops), and indent guides.
     // A plain (non-.py) file is not Python. With a grammar of its own
-    // (YAML) it gets the same chrome over that grammar; without one it
-    // is just numbered, wrapped text.
-    const language = this.plainFile ? this.plainLanguage : python();
+    // (YAML, Rust, …) it gets the same chrome over that grammar; without
+    // one, or until its grammar has loaded, it is numbered, wrapped text.
+    const language = this.plainFile ? (this.plainGrammar?.support ?? null) : python();
     const codeChrome: Extension = language
       ? [
           language,
@@ -455,8 +433,8 @@ export class DocumentView {
       // CodeMirror's indent-unit facet defaults to TWO spaces and python()
       // does not correct it — auto-indent was stepping by 2, and the
       // indent guides drew a phantom bar at every half level of 4-space
-      // code. Python's unit is four; a plain file's (YAML's) is two.
-      indentUnit.of(this.plainFile ? '  ' : '    '),
+      // code. Python's unit is four; a plain file's is its own.
+      indentUnit.of(this.plainFile ? this.plainIndent : '    '),
       wrapHang,
       lineNumbers(),
       lineNumberMarkers.of(RangeSet.of(
@@ -517,11 +495,24 @@ export class DocumentView {
     if (v.cell.output.length === 0) v.cell.source.push('');
   }
 
-  /** Pin the document to the plain source editor (non-.py files). Set
-   *  before setDoc — it decides which view the document opens in. */
-  setPlain(on: boolean, language: Extension | null = null) {
+  /** Pin the document to the plain source editor (non-.py files), with
+   *  the grammar its name calls for. Set before setDoc — it decides which
+   *  view the document opens in. A grammar not loaded yet arrives a
+   *  moment after the text and is switched into the open editor. */
+  setPlain(on: boolean, grammar: LanguageDescription | null = null) {
     this.plainFile = on;
-    this.plainLanguage = on ? language : null;
+    this.plainGrammar = on ? grammar : null;
+    if (!on || !grammar || grammar.support) return;
+    grammar.load().then(
+      () => {
+        if (this.plainGrammar !== grammar) return; // another document since
+        for (const v of [this.preambleView, ...this.views]) {
+          v?.editor?.dispatch({ effects: v.lang.reconfigure(this.langFor(v)) });
+        }
+      },
+      // A grammar that cannot load leaves the file plain text.
+      () => {},
+    );
   }
 
   /** Offer the grid view for a delimited file (.csv/.tsv), given its
@@ -537,6 +528,7 @@ export class DocumentView {
     // Open in the view that fits: cells when the file has markers, the
     // raw source editor when it does not — or always, for a plain file.
     this.sourceMode = this.plainFile || doc.cells.length === 0;
+    if (this.plainFile) this.plainIndent = indentOf(serializeDocument(doc));
     // A delimited file opens as its grid, if the table can carry it.
     this.gridOffered =
       this.plainFile && this.gridDelimiter !== null;

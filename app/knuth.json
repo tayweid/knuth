@@ -46,6 +46,23 @@
   "documentTypes": [
     { "name": "Python cell document", "role": "Editor", "rank": "Alternate", "contentTypes": ["public.python-script"], "extensions": ["py"] },
     { "name": "Jupyter notebook", "role": "Viewer", "rank": "Alternate", "extensions": ["ipynb"] },
-    { "name": "Text file", "role": "Editor", "rank": "None", "contentTypes": ["public.plain-text", "public.comma-separated-values-text"] }
+    {
+      "name": "Source code",
+      "role": "Editor",
+      "rank": "Alternate",
+      "//": "src/plain-file.ts's TEXT_EXTENSIONS, by extension: the system's own type where it has one (.c is public.c-source), else the extension (.rs). .ts is the system's MPEG-2 video, which an app's declaration cannot change (tried 2026-10-16), so Knuth is offered for those too.",
+      "extensions": [
+        "txt", "text", "md", "markdown", "qmd", "rmd", "rst", "org", "adoc", "log", "tex",
+        "sty", "cls", "bib", "typ", "diff", "patch", "json", "jsonl", "jsonc", "yaml", "yml",
+        "toml", "ini", "cfg", "conf", "properties", "env", "csv", "tsv", "xml", "svg", "sql",
+        "graphql", "proto", "html", "htm", "css", "scss", "sass", "less", "js", "mjs", "cjs",
+        "jsx", "ts", "tsx", "vue", "svelte", "php", "sh", "bash", "zsh", "fish", "ps1",
+        "bat", "cmake", "gradle", "tf", "hcl", "pyi", "r", "jl", "m", "do", "ado", "sas",
+        "stan", "f90", "c", "h", "cc", "cpp", "cxx", "hpp", "hh", "mm", "cs", "java", "kt",
+        "kts", "scala", "groovy", "swift", "go", "rs", "zig", "nim", "dart", "rb", "lua",
+        "pl", "pm", "hs", "ml", "mli", "clj", "lisp", "el", "scm", "erl", "ex", "exs"
+      ]
+    },
+    { "name": "Text file", "role": "Editor", "rank": "Alternate", "contentTypes": ["public.plain-text"] }
   ]
 }

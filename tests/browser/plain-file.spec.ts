@@ -113,3 +113,26 @@ test('a .qmd file is markdown with YAML front matter and Python fences', async (
   await expect(line('# Heading').locator('span').first()).toBeVisible();
   await expect(line('*prose*').locator('span').first()).toBeVisible();
 });
+
+const RUST = 'fn main() {\n    let answer = 41 + 1;\n    println!("{answer}");\n}\n';
+
+test('a .rs file gets its grammar from the catalog and keeps its indent', async ({ page }) => {
+  await seed(page, 'main.rs', RUST);
+  await page.goto('/');
+  await expect(page.locator('#kernel-status')).toHaveText('Python');
+
+  const editor = page.locator('.cm-content');
+  await expect(editor).toContainText('fn main()');
+  // Rust's grammar is a chunk of its own, switched in once it arrives.
+  const line = (text: string) => editor.locator('.cm-line', { hasText: text });
+  await expect(line('fn main').locator('span', { hasText: 'fn' })).toBeVisible();
+  await expect(page.locator('.cm-foldGutter')).toBeVisible();
+
+  // A new line opening the body takes the file's four spaces, not two.
+  await line('fn main').click();
+  await page.keyboard.press('End');
+  await page.keyboard.press('Enter');
+  await page.keyboard.type('x();');
+  // Raw text: toHaveText would collapse the very spaces being counted.
+  await expect.poll(() => line('x();').textContent()).toBe('    x();');
+});

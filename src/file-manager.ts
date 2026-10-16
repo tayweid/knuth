@@ -20,6 +20,7 @@ import type {
 } from './kernel/kernel.ts';
 import { ARTIFACT_MANIFEST, isSafeFigureName, manifestText, parseOwnedFigureNames } from './artifacts.ts';
 import { findHeader, spliceHeader } from './header.ts';
+import { TEXT_EXTENSIONS } from './plain-file.ts';
 
 export interface FileHooks {
   getDoc(): KnuthDocument;
@@ -97,23 +98,14 @@ function readRecentPaths(): RecentPath[] {
 }
 
 // Any text file opens: .py as a cell document, .ipynb converted, and
-// everything else in the plain source editor (the file_handlers list in
-// manifest.webmanifest names the same set for OS launches). One picker
-// type carries them all — separate filter entries would hide .py files
-// exactly when someone is looking for either.
-const TEXT_EXTENSIONS = [
-  '.txt', '.text', '.md', '.markdown', '.qmd', '.rmd', '.log', '.json', '.jsonl',
-  '.yaml', '.yml', '.toml', '.ini', '.cfg', '.conf', '.csv', '.tsv',
-  '.html', '.htm', '.css', '.js', '.mjs', '.cjs', '.jsx', '.ts', '.tsx',
-  '.sh', '.bash', '.zsh', '.tex', '.sty', '.bib', '.typ', '.r', '.jl',
-  '.sql', '.xml', '.svg', '.rs', '.go', '.c', '.h', '.cpp', '.hpp',
-  '.java', '.rb', '.lua', '.php',
-];
+// everything else in the plain source editor (plain-file.ts names them).
+// One picker type carries them all — separate filter entries would hide
+// .py files exactly when someone is looking for either.
 const PY_TYPE: FilePickerType[] = [
   {
     description: 'Python cell documents and text files',
     accept: {
-      'text/x-python': ['.py', '.pyi'],
+      'text/x-python': ['.py'],
       'application/x-ipynb+json': ['.ipynb'],
       'text/plain': TEXT_EXTENSIONS,
     },
@@ -1287,7 +1279,7 @@ export class FileManager {
   private openViaInput() {
     const input = document.createElement('input');
     input.type = 'file';
-    input.accept = ['.py', '.pyi', '.ipynb', ...TEXT_EXTENSIONS].join(',');
+    input.accept = ['.py', '.ipynb', ...TEXT_EXTENSIONS].join(',');
     input.onchange = async () => {
       const file = input.files?.[0];
       if (!file) return;

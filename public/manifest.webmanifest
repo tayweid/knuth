@@ -35,18 +35,24 @@
         "text/x-python": [".py", ".pyi"],
         "application/x-ipynb+json": [".ipynb"],
         "text/markdown": [".md", ".markdown", ".qmd", ".rmd"],
-        "application/json": [".json", ".jsonl"],
+        "application/json": [".json", ".jsonl", ".jsonc"],
         "application/yaml": [".yaml", ".yml"],
         "text/csv": [".csv", ".tsv"],
         "text/html": [".html", ".htm"],
-        "text/css": [".css"],
+        "text/css": [".css", ".scss", ".sass", ".less"],
         "text/javascript": [".js", ".mjs", ".cjs", ".jsx", ".ts", ".tsx"],
-        "text/x-sh": [".sh", ".bash", ".zsh"],
-        "text/x-tex": [".tex", ".sty", ".bib"],
+        "text/x-sh": [".sh", ".bash", ".zsh", ".fish"],
+        "text/x-tex": [".tex", ".sty", ".cls", ".bib"],
         "text/plain": [
-          ".txt", ".text", ".log", ".ini", ".cfg", ".conf", ".toml",
-          ".typ", ".r", ".jl", ".sql", ".xml", ".svg", ".rs", ".go",
-          ".c", ".h", ".cpp", ".hpp", ".java", ".rb", ".lua", ".php"
+          ".txt", ".text", ".rst", ".org", ".adoc", ".log", ".typ", ".diff",
+          ".patch", ".toml", ".ini", ".cfg", ".conf", ".properties", ".env",
+          ".xml", ".svg", ".sql", ".graphql", ".proto", ".vue", ".svelte",
+          ".php", ".ps1", ".bat", ".cmake", ".gradle", ".tf", ".hcl", ".r",
+          ".jl", ".m", ".do", ".ado", ".sas", ".stan", ".f90", ".c", ".h",
+          ".cc", ".cpp", ".cxx", ".hpp", ".hh", ".mm", ".cs", ".java", ".kt",
+          ".kts", ".scala", ".groovy", ".swift", ".go", ".rs", ".zig",
+          ".nim", ".dart", ".rb", ".lua", ".pl", ".pm", ".hs", ".ml", ".mli",
+          ".clj", ".lisp", ".el", ".scm", ".erl", ".ex", ".exs"
         ]
       }
     }

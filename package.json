@@ -15,7 +15,7 @@
     "app:build": "node node_modules/claerbout/package.mjs --config app/knuth.json",
     "app:smoke": "node node_modules/claerbout/smoke.mjs --config app/knuth.json browser && node node_modules/claerbout/smoke.mjs --config app/knuth.json uv",
     "check:web": "node scripts/check-web-fresh.mjs",
-    "test": "node --import tsx src/format/round-trip.test.ts && node --import tsx src/format/csv.test.ts && node --import tsx src/kernel/protocol.test.ts && node --import tsx src/artifacts.test.ts && node --import tsx src/receipts.test.ts && node --import tsx src/contract.test.ts && node --import tsx src/kernel/pip-lines.test.ts && node --import tsx src/header.test.ts && node --import tsx src/prose/md-round.test.ts && node --import tsx src/shell.test.ts",
+    "test": "node --import tsx src/format/round-trip.test.ts && node --import tsx src/format/csv.test.ts && node --import tsx src/kernel/protocol.test.ts && node --import tsx src/artifacts.test.ts && node --import tsx src/receipts.test.ts && node --import tsx src/contract.test.ts && node --import tsx src/kernel/pip-lines.test.ts && node --import tsx src/header.test.ts && node --import tsx src/prose/md-round.test.ts && node --import tsx src/shell.test.ts && node --import tsx src/plain-file.test.ts",
     "test:browser": "playwright test",
     "app:install-script": "node node_modules/claerbout/package.mjs --config app/knuth.json --install-script public/install"
   },
@@ -31,6 +31,7 @@
     "@codemirror/lang-markdown": "^6.5.2",
     "@codemirror/lang-python": "^6.2.1",
     "@codemirror/lang-yaml": "^6.1.3",
+    "@codemirror/language-data": "^6.5.2",
     "@codemirror/theme-one-dark": "^6.1.3",
     "@replit/codemirror-indentation-markers": "^6.5.3",
     "claerbout": "https://github.com/tayweid/claerbout/archive/refs/tags/v0.2.11.tar.gz",

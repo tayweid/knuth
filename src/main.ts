@@ -20,7 +20,8 @@ import {
 } from './kernel/kernel.ts';
 import { LazyKernel } from './kernel/lazy-kernel.ts';
 import { writeContract, type PathIO } from './contract.ts';
-import { DocumentView, plainLanguageFor } from './document-view.ts';
+import { DocumentView } from './document-view.ts';
+import { plainGrammarFor } from './plain-file.ts';
 import { delimiterFor } from './format/csv.ts';
 import { serializeDocument } from './format/percent.ts';
 import { DEFAULT_DOC_NAME, FileManager, basename, dirname } from './file-manager.ts';
@@ -1176,7 +1177,7 @@ fileManager = new FileManager({
     // A non-.py file is a plain text file: pin it to the source editor
     // (the cell workbench is for Python cell documents).
     const name = fileManager?.name ?? DEFAULT_DOC_NAME;
-    docView.setPlain(!/\.py$/i.test(name), plainLanguageFor(name));
+    docView.setPlain(!/\.py$/i.test(name), plainGrammarFor(name));
     // A .csv/.tsv opens as a grid of cells, with the source editor a
     // toggle away.
     docView.setGrid(delimiterFor(name));

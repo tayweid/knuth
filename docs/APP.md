@@ -50,6 +50,12 @@ DECIDED: **`.py` is registered as an alternate handler, never the default.**
 The app appears in Open With; the user promotes it in Get Info if they want.
 Taking the association from VS Code on install would be the wrong first
 impression.
+The same goes for every other kind of code and text (2026-10-16; DESIGN.md,
+"Other files"): one "Source code" document type claims src/plain-file.ts's
+extensions, each becoming the system's own type where it has one (`.c` is
+`public.c-source`). `.ts` is the system's MPEG-2 video and stays so whatever
+an app declares (an imported `com.microsoft.typescript` loses to it, tried),
+so Knuth is offered for those videos too — harmless at Alternate rank.
 
 DECIDED: **File I/O moves to the engine.** The page no longer holds browser
 file handles when it has a path: open, save, rename, change-polling and the

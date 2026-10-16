@@ -112,13 +112,24 @@ and makes pyrmd the computation half.
 
 ## Other files: text, and delimited grids
 
-- Any text file opens (the manifest's `file_handlers` name the set); a
+- Any text file opens (`src/plain-file.ts` names the set, which the
+  manifest's `file_handlers` and the Mac app's document types repeat); a
   non-`.py` file is pinned to the plain source editor, never the cell
   workbench, even when its text happens to contain `# %%` lines. Files
   the editor has a grammar for get highlighting, fold arrows, and indent
-  guides: YAML, and markdown (`.md`, `.qmd`, `.rmd`) read the Quarto way,
-  a YAML front matter over prose with `{python}`/`{yaml}` fences
-  highlighted in their own language. The rest are numbered, wrapped text.
+  guides: markdown (`.md`, `.qmd`, `.rmd`) read the Quarto way, a YAML
+  front matter over prose with `{python}`/`{yaml}` fences highlighted in
+  their own language; YAML; and everything in CodeMirror's catalog
+  (`@codemirror/language-data`: Rust, Go, C, JavaScript, TypeScript, R,
+  Julia, shell, SQL, … about 140), each grammar a chunk of its own,
+  fetched the first time a file needs it. A plain file is indented the
+  way it already is (tabs, four spaces or two). The rest are numbered,
+  wrapped text.
+- DECIDED (2026-10-16): **Knuth is an editor for any code, the way
+  Sublime is.** The Mac app claims every name on that list (APP.md's
+  alternate-handler rule holds: it appears in Open With and is made the
+  default only by the user, in Finder's Get Info › Open with › Change
+  All…).
 - DECIDED (2026-09-08): a `.csv`/`.tsv` opens as a **grid** of its cells,
   each editable in place, with the source editor a toggle away (the same
   ⌘⇧E / corner pill that flips `.py` files between cells and source).
