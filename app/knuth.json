@@ -65,5 +65,19 @@
       ]
     },
     { "name": "Text file", "role": "Editor", "rank": "Alternate", "contentTypes": ["public.plain-text"] }
-  ]
+  ],
+  "defaultFor": {
+    "name": "code",
+    "//": "Knuth › Make Knuth the Default Editor… (shell 0.2.14): \"Source code\" above less the prose and data other apps keep on Taylor's Mac (txt text md markdown qmd rmd rst org adoc log typ: Plass and TextEdit; html htm svg xml: the browsers). csv and tsv are Knuth's, its grid (Taylor, 2026-10-16). .ts is also the system's MPEG-2 video, so Knuth takes that type too. macOS 26.4+ confirms each type it changes in a prompt of its own; only those another app opens are changed.",
+    "extensions": [
+      "tex", "sty", "cls", "bib", "diff", "patch", "json", "jsonl", "jsonc", "yaml", "yml",
+      "toml", "ini", "cfg", "conf", "properties", "env", "csv", "tsv", "sql", "graphql", "proto", "css",
+      "scss", "sass", "less", "js", "mjs", "cjs", "jsx", "ts", "tsx", "vue", "svelte", "php",
+      "sh", "bash", "zsh", "fish", "ps1", "bat", "cmake", "gradle", "tf", "hcl", "pyi", "r",
+      "jl", "m", "do", "ado", "sas", "stan", "f90", "c", "h", "cc", "cpp", "cxx", "hpp", "hh",
+      "mm", "cs", "java", "kt", "kts", "scala", "groovy", "swift", "go", "rs", "zig", "nim",
+      "dart", "rb", "lua", "pl", "pm", "hs", "ml", "mli", "clj", "lisp", "el", "scm", "erl",
+      "ex", "exs"
+    ]
+  }
 }

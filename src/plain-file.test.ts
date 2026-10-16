@@ -56,4 +56,8 @@ assert.equal(source.rank, 'Alternate', 'Knuth never takes a type on install (APP
 assert.equal(source.contentTypes, undefined, 'claimed by extension: a content-type list would hide these');
 assert.deepEqual(source.extensions.map((ext: string) => `.${ext}`), TEXT_EXTENSIONS);
 
+// The app menu's Make Knuth the Default Editor… (shell 0.2.14) covers
+// names Knuth claims, never one it does not.
+for (const ext of config.defaultFor.extensions) assert.ok(listed.has(`.${ext}`), ext);
+
 console.log('plain-file: ok');
