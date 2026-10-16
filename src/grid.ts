@@ -10,6 +10,10 @@
 // down (past the last row: appends one), Tab commits and moves right,
 // Escape reverts, Backspace/Delete clears — and on a row that is already
 // entirely empty, removes it.
+//
+// Read-only, it is a viewer without the pen: an Excel workbook's sheet,
+// which Knuth never writes (python/knuth/workbook.py). The arrows and Tab
+// still move; nothing edits. Its sheets are tabs under the table.
 
 import { type CsvRow, emptyRow, rowValues, setValue, splitRows } from './format/csv.ts';
 
@@ -29,6 +33,14 @@ export class GridHistory {
   clear() { this.undo = []; this.redo = []; }
 }
 
+/** A workbook's sheets: their names in order, the one shown, and what
+ *  picking another does. */
+export interface GridSheets {
+  names: string[];
+  current: string;
+  pick(name: string): void;
+}
+
 export interface GridOptions {
   delimiter: string;
   /** The file's physical lines. The grid edits this array in place. */
@@ -36,6 +48,10 @@ export interface GridOptions {
   history?: GridHistory;
   /** The lines changed (a cell committed, a row added or removed). */
   onChange(lines: string[]): void;
+  /** Shown, never edited. */
+  readOnly?: boolean;
+  /** Tabs under the table, when there is more than one sheet. */
+  sheets?: GridSheets;
 }
 
 export class GridView {
@@ -67,10 +83,16 @@ export class GridView {
     this.pager.setAttribute('aria-label', 'CSV pages');
     this.table.append(this.tbody);
     this.root.append(this.pager, this.table);
+    if (opts.readOnly) this.table.classList.add('read-only');
+    if (opts.sheets && opts.sheets.names.length > 1) {
+      const room = document.createElement('div');
+      room.className = 'grid-room';
+      this.root.append(this.sheetTabs(opts.sheets), room);
+    }
     this.renderPage();
     this.root.addEventListener('keydown', (e) => {
       const key = e.key.toLowerCase();
-      if (!(e.metaKey || e.ctrlKey) || e.altKey || (key !== 'z' && key !== 'y')) return;
+      if (this.opts.readOnly || !(e.metaKey || e.ctrlKey) || e.altKey || (key !== 'z' && key !== 'y')) return;
       e.preventDefault();
       e.stopPropagation();
       this.commit();
@@ -80,7 +102,7 @@ export class GridView {
     this.table.addEventListener('mousedown', (e) => this.onMouseDown(e));
     this.table.addEventListener('dblclick', (e) => {
       const td = this.cellOf(e.target);
-      if (td && !this.editing) this.startEdit(td);
+      if (td && !this.editing && !this.opts.readOnly) this.startEdit(td);
     });
     this.table.addEventListener('keydown', (e) => this.onKeyDown(e));
     this.table.addEventListener('focusout', (e) => {
@@ -127,6 +149,21 @@ export class GridView {
       label,
       button('Next', this.pageStart + PAGE_SIZE, end === this.rows.length),
     );
+  }
+
+  private sheetTabs(sheets: GridSheets): HTMLElement {
+    const nav = document.createElement('nav');
+    nav.className = 'grid-sheets';
+    nav.setAttribute('aria-label', 'Sheets');
+    for (const name of sheets.names) {
+      const tab = document.createElement('button');
+      tab.type = 'button';
+      tab.textContent = name;
+      if (name === sheets.current) tab.setAttribute('aria-current', 'true');
+      else tab.addEventListener('click', () => sheets.pick(name));
+      nav.append(tab);
+    }
+    return nav;
   }
 
   private buildRow(index: number, row: CsvRow): HTMLTableRowElement {
@@ -205,11 +242,13 @@ export class GridView {
         return;
       case 'Enter':
       case 'F2':
+        if (this.opts.readOnly) return;
         e.preventDefault();
         this.startEdit(td);
         return;
       case 'Backspace':
       case 'Delete':
+        if (this.opts.readOnly) return;
         e.preventDefault();
         if (td.textContent !== '') this.write(td, '');
         else if (this.rowIsEmpty(r)) this.removeRow(r, c);
@@ -218,7 +257,7 @@ export class GridView {
         break;
     }
     // A printable key starts typing into an emptied cell, as in a sheet.
-    if (e.key.length === 1 && !e.metaKey && !e.ctrlKey && !e.altKey) {
+    if (!this.opts.readOnly && e.key.length === 1 && !e.metaKey && !e.ctrlKey && !e.altKey) {
       this.startEdit(td, '');
     }
   }

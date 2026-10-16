@@ -2609,6 +2609,46 @@ body[data-view='grid'] #doc {
 }
 .grid-pager button:disabled { opacity: 0.4; cursor: default; }
 
+/* A workbook's sheets: tabs under the table, as a spreadsheet has them —
+   right under the last row of a short sheet, and held at the foot of the
+   scroller while a long one scrolls. The room the grid leaves under its
+   table goes under the tabs instead (a spacer, not a margin: a sticky box
+   can ride over a sibling but never into its own margin). */
+.grid:has(+ .grid-sheets) { margin-bottom: 0; }
+.grid-sheets {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  position: sticky;
+  bottom: 0;
+  left: 0;
+  z-index: 4;
+  width: fit-content;
+  max-width: 100%;
+  box-sizing: border-box;
+  padding: 8px;
+  background: #282c34;
+  font: 12px var(--sans);
+}
+.grid-room { height: 40vh; }
+.grid-sheets button {
+  color: #abb2bf;
+  background: #21252b;
+  border: 1px solid #444953;
+  border-radius: 4px;
+  padding: 4px 10px;
+  cursor: pointer;
+}
+.grid-sheets button[aria-current='true'] {
+  color: #dcdfe4;
+  background: #2c313a;
+  border-color: #61afef;
+  cursor: default;
+}
+
+/* Read-only (a workbook's sheet): a cell is chosen, never typed into. */
+.grid.read-only td { cursor: default; }
+
 .grid-scroll {
   height: 100%;
   overflow: auto;

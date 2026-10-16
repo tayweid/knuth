@@ -17,6 +17,7 @@ import type {
   RenamedResult,
   SavedResult,
   StatResult,
+  WorkbookSheet,
 } from './kernel/kernel.ts';
 import { ARTIFACT_MANIFEST, isSafeFigureName, manifestText, parseOwnedFigureNames } from './artifacts.ts';
 import { findHeader, spliceHeader } from './header.ts';
@@ -46,8 +47,9 @@ export interface FileHooks {
   /** Only the preamble changed (a header the engine grew): update it
    *  without rebuilding the cells, which may be running. */
   setPreamble?(lines: string[]): void;
-  /** Documents by path, answered by the engine (null: no engine). */
-  openPath?(path: string): Promise<DocumentResult | null>;
+  /** Documents by path, answered by the engine (null: no engine).
+   *  `sheet` names an Excel workbook's sheet. */
+  openPath?(path: string, sheet?: string): Promise<DocumentResult | null>;
   savePath?(path: string, text: string): Promise<SavedResult | null>;
   statPath?(path: string): Promise<StatResult | null>;
   renamePath?(path: string, name: string): Promise<RenamedResult | null>;
@@ -60,6 +62,16 @@ export interface FileHooks {
    *  as, rename): the session's environment is per document, so the
    *  caller restarts the kernel for the new path. */
   onPathChanged?(path: string | null): void;
+  /** Show the document again as its name and `workbook` now say — a
+   *  workbook's other sheet, a sheet saved as a CSV — in the same
+   *  session. */
+  showDoc?(doc: KnuthDocument): void;
+}
+
+/** An Excel workbook, by its name: opened by the engine alone, one sheet
+ *  at a time, and never written (python/knuth/workbook.py). */
+export function isWorkbook(name: string): boolean {
+  return /\.xls[xm]$/i.test(name);
 }
 
 /** The folder part of an absolute path, either separator. */
@@ -225,6 +237,11 @@ export class FileManager {
   root: string | null = null;
   name = DEFAULT_DOC_NAME;
   dirty = false;
+  /** An Excel workbook's sheet is on screen: the text is the engine's
+   *  reading of that sheet as CSV, under the workbook's own path. It is
+   *  never dirty and never written; ⌘S writes the sheet as a CSV
+   *  elsewhere, which then becomes the document (saveSheet). */
+  workbook: WorkbookSheet | null = null;
   /** Whether edits reach the disk by themselves (scheduleFlush, 1.2 s
    *  after each, and when the window is hidden). Off, only ⌘S, a close
    *  and a rewind's save write, and the document stays dirty meanwhile:
@@ -318,10 +335,11 @@ export class FileManager {
     const stat = await this.hooks.statPath(this.path);
     if (!stat || stat.error || stat.modified == null) return; // gone, or no engine
     if (stat.modified === this.diskModified) return;
-    const fresh = await this.hooks.openPath?.(this.path);
+    const fresh = await this.hooks.openPath?.(this.path, this.workbook?.sheet);
     if (!fresh || fresh.error || typeof fresh.text !== 'string') return;
     if (this.dirty || this.held) return; // typed meanwhile: the autosave wins; a rewind: its reload
     this.diskModified = fresh.modified ?? stat.modified;
+    if (this.workbook && fresh.workbook) this.workbook = fresh.workbook;
     if (fresh.text === serializeDocument(this.hooks.getDoc())) return;
     this.hooks.onDiskChange?.(parseDocument(fresh.text));
     this.hooks.message(`${this.name} changed on disk — reloaded`);
@@ -337,6 +355,9 @@ export class FileManager {
    *  and a session stash (so reload restores the document alongside the
    *  resumed kernel session). */
   noteChange() {
+    // Nothing on a workbook's sheet is an edit (the grid is read-only):
+    // a workbook is never dirty, so never written.
+    if (this.workbook) return;
     this.changes += 1;
     if (!this.dirty) {
       this.dirty = true;
@@ -522,7 +543,7 @@ export class FileManager {
       return 'it has no file';
     }
     if (this.flushing) await this.flushing;
-    const fresh = await this.hooks.openPath(this.path);
+    const fresh = await this.hooks.openPath(this.path, this.workbook?.sheet);
     if (!fresh || fresh.error || typeof fresh.text !== 'string') {
       this.release();
       return fresh?.error ?? 'the engine is not running';
@@ -530,6 +551,7 @@ export class FileManager {
     clearTimeout(this.saveTimer);
     this.saveTimer = 0;
     this.diskModified = fresh.modified ?? 0;
+    if (this.workbook && fresh.workbook) this.workbook = fresh.workbook;
     this.dirty = false;
     this.release();
     if (fresh.text !== serializeDocument(this.hooks.getDoc())) this.hooks.onDiskChange?.(parseDocument(fresh.text));
@@ -562,6 +584,7 @@ export class FileManager {
       path: this.path,
       root: this.root,
       modified: this.diskModified,
+      workbook: this.workbook,
     };
     let figures = this.hooks.getFigures?.();
     if (figures) {
@@ -600,11 +623,14 @@ export class FileManager {
         path?: string | null;
         root?: string | null;
         modified?: number;
+        workbook?: WorkbookSheet | null;
       };
-      // Name first: setDoc reads it to decide plain-file mode.
+      // Name first: setDoc reads it to decide plain-file mode (and the
+      // workbook, whether the grid is read-only).
       this.name = snap.name;
       this.path = typeof snap.path === 'string' ? snap.path : null;
       this.root = typeof snap.root === 'string' ? snap.root : null;
+      this.workbook = this.path && snap.workbook && Array.isArray(snap.workbook.sheets) ? snap.workbook : null;
       this.readAutosave(this.path);
       this.diskModified = typeof snap.modified === 'number' ? snap.modified : 0;
       this.hooks.setDoc(parseDocument(snap.text));
@@ -780,6 +806,7 @@ export class FileManager {
     this.dir = null;
     this.root = dirname(reply.path);
     this.name = reply.name ?? basename(reply.path);
+    this.workbook = reply.workbook ?? null;
     if (reply.unsaved) {
       // A converted notebook: adopt the sibling .py path only if nothing is
       // there yet — autosave would otherwise write over someone's file.
@@ -811,7 +838,7 @@ export class FileManager {
     this.saveFailedNotified = false;
     this.writeFailure = null;
     this.hooks.onState();
-    this.hooks.message(`Opened ${this.name}`);
+    this.hooks.message(this.workbook ? this.sheetNote(`Opened ${this.name}`) : `Opened ${this.name}`);
     this.addRecentPath(reply.path, this.name);
     this.stash();
     this.hooks.onOpened?.();
@@ -834,6 +861,7 @@ export class FileManager {
     this.path = saved.path ?? path;
     this.root = dirname(this.path);
     this.name = basename(this.path);
+    this.workbook = null; // what was written is the document now
     if (this.autosave) this.readAutosave(this.path);
     else this.rememberAutosave(this.path);
     this.diskModified = saved.modified ?? 0;
@@ -852,6 +880,54 @@ export class FileManager {
     this.hooks.onOpened?.();
     this.hooks.onPathChanged?.(this.path);
     return true;
+  }
+
+  /** A workbook's other sheet, read afresh by the engine and shown in the
+   *  same session. */
+  async showSheet(sheet: string) {
+    const path = this.path;
+    if (!this.workbook || !path || !this.hooks.openPath) return;
+    const reply = await this.hooks.openPath(path, sheet);
+    if (this.path !== path || !this.workbook) return; // another document since
+    if (!reply || reply.error || typeof reply.text !== 'string' || !reply.workbook) {
+      this.hooks.message(`Could not open ${sheet}: ${reply?.error ?? 'the engine is not running'}`);
+      return;
+    }
+    this.workbook = reply.workbook;
+    this.diskModified = reply.modified ?? 0;
+    this.hooks.showDoc?.(parseDocument(reply.text));
+    if (this.workbook.truncated) this.hooks.message(this.sheetNote(this.workbook.sheet));
+    this.stash();
+  }
+
+  /** What opening a workbook's sheet says: that it is read-only and what
+   *  ⌘S does, or that the sheet was cut short. */
+  private sheetNote(lead: string): string {
+    const book = this.workbook!;
+    if (book.truncated) {
+      return `${lead} — only its first ${book.rows.toLocaleString()} rows fit; read the rest with pandas.read_excel`;
+    }
+    return `${lead}, read-only — ⌘S saves ${book.sheets.length > 1 ? 'this sheet' : 'it'} as CSV`;
+  }
+
+  /** ⌘S on a workbook: the sheet on screen written as a CSV where the save
+   *  panel says (by default beside the workbook, named after it), and that
+   *  CSV is the document from then on — a grid with a pen. The workbook is
+   *  never written. Without the shell's panel, a download. */
+  private async saveSheet() {
+    const book = this.workbook!;
+    if (book.truncated) {
+      this.hooks.message(`${book.sheet} is too large to save from here — in a cell, pandas.read_excel(…).to_csv(…) can`);
+      return;
+    }
+    const stem = this.name.replace(/\.[^.]+$/, '');
+    const name = book.sheets.length > 1 ? `${stem} - ${book.sheet}.csv` : `${stem}.csv`;
+    if (!this.hooks.pickSavePath) {
+      this.download(name);
+      return;
+    }
+    const path = await this.hooks.pickSavePath(name);
+    if (path && (await this.saveAs(path))) this.hooks.showDoc?.(this.hooks.getDoc());
   }
 
   /** The kernel writes values.json and figs/ into its own folder. */
@@ -898,6 +974,7 @@ export class FileManager {
     this.handle = null;
     this.pendingHandle = null;
     this.path = null; // root stays: the session keeps its folder
+    this.workbook = null;
     this.name = DEFAULT_DOC_NAME;
     this.dirty = false;
     this.hooks.setDoc(parseDocument(NEW_DOC));
@@ -947,6 +1024,7 @@ export class FileManager {
       return;
     }
     this.name = file.name.replace(/\.ipynb$/i, '.py');
+    this.workbook = null;
     this.hooks.setDoc(parseDocument(result.text));
     this.handle = null;
     this.path = null;
@@ -1004,6 +1082,7 @@ export class FileManager {
     const file = await handle.getFile();
     this.path = null;
     this.name = file.name;
+    this.workbook = null;
     this.hooks.setDoc(parseDocument(await file.text()));
     this.handle = handle;
     this.diskModified = file.lastModified;
@@ -1079,6 +1158,10 @@ export class FileManager {
   }
 
   async save() {
+    if (this.workbook) {
+      await this.saveSheet();
+      return;
+    }
     if (this.path) {
       await this.flushPath();
       return;
@@ -1112,6 +1195,10 @@ export class FileManager {
       newName += this.name.match(/\.[^./]+$/)?.[0] ?? '.py';
     }
     if (newName === this.name) return true;
+    if (this.workbook && !isWorkbook(newName)) {
+      this.hooks.message(`${this.name} stays a workbook — ⌘S saves its sheet as CSV`);
+      return false;
+    }
     if (this.path) {
       const renamed = await this.hooks.renamePath?.(this.path, newName);
       if (!renamed || renamed.error || typeof renamed.path !== 'string') {
@@ -1288,6 +1375,7 @@ export class FileManager {
         return;
       }
       this.name = file.name;
+      this.workbook = null;
       this.hooks.setDoc(parseDocument(await file.text()));
       this.handle = null;
       this.path = null;
@@ -1297,12 +1385,12 @@ export class FileManager {
     input.click();
   }
 
-  private download() {
-    const type = /\.py$/i.test(this.name) ? 'text/x-python' : 'text/plain';
+  private download(name = this.name) {
+    const type = /\.py$/i.test(name) ? 'text/x-python' : 'text/plain';
     const blob = new Blob([serializeDocument(this.hooks.getDoc())], { type });
     const a = document.createElement('a');
     a.href = URL.createObjectURL(blob);
-    a.download = this.name;
+    a.download = name;
     a.click();
     URL.revokeObjectURL(a.href);
   }

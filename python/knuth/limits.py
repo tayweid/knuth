@@ -34,3 +34,6 @@ MAX_TABLE_RESPONSE_BYTES = 8 * 1024 * 1024
 # and how long a path it will consider at all.
 MAX_DOCUMENT_BYTES = 8 * 1024 * 1024
 MAX_PATH_CHARS = 4096
+# An Excel workbook is a zip read one sheet at a time (workbook.py), and the
+# sheet's text is held to MAX_DOCUMENT_BYTES; this bounds the file itself.
+MAX_WORKBOOK_BYTES = 32 * 1024 * 1024

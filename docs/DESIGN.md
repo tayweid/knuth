@@ -149,6 +149,23 @@ and makes pyrmd the computation half.
   changed lines for cell edits and row additions/deletions. An active
   cell edit is one undo step. History survives paging and view toggles;
   raw source edits, opening another document, or reloading clear it.
+- DECIDED (2026-10-16): an **Excel workbook** (`.xlsx`, `.xlsm`) opens
+  as a **read-only grid**, one sheet at a time, its other sheets as tabs
+  under the table. The engine reads it (`python/knuth/workbook.py`,
+  openpyxl, an engine requirement) and hands the page the sheet as CSV
+  text under the workbook's own path, so it is the same grid a `.csv`
+  opens in, without the pen: nothing types, and there is no source view
+  (that text is Knuth's reading of the workbook, not a source). Knuth
+  never writes a workbook — the page never marks one dirty, and the
+  engine refuses to save over one. ⌘S (File › Save as CSV…) writes the
+  sheet on screen as a CSV where the save panel says, and that CSV is
+  the document from then on. A cell shows what Excel last computed (a
+  formula's cached result), the value rather than its number format
+  (0.5, not 50%), dates as ISO, and TRUE/FALSE; hidden sheets are left
+  out. A sheet larger than 8 MB as text arrives cut short and says so,
+  and is not saved from the grid. Excel files go through the engine
+  alone: Python in the window (Pyodide) cannot open one, since the shell
+  reads files as text. The old binary `.xls` is not read.
 
 ## File format: `.py`, percent format, outputs inside
 

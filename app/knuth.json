@@ -17,7 +17,7 @@
     "marker": "server.py",
     "probe": "knuth",
     "python": "3.13",
-    "requirements": ["websockets>=14.0"]
+    "requirements": ["websockets>=14.0", "openpyxl>=3.1"]
   },
   "window": {
     "width": 1100,
@@ -46,6 +46,7 @@
   "documentTypes": [
     { "name": "Python cell document", "role": "Editor", "rank": "Alternate", "contentTypes": ["public.python-script"], "extensions": ["py"] },
     { "name": "Jupyter notebook", "role": "Viewer", "rank": "Alternate", "extensions": ["ipynb"] },
+    { "name": "Excel workbook", "role": "Viewer", "rank": "Alternate", "extensions": ["xlsx", "xlsm"] },
     {
       "name": "Source code",
       "role": "Editor",

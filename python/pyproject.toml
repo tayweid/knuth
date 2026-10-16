@@ -36,6 +36,9 @@ dependencies = [
     # (SAME_ORIGIN.md). On 13.x the legacy server hands process_request a
     # Headers object instead and every page request 500s.
     "websockets>=14.0",
+    # Excel workbooks open as a read-only grid (workbook.py). Pure Python,
+    # with et-xmlfile its one dependency.
+    "openpyxl>=3.1",
 ]
 
 [project.urls]

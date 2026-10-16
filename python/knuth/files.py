@@ -14,9 +14,9 @@ and `id`): either the data, or `{"error": <user-safe sentence>}`.
 import os
 from pathlib import Path
 
-from . import env
+from . import env, workbook
 from .ipynb import notebook_to_document
-from .limits import MAX_DOCUMENT_BYTES, MAX_PATH_CHARS
+from .limits import MAX_DOCUMENT_BYTES, MAX_PATH_CHARS, MAX_WORKBOOK_BYTES
 from .percent import serialize_document
 from .contract import atomic_write
 
@@ -40,7 +40,7 @@ def _modified(path):
     return int(path.stat().st_mtime * 1000)
 
 
-def open_document(value):
+def open_document(value, sheet=None):
     path, error = check_path(value)
     if error:
         return {"error": error}
@@ -52,6 +52,23 @@ def open_document(value):
         return {"error": f"{path.name} could not be read: {exc.strerror or exc}"}
     if not path.is_file():
         return {"error": f"{path.name} is not a file"}
+    if workbook.is_workbook(path):
+        # Read, never written: one sheet as CSV text under the workbook's
+        # own path, for the page's read-only grid (workbook.py). `sheet`
+        # names which; the reply lists the rest.
+        if size > MAX_WORKBOOK_BYTES:
+            return {"error": f"{path.name} is larger than {MAX_WORKBOOK_BYTES // (1024 * 1024)} MB"}
+        try:
+            text, book = workbook.read_sheet(path, sheet)
+        except ValueError as exc:
+            return {"error": str(exc)}
+        return {
+            "path": str(path),
+            "name": path.name,
+            "text": text,
+            "modified": _modified(path),
+            "workbook": book,
+        }
     if size > MAX_DOCUMENT_BYTES:
         return {"error": f"{path.name} is larger than {MAX_DOCUMENT_BYTES // (1024 * 1024)} MB"}
     try:
@@ -95,10 +112,14 @@ def save_document(value, text):
         return {"error": "text must be a string"}
     if path.exists() and not path.is_file():
         return {"error": f"{path.name} is not a file"}
+    if workbook.is_workbook(path):
+        # Whatever the page holds, it is never written over a workbook.
+        return {"error": f"{path.name} is an Excel workbook, which Knuth only reads"}
     header = None
-    if not path.exists():
+    if not path.exists() and path.suffix.lower() == ".py":
         # A new document gets its environment header (ENVIRONMENT.md). The
         # reply carries the lines so the page splices them into its copy.
+        # Only a Python one: a CSV or a README saved as new stays as typed.
         text, header = env.with_header(text)
     try:
         atomic_write(path, text)

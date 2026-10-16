@@ -53,6 +53,7 @@ export type {
   StatResult,
   StreamWhich,
   TableWindow,
+  WorkbookSheet,
 } from './protocol.ts';
 
 export type KernelStatus =
@@ -107,8 +108,8 @@ export interface Kernel {
   /** .ipynb JSON in, percent-format document text out (null: no engine). */
   convert(text: string): Promise<ConvertResult | null>;
   /** Documents by absolute path, read and written by the engine (APP.md).
-   *  null: no engine connection. */
-  openPath(path: string): Promise<DocumentResult | null>;
+   *  null: no engine connection. `sheet` names an Excel workbook's sheet. */
+  openPath(path: string, sheet?: string): Promise<DocumentResult | null>;
   savePath(path: string, text: string): Promise<SavedResult | null>;
   statPath(path: string): Promise<StatResult | null>;
   renamePath(path: string, name: string): Promise<RenamedResult | null>;
@@ -647,12 +648,12 @@ export class SidecarKernel implements Kernel {
     });
   }
 
-  async openPath(path: string): Promise<DocumentResult | null> {
+  async openPath(path: string, sheet?: string): Promise<DocumentResult | null> {
     if (!this.connectedReady) return null;
     const id = this.nextId++;
     return new Promise((resolve) => {
       this.documentWaiters.set(id, resolve);
-      this.send({ type: 'open', id, path });
+      this.send({ type: 'open', id, path, ...(sheet === undefined ? {} : { sheet }) });
     });
   }
 

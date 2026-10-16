@@ -1,4 +1,4 @@
-import{c as e,i as t}from"./index-CE7xlVzi.js";var n=/^\s*#\s*[%!]\s*pip\s+install\s+(.+?)\s*$/;function r(e){let t=[];for(let r of e.split(`
+import{c as e,i as t}from"./index-DbryATWz.js";var n=/^\s*#\s*[%!]\s*pip\s+install\s+(.+?)\s*$/;function r(e){let t=[];for(let r of e.split(`
 `)){let e=n.exec(r);if(e)for(let n of e[1].split(/\s+/))n&&!n.startsWith(`-`)&&!t.includes(n)&&t.push(n)}return t}var i=`from .session import Session
 
 __all__ = ["Session"]
@@ -1061,6 +1061,9 @@ MAX_TABLE_RESPONSE_BYTES = 8 * 1024 * 1024
 # and how long a path it will consider at all.
 MAX_DOCUMENT_BYTES = 8 * 1024 * 1024
 MAX_PATH_CHARS = 4096
+# An Excel workbook is a zip read one sheet at a time (workbook.py), and the
+# sheet's text is held to MAX_DOCUMENT_BYTES; this bounds the file itself.
+MAX_WORKBOOK_BYTES = 32 * 1024 * 1024
 `,d=`"""Percent-format (.py) document model — Python port of src/format/percent.ts,
 same semantics, kept honest by round-tripping the same corpus in tests.
 

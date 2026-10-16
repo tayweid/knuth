@@ -56,6 +56,8 @@ extensions, each becoming the system's own type where it has one (`.c` is
 `public.c-source`). `.ts` is the system's MPEG-2 video and stays so whatever
 an app declares (an imported `com.microsoft.typescript` loses to it, tried),
 so Knuth is offered for those videos too — harmless at Alternate rank.
+Excel workbooks (`.xlsx`, `.xlsm`) are an "Excel workbook" type with the
+Viewer role, as notebooks are: Knuth shows one and never writes it.
 
 DECIDED: **File I/O moves to the engine.** The page no longer holds browser
 file handles when it has a path: open, save, rename, change-polling and the
@@ -543,9 +545,13 @@ rebuilds the cell that is running.
   Missing or unusable: the engine's default root, as before.
 - `restart{id, root?}` — a restart may move the session: opening a document
   in another folder is a new project.
-- `open{id, path}` → `document{id, path, name, text, modified}` or
+- `open{id, path, sheet?}` → `document{id, path, name, text, modified}` or
   `document{id, error}`. An `.ipynb` path converts (the one converter) and
-  comes back `unsaved: true` with a sibling `.py` path.
+  comes back `unsaved: true` with a sibling `.py` path. An `.xlsx`/`.xlsm`
+  path comes back as the CSV text of one sheet (`sheet` by name, else the
+  first visible one) under its own path, with `workbook{sheets, sheet,
+  rows, truncated}`; the page shows it read-only (DESIGN.md, "Other
+  files"), and `save` refuses a workbook's path.
 - `save{id, path, text}` → `saved{id, path, modified}` or `saved{id, error}`.
   Atomic: staged beside the destination, then replaced.
 - `stat{id, path}` → `stat{id, path, modified}` (`modified: null` when the

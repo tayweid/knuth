@@ -44,8 +44,20 @@ export interface ConvertResult {
   commented?: number;
 }
 
+/** One sheet of an Excel workbook, read-only (python/knuth/workbook.py):
+ *  the visible sheets in order, the one shown, the rows its text holds,
+ *  and whether the sheet had more than that. */
+export interface WorkbookSheet {
+  sheets: string[];
+  sheet: string;
+  rows: number;
+  truncated: boolean;
+}
+
 /** A document the engine read by path (APP.md). An .ipynb arrives
- *  converted and `unsaved`, under a sibling .py path it has not written. */
+ *  converted and `unsaved`, under a sibling .py path it has not written.
+ *  An .xlsx arrives as one sheet's CSV text under its own path, with
+ *  `workbook` saying which: the page shows it and never writes it. */
 export interface DocumentResult {
   path?: string;
   name?: string;
@@ -54,6 +66,7 @@ export interface DocumentResult {
   modified?: number | null;
   unsaved?: boolean;
   commented?: number;
+  workbook?: WorkbookSheet;
   error?: string;
 }
 
@@ -202,6 +215,11 @@ function isStringArray(value: unknown): value is string[] {
   return Array.isArray(value) && value.every((item) => typeof item === 'string');
 }
 
+function isWorkbookSheet(value: unknown): value is WorkbookSheet {
+  return isRecord(value) && isStringArray(value.sheets) && typeof value.sheet === 'string' &&
+    isRequestId(value.rows) && typeof value.truncated === 'boolean';
+}
+
 function isNamespaceVar(value: unknown): value is NamespaceVar {
   if (!isRecord(value)) return false;
   if (
@@ -289,7 +307,8 @@ export function parseServerEvent(value: unknown): ServerEvent | null {
         )) &&
         optionalString(event.error) &&
         (event.unsaved === undefined || typeof event.unsaved === 'boolean') &&
-        (event.commented === undefined || isRequestId(event.commented))
+        (event.commented === undefined || isRequestId(event.commented)) &&
+        (event.workbook === undefined || isWorkbookSheet(event.workbook))
         ? event as ServerEvent : null;
     case 'saved':
     case 'renamed':

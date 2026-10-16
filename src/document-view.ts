@@ -53,7 +53,7 @@ import {
 } from './format/percent.ts';
 import type { Kernel, NamespaceVar } from './kernel/kernel.ts';
 import { findHeader, headerPackages } from './header.ts';
-import { GridView, GridHistory } from './grid.ts';
+import { GridView, GridHistory, type GridSheets } from './grid.ts';
 import { icon } from './icons.ts';
 import { indentOf } from './plain-file.ts';
 import { clearSafeSvgImages, createSafeSvgImage } from './safe-svg.ts';
@@ -284,6 +284,9 @@ export class DocumentView {
   private plainIndent = '  ';
   /** A .csv/.tsv: its delimiter, and with it a grid view on offer. */
   private gridDelimiter: string | null = null;
+  /** An Excel workbook's sheet: the grid alone, read-only, with these
+   *  sheets as its tabs. */
+  private gridSheets: GridSheets | null = null;
   /** Whether this document offers the toggle between grid and source. */
   private gridOffered = false;
   /** Showing the grid rather than the source editor. */
@@ -516,10 +519,12 @@ export class DocumentView {
   }
 
   /** Offer the grid view for a delimited file (.csv/.tsv), given its
-   *  delimiter — null for a file with no grid to show. Set before
-   *  setDoc, like setPlain. */
-  setGrid(delimiter: string | null) {
+   *  delimiter — null for a file with no grid to show. With `sheets`,
+   *  the text is a workbook's sheet: shown only as its grid, read-only.
+   *  Set before setDoc, like setPlain. */
+  setGrid(delimiter: string | null, sheets: GridSheets | null = null) {
     this.gridDelimiter = delimiter;
+    this.gridSheets = sheets;
   }
 
   setDoc(doc: KnuthDocument) {
@@ -529,10 +534,12 @@ export class DocumentView {
     // raw source editor when it does not — or always, for a plain file.
     this.sourceMode = this.plainFile || doc.cells.length === 0;
     if (this.plainFile) this.plainIndent = indentOf(serializeDocument(doc));
-    // A delimited file opens as its grid, if the table can carry it.
-    this.gridOffered =
-      this.plainFile && this.gridDelimiter !== null;
-    this.gridMode = this.gridOffered;
+    // A delimited file opens as its grid, if the table can carry it. A
+    // workbook's sheet is only ever its grid: its text is Knuth's reading
+    // of the workbook, not a source to edit.
+    const grid = this.plainFile && this.gridDelimiter !== null;
+    this.gridOffered = grid && !this.gridSheets;
+    this.gridMode = grid;
     this.render();
     this.onDocument?.();
   }
@@ -633,6 +640,8 @@ export class DocumentView {
         history: this.gridHistory,
         delimiter: this.gridDelimiter ?? ',',
         lines,
+        readOnly: !!this.gridSheets,
+        sheets: this.gridSheets ?? undefined,
         onChange: (edited) => {
           const text =
             edited.length === 0 ? '' : edited.join('\n') + (this.doc.trailingNewline ? '\n' : '');

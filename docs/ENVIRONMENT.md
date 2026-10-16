@@ -237,9 +237,10 @@ header with no uv on the machine is reported and the run proceeds on the
 engine's Python, since the alternative is refusing to run a file that
 plain `python` would run.
 
-**New documents.** `files.save_document` to a path that does not exist,
-with text that has no header, prepends one and returns its lines in the
-`saved` reply. `knuth import` does the same for the `.py` it writes.
+**New documents.** `files.save_document` to a `.py` path that does not
+exist, with text that has no header, prepends one and returns its lines in
+the `saved` reply; any other file (a CSV, a README) is written as given.
+`knuth import` does the same for the `.py` it writes.
 
 ## Protocol (additive; version stays 2)
 

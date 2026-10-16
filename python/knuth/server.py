@@ -25,9 +25,10 @@ absolute directory the session's kernel runs in — the opened document's
 folder, when the page has a real path. Without one, the engine's own root
 (`--root`, else its cwd) applies, as before.
 
-Documents by path (files.py) are answered here, not by the kernel: `open`,
-`save`, `stat`, `rename`. `persist` goes to the kernel, which writes the
-folder contract into its cwd.
+Documents by path (files.py) are answered here, not by the kernel: `open`
+(with `sheet`, for an Excel workbook: workbook.py), `save`, `stat`,
+`rename`. `persist` goes to the kernel, which writes the folder contract
+into its cwd.
 
 Environments are per document (ENVIRONMENT.md): `document` on attach or
 restart, beside `root`, is the absolute path of the open `.py`. When it
@@ -291,6 +292,10 @@ def _validate_request(msg):
             return f"{kind} path must be a string of at most {MAX_PATH_CHARS} characters"
         if kind == "save" and not isinstance(msg.get("text"), str):
             return "save text must be a string"
+        if kind == "open" and "sheet" in msg and (
+            not isinstance(msg["sheet"], str) or len(msg["sheet"]) > MAX_NAME_CHARS
+        ):
+            return f"open sheet must be a string of at most {MAX_NAME_CHARS} characters"
         if kind == "rename" and not isinstance(msg.get("name"), str):
             return "rename name must be a string"
     elif kind in {"figure", "table"}:
@@ -311,7 +316,7 @@ def _file_response(msg):
     """Answer a document-by-path request from the engine itself."""
     kind = msg["type"]
     if kind == "open":
-        body = files.open_document(msg["path"])
+        body = files.open_document(msg["path"], msg.get("sheet"))
         reply = "document"
     elif kind == "save":
         body = files.save_document(msg["path"], msg["text"])

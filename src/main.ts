@@ -23,8 +23,8 @@ import { writeContract, type PathIO } from './contract.ts';
 import { DocumentView } from './document-view.ts';
 import { plainGrammarFor } from './plain-file.ts';
 import { delimiterFor } from './format/csv.ts';
-import { serializeDocument } from './format/percent.ts';
-import { DEFAULT_DOC_NAME, FileManager, basename, dirname } from './file-manager.ts';
+import { serializeDocument, type KnuthDocument } from './format/percent.ts';
+import { DEFAULT_DOC_NAME, FileManager, basename, dirname, isWorkbook } from './file-manager.ts';
 import { Session } from './session.ts';
 import { attachScrollRail } from './scroll-rail.ts';
 import { cellMarks } from './rail-marks.ts';
@@ -165,9 +165,13 @@ function paintRail() {
   const { view, cells, grid } = document.body.dataset;
   for (const id of CELL_TOOLS) rest(document.getElementById(id)!, view === 'source' || view === 'grid');
   const toggle = document.getElementById('view-toggle')!;
-  const alone = view === 'source' && cells !== 'true' && grid !== 'true';
+  // A workbook's sheet is a grid with no source to switch to.
+  const sheet = view === 'grid' && grid !== 'true';
+  const alone = sheet || (view === 'source' && cells !== 'true' && grid !== 'true');
   rest(toggle, alone);
-  const title = alone ? 'No cell view: this file has no # %% cells' : VIEW_TITLE;
+  const title = sheet
+    ? 'No source view: a workbook shows as its grid'
+    : alone ? 'No cell view: this file has no # %% cells' : VIEW_TITLE;
   if (toggle.title !== title) toggle.title = title;
 }
 new MutationObserver(paintRail).observe(document.body, {
@@ -243,7 +247,7 @@ menu.item(fileMenu, 'New window', () => void window.open(location.pathname, '_bl
 });
 menu.item(fileMenu, 'Open…', () => void fileManager.open(), { title: 'Open… (⌘O)', shortcut: '⌘O' });
 menu.item(fileMenu, 'Recent documents', () => {}, { title: 'Your documents', submenu: recentMenu });
-menu.item(fileMenu, 'Save', () => void fileManager.save(), { title: 'Save (⌘S)', shortcut: '⌘S' });
+const saveItem = menu.item(fileMenu, 'Save', () => void fileManager.save(), { title: 'Save (⌘S)', shortcut: '⌘S' });
 // Autosave, checked: the document written 1.2 s after each edit
 // (file-manager.ts). Off, for this document and remembered by its path,
 // only ⌘S and a close write, and the dot stays red until then (Taylor,
@@ -820,17 +824,32 @@ async function shellOpen(path: string): Promise<DocumentResult | null> {
   };
 }
 
+/** An Excel workbook opens through the engine, which alone reads one
+ *  (python/knuth/workbook.py; the shell reads text), waiting as a launch's
+ *  open does for an engine still connecting or building its environment.
+ *  `sheet` names which; the reply says which it is and lists the rest. */
+async function openWorkbook(path: string, sheet?: string): Promise<DocumentResult | null> {
+  for (let waited = 0; !kernel.isReady && (waited < 8000 || environmentSyncing); waited += 100) {
+    await new Promise((resolve) => setTimeout(resolve, 100));
+  }
+  return kernel.openPath(path, sheet);
+}
+
 // Documents by path: the engine's files.py, or the shell when Python runs
 // in the tab. One shape, two answerers.
 const files = filesViaShell
   ? {
-      open: shellOpen,
+      open: async (path: string): Promise<DocumentResult | null> =>
+        isWorkbook(path)
+          ? { error: "an Excel workbook opens with uv's Python (Knuth › Choose Python…), not Pyodide's" }
+          : shellOpen(path),
       save: (path: string, text: string) => askShell<SavedResult>({ type: 'write', path, text }),
       stat: (path: string) => askShell<StatResult>({ type: 'stat', path }),
       rename: (path: string, name: string) => askShell<RenamedResult>({ type: 'rename', path, name }),
     }
   : {
-      open: (path: string) => (opensViaShell ? shellOpen(path) : kernel.openPath(path)),
+      open: (path: string, sheet?: string) =>
+        isWorkbook(path) ? openWorkbook(path, sheet) : opensViaShell ? shellOpen(path) : kernel.openPath(path),
       save: (path: string, text: string) => kernel.savePath(path, text),
       stat: (path: string) => kernel.statPath(path),
       rename: (path: string, name: string) => kernel.renamePath(path, name),
@@ -1141,7 +1160,9 @@ function repaintName() {
   pod.classList.toggle('doc-unsaved', unsaved);
   $('doc-mark').title = homeless
     ? 'Not saved yet — ⌘S picks its folder'
-    : unsaved
+    : fileManager.workbook
+      ? 'Read-only — ⌘S saves the sheet as CSV'
+      : unsaved
       ? fileManager.autosave ? 'Unsaved changes' : 'Unsaved changes — autosave is off, ⌘S saves'
       : 'Saved';
   // The folder beside the name, in a sibling so the name's own text stays
@@ -1156,6 +1177,13 @@ function repaintName() {
   // Just the file name: the installed app's window prepends its own
   // app name, so anything more reads twice.
   document.title = fileManager.name;
+  // ⌘S on a workbook writes its sheet as a CSV (file-manager.ts, saveSheet).
+  const saveLabel = fileManager.workbook ? 'Save as CSV…' : 'Save';
+  const saveText = saveItem.querySelector('.tb-menu-label')!;
+  if (saveText.textContent !== saveLabel) {
+    saveText.textContent = saveLabel;
+    saveItem.title = `${saveLabel} (⌘S)`;
+  }
   reportUnsaved();
 }
 
@@ -1171,17 +1199,27 @@ function tilde(path: string): string {
 // point is rejoining the resumed session with its document.
 let restoring = true;
 
+/** The document on screen, in the view its name calls for. */
+function showDocument(doc: KnuthDocument) {
+  // A non-.py file is a plain text file: pin it to the source editor
+  // (the cell workbench is for Python cell documents).
+  const name = fileManager?.name ?? DEFAULT_DOC_NAME;
+  docView.setPlain(!/\.py$/i.test(name), plainGrammarFor(name));
+  // A .csv/.tsv opens as a grid of cells, with the source editor a
+  // toggle away; a workbook's sheet as a read-only grid, its sheets as
+  // tabs (the engine's CSV reading of the sheet on screen).
+  const book = fileManager?.workbook;
+  docView.setGrid(
+    book ? ',' : delimiterFor(name),
+    book ? { names: book.sheets, current: book.sheet, pick: (sheet) => void fileManager.showSheet(sheet) } : null,
+  );
+  docView.setDoc(doc);
+}
+
 fileManager = new FileManager({
   getDoc: () => docView.doc,
   setDoc: (doc) => {
-    // A non-.py file is a plain text file: pin it to the source editor
-    // (the cell workbench is for Python cell documents).
-    const name = fileManager?.name ?? DEFAULT_DOC_NAME;
-    docView.setPlain(!/\.py$/i.test(name), plainGrammarFor(name));
-    // A .csv/.tsv opens as a grid of cells, with the source editor a
-    // toggle away.
-    docView.setGrid(delimiterFor(name));
-    docView.setDoc(doc);
+    showDocument(doc);
     // A different document deserves a fresh session — otherwise the
     // previous document's variables haunt the explorer and values.json.
     // By path, the session also moves to the document's folder and into
@@ -1202,6 +1240,7 @@ fileManager = new FileManager({
   getFigures: () => docView.collectFigures(),
   setFigures: (figures) => docView.restoreFigures(figures),
   convert: convertWhenReady,
+  showDoc: showDocument,
   onSaveBlocked: () => {
     toast(`Allow saving to ${fileManager.name}?`, {
       label: 'Allow',
@@ -1215,7 +1254,7 @@ fileManager = new FileManager({
     // and the place: the view, the scroll and the focused cell (place.ts).
     const restore = keepPlace($('doc'), $('sheet'));
     const source = docView.isSource;
-    docView.setDoc(doc);
+    showDocument(doc);
     if (source && !docView.isSource) docView.setSource(true);
     if (fileManager.dir || fileManager.root) docView.hydrateAll();
     restore();

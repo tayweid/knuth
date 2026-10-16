@@ -88,8 +88,8 @@ export class LazyKernel implements Kernel {
     return (await (await this.real())?.convert(text)) ?? null;
   }
 
-  async openPath(path: string): Promise<DocumentResult | null> {
-    return (await (await this.real())?.openPath(path)) ?? null;
+  async openPath(path: string, sheet?: string): Promise<DocumentResult | null> {
+    return (await (await this.real())?.openPath(path, sheet)) ?? null;
   }
 
   async savePath(path: string, text: string): Promise<SavedResult | null> {
