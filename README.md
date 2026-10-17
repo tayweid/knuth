@@ -123,7 +123,7 @@ and rewrites the outputs and `values.json`. Scratch cells don't run.
 Click the pill at the top right to see everything the session holds.
 DataFrames open in a table you can scroll; figures open full size.
 
-![The Session card open beside the document: what the last run added, growth and ax, with the figure it drew, then the session's data and figures](docs/images/session.png)
+![The Session card open beside the document: one list of what the session holds, growth and ax marked + by the last run, then the figure it drew](docs/images/session.png)
 
 ## Packages
 
