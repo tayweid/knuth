@@ -1,157 +1,124 @@
 # Knuth
 
-> Part of the **Claerbout suite** with [Plass](https://github.com/tayweid/plass):
-> Plass owns the paper, Knuth owns the computation. The contract between
-> them is plain files in the project folder — `values.json` and
-> `figs/<name>.svg` — that a stock `typst compile` reads with neither app
-> in the loop.
+Knuth is a notebook for Python that saves plain `.py` files. You write in
+cells, run them against a live Python session, and see the results under
+each cell. The file stays a Python script anyone can run.
 
-Knuth is a computation workbench: a cell-document editor over a live
-Python session. Documents are plain `.py` files in the percent format
-(`# %%` cells), so they open as cell documents in VS Code, Spyder, and
-PyCharm, run under bare `python`, and diff cleanly in git — with outputs
-stored in the file as machine-managed comment blocks, so results change
-alongside code in the history.
+Try it in your browser: **<https://knuth.tayweid.io>**
 
-The app is served by the local Python engine on its own port, so the page
-and the kernel socket share one origin and no credential ever travels
-([SAME_ORIGIN.md](./docs/SAME_ORIGIN.md)). A read-only demo is hosted at
-`https://knuth.tayweid.io`.
+## Why
 
-The session is separate from the document, with panes looking into it
-(the RStudio architecture): a variable explorer shows the live namespace,
-and clicking a DataFrame opens a real windowed table view.
+Jupyter notebooks are JSON: they diff badly and can't be run with
+`python`. Plain scripts lose the cells, the outputs and the live session.
 
-Named things persist automatically: assign a scalar and it mirrors to
-`values.json`; assign a figure to a name and it lands in `figs/<name>.svg`.
-`knuth run file.py` is the reproducibility check — fresh session, program
-cells top to bottom, outputs rewritten as receipts, contract regenerated.
-The full build of a paper is one line:
+Knuth keeps the script. Cells are marked with `# %%`, which VS Code,
+Spyder and PyCharm already understand, and outputs are saved as comments,
+so git shows a changed result beside the code that changed it.
 
-```bash
-knuth run analysis.py && typst compile paper.typ
-```
+Knuth is the computing half of a pair; [Plass](https://github.com/tayweid/plass)
+is the writing half. Knuth puts the numbers and figures you name into the
+project folder, and the paper reads them from there.
 
-**Status: v2 public-release candidate.** The design is in
-[DESIGN.md](./docs/DESIGN.md), the build history in [PLAN.md](./docs/PLAN.md). The v1
-Tauri app (WYSIWYG markdown with executable cells) is retired at the
-`v1-tauri` tag in git history, its docs at that tag's root.
+## Install the Mac app
 
-## Install and launch
+Paste this into Terminal:
 
-### Knuth.app (macOS)
-
-The app is a native window around the same local engine (design in
-[APP.md](./docs/APP.md)). Paste this into Terminal (in Applications →
-Utilities):
-
-```bash
+```sh
 curl -fsSL https://knuth.tayweid.io/install | bash
 ```
 
-It downloads Knuth.app (about 3 MB) and puts it in Applications; it needs
-macOS 13 or later. The window is Electron's, which the app does not carry:
-it is shared with another Claerbout app (Plass, ManimLive) on the same
-version, taking no more disk, or else downloaded once (about 125 MB). The
-download button on knuth.tayweid.io gives the same app, which does this
-on its first launch. Run the same line again to
-update. Every deploy builds the app on a GitHub Mac from that deploy's site
-and publishes it beside the site, so the app and knuth.tayweid.io are
-always the same version.
+This puts Knuth in Applications. Run the same line again to update. Needs
+macOS 13 or later.
 
-From a checkout, without GitHub: to run the checkout, `npm run app`, the
-shell straight from the checkout, in a state folder and port of its own
-beside an installed Knuth; to install the checkout's build as the app,
-`npm run install:local`, the deploy's own steps on this Mac: it builds the
-page, packages Knuth.app for this Mac's processor into a site folder under
-the temp folder, and installs it from there into Applications with the
-install line (quit Knuth first; `npm run install:local -- ~/Other/Knuth.app`
-installs elsewhere). Its build is the checkout's commit, `-dirty` with
-changes not committed; the app's Check for Updates… offers the site's
-build in its place whenever the two differ, and taking it goes back to the
-deployed app.
+The first time you open it, Knuth asks whether to install Python. **Yes**
+gets a Python of Knuth's own through [uv](https://docs.astral.sh/uv/)
+(about 60 MB, once), leaving anything already on your Mac alone. **Not
+now** runs Python inside the window with [Pyodide](https://pyodide.org):
+the common packages work, but it needs the network and documents aren't
+reproducible. Change it later under **Knuth → Choose Python…**.
 
-Open it. The first launch asks one question, in the window: install
-Python? Knuth runs Python through [uv](https://docs.astral.sh/uv/), and
-only uv — the package manager built for reproducible work. Say yes and
-the app downloads uv, uv installs a Python that belongs to Knuth (about
-60 MB, once), and nothing already on the Mac is used or changed. Say not
-now and Python runs inside the window through Pyodide, loaded from the
-web, with the common packages and no reproducibility. The status pill
-always says which one is running, and Knuth menu → Choose Python… asks
-again.
+To have `.py` and other code files open in Knuth when you double-click
+them, choose **Knuth → Make Knuth the Default Editor…**.
 
-Double-clicking a `.py` (or choosing Knuth in Open With) opens it in its
-own folder: the kernel starts there, and `values.json` and `figs/` land
-there. The app starts its engine when it opens and stops it when it
-quits.
+### Windows, Linux, or the terminal
 
-### The terminal (every platform)
+Knuth also runs as a local web page, served by a Python package:
 
-macOS and Linux:
-
-```bash
+```sh
 python3 -m pip install --upgrade --force-reinstall "knuth @ https://github.com/tayweid/knuth/archive/refs/heads/main.zip#subdirectory=python"
-knuth app
+knuth app ~/my-project
 ```
 
-Windows:
+On Windows, use `py` in place of `python3`. `knuth app` opens Knuth in
+your browser, working in that folder. Keep the terminal open; Ctrl-C
+stops it. If it won't connect, run `knuth doctor`.
 
-```powershell
-py -m pip install --upgrade --force-reinstall "knuth @ https://github.com/tayweid/knuth/archive/refs/heads/main.zip#subdirectory=python"
-knuth app
+## Your files
+
+A Knuth document looks like this on disk:
+
+```python
+# %% [markdown]
+# # Growth
+# The yearly rate we report in the paper.
+
+# %%
+gdp = [100, 103, 106.2]
+rate = round(gdp[-1] / gdp[0] - 1, 3)
+rate
+#-> 0.062
+
+# %% scratch
+#| sum(gdp) / len(gdp)
 ```
 
-The second command starts the Python engine on `127.0.0.1:5197`, which
-serves the app itself and opens it in the default browser — nothing to pair,
-no token to carry. Keep the terminal open while using Knuth; `Ctrl-C` stops
-the foreground engine. If the console entry point is not on `PATH`, use
-`python3 -m knuth app` on macOS/Linux or `py -m knuth app` on Windows. The
-demo page at [knuth.tayweid.io](https://knuth.tayweid.io) shows these
-commands pinned to the exact deployed commit; the `main` URL above follows
-the latest repository version.
+There are three kinds of cell:
 
-Installing the app as a PWA (from the local origin) is optional. In Chromium
-browsers it also registers Knuth as a handler for `.py` files. The Python
-engine remains local whether Knuth runs in a browser tab or an installed
-window.
+- **Code cells** (`# %%`) are your program.
+- **Text cells** (`# %% [markdown]`) are notes in Markdown, with math in
+  `$…$`. You edit them as formatted text, not as comments.
+- **Scratch cells** (`# %% scratch`) are for poking at things. They're
+  saved commented out (`#|`), so `python analysis.py` skips them.
 
-### Optional macOS background agent
+Lines starting `#->` are saved output, written by Knuth.
 
-The cross-platform foreground command is the default. macOS users who want an
-engine that starts at login can additionally use:
+Code runs in the project folder, so `pd.read_csv("data.csv")` finds the
+file beside it. Knuth saves as you type; **Autosave**, under Open's
+chevron, turns that off for one document, and a Save button shows beside
+its name.
 
-```bash
-knuth agent install
-knuth agent status
-knuth agent restart
-knuth agent uninstall
+Have notebooks? Open a `.ipynb` and Knuth turns it into a new `.py` beside
+it, leaving the notebook alone. `knuth import *.ipynb` does a whole folder
+at once.
+
+## Values and figures
+
+When a code cell runs, Knuth writes what it named into the document's
+folder:
+
+- Numbers, strings, lists and dicts go into `values.json`.
+- A matplotlib figure goes to `figs/` under its name:
+  `growth, ax = plt.subplots()` makes `figs/growth.svg`.
+
+Underscore names and scratch cells are left out. A paper in Typst or Plass
+reads these files directly, so the whole build is one line, with neither
+app open:
+
+```sh
+knuth run analysis.py && typst compile paper.typ
 ```
 
-If the page and engine do not connect, run `knuth doctor`. It reports the
-installed version, Python executable, engine version, protocol version,
-build stamp, and live-session count — never code, output, or document
-contents.
+`knuth run` is the check that your document really works. It starts a
+fresh Python, runs the code cells top to bottom, stops at the first error,
+and rewrites the outputs and `values.json`. Scratch cells don't run.
 
-## Working in a project
+Click the pill at the top right to see everything the session holds.
+DataFrames open in a table you can scroll; figures open full size.
 
-Start the engine in your project so relative reads work in the app —
-`pd.read_csv('data.csv')` resolves against the folder every kernel
-starts in:
+## Packages
 
-```bash
-knuth app ~/analysis        # or: knuth serve --root ~/analysis
-```
-
-Scratch cells are stored commented (`#| ` lines), so running the file
-with plain `python` executes only the program cells; the app shows and
-edits them as ordinary code.
-
-### The document's environment
-
-A document carries its own environment in a standard header at the top
-of the file ([ENVIRONMENT.md](./docs/ENVIRONMENT.md)), and Knuth builds
-it with [uv](https://docs.astral.sh/uv/):
+A document can list its own packages in a standard header at the top
+([PEP 723](https://peps.python.org/pep-0723/)):
 
 ```python
 # /// script
@@ -165,71 +132,105 @@ it with [uv](https://docs.astral.sh/uv/):
 # ///
 ```
 
-New documents get an empty header. When a cell imports a package the
-document does not have, Knuth adds it at its newest version and pins
-that exact version in the header, then runs the cell again. A package
-already on the Mac goes in without a word; one that needs a download
-asks first (**Download with uv**). The date
-stamp holds everything underneath, so the same file resolves the same
-way years later. Nothing lands in the project folder: the environment
-lives in uv's store, on a Python uv manages, whatever else is on the
-machine. `knuth run` reproduces in that environment and never installs.
-The header is comments, so the file still opens anywhere:
+You rarely type this. With uv's Python, when a cell imports something the
+document doesn't list, Knuth adds it at an exact version and runs the cell
+again, asking first if it needs a download. The date line holds
+everything underneath, so the file installs the same way years from now.
 
-```bash
-uv run analysis.py                       # build the environment and run it
-knuth env analysis.py                    # print its interpreter (for VS Code, Spyder)
-uv add --script analysis.py --bounds exact statsmodels
-```
+The header is only comments, so the file still runs elsewhere:
+`uv run analysis.py` builds the environment and runs it, and
+`knuth env analysis.py` prints the Python to point VS Code or Spyder at.
+More in [ENVIRONMENT.md](./docs/ENVIRONMENT.md).
 
-Without uv, or without a header, a document runs on the Python the
-engine was installed into, as before.
+## Other files
 
-## Migrating from Jupyter
+Knuth opens more than notebooks:
 
-```bash
-knuth import notebooks/*.ipynb
-```
+- **CSV and TSV** open as a table you can edit.
+- **Excel** workbooks (`.xlsx`) open read-only, one sheet at a time. Save
+  a sheet as CSV to edit it. This needs Python on your computer, not
+  Pyodide.
+- **Code and text** in about a hundred other languages (Markdown, R,
+  Julia, LaTeX, JSON, shell, …) open in a plain editor with highlighting.
 
-Each notebook becomes a sibling percent-format `.py` — one-way, and never
-overwriting an existing file. Outputs are dropped (`knuth run` regenerates
-them as receipts), and magic or shell-escape lines, which are not Python,
-arrive commented out.
+## History
 
-The app speaks the same conversion: Open accepts a `.ipynb`, the engine
-converts it, and the document arrives as an unsaved `.py` — saving writes
-the `.py`; the notebook itself is never touched.
+In the Mac app, **History** (⇧⌘H) shows the project as it was at each
+run, and every minute in between. Go back to any point and carry on.
 
-## Development
+It's kept with git, on a branch of its own (`claerbout-autosave`). Your
+branches and commits are never touched and nothing is pushed. A project
+folder that isn't a git repository yet becomes one, except your home
+folder, Desktop, Documents, Downloads and cloud-synced folders themselves.
+Files in an `untracked/` folder are left out. More in
+[AUTOSAVE.md](./docs/AUTOSAVE.md).
 
-```bash
+## Keys
+
+| Keys | Does |
+| --- | --- |
+| ⇧⏎ | Run the cell and go to the next one |
+| ⌘⏎ | Run the cell and stay |
+| ⌥⏎ | Run the cell and add a new one below |
+| ⌘⇧⏎ | Add a cell below without running |
+| Esc, then S / M / Y | Make the cell scratch / text / code |
+| Esc, then O | Clear the cell's output |
+| Ctrl-Space | Complete a name from the live session |
+| ⌘⇧E | Switch between cells and the plain file |
+| ⌘S / ⌘O | Save / open |
+| ⇧⌘H | History (Mac app) |
+
+The buttons down the left side add cells, run everything, re-run only
+what your edits made out of date, and stop.
+
+## The command line
+
+| Command | Does |
+| --- | --- |
+| `knuth app [folder or file]` | Start Knuth and open it in the browser |
+| `knuth run file.py` | Run the document fresh and rewrite its outputs |
+| `knuth env file.py` | Build the document's packages, print its Python |
+| `knuth import a.ipynb …` | Turn notebooks into `.py` documents |
+| `knuth doctor` | Report versions and whether Knuth is running |
+| `knuth serve` | Run Knuth in the foreground, without opening a browser |
+| `knuth agent install` | On a Mac, keep Knuth running in the background |
+
+## Status
+
+Knuth is a preview, built and kept up by one person. Keep your documents
+in git or another backup. Report bugs as GitHub issues and security
+problems privately ([SECURITY.md](./docs/SECURITY.md)).
+
+Knuth runs your Python with your permissions. It is not a sandbox, so
+only open documents you'd run yourself.
+
+## Working on Knuth
+
+```sh
 npm install
-npm run dev    # Vite dev server on port 5198
-npm test       # format round-trip tests
-npx playwright install chromium # one-time browser test setup
-npm run test:browser             # real-browser regression tests
+npm run dev                  # http://localhost:5198
+npm test
+npm run test:browser         # after: npx playwright install chromium
 
 python3 -m venv .venv && .venv/bin/pip install -e 'python[test]'
-.venv/bin/knuth serve                   # the engine on 5197; the dev page reaches it through vite
-.venv/bin/python -m pytest python/tests # Python unit + end-to-end tests
+.venv/bin/knuth serve        # the engine; the dev page reaches it through vite
+.venv/bin/python -m pytest python/tests
 ```
 
-The engine accepts WebSocket upgrades only from the origin it serves the
-page on. In development vite proxies the page's socket to the engine as
-that origin (`vite.config.ts`; `KNUTH_ENGINE` names another engine
-address), so nothing is opted into. A deployment that really serves the
-page from elsewhere names each origin with `knuth serve --origin
-https://exact.example`.
+`npm run app` runs the Mac app from the checkout, beside an installed one.
+`npm run install:local` installs the checkout's build as Knuth.app.
 
-`python/` is the distributed `knuth` package: the hosted launcher, live session,
-kernel subprocess, WebSocket server, background-agent helper, and the
-reproducibility runner behind `knuth run`.
+Design notes are in [docs/](./docs): [DESIGN.md](./docs/DESIGN.md) (the
+file format), [SAME_ORIGIN.md](./docs/SAME_ORIGIN.md) (how the page
+reaches Python safely), [APP.md](./docs/APP.md) (the Mac app) and
+[ROADMAP.md](./docs/ROADMAP.md) (what's next).
 
-## Security
+## The name
 
-Please report vulnerabilities privately rather than opening a public issue.
-The supported-version policy, threat-model boundary, and reporting process are
-in [SECURITY.md](./docs/SECURITY.md).
+Knuth is named for Donald Knuth, whose literate programming mixed prose
+and code in one file. It's part of the Claerbout family, named for Jon
+Claerbout, who argued that a paper should ship with the code that
+reproduces it.
 
 ## License
 
