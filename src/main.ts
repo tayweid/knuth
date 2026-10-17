@@ -73,9 +73,10 @@ function labeled(id: string, glyph: string, label: string, title: string, classN
 // own; the name pill with the save mark, the folder and, only when
 // autosave is off or the document has no file yet, Save (Taylor,
 // 2026-10-17: the File menu's Save, History and Check for updates were
-// each somewhere else already); beside it, inside Knuth.app, the
-// History tile (Taylor: "it belongs as a tile on the topbar beside the
-// address"), Plass's too, the same glyph — and, at the right, the session pill
+// each somewhere else already) and, inside Knuth.app, the History tile
+// at the pill's far right, after the folder and Save (Taylor, 2026-10-17,
+// as Plass has it: first "a tile on the topbar beside the address", now
+// in it), the same glyph as Plass's — and, at the right, the session pill
 // (session.ts, docs/SESSION.md): the kernel's status, then the session's
 // names in cell order. In Knuth.app the bar is the window's title bar
 // (styles.css).
@@ -87,8 +88,7 @@ toolbar.innerHTML = `
     <button type="button" class="tb-btn tb-tile tb-split-more" id="recent-tile" title="Recent documents" aria-label="Recent documents">${icon('chevron')}<span class="lbl">Recent</span></button>
   </span>
   ${labeled('new-window', icon('newwindow'), 'New window', 'New window — a new document, with its own session', 'tb-btn tb-tile')}
-  <div class="doc-pod" id="doc-pod"><span class="name" id="file-name" title="Click to rename">${DEFAULT_DOC_NAME}</span><span class="doc-mark" id="doc-mark" aria-hidden="true"></span><span class="doc-folder" id="doc-folder" hidden><span dir="ltr"></span></span><button type="button" class="doc-save" id="doc-save" title="Save (⌘S)" hidden>Save</button></div>
-  <button type="button" class="tb-btn tb-tile" id="history-tile" title="History (⇧⌘H)" aria-label="History" aria-keyshortcuts="Shift+Meta+H">${HISTORY_GLYPH}<span class="lbl">History</span></button>
+  <div class="doc-pod" id="doc-pod"><span class="name" id="file-name" title="Click to rename">${DEFAULT_DOC_NAME}</span><span class="doc-mark" id="doc-mark" aria-hidden="true"></span><span class="doc-folder" id="doc-folder" hidden><span dir="ltr"></span></span><button type="button" class="doc-save" id="doc-save" title="Save (⌘S)" hidden>Save</button><button type="button" class="tb-btn tb-tile" id="history-tile" title="History (⇧⌘H)" aria-label="History" aria-keyshortcuts="Shift+Meta+H">${HISTORY_GLYPH}<span class="lbl">History</span></button></div>
   <div class="tb-end">
     ${labeled('restart', icon('restart'), 'Restart', 'Restart session: a fresh kernel process, every cell stale', 'tb-btn tb-tile')}
     <button type="button" id="session-pill"><span id="kernel-status">connecting…</span><span class="sp-sep" aria-hidden="true"></span><span class="sp-mark" aria-hidden="true">${icon('braces')}</span><span class="sp-names"></span></button>
@@ -246,7 +246,7 @@ function toast(
 // hosted demo) and Install Knuth (a locally served tab the browser offers
 // to install) — given their conditions and actions below, where those are
 // decided. New window is a tile of its own; Save shows in the name pill
-// when it is needed (repaintName); History is the bar's tile, and checking
+// when it is needed (repaintName), History as a tile at its end, and checking
 // for an update the Knuth menu's (the shell's), with a toast offering to
 // install one (below). Folder needs no item: Save on a homeless doc IS the
 // folder grant (the browser grants the project folder for values.json and
@@ -289,8 +289,8 @@ menu.item(
 // The project's autosave record as a path, with a rewind: the shell's own
 // page, laid over the room of this window (Taylor: "instead of a new
 // window, i just want it to open in the same window in the main area"), so
-// only inside Knuth.app, from the bar's History tile beside the name pill
-// and the shell's View › History… on the same ⇧⌘H (toggleHistory, below).
+// only inside Knuth.app, from the History tile at the name pill's far
+// right and the shell's View › History… on the same ⇧⌘H (toggleHistory, below).
 // The tile takes no focus from a click: the cell keeps it.
 const historyTile = $('history-tile') as HTMLButtonElement;
 historyTile.hidden = !shell;

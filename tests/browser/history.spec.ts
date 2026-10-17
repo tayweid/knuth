@@ -1,7 +1,7 @@
 // The page's side of the shell's history view (shell.ts, answerRewinds;
 // claerbout's README, "The history view"): a rewind's `save` answered with
 // `saved`, its `reload` re-reading only the document whose path it names,
-// the record told when a run raised, and the bar's History tile beside
+// the record told when a run raised, and the History tile in
 // the name pill (one way in, with the shell's ⇧⌘H), which lays the shell's
 // History page over the room of the same window and put it away again.
 // The shell is a mock `window.claerbout` over an in-page disk, which the
@@ -360,20 +360,24 @@ const bar = (page: Page) =>
     } as Record<string, Box | null>;
   });
 
-test('the History tile stands right after the name pill, the New window tile\'s twin, and moves nothing else in the bar', async ({ page }) => {
+test('the History tile is the name pill\'s last child, at its far right, and moves nothing outside the pill', async ({ page }) => {
   await page.setViewportSize({ width: 1100, height: 760 });
   await open(page, '# %%\nx = 1\n');
   const tile = page.locator('#history-tile');
   await expect(tile).toBeVisible();
+  await expect(page.locator('#doc-pod > #history-tile:last-child')).toHaveCount(1);
   const after = await bar(page);
   const pod = after['doc-pod']!;
   const box = after['history-tile']!;
-  // Right after the pill, with the bar's 6 px gap; 32 × 32, level with the
-  // Open tile (6 px under the 44 px bar's top, as the 30 px pills are 7).
-  expect(box.left).toBe(pod.right + 6);
-  expect({ width: box.right - box.left, top: box.top, bottom: box.bottom }).toEqual({ width: 32, top: 6, bottom: 38 });
-  // The glyph is 18 px, centred in it.
-  expect(after.glyph).toEqual({ left: box.left + 7, top: 13, right: box.left + 25, bottom: 31 });
+  // Inside the pill, after the folder with the pill's 9 px gap, reaching
+  // 6 px into its 10 px padding (so 5 px in from its edge, the 1 px border
+  // included); 24 × 24, centred in the 30 px pill (7 px under the 44 px
+  // bar's top, so 10 px).
+  expect(box.left).toBe(after['doc-folder']!.right + 9);
+  expect(box.right).toBe(pod.right - 5);
+  expect({ width: box.right - box.left, top: box.top, bottom: box.bottom }).toEqual({ width: 24, top: 10, bottom: 34 });
+  // The glyph is 16 px, centred in it.
+  expect(after.glyph).toEqual({ left: box.left + 4, top: 14, right: box.left + 20, bottom: 30 });
   // The frame spec's numbers (frame.spec.ts), unchanged: the Open tile 6 px
   // in (a tab has no lights' room), the pill after New window with the
   // bar's gap, 30 px tall; the session pill's right edge on the room's.
@@ -383,17 +387,21 @@ test('the History tile stands right after the name pill, the New window tile\'s 
   expect(after['toolbar']).toEqual({ left: 0, top: 0, right: 1100, bottom: 44 });
   expect(after['layout']).toEqual({ left: 44, top: 44, right: 1092, bottom: 752 });
   expect(after['session-pill']!.right).toBe(1092);
-  // And every other box in the bar is where it was without the tile: only
-  // its 32 px and a gap were inserted, after the pill.
+  // And every other box in the bar is where it was without the tile: the
+  // pill only grew at its right, by the tile's 24 px and a gap less the
+  // 6 px it reaches into the padding.
   await tile.evaluate((element) => { (element as HTMLElement).hidden = true; });
   const before = await bar(page);
   await tile.evaluate((element) => { (element as HTMLElement).hidden = false; });
   expect(before['history-tile']).toBeNull();
+  expect(pod.right).toBe(before['doc-pod']!.right + 27);
+  expect({ ...pod, right: 0 }).toEqual({ ...before['doc-pod']!, right: 0 });
   const others = (boxes: Record<string, Box | null>) =>
-    Object.fromEntries(Object.entries(boxes).filter(([id]) => id !== 'history-tile' && id !== 'glyph'));
+    Object.fromEntries(Object.entries(boxes).filter(([id]) => id !== 'history-tile' && id !== 'glyph' && id !== 'doc-pod'));
   expect(others(after)).toEqual(others(before));
 
-  // The New window tile's look: the same size, corners, glyph size and ink.
+  // A small tile of the bar's family: the New window tile's ink and
+  // resting background, at 24 px with 6 px corners and a 16 px glyph.
   const look = (selector: string) =>
     page.locator(selector).evaluate((element) => {
       const style = getComputedStyle(element);
@@ -405,9 +413,9 @@ test('the History tile stands right after the name pill, the New window tile\'s 
     });
   await page.mouse.move(600, 400);
   const history = await look('#history-tile');
-  expect(history).toEqual(await look('#new-window'));
-  expect(history.radius).toBe('9px');
-  expect(history.glyph).toEqual([18, 18]);
+  const newWindow = await look('#new-window');
+  expect({ color: history.color, background: history.background }).toEqual({ color: newWindow.color, background: newWindow.background });
+  expect(history).toMatchObject({ width: '24px', height: '24px', radius: '6px', glyph: [16, 16] });
   // The glyph: the standard history icon, a clock face with a
   // counter-clockwise arrow round its left side — the one string Plass's
   // bar draws too (HISTORY_GLYPH in both apps; Plass's frame.spec holds it
@@ -422,7 +430,7 @@ test('the History tile stands right after the name pill, the New window tile\'s 
   );
   expect(svgs[0]).not.toContain(svgs[1]);
   // Named for a screen reader, its key said in the tooltip; the caption,
-  // below it in the frame's dark glass, is the word, as File's is.
+  // below it in the frame's dark glass, is the word, as the bar tiles' are.
   await expect(tile).toHaveAttribute('aria-label', 'History');
   await expect(tile).toHaveAttribute('title', 'History (⇧⌘H)');
   await expect(tile).toHaveAttribute('aria-keyshortcuts', 'Shift+Meta+H');
@@ -436,10 +444,15 @@ test('the History tile stands right after the name pill, the New window tile\'s 
     return { top: r.top, middle: (r.left + r.right) / 2 };
   });
   expect(captionBox).toEqual({ top: box.bottom + 6, middle: (box.left + box.right) / 2 });
-  // The bar is the window's drag region in the shell; the tile is not.
+  // The bar is the window's drag region in the shell; the tile is not (its
+  // pill is the page's, and the tile within it).
   expect(await tile.evaluate((element) => {
-    const style = getComputedStyle(element) as CSSStyleDeclaration & { appRegion?: string };
-    return style.getPropertyValue('-webkit-app-region') || style.appRegion;
+    for (let at: Element | null = element; at; at = at.parentElement) {
+      const style = getComputedStyle(at) as CSSStyleDeclaration & { appRegion?: string };
+      const region = style.getPropertyValue('-webkit-app-region') || style.appRegion || 'none';
+      if (region !== 'none') return region;
+    }
+    return 'none';
   })).toBe('no-drag');
 });
 
@@ -616,23 +629,62 @@ test('the document under the view answers a rewind\'s save and reload, and the v
   await expect(tile).toHaveAttribute('aria-pressed', 'true');
 });
 
-test('when the bar is short the name pill gives way, its max-width first; the History tile never does', async ({ page }) => {
+test('when the bar is short the name pill gives way, its folder first; the History tile and Save never do, nor leave the pill', async ({ page }) => {
   const root = '/Users/someone/Library/CloudStorage/Dropbox/Research/econ/2026/wages-and-hours/drafts/chapter-three/analysis';
+  const pill = () =>
+    page.evaluate(() => {
+      const rect = (id: string) => document.getElementById(id)!.getBoundingClientRect();
+      const name = document.getElementById('file-name')!;
+      const folder = document.getElementById('doc-folder')!;
+      const pod = rect('doc-pod');
+      // The pill's content box: inside its 1 px border and 10 px padding,
+      // the tile reaching 6 px into the padding at the right.
+      const inner = { left: pod.left + 11, right: pod.right - 5 };
+      const shown = [...document.getElementById('doc-pod')!.children].filter((child) => child.getClientRects().length);
+      const at = (child: Element) => child.getBoundingClientRect();
+      return {
+        width: pod.width,
+        nameWhole: name.scrollWidth <= name.clientWidth,
+        folderCut: folder.scrollWidth > folder.clientWidth,
+        order: shown.map((child) => child.id),
+        // Every shown child inside the pill, each clear of the one before
+        // by the pill's 9 px gap.
+        inside: shown.every((child) => at(child).left >= inner.left - 0.5 && at(child).right <= inner.right + 0.5),
+        spaced: shown.every((child, i) => i === 0 || at(child).left >= at(shown[i - 1]!).right + 8.5),
+        tileRight: rect('history-tile').right,
+        tileWidth: rect('history-tile').width,
+        podRight: pod.right,
+        session: { left: rect('session-pill').left, right: rect('session-pill').right },
+      };
+    });
   for (const width of [1100, 780]) {
     await page.setViewportSize({ width, height: 760 });
     await open(page, '# %%\nx = 1\n', `${root}/wages-and-hours.py`);
-    const after = await bar(page);
-    const pod = after['doc-pod']!;
-    const box = after['history-tile']!;
+    const at = await pill();
     // The pill at its max-width, min(560px, 50vw), its folder cut; the
-    // tile whole right after it, clear of the session pill.
-    expect(pod.right - pod.left, `at ${width}`).toBe(Math.min(560, width / 2));
-    expect(await page.locator('#doc-folder').evaluate((element) => element.scrollWidth > element.clientWidth)).toBe(true);
-    expect(box.left).toBe(pod.right + 6);
-    expect(box.right - box.left).toBe(32);
-    expect(box.right + 6).toBeLessThanOrEqual(after['session-pill']!.left);
-    expect(after['session-pill']!.right).toBe(width - 8);
+    // tile whole at its far right, the pill clear of the session pill.
+    expect(at.width, `at ${width}`).toBe(Math.min(560, width / 2));
+    expect(at, `at ${width}`).toMatchObject({ nameWhole: true, folderCut: true, inside: true, spaced: true, tileWidth: 24 });
+    expect(at.order).toEqual(['file-name', 'doc-mark', 'doc-folder', 'history-tile']);
+    expect(at.tileRight).toBe(at.podRight - 5);
+    expect(at.podRight + 6).toBeLessThanOrEqual(at.session.left);
+    expect(at.session.right).toBe(width - 8);
   }
+  // Autosave off: Save shows, before the tile; with a long name, at the
+  // narrowest bar that still shows a folder, the name leaves both their
+  // room — it takes an ellipsis rather than push anything out of the pill.
+  const name = `${'a-long-document-name-'.repeat(3)}draft.py`;
+  await page.setViewportSize({ width: 760, height: 760 });
+  await open(page, '# %%\nx = 1\n', `${root}/${name}`);
+  await page.locator('#recent-tile').click();
+  await page.locator('#tb-menu-recent').getByRole('menuitemcheckbox', { name: 'Autosave' }).click();
+  await page.keyboard.press('Escape');
+  await expect(page.locator('#doc-save')).toBeVisible();
+  const at = await pill();
+  expect(at.width).toBe(380);
+  expect(at).toMatchObject({ nameWhole: false, inside: true, spaced: true, tileWidth: 24 });
+  expect(at.order).toEqual(['file-name', 'doc-mark', 'doc-folder', 'doc-save', 'history-tile']);
+  expect(at.tileRight).toBe(at.podRight - 5);
 });
 
 test('a plain tab has no History item and no History tile', async ({ page }) => {
