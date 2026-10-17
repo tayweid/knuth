@@ -555,7 +555,8 @@ fullscreen, where the File tile stands over the rail's column):
   *The History tile*) — inside Knuth.app only, a bar tile like File right
   after the pill: a history clock as its glyph, a click laying the
   shell's history view over the room as File › History… does, and taking
-  it away again; pressed while it is up.
+  it away again; pressed while it is up. Since 2026-10-17 it is inside
+  the pill, its last child (below, *History in the name pill*).
 - At the right (`.tb-end`): the **kernel's status** (`#kernel-status`),
   a pill that matches the name pill, its right edge on the room's. It
   holds its words and nothing else (the smoke compares `uv` / `Pyodide`
@@ -582,7 +583,8 @@ as Plass's is: the folder half opens a document (⌘O), the chevron half
 drops the recent documents with Autosave and, where they apply, Get
 Knuth and Install at its foot. New window is a tile of its own. Save
 shows in the name pill only when autosave is off or the document has no
-file yet. History is the bar's tile alone, and Check for updates the
+file yet. History is a tile alone (later that day inside the name pill,
+at its far right: *History in the name pill*), and Check for updates the
 shell's Knuth menu's, a toast offering to install a build it finds. The
 rail's groups stand apart, 9 px of air
 either side of the rule (the tiles in a group keep their 3 px), and the
@@ -951,3 +953,34 @@ cell runs: the view at (44, 44) 1048 × 708 DIP, the room's box at zoom
 reloaded `fit.py` under it (`v = 3` to `v = 1`, every cell stale) with
 the view still up; Escape put the card away, a second Escape the view,
 the tile un-pressed and no inline webContents left.
+
+## History in the name pill, 2026-10-17
+
+Taylor asked, as for Plass the same day, for History inside the name
+pill and for a new New window glyph; both are Plass's, the same values.
+
+- **The tile** (`#history-tile`) is the pill's last child, at its far
+  right: after the folder, and after Save when Save shows. 24 × 24 px with
+  6 px corners and a 16 px glyph, reaching 6 px into the pill's 10 px
+  padding (`margin-right: -6px`), so it sits 5 px in from the pill's
+  edge, centred in its 30 px. Its id, title, key, caption, no-focus
+  click, pressed look (`aria-pressed` → `--tile`) and hiding in a tab
+  are as before. Nothing outside the pill moves when it shows: the pill
+  grows at its right by 27 px (the tile and a gap, less the 6 px).
+- **The name's room.** The name's `max-width` leaves the mark and its
+  gap, and, while they show, the folder's gap (cut to nothing, the
+  folder still holds it), the Save chip (48 px and a gap) and the tile
+  (18 px and a gap): `--folder-room`, `--save-room`, `--history-room`,
+  set by `:has()` on the pill. Without the folder's gap a long name, a
+  folder and Save at 760 px pushed the tile 4 px out of the pill (the
+  gap's 9 px less the slack in Save's 48, the chip being 43 px; Plass's
+  formula has no folder term).
+- **New window** (`icons.ts`, `newwindow`): a page with a folded corner
+  and a solid + badge at its foot, Plass's string.
+
+Checks: `tests/browser/history.spec.ts` (the tile the pill's last child,
+its box against the folder's and the pill's, the 16 px glyph, nothing
+outside the pill moving; at 1100 and 780 with a long folder, and at 760
+with a long name, autosave off and Save showing, every child inside the
+pill and spaced by its gap) and `tests/browser/frame.spec.ts` (the
+pill's children in order).

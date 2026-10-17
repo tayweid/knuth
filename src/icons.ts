@@ -8,7 +8,8 @@ export const ICONS: Record<string, string> = {
     '<path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/><circle cx="12" cy="14" r="2.4"/><line x1="12" y1="9.5" x2="12" y2="11.6"/>',
   plus: '<line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>',
   // Plass's New window glyph (plass/src/toolbar.ts), the same string.
-  newwindow: '<rect x="3" y="4" width="18" height="16" rx="2"/><line x1="3" y1="8.5" x2="21" y2="8.5"/><line x1="12" y1="11.5" x2="12" y2="17.5"/><line x1="9" y1="14.5" x2="15" y2="14.5"/>',
+  newwindow:
+    '<path d="M12 21H7a2 2 0 0 1-2-2V4.5a2 2 0 0 1 2-2h5.5L17 7v3.5"/><path d="M12.5 2.5V7H17"/><path fill="currentColor" stroke="none" fill-rule="evenodd" d="M22.5 17a5.5 5.5 0 1 1-11 0a5.5 5.5 0 1 1 11 0ZM16.15 13.9v2.25H13.9v1.7h2.25v2.25h1.7v-2.25h2.25v-1.7h-2.25V13.9Z"/>',
   code: '<polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/>',
   // The view switch: the file as its text, a page of lines — its own
   // glyph, so the rail's foot does not repeat the Code cell's <> above.

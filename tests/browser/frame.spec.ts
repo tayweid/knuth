@@ -163,8 +163,12 @@ test('the controls are where the frame puts them, with every id the tests and th
   for (const id of ['open-split', 'open-tile', 'recent-tile', 'new-window', 'doc-pod', 'file-name', 'doc-mark', 'doc-folder', 'doc-save', 'restart', 'session-pill', 'kernel-status']) {
     await expect(page.locator(`#toolbar #${id}`), id).toHaveCount(1);
   }
+  // The name pill holds, in order, the name, the mark, the folder, Save
+  // and, last, the History tile (hidden in a tab: history.spec.ts).
+  expect(await page.locator('#doc-pod').evaluate((pod) => [...pod.children].map((child) => child.id)))
+    .toEqual(['file-name', 'doc-mark', 'doc-folder', 'doc-save', 'history-tile']);
   // Get Knuth and Install sit at the Recent menu's foot; the update is the
-  // shell's Knuth menu's, and History the bar's tile.
+  // shell's Knuth menu's, and History the name pill's tile.
   for (const id of ['get-app', 'install-app']) {
     await expect(page.locator(`#tb-menu-recent #${id}`), id).toHaveCount(1);
   }

@@ -137,11 +137,10 @@ body {
 /* One plain bar on the frame, a straight line across the top of the
    window. The document's way in and out sits on the left beside the
    traffic lights — Open (split: the chevron drops the recent documents),
-   New window, the name pill with the save mark, the folder and, when it
-   is needed, Save, and in Knuth.app the History tile beside the
-   pill (Plass's too: one tile, one glyph) — and the session pill on the
-   right (the
-   kernel's status, then the session's names), which ends where the room
+   New window, the name pill with the save mark, the folder, Save when
+   it is needed and, in Knuth.app, the History tile at its far right
+   (Plass's too: one tile, one glyph) — and the session pill on the
+   right (the kernel's status, then the session's names), which ends where the room
    does (the bar's right padding is the frame's edge). The cell tools are
    on the rail.
 
@@ -181,14 +180,16 @@ body {
 #toolbar > *:focus-within { z-index: 20; }
 
 /* The name pill: Zen's address pill, a shade up from the frame, holding
-   the document's name (click to rename), its save mark and the folder it
-   lives in. When the pill is short only the folder gives way, from its
+   the document's name (click to rename), its save mark, the folder it
+   lives in, Save when it is needed and, in Knuth.app, the History tile.
+   When the pill is short only the folder gives way, from its
    start, so the nearest folder stays; the name and the mark never do —
    the name takes an ellipsis only if it alone overfills the pill. */
 .doc-pod {
+  --pod-gap: 9px;
   display: flex;
   align-items: center;
-  gap: 9px;
+  gap: var(--pod-gap);
   flex: 0 1 auto;
   min-width: 0;
   max-width: min(560px, 50vw);
@@ -200,10 +201,12 @@ body {
 }
 
 /* The document slug: small serif, letterspaced, quiet (Plass's galley).
-   (Its max-width leaves the mark and its gap their room.) */
+   (Its max-width leaves the mark and its gap their room, and the
+   folder's gap, the Save chip's and the History tile's while they show:
+   below.) */
 #toolbar .name {
   flex: none;
-  max-width: min(40ch, calc(100% - 15px));
+  max-width: min(40ch, calc(100% - var(--pod-gap) - 6px - var(--folder-room, 0px) - var(--save-room, 0px) - var(--history-room, 0px)));
   font: 15px/1.5 var(--serif);
   letter-spacing: 0.09em;
   color: rgba(252, 252, 251, 0.8);
@@ -244,6 +247,28 @@ body {
 .doc-save:hover { color: #fff; background: rgba(255, 255, 255, 0.08); }
 .doc-save[hidden] { display: none; }
 
+/* History (Knuth.app), inside the pill at its far right, after the
+   folder and Save: Plass's small tile, the pill's own height less its
+   inset, with a 16 px glyph; pressed while the History view is up (the
+   bar's tiles, below). */
+#toolbar .doc-pod #history-tile {
+  flex: none;
+  width: 24px;
+  min-width: 24px;
+  height: 24px;
+  margin-right: -6px;
+  border-radius: 6px;
+}
+
+#toolbar .doc-pod #history-tile .ico { width: 16px; height: 16px; }
+
+/* The name leaves the Save chip and the History tile their room (the
+   tile's 24 px less the 6 px it reaches into the pill's padding), and
+   the folder its gap: cut to nothing, the folder still holds that. */
+.doc-pod:has(> .doc-save:not([hidden])) { --save-room: calc(48px + var(--pod-gap)); }
+.doc-pod:has(> #history-tile:not([hidden])) { --history-room: calc(18px + var(--pod-gap)); }
+.doc-pod:has(> #doc-folder:not([hidden])) { --folder-room: var(--pod-gap); }
+
 /* The folder: the path's, home as ~ (the whole path in its title). It
    alone shrinks, and it ellipsizes from its start: right-to-left in the
    pill, the path itself left-to-right inside (its span's dir), so the
@@ -264,6 +289,7 @@ body {
 
 @media (max-width: 759px) {
   #doc-folder { display: none; }
+  .doc-pod:has(> #doc-folder:not([hidden])) { --folder-room: 0px; }
 }
 
 /* The bar's right end: the Restart tile, then the session pill. The pill
@@ -302,11 +328,12 @@ body {
 .tb-btn[hidden] { display: none; }
 .tb-btn .ico { width: 19px; height: 19px; display: block; }
 
-/* The bar's tiles (File; History, right after the name pill with the
-   bar's gap): bare, 32 px with 9 px corners and an 18 px glyph, lit while
-   a menu is open (File) or the History view is up over the room (History,
-   pressed: main.ts, inlineHistory). They never shrink: when the bar is
-   short the name pill gives way (its max-width first, then its folder). */
+/* The bar's tiles (Open, New window, Restart; History, smaller, inside
+   the name pill: above): bare, 32 px with 9 px corners and an 18 px
+   glyph, lit while a menu is open (Recent) or the History view is up over
+   the room (History, pressed: main.ts, inlineHistory). They never shrink:
+   when the bar is short the name pill gives way (its max-width first,
+   then its folder). */
 #toolbar .tb-tile {
   flex: none;
   width: 32px;
