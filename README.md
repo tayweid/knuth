@@ -6,6 +6,11 @@ each cell. The file stays a Python script anyone can run.
 
 Try it in your browser: **<https://knuth.tayweid.io>**
 
+<p align="center">
+  <img src="docs/images/document.png" width="720"
+       alt="A Knuth document: a heading and a sentence of text, a code cell with its result 0.062 underneath, and a cell that draws a line chart of GDP, shown below it">
+</p>
+
 ## Why
 
 Jupyter notebooks are JSON: they diff badly and can't be run with
@@ -80,7 +85,10 @@ There are three kinds of cell:
 - **Scratch cells** (`# %% scratch`) are for poking at things. They're
   saved commented out (`#|`), so `python analysis.py` skips them.
 
-Lines starting `#->` are saved output, written by Knuth.
+Lines starting `#->` are saved output, written by Knuth. ⌘⇧E switches
+to the file itself, outputs and all:
+
+![The same document as the plain .py file: the cell markers, the code, and the saved outputs on lines starting #->](docs/images/plain-file.png)
 
 Code runs in the project folder, so `pd.read_csv("data.csv")` finds the
 file beside it. Knuth saves as you type; **Autosave**, under Open's
@@ -114,6 +122,8 @@ and rewrites the outputs and `values.json`. Scratch cells don't run.
 
 Click the pill at the top right to see everything the session holds.
 DataFrames open in a table you can scroll; figures open full size.
+
+![The Session card open beside the document: what the last run added, growth and ax, with the figure it drew, then the session's data and figures](docs/images/session.png)
 
 ## Packages
 
@@ -223,6 +233,8 @@ python3 -m venv .venv && .venv/bin/pip install -e 'python[test]'
 
 `npm run app` runs the Mac app from the checkout, beside an installed one.
 `npm run install:local` installs the checkout's build as Knuth.app.
+`npm run screenshots` (with the dev server running) retakes the pictures
+in this README.
 
 Design notes are in [docs/](./docs): [DESIGN.md](./docs/DESIGN.md) (the
 file format), [SAME_ORIGIN.md](./docs/SAME_ORIGIN.md) (how the page
