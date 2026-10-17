@@ -10,11 +10,13 @@ export const ICONS: Record<string, string> = {
   // Plass's New window glyph (plass/src/toolbar.ts), the same string.
   newwindow:
     '<path d="M12 21H7a2 2 0 0 1-2-2V4.5a2 2 0 0 1 2-2h5.5L17 7v3.5"/><path d="M12.5 2.5V7H17"/><path fill="currentColor" stroke="none" fill-rule="evenodd" d="M22.5 17a5.5 5.5 0 1 1-11 0a5.5 5.5 0 1 1 11 0ZM16.15 13.9v2.25H13.9v1.7h2.25v2.25h1.7v-2.25h2.25v-1.7h-2.25V13.9Z"/>',
-  code: '<polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/>',
-  // The view switch: the file as its text, a page of lines — its own
-  // glyph, so the rail's foot does not repeat the Code cell's <> above.
-  source:
-    '<path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><polyline points="14 3 14 8 19 8"/><line x1="8.5" y1="12.5" x2="15.5" y2="12.5"/><line x1="8.5" y1="16" x2="13" y2="16"/>',
+  // A code cell: ManimLive's prompt, >_ (maniml/web/static/viewer.html),
+  // the same strokes.
+  code: '<path d="m5 8 4 4-4 4"/><path d="M12 16h7"/>',
+  // The view switch to the source: < >, the code itself (Taylor,
+  // 2026-10-17); the Code cell tile above it is the prompt, so the rail's
+  // foot repeats nothing.
+  source: '<polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/>',
   scratch:
     '<rect x="4" y="4" width="16" height="16" rx="2" stroke-dasharray="3.4 2.8"/><line x1="9" y1="12" x2="15" y2="12"/>',
   text: '<polyline points="4 7 4 4 20 4 20 7"/><line x1="9" y1="20" x2="15" y2="20"/><line x1="12" y1="4" x2="12" y2="20"/>',
