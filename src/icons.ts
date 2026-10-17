@@ -7,6 +7,8 @@ export const ICONS: Record<string, string> = {
   project:
     '<path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/><circle cx="12" cy="14" r="2.4"/><line x1="12" y1="9.5" x2="12" y2="11.6"/>',
   plus: '<line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>',
+  // Plass's New window glyph (plass/src/toolbar.ts), the same string.
+  newwindow: '<rect x="3" y="4" width="18" height="16" rx="2"/><line x1="3" y1="8.5" x2="21" y2="8.5"/><line x1="12" y1="11.5" x2="12" y2="17.5"/><line x1="9" y1="14.5" x2="15" y2="14.5"/>',
   code: '<polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/>',
   // The view switch: the file as its text, a page of lines — its own
   // glyph, so the rail's foot does not repeat the Code cell's <> above.
@@ -16,6 +18,9 @@ export const ICONS: Record<string, string> = {
     '<rect x="4" y="4" width="16" height="16" rx="2" stroke-dasharray="3.4 2.8"/><line x1="9" y1="12" x2="15" y2="12"/>',
   text: '<polyline points="4 7 4 4 20 4 20 7"/><line x1="9" y1="20" x2="15" y2="20"/><line x1="12" y1="4" x2="12" y2="20"/>',
   play: '<polygon points="7 4.5 19 12 7 19.5"/>',
+  // Run stale: the play glyph with the stale amber's dot at its upper
+  // right, the colour of a stale cell's gutter edge (styles.css).
+  playstale: '<polygon points="6 5.5 17 12 6 18.5"/><circle class="stale-dot" cx="19.5" cy="5" r="2.6"/>',
   playall: '<polygon points="3.5 5 11 12 3.5 19"/><polygon points="13 5 20.5 12 13 19"/>',
   stop: '<rect x="6.5" y="6.5" width="11" height="11" rx="1.5"/>',
   // Clear outputs: lines of output struck through by an eraser's slash.

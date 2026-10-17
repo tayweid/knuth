@@ -136,8 +136,9 @@ body {
 
 /* One plain bar on the frame, a straight line across the top of the
    window. The document's way in and out sits on the left beside the
-   traffic lights — the File tile with its menu, the name pill with the
-   save mark and the folder, and in Knuth.app the History tile beside the
+   traffic lights — Open (split: the chevron drops the recent documents),
+   New window, the name pill with the save mark, the folder and, when it
+   is needed, Save, and in Knuth.app the History tile beside the
    pill (Plass's too: one tile, one glyph) — and the session pill on the
    right (the
    kernel's status, then the session's names), which ends where the room
@@ -148,7 +149,7 @@ body {
    and leaves the traffic lights over the page; app/knuth.json). Its row
    is padded on the left by the lights' room (env(titlebar-area-x)) and by
    nothing else; with no lights' room — a tab, the PWA, fullscreen, a
-   native title bar — the File tile stands over the rail's column of
+   native title bar — the Open tile stands over the rail's column of
    tiles instead, 6 px in ((48 − 36) / 2: the fallback undoes 6 px of the
    12). The bar's empty part drags the window, which is the shell's to
    handle, so its children and the menus that open into its band are
@@ -225,6 +226,24 @@ body {
 
 .doc-saved .doc-mark { background: rgba(110, 165, 118, 0.9); }
 
+/* Save, at the pill's end, only while something needs it (main.ts,
+   repaintName): autosave off, or no file yet. A quiet word, as the folder
+   is, lit on hover; it never gives way when the pill is short. */
+.doc-save {
+  flex: none;
+  height: 20px;
+  padding: 0 7px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 6px;
+  background: transparent;
+  color: var(--glass-ink-soft);
+  font: 12px/1 var(--sans);
+  cursor: pointer;
+}
+
+.doc-save:hover { color: #fff; background: rgba(255, 255, 255, 0.08); }
+.doc-save[hidden] { display: none; }
+
 /* The folder: the path's, home as ~ (the whole path in its title). It
    alone shrinks, and it ellipsizes from its start: right-to-left in the
    pill, the path itself left-to-right inside (its span's dir), so the
@@ -247,7 +266,8 @@ body {
   #doc-folder { display: none; }
 }
 
-/* The bar's right end: the session pill. It may give way (its names do,
+/* The bar's right end: the Restart tile, then the session pill. The pill
+   may give way (its names do,
    to +N) when the bar is short; the status never does. */
 .tb-end {
   margin-left: auto;
@@ -305,6 +325,31 @@ body {
   background: rgba(255, 255, 255, 0.08);
 }
 
+/* Open, split as Plass's is (plass/src/toolbar.css, the same values): the
+   folder half opens a document on one click (⌘O), a narrow chevron half
+   drops the recent ones, one tile's outline between them. */
+#toolbar .tb-split {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 1px;
+}
+
+#toolbar .tb-split > .tb-tile:first-child {
+  border-radius: 9px 3px 3px 9px;
+}
+
+#toolbar .tb-split > .tb-split-more {
+  width: 18px;
+  min-width: 18px;
+  border-radius: 3px 9px 9px 3px;
+}
+
+#toolbar .tb-split > .tb-split-more .ico {
+  width: 14px;
+  height: 14px;
+}
+
 #toolbar .tb-tile[aria-expanded='true'],
 #toolbar .tb-tile[aria-pressed='true'] {
   color: #fff;
@@ -356,7 +401,7 @@ body {
 /* An open menu takes the caption's place. */
 .tb-btn[aria-expanded='true'] > .lbl { visibility: hidden; }
 
-/* Every caption in the frame — the File tile's, a rail tile's — is the
+/* Every caption in the frame — a bar tile's, a rail tile's — is the
    menus' dark glass, Zen's tooltip on the dark frame. */
 #toolbar .lbl,
 #rail .lbl {
@@ -365,8 +410,8 @@ body {
   border-color: rgba(255, 255, 255, 0.1);
 }
 
-/* The menus: Plass's (plass/src/toolbar.css, .tb-menu), the File tile's
-   and its submenus, Recent documents and Get Knuth, in the frame's dark
+/* The menus: Plass's (plass/src/toolbar.css, .tb-menu), Open's Recent
+   documents and its submenu Get Knuth, in the frame's dark
    glass; 10 px under the tile, left-aligned with it (menu.ts). */
 .tb-menu {
   --menu-ink: rgba(240, 238, 233, 0.9);
@@ -819,10 +864,9 @@ body {
    the frame's edge either side (--rail). The cell and run groups scroll as
    one when the window is short (no scrollbar drawn; the wheel still
    scrolls, and a fade at the cut edge says there is more), and, as Zen
-   pins its bottom icons, the Session card's toggle and the view switch
-   stay pinned at the bottom, the switch level with the room's bottom
-   edge, the first tile level with its top: only tools ever go under the
-   fade. Values and rules are Plass's (plass/src/toolbar.css). */
+   pins its bottom icons, the view switch stays pinned at the bottom,
+   level with the room's bottom edge, the first tile 10 px under its top:
+   only tools ever go under the fade. Values and rules are Plass's (plass/src/toolbar.css). */
 #rail {
   position: fixed;
   top: var(--topbar);
@@ -848,6 +892,8 @@ body {
   overflow-y: auto;
   overscroll-behavior: contain;
   scrollbar-width: none;
+  /* Room under the bar and its traffic lights before the first tile. */
+  padding-top: 10px;
   /* A tile Tab reaches scrolls clear of the fade (its height, below). */
   scroll-padding-block: 28px;
 }
@@ -893,7 +939,9 @@ body {
   flex: none;
   width: 18px;
   height: 1px;
-  margin: 3px 0;
+  /* Air either side of the rule, so the groups read as groups; the tiles
+     inside one keep their 3 px (Taylor, 2026-10-17). */
+  margin: 9px 0;
   background: rgba(255, 255, 255, 0.1);
 }
 
@@ -912,6 +960,8 @@ body {
 }
 
 #rail .tb-btn .ico { width: 18px; height: 18px; }
+/* Run stale's dot: the amber of a stale cell's edge, filled. */
+.ico .stale-dot { fill: var(--amber); stroke: none; }
 
 #rail .tb-btn:hover,
 #rail .tb-btn:focus-visible {
@@ -928,14 +978,16 @@ body[data-view='source'] #view-toggle {
 /* A tile that cannot act in this view rests, dim, rather than going away
    (Plass's rule; main.ts, paintRail): at 40 % — the old bar's resting
    ink — with no hover, no lit tile and no caption. */
-#rail .tb-btn[aria-disabled='true'] {
+#rail .tb-btn[aria-disabled='true'],
+#toolbar .tb-tile[aria-disabled='true'] {
   opacity: 0.4;
   cursor: default;
   color: rgba(240, 238, 233, 0.64);
   background: transparent;
 }
 
-#rail .tb-btn[aria-disabled='true'] .lbl { visibility: hidden; }
+#rail .tb-btn[aria-disabled='true'] .lbl,
+#toolbar .tb-tile[aria-disabled='true'] .lbl { visibility: hidden; }
 
 /* The caption to the tile's right, where nothing crowds it; fixed to the
    window, since the groups scroll and would clip it (main.ts places it
@@ -1347,17 +1399,16 @@ body[data-view='source'] #view-toggle {
   /* Centred, 52rem. The docked Session card (--need: its width, the
      chips' lane and its gap, less the room's own margin; session.ts)
      slides it left by only what the card lacks, then narrows it to a
-     640 px floor; a receipt card (--lean) only slides it, for its stay.
-     peek-v2's rule: margin-left = max(0, min(centred, room − column −
-     need)). The slide is animated (.slide) on the pin and for a receipt,
-     never on a resize, and a run never changes it. */
+     640 px floor; a receipt card never moves it. peek-v2's rule:
+     margin-left = max(0, min(centred, room − column − need)). The slide
+     is animated (.slide) on the pin, never on a resize, and a run never
+     changes it. */
   --need: 0px;
-  --lean: 0px;
   /* The measure and its floor, times the View menu's zoom
      (column-zoom.ts; session.ts columnAt works out the same). */
   --measure: calc(52rem * var(--column-zoom, 1));
   max-width: max(min(calc(40rem * var(--column-zoom, 1)), 100%), min(var(--measure), 100% - var(--need)));
-  margin: 0 auto 0 max(0px, min((100% - var(--measure)) / 2, 100% - var(--measure) - max(var(--need), var(--lean))));
+  margin: 0 auto 0 max(0px, min((100% - var(--measure)) / 2, 100% - var(--measure) - var(--need)));
 }
 
 /* Knuth.app's View › Zoom (column-zoom.ts): the cells drawn larger or
@@ -1463,8 +1514,11 @@ body[data-view='source'] .cell .run-num { visibility: visible; }
 
 .cell .body { flex: 1; min-width: 0; }
 
-/* Esc armed: the next key (Y/S/M) switches this cell's kind. */
-.cell.armed { outline: 1px dashed rgba(157, 184, 214, 0.5); outline-offset: 3px; border-radius: 8px; }
+/* Command mode (Esc): the selected cell, its keys A/B, Y/S/M, O, D D,
+   Enter (document-view.ts, commandKey). The row holds the focus, so the
+   ring is the focus ring's blue, softer. */
+.cell.selected { outline: 1px solid rgba(157, 184, 214, 0.55); outline-offset: 3px; border-radius: 9px; }
+.cell.selected:focus-visible { outline: 1px solid rgba(157, 184, 214, 0.55); }
 
 /* code cells: dark instrument cards, One Dark ink */
 
@@ -1740,64 +1794,65 @@ body[data-view='source'] .cell .run-num { visibility: visible; }
 
 .cell .output.error { border-left-color: #cd6452; color: #cd6452; }
 
-/* insert strips between cells: a hairline carrying a small glass pill of
-   kind icons — invisible until the cursor enters the gap. Cell paddings
-   are symmetric, so the strip sits dead-center between neighbors. */
+/* The inserter in a gap between cells (document-view.ts, buildZone): a
+   very small cell, not yet one, holding the three kinds. It is the run
+   gutter's width, flush with the cards' left edge, with a card's corners,
+   hairline and fill, and it lies in the gap as a cell does: no glass, no
+   shadow, no line across (Taylor, 2026-10-17). Only the gaps beside a
+   current cell show it (.near: paintZones), and any gap the pointer is
+   on. Cell paddings are symmetric, so the gap's center is dead-center
+   between neighbors. */
 
 .insert-zone {
   height: 22px;
-  position: relative;
   display: flex;
   align-items: center;
-  justify-content: center;
-  /* Center the pill on the CARD column, not the row: the gutter sits to
-     the left, and without this the pill drifts half a gutter off-center. */
-  padding-left: 2.2rem;
-  opacity: 0;
-  transition: opacity 0.12s ease;
-}
-
-.insert-zone:hover { opacity: 1; }
-
-.insert-zone::before {
-  content: '';
-  position: absolute;
-  left: 2.2rem;
-  right: 0;
-  top: 50%;
-  border-top: 1px solid rgba(157, 184, 214, 0.25);
 }
 
 .insert-actions {
-  position: relative;
   display: inline-flex;
   align-items: center;
-  gap: 2px;
-  padding: 2px 5px;
-  background: color-mix(in srgb, #3a3840 94%, transparent);
-  backdrop-filter: blur(14px);
-  border: 1px solid rgba(255, 255, 255, 0.14);
-  border-radius: 999px;
-  box-shadow: 0 5px 18px rgba(0, 0, 0, 0.45);
+  justify-content: center;
+  width: 50px;
+  height: 18px;
+  background: #282c34;
+  border: 1px solid rgba(255, 255, 255, 0.07);
+  border-radius: 8px;
+  visibility: hidden;
+  opacity: 0;
+  transition: opacity 0.14s ease, visibility 0.14s, border-color 0.12s;
 }
+
+.insert-zone:is(.near, :hover, :focus-within) .insert-actions {
+  visibility: visible;
+  opacity: 1;
+}
+
+.insert-zone:is(:hover, :focus-within) .insert-actions { border-color: rgba(255, 255, 255, 0.14); }
 
 .insert-actions button {
   position: relative;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 24px;
-  height: 18px;
-  color: rgba(240, 238, 233, 0.75);
+  width: 15px;
+  height: 16px;
+  padding: 0;
+  color: rgba(240, 238, 233, 0.4);
   border: 0;
-  border-radius: 999px;
+  border-radius: 5px;
   background: transparent;
   cursor: pointer;
+  transition: color 0.12s, background 0.12s;
 }
 
-.insert-actions button:hover { color: #fff; background: rgba(255, 255, 255, 0.12); }
+.insert-zone:is(:hover, :focus-within) .insert-actions button { color: rgba(240, 238, 233, 0.62); }
+.insert-zone .insert-actions button:is(:hover, :focus-visible) {
+  color: #fff;
+  background: rgba(255, 255, 255, 0.08);
+}
 
-.insert-actions .ico { width: 13px; height: 13px; display: block; }
+.insert-actions .ico { width: 11px; height: 11px; display: block; }
 
 /* ---------- the viewers' parts (viewers.ts, in the Session card) ---------- */
 
@@ -1928,14 +1983,6 @@ body[data-view='source'] .cell .run-num { visibility: visible; }
 }
 
 #receipt.show { opacity: 1; transform: none; }
-/* Riding beside the column while it slides for the card (session.ts):
-   the same 0.36 s and curve as #sheet's slide. */
-#receipt.riding {
-  transition:
-    opacity 0.18s ease,
-    transform 0.24s cubic-bezier(0.2, 0.7, 0.2, 1),
-    left 0.36s cubic-bezier(0.2, 0.7, 0.2, 1);
-}
 /* Flying, above the bar: it is seen going into the pill. */
 #receipt.flying { z-index: 12; transition: none; pointer-events: none; }
 /* A click anywhere on a run's card or a chip's keeps it. */
@@ -2196,7 +2243,7 @@ body[data-view='source'] .cell .run-num { visibility: visible; }
   border-bottom: 1px solid rgba(255, 255, 255, 0.06);
 }
 
-.s-modes button,
+.s-pin,
 .s-close {
   border: 0;
   background: transparent;
@@ -2205,37 +2252,26 @@ body[data-view='source'] .cell .run-num { visibility: visible; }
   white-space: nowrap;
 }
 
-/* The modes: Peek, Silent, Pinned (the pin itself). */
-.s-modes {
-  display: inline-flex;
-  gap: 1px;
-  padding: 2px;
-  border-radius: 7px;
-  background: rgba(0, 0, 0, 0.22);
-  border: 1px solid rgba(255, 255, 255, 0.06);
-}
-.s-modes button {
+/* The pin: the header's one control besides ✕, lit blue and filled while
+   the card is docked. */
+.s-pin {
   display: inline-flex;
   align-items: center;
-  gap: 4px;
+  gap: 5px;
+  height: 24px;
+  padding: 0 8px;
+  border-radius: 6px;
   font: 11px/1 var(--sans);
-  padding: 4px 7px;
-  border-radius: 5px;
 }
-.s-modes button .ico { width: 11px; height: 11px; display: block; }
-/* A card under 370 px (the docked card on most windows): the modes and
-   ✕ on one line, Pinned as its pin alone (its title says it). */
-#session.tight .s-modes button { padding: 4px 6px; }
-#session.tight .s-modes [data-mode='pinned'] span { display: none; }
-.s-modes button:hover { color: var(--room-ink); }
-.s-modes button.on { color: var(--room-ink); background: rgba(255, 255, 255, 0.1); }
-.s-modes button[data-mode='pinned'].on { color: #9db8d6; }
-.s-modes button[data-mode='pinned'].on .ico { fill: currentColor; }
+.s-pin .ico { width: 11px; height: 11px; display: block; }
+.s-pin:hover { color: var(--room-ink); background: rgba(255, 255, 255, 0.08); }
+.s-pin[aria-pressed='true'] { color: #9db8d6; }
+.s-pin[aria-pressed='true'] .ico { fill: currentColor; }
 .s-close { width: 24px; height: 24px; border-radius: 6px; font-size: 12px; }
 .s-head .s-close { margin-left: auto; }
 .s-close:hover { color: var(--room-ink); background: rgba(255, 255, 255, 0.08); }
-#session :is(.s-fold, .s-modes, .s-pick) button:focus-visible,
-#session .s-fold:focus-visible,
+#session .s-pick button:focus-visible,
+#session :is(.s-fold, .s-pin):focus-visible,
 #session .s-close:focus-visible,
 #receipt button:focus-visible { outline: 2px solid #9db8d6; outline-offset: 1px; }
 
@@ -2244,6 +2280,7 @@ body[data-view='source'] .cell .run-num { visibility: visible; }
    height and each scrolls inside itself. */
 .s-body { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; overflow: hidden; }
 .s-part { flex: none; display: flex; flex-direction: column; min-height: 0; }
+.s-part[hidden] { display: none; }
 .s-part + .s-part { border-top: 1px solid rgba(255, 255, 255, 0.06); }
 .s-fold {
   flex: none;
@@ -2251,7 +2288,9 @@ body[data-view='source'] .cell .run-num { visibility: visible; }
   align-items: center;
   gap: 6px;
   width: 100%;
-  padding: 6px 10px 6px 8px;
+  /* The label at the card's 12 px inset, as its rows; the fold's arrow
+     after it (Taylor, 2026-10-17), the count at the far end. */
+  padding: 6px 10px 6px 12px;
   border: 0;
   background: rgba(255, 255, 255, 0.015);
   color: var(--room-ink-soft);
@@ -2271,83 +2310,19 @@ body[data-view='source'] .cell .run-num { visibility: visible; }
 .s-pane[data-pane='session'] { display: block; overflow-y: auto; overscroll-behavior: contain; }
 .s-pane[data-pane='session'][hidden] { display: none; }
 
-/* The band: the last run's receipt on top, behind a blue rule (grey for
-   an earlier run's, a chip's while docked); a run landing in a docked
-   card, or a chip's receipt shown there, lights it for a moment. */
-#session .rv { position: relative; border-bottom: 1px solid rgba(255, 255, 255, 0.06); }
-#session .rv::before {
-  content: '';
-  position: absolute;
-  left: 0;
-  top: 10px;
-  bottom: 10px;
-  width: 3px;
-  border-radius: 0 2px 2px 0;
-  background: #9db8d6;
-}
-#session .rv.earlier::before { background: rgba(240, 238, 233, 0.3); }
-#session .rv .r-head { background: transparent; }
+/* The band: one line naming the run whose marks the list carries, its
+   dot blue for the last run (grey for an earlier one's, a chip's), a
+   click on it going to the cell; a run landing in a docked card, or a
+   chip's receipt shown there, lights it for a moment. */
+#session .rv { position: relative; }
+#session .rv .r-head { background: transparent; min-height: 30px; }
+#session .rv .r-head.goes { cursor: pointer; }
+#session .rv .r-head.goes:hover { color: var(--room-ink); background: rgba(255, 255, 255, 0.04); }
 #session .rv.landed { animation: s-landed 1.2s ease-out; }
 @keyframes s-landed {
   from { background: rgba(157, 184, 214, 0.16); }
   to { background: transparent; }
 }
-
-/* Each name on its line — its mark, its kind at the right — and its value
-   under it: the preview on one line, or a table this small whole
-   (peek-v2's board, at the card's type size). */
-.band .b-rows { padding: 2px 12px 6px 14px; }
-.band .b-row {
-  display: flex;
-  align-items: baseline;
-  gap: 8px;
-  min-width: 0;
-  margin: 0 -6px;
-  padding: 2px 6px;
-  border-radius: 6px;
-  font: 12.5px/1.45 var(--mono);
-}
-.band .b-row .m { flex: none; width: 1ch; font-style: normal; font-weight: 600; color: var(--room-ink-soft); }
-.band .b-row .m.new { color: #6ea576; }
-.band .b-row b { font-weight: 600; color: var(--room-ink); white-space: nowrap; }
-.band .b-row .ty {
-  min-width: 0;
-  margin-left: auto;
-  padding-left: 8px;
-  color: var(--room-ink-soft);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-.band .b-row.viewable { cursor: pointer; }
-.band .b-row.viewable b { color: #9db8d6; }
-.band .b-row.viewable:hover { background: rgba(255, 255, 255, 0.05); }
-.band .b-row.scratch b { font-style: italic; font-weight: 500; }
-.band .b-val { margin: 0 0 6px calc(1ch + 8px); font: 12px/1.45 var(--mono); color: #c3c1bc; }
-.band .b-val.pv { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.band .mt-wrap { overflow-x: auto; scrollbar-width: thin; }
-.band .mt { border-collapse: collapse; font: 12px/1.45 var(--mono); }
-.band .mt th { padding: 0 12px 0 0; color: var(--room-ink-soft); font-weight: 400; text-align: left; white-space: nowrap; }
-.band .mt td { padding: 0 0 0 12px; color: #e6e4df; text-align: right; white-space: nowrap; }
-.band .mt.h tr:first-child td,
-.band .mt.v thead td { color: var(--room-ink-soft); }
-
-/* The figure at the card's width, its name under it. */
-.rv .r-fig.wide { display: block; padding: 0.35rem 12px 0.45rem 14px; }
-.rv .r-fig.wide .thumb { width: 100%; padding: 6px; border-radius: 6px; }
-.rv .r-fig.wide .fl { margin-top: 6px; }
-.rv .r-fig.wide .fl small { display: inline; margin-left: 8px; }
-
-.s-sec {
-  display: flex;
-  justify-content: space-between;
-  padding: 10px 12px 4px;
-  font: 10.5px var(--sans);
-  letter-spacing: 0.14em;
-  text-transform: uppercase;
-  color: var(--room-ink-soft);
-}
-.s-sec .c { letter-spacing: 0.02em; }
 
 .s-list { padding: 0 6px 8px; }
 .s-row {
@@ -2360,6 +2335,11 @@ body[data-view='source'] .cell .run-num { visibility: visible; }
   font: 12.5px/1.45 var(--mono);
 }
 .s-row .g { align-self: center; display: inline-flex; color: rgba(240, 238, 233, 0.4); }
+/* A name the band's run touched: its + (new, green) or ~ (rebound or
+   changed in place) where the kind glyph was, behind a blue edge. */
+.s-row.touched { box-shadow: inset 2px 0 0 #9db8d6; border-radius: 0 6px 6px 0; }
+.s-row .g.m { justify-content: center; font: normal 600 12.5px var(--mono); color: #9db8d6; }
+.s-row .g.m.new { color: #6ea576; }
 .s-row .g .ico { width: 13px; height: 13px; display: block; }
 .s-row.new .g { color: #9db8d6; }
 .s-row b { font-weight: 600; color: var(--room-ink); white-space: nowrap; }

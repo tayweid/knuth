@@ -112,15 +112,15 @@ test('the frame is Zen\'s: a dark edge all round a rounded room, a 44 px rail, t
   // under it down the left edge, 32 px tiles with 6 px either side, 44 px
   // like the bar; the room starts where they end and keeps the frame's 8 px to the
   // window's right and bottom (at the right, the scroll rail's 20 px gutter
-  // instead while a column runs past the room: rail.spec.ts). The first tile is level with the room's top
-  // edge, the view switch with its bottom.
+  // instead while a column runs past the room: rail.spec.ts). The first tile is 10 px under the room's
+  // top edge, the view switch level with its bottom.
   const bar = await box(page, '#toolbar');
   expect(bar.left).toBe(0);
   expect(bar.right).toBe(look.width);
   expect(bar.bottom).toBe(44);
   expect(await box(page, '#rail')).toEqual({ left: 0, top: bar.bottom, right: 44, bottom: look.height });
   const first = await box(page, '#rail .tb-btn');
-  expect(first).toEqual({ left: 6, top: bar.bottom, right: 38, bottom: bar.bottom + 32 });
+  expect(first).toEqual({ left: 6, top: bar.bottom + 10, right: 38, bottom: bar.bottom + 42 });
   const room = await box(page, '#layout');
   expect(room).toEqual({ left: 44, top: bar.bottom, right: look.width - 8, bottom: look.height - 8 });
   expect((await box(page, '#view-toggle')).bottom).toBe(room.bottom);
@@ -131,9 +131,9 @@ test('the frame is Zen\'s: a dark edge all round a rounded room, a 44 px rail, t
   expect(pill.right).toBe(room.right);
   expect((await box(page, '#doc-pod')).bottom - (await box(page, '#doc-pod')).top).toBe(30);
 
-  // In a tab there is no lights' room: the File tile stands over the rail's
-  // column of tiles.
-  const file = await box(page, '#file-tile');
+  // In a tab there is no lights' room: the Open tile stands over the
+  // rail's column of tiles.
+  const file = await box(page, '#open-tile');
   expect(file.left).toBe(6);
   expect((file.left + file.right) / 2).toBe((first.left + first.right) / 2);
 
@@ -142,29 +142,33 @@ test('the frame is Zen\'s: a dark edge all round a rounded room, a 44 px rail, t
   // The rail scrolls, so it is no drag region.
   expect(await appRegion(page, '#toolbar')).toBe('drag');
   expect(await appRegion(page, '#rail')).not.toBe('drag');
-  for (const selector of ['#doc-pod', '#file-name', '#file-tile', '.tb-end', '#session-pill', '#kernel-status']) {
+  for (const selector of ['#doc-pod', '#file-name', '#open-split', '#new-window', '.tb-end', '#session-pill', '#kernel-status']) {
     expect(await appRegion(page, selector), selector).toBe('no-drag');
   }
-  // The menus drop into the bar's band: theirs, too.
-  await page.locator('#file-tile').click();
-  expect(await appRegion(page, '#tb-menu-file')).toBe('no-drag');
-  await page.getByTitle('Your documents').click();
+  // The menu drops into the bar's band: its, too.
+  await page.locator('#recent-tile').click();
   await expect(page.locator('#tb-menu-recent')).toBeVisible();
   expect(await appRegion(page, '#tb-menu-recent')).toBe('no-drag');
 });
 
 test('the controls are where the frame puts them, with every id the tests and the smoke use', async ({ page }) => {
   await boot(page);
-  for (const id of ['cells-pod', 'add-code', 'add-scratch', 'add-text', 'run-pod', 'run-stale', 'run-all', 'stop', 'clear-outputs', 'restart', 'toggle-panel', 'view-toggle']) {
+  for (const id of ['cells-pod', 'add-code', 'add-scratch', 'add-text', 'run-pod', 'run-stale', 'run-all', 'stop', 'clear-outputs', 'view-toggle']) {
     await expect(page.locator(`#rail #${id}`), id).toHaveCount(1);
   }
-  for (const id of ['doc-pod', 'file-tile', 'file-name', 'doc-mark', 'doc-folder', 'session-pill', 'kernel-status']) {
+  // Restart stands beside the pill, with the session it replaces; the
+  // Session card opens from the pill alone.
+  await expect(page.locator('#toggle-panel')).toHaveCount(0);
+  await expect(page.locator('.tb-end > #restart + #session-pill')).toHaveCount(1);
+  for (const id of ['open-split', 'open-tile', 'recent-tile', 'new-window', 'doc-pod', 'file-name', 'doc-mark', 'doc-folder', 'doc-save', 'restart', 'session-pill', 'kernel-status']) {
     await expect(page.locator(`#toolbar #${id}`), id).toHaveCount(1);
   }
-  // Get Knuth, Install and the update are File menu items, as in Plass.
-  for (const id of ['get-app', 'install-app', 'update-app']) {
-    await expect(page.locator(`#tb-menu-file #${id}`), id).toHaveCount(1);
+  // Get Knuth and Install sit at the Recent menu's foot; the update is the
+  // shell's Knuth menu's, and History the bar's tile.
+  for (const id of ['get-app', 'install-app']) {
+    await expect(page.locator(`#tb-menu-recent #${id}`), id).toHaveCount(1);
   }
+  for (const id of ['update-app', 'open-history', 'file-tile', 'tb-menu-file']) await expect(page.locator(`#${id}`), id).toHaveCount(0);
   // The status holds its words and nothing else (the shell's smoke compares
   // its text exactly), inside the session pill, and the name its name.
   expect(await page.locator('#kernel-status').evaluate((element) => element.textContent)).toBe('Python');
@@ -190,17 +194,17 @@ test('the column centres in the room, the Session card closed or floating; docke
   expect(closed.width).toBe(832);
   expect(closed.offset).toBeLessThan(1);
   // Floating, the card lies over the room: the column stays.
-  await page.locator('#toggle-panel').click();
+  await page.locator('#session-pill').click();
   await expect(page.locator('#session')).toHaveClass(/floating/);
   expect(await centred()).toEqual(closed);
   // Docked, the column slides left by what the card lacks, its width kept
   // (session.spec.ts has the rule at each width).
-  await page.locator('#session [data-mode="pinned"]').click();
+  await page.locator('#session .s-pin').click();
   await expect(page.locator('#session')).toHaveClass(/docked/);
   const docked = await centred();
   expect(docked.width).toBe(832);
   expect(docked.offset).toBeGreaterThan(50);
-  await page.locator('#session [data-mode="peek"]').click();
+  await page.locator('#session .s-pin').click();
   expect(await centred()).toEqual(closed);
   // Narrower than the column and its margins: the column fills what there
   // is.
@@ -212,25 +216,25 @@ test('the column centres in the room, the Session card closed or floating; docke
   expect(await page.locator('#doc').evaluate((element) => getComputedStyle(element).paddingTop)).toBe('24px');
 });
 
-test('the Session tile is lit while the Session card shows', async ({ page }) => {
+test('the session pill is lit while the Session card shows', async ({ page }) => {
   await boot(page);
-  const tile = page.locator('#toggle-panel');
+  const tile = page.locator('#session-pill');
   await expect(page.locator('#session')).toBeHidden();
-  await expect(tile).toHaveAttribute('aria-pressed', 'false');
+  await expect(tile).toHaveAttribute('aria-expanded', 'false');
   await tile.click();
   await expect(page.locator('#session')).toBeVisible();
-  await expect(tile).toHaveAttribute('aria-pressed', 'true');
+  await expect(tile).toHaveAttribute('aria-expanded', 'true');
   await page.mouse.move(600, 400);
   await expect.poll(() => tile.evaluate((element) => getComputedStyle(element).backgroundColor)).toBe('rgb(46, 46, 50)');
   // Docked, it is remembered for the window, and painted at boot.
-  await page.locator('#session [data-mode="pinned"]').click();
+  await page.locator('#session .s-pin').click();
   await page.reload();
   await expect(page.locator('#kernel-status')).toHaveText('Python');
   await expect(page.locator('#session')).toBeVisible();
-  await expect(tile).toHaveAttribute('aria-pressed', 'true');
+  await expect(tile).toHaveAttribute('aria-expanded', 'true');
   await tile.click();
   await expect(page.locator('#session')).toBeHidden();
-  await expect(tile).toHaveAttribute('aria-pressed', 'false');
+  await expect(tile).toHaveAttribute('aria-expanded', 'false');
 });
 
 test('the History view\'s box is the room\'s: the frame\'s numbers, the docked Session card moving none of it, the pressed tile nothing in the bar', async ({ page }) => {
@@ -271,7 +275,7 @@ test('the History view\'s box is the room\'s: the frame\'s numbers, the docked S
   await boot(page);
   const tile = page.locator('#history-tile');
   const sent = () => page.evaluate(() => (window as unknown as { __sent: Array<Record<string, unknown>> }).__sent);
-  const ids = ['toolbar', 'file-tile', 'doc-pod', 'history-tile', 'session-pill', 'layout', 'rail', 'doc'];
+  const ids = ['toolbar', 'open-tile', 'doc-pod', 'history-tile', 'session-pill', 'layout', 'rail', 'doc'];
   const boxes = () => Promise.all(ids.map((id) => box(page, `#${id}`)));
   const rest = await boxes();
   // The room: under the 44 px bar, right of the 44 px rail, 8 px from the
@@ -286,8 +290,8 @@ test('the History view\'s box is the room\'s: the frame\'s numbers, the docked S
   await expect(tile).toHaveAttribute('aria-pressed', 'false');
   // Docked, the Session card slides the column inside the room, never the
   // room: the view's box is the same, and nothing is sent on the slide.
-  await page.locator('#toggle-panel').click();
-  await page.locator('#session [data-mode="pinned"]').click();
+  await page.locator('#session-pill').click();
+  await page.locator('#session .s-pin').click();
   await expect(page.locator('#session')).toHaveClass(/docked/);
   expect(await box(page, '#layout')).toEqual({ left: 44, top: 44, right: 1092, bottom: 752 });
   await tile.click();
@@ -297,96 +301,90 @@ test('the History view\'s box is the room\'s: the frame\'s numbers, the docked S
   expect(await sent()).toHaveLength(3);
 });
 
-test('the File tile opens Plass\'s text menu under it, and it closes on an item, a click elsewhere or Escape', async ({ page }) => {
+test('Open is a split tile: the folder half opens, the chevron drops the recent documents with Autosave, closing on a click elsewhere or Escape', async ({ page }) => {
   await boot(page);
-  const tile = page.locator('#file-tile');
-  const file = page.locator('#tb-menu-file');
-  await expect(file).toBeHidden();
-  // A hover does not open it; a click does, 10 px under the tile and
+  const tile = page.locator('#recent-tile');
+  const recent = page.locator('#tb-menu-recent');
+  // The two halves, one tile's outline between them, then New window.
+  const half = await box(page, '#open-tile');
+  const more = await box(page, '#recent-tile');
+  expect(more.left).toBe(half.right + 1);
+  expect(more.right - more.left).toBe(18);
+  expect((await box(page, '#new-window')).left).toBe(more.right + 6);
+  await expect(recent).toBeHidden();
+  // A hover does not open it; a click does, 10 px under the chevron and
   // left-aligned with it, on its first item.
   await tile.hover();
-  await expect(file).toBeHidden();
+  await expect(recent).toBeHidden();
   await tile.click();
-  await expect(file).toBeVisible();
+  await expect(recent).toBeVisible();
   await expect(tile).toHaveAttribute('aria-expanded', 'true');
-  const at = await box(page, '#tb-menu-file');
-  const anchor = await box(page, '#file-tile');
-  expect(at.top).toBe(anchor.bottom + 10);
-  // (Never closer than 8 px to the window's edge: the tile is 6 px in, in
-  // a tab; beside the lights it is the tile's own left.)
-  expect(at.left).toBe(Math.max(8, anchor.left));
-  // A vertical text menu: New window, Open…, Recent documents ›, Save,
-  // Autosave (checked, with no shortcut), in Plass's dark glass. In a locally served tab with no install offered,
-  // Get Knuth, Install and the update are away, and so is their rule.
-  const items = file.locator('.tb-menu-item:visible');
-  await expect(items.locator('.tb-menu-label')).toHaveText(['New window', 'Open…', 'Recent documents', 'Save', 'Autosave']);
-  await expect(items.locator('kbd')).toHaveText(['⌘O', '›', '⌘S']);
-  await expect(file.getByRole('menuitemcheckbox', { name: 'Autosave' })).toHaveAttribute('aria-checked', 'true');
-  await expect(file.locator('.tb-menu-divider')).toBeHidden();
+  const at = await box(page, '#tb-menu-recent');
+  expect(at.top).toBe(more.bottom + 10);
+  expect(at.left).toBe(Math.max(8, more.left));
+  // The recent documents (none yet), then below a rule Autosave, checked.
+  // In a locally served tab with no install offered, Get Knuth and Install
+  // are away, and so is their rule.
+  await expect(recent.locator('.tb-menu-heading')).toHaveText('Recent documents');
+  await expect(recent).toContainText('Your saved documents will appear here.');
+  const items = recent.locator('.tb-menu-item:visible');
+  await expect(items.locator('.tb-menu-label')).toHaveText(['Autosave']);
+  await expect(recent.getByRole('menuitemcheckbox', { name: 'Autosave' })).toHaveAttribute('aria-checked', 'true');
+  await expect(recent.locator('.tb-menu-divider:visible')).toHaveCount(1);
   await expect(items.first()).toBeFocused();
-  const look = await file.evaluate((element) => {
+  const look = await recent.evaluate((element) => {
     const style = getComputedStyle(element);
     return { glass: style.backgroundColor, radius: style.borderRadius, width: element.getBoundingClientRect().width };
   });
   expect(look).toEqual({ glass: 'rgba(27, 26, 30, 0.94)', radius: '13px', width: 258 });
   // A click elsewhere closes it.
   await page.locator('#doc').click({ position: { x: 300, y: 600 } });
-  await expect(file).toBeHidden();
+  await expect(recent).toBeHidden();
   await expect(tile).toHaveAttribute('aria-expanded', 'false');
 
   // Opened with a click while typing in a cell, Escape closes it and the
   // focus goes back to the cell — Escape never reaches it.
   await page.locator('.cm-content').first().click();
   await tile.click();
-  await expect(file).toBeVisible();
+  await expect(recent).toBeVisible();
   await page.keyboard.press('Escape');
-  await expect(file).toBeHidden();
+  await expect(recent).toBeHidden();
   await expect(page.locator('.cm-content').first()).toBeFocused();
 
-  // From the keyboard: ArrowDown on the tile opens it on its first item;
-  // the arrows, Home, End and a letter walk it; ArrowRight opens Recent in
-  // its place and ArrowLeft goes back; Escape hands the focus to the tile.
+  // From the keyboard: ArrowDown on the chevron opens it on its first
+  // item; Escape hands the focus back to the chevron; Tab out closes it.
   await tile.focus();
   await page.keyboard.press('ArrowDown');
-  await expect(file).toBeVisible();
-  await expect(page.getByTitle(/^New document/)).toBeFocused();
-  await page.keyboard.press('ArrowDown');
-  await expect(page.getByTitle('Open… (⌘O)')).toBeFocused();
-  await page.keyboard.press('End');
-  await expect(page.getByTitle(/^Autosave/)).toBeFocused();
-  await page.keyboard.press('Home');
-  await expect(page.getByTitle(/^New document/)).toBeFocused();
-  await page.keyboard.press('r');
-  await expect(page.getByTitle('Your documents')).toBeFocused();
-  await page.keyboard.press('ArrowRight');
-  const recent = page.locator('#tb-menu-recent');
   await expect(recent).toBeVisible();
-  await expect(file).toBeHidden();
-  await expect(recent.locator('.tb-menu-heading')).toHaveText('Recent documents');
-  await expect(recent).toContainText('Your saved documents will appear here.');
-  await expect(recent.getByTitle('Back to File')).toBeFocused();
-  await page.keyboard.press('ArrowLeft');
-  await expect(file).toBeVisible();
-  await expect(page.getByTitle('Your documents')).toBeFocused();
+  await expect(page.getByTitle(/^Autosave/)).toBeFocused();
   await page.keyboard.press('Escape');
-  await expect(file).toBeHidden();
+  await expect(recent).toBeHidden();
   await expect(tile).toBeFocused();
-  // Tab out of it closes it and goes on from the tile.
   await page.keyboard.press('ArrowDown');
   await page.keyboard.press('Tab');
-  await expect(file).toBeHidden();
+  await expect(recent).toBeHidden();
 
-  // An item closes it and runs: New window opens this page again.
+  // Autosave off: the pill offers Save; the document here has no file
+  // yet, so it already did, as Save… (it asks where).
+  const save = page.locator('#doc-save');
+  await expect(save).toHaveText('Save…');
   await tile.click();
+  await page.getByTitle(/^Autosave/).click();
+  await expect(recent).toBeHidden();
+  await tile.click();
+  await expect(recent.getByRole('menuitemcheckbox', { name: 'Autosave' })).toHaveAttribute('aria-checked', 'false');
+  await tile.click();
+  await expect(save).toBeVisible();
+
+  // New window opens this page again; a second click on the chevron
+  // closes its menu.
   const popup = page.waitForEvent('popup');
-  await page.getByTitle(/^New document/).click();
+  await page.locator('#new-window').click();
   expect(new URL((await popup).url()).pathname).toBe('/');
-  await expect(file).toBeHidden();
-  // A second click on the tile closes it.
   await tile.click();
-  await expect(file).toBeVisible();
+  await expect(recent).toBeVisible();
   await tile.click();
-  await expect(file).toBeHidden();
+  await expect(recent).toBeHidden();
 });
 
 test('the name pill renames in place and keeps the name\'s text exact', async ({ page }) => {
@@ -428,6 +426,14 @@ test('the save mark is Plass\'s: green when the file holds the document, red whe
   await page.keyboard.type('2');
   await expect(page.locator('#doc-pod')).toHaveClass(/doc-unsaved/);
   await expect.poll(() => markColour(page)).toBe('rgba(205, 100, 82, 0.95)');
+  // With a file and autosave on, nothing to press: no Save in the pill.
+  // Autosave off brings it.
+  const save = page.locator('#doc-save');
+  await expect(save).toBeHidden();
+  await page.locator('#recent-tile').click();
+  await page.getByTitle(/^Autosave/).click();
+  await expect(save).toBeVisible();
+  await expect(save).toHaveText('Save');
 });
 
 test('a new document with no file yet is unsaved', async ({ page }) => {
@@ -495,7 +501,7 @@ test('source view keeps the frame: the bar and the switch lit, the room One Dark
   // Plass's rule: the tools that cannot act here rest, dim, in their
   // places — the rail reads as the rail in every view.
   await expect(page.locator('#rail .tb-rule')).toBeVisible();
-  for (const id of ['add-code', 'add-scratch', 'add-text', 'run-stale', 'run-all', 'stop', 'clear-outputs', 'restart', 'toggle-panel']) {
+  for (const id of ['add-code', 'add-scratch', 'add-text', 'run-stale', 'run-all', 'stop', 'clear-outputs', 'restart']) {
     const tile = page.locator(`#${id}`);
     await expect(tile, id).toBeVisible();
     await expect(tile, id).toHaveAttribute('aria-disabled', 'true');
@@ -503,8 +509,9 @@ test('source view keeps the frame: the bar and the switch lit, the room One Dark
   }
   // A click on a resting tile does nothing (forced: Playwright itself
   // waits for an aria-disabled control to wake).
-  await page.locator('#toggle-panel').click({ force: true });
-  await expect(page.locator('#toggle-panel')).toHaveAttribute('aria-pressed', 'false');
+  await page.locator('#run-all').click({ force: true });
+  await page.locator('#restart').click({ force: true });
+  await expect(page.locator('#session-pill .sp-names')).not.toHaveText('fresh session');
   await expect(page.locator('#session')).toBeHidden();
   const look = await page.evaluate(() => ({
     room: getComputedStyle(document.getElementById('layout')!).backgroundColor,
@@ -533,7 +540,7 @@ test('a script with no cells keeps a whole rail, every tile resting, the switch 
   await boot(page);
   await expect(page.locator('body')).toHaveAttribute('data-view', 'source');
   const tiles = page.locator('#rail .tb-btn');
-  await expect(tiles).toHaveCount(10);
+  await expect(tiles).toHaveCount(8);
   for (const tile of await tiles.all()) {
     await expect(tile).toBeVisible();
     await expect(tile).toHaveAttribute('aria-disabled', 'true');
@@ -578,7 +585,7 @@ test('the toast sits on the room\'s axis', async ({ page }) => {
   expect(room.bottom - at.bottom).toBe(12);
 });
 
-test('a short window cuts the cell tools under a fade and keeps the Session tile and the switch whole', async ({ page }) => {
+test('a short window cuts the cell tools under a fade and keeps the switch whole', async ({ page }) => {
   await boot(page);
   const cue = () => page.evaluate(() => {
     const groups = document.querySelector('.tb-rail-groups')!;
@@ -587,25 +594,26 @@ test('a short window cuts the cell tools under a fade and keeps the Session tile
   const pinned = () => page.evaluate(() => {
     const groups = document.querySelector('.tb-rail-groups')!;
     const cut = groups.getBoundingClientRect().bottom;
-    return ['toggle-panel', 'view-toggle'].map((id) => {
+    return ['view-toggle'].map((id) => {
       const tile = document.getElementById(id)!;
       const bounds = tile.getBoundingClientRect();
       return { id, scrolls: groups.contains(tile), belowCut: bounds.top >= cut, inWindow: bounds.bottom <= innerHeight - 8 };
     });
   });
   await expect.poll(cue).toEqual({ above: false, below: false });
-  await page.setViewportSize({ width: 1100, height: 360 });
+  await page.setViewportSize({ width: 1100, height: 300 });
   await expect.poll(cue).toEqual({ above: false, below: true });
   for (const tile of await pinned()) expect(tile).toEqual({ id: tile.id, scrolls: false, belowCut: true, inWindow: true });
   // A tile Tab reaches under the fade scrolls into view, clear of it: the
-  // last one, Restart, to the end of the groups, where the fade is gone.
-  await page.locator('#clear-outputs').focus();
+  // last one, Clear outputs, to the end of the groups, where the fade is
+  // gone.
+  await page.locator('#stop').focus();
   await page.keyboard.press('Tab');
-  await expect(page.locator('#restart')).toBeFocused();
+  await expect(page.locator('#clear-outputs')).toBeFocused();
   await expect.poll(cue).toEqual({ above: true, below: false });
   const inView = await page.evaluate(() => {
     const groups = document.querySelector('.tb-rail-groups')!.getBoundingClientRect();
-    const tile = document.getElementById('restart')!.getBoundingClientRect();
+    const tile = document.getElementById('clear-outputs')!.getBoundingClientRect();
     return tile.top >= groups.top - 0.5 && tile.bottom <= groups.bottom + 0.5;
   });
   expect(inView).toBe(true);
@@ -637,8 +645,8 @@ test('the floor is main\'s 640 px; the docked card raises it, so the card never 
   // Docked at 990 the column narrows to its 640 px floor, and the chips'
   // lane and the card need more than the room has: the room scrolls
   // sideways, the card past the column's edge.
-  await page.locator('#toggle-panel').click();
-  await page.locator('#session [data-mode="pinned"]').click();
+  await page.locator('#session-pill').click();
+  await page.locator('#session .s-pin').click();
   await expect(page.locator('#session')).toHaveClass(/docked/);
   expect(await column()).toBe(640);
   expect(await sideways()).toBe(true);
@@ -646,7 +654,7 @@ test('the floor is main\'s 640 px; the docked card raises it, so the card never 
     document.getElementById('session')!.getBoundingClientRect().left - document.getElementById('sheet')!.getBoundingClientRect().right);
   expect(beside).toBeGreaterThanOrEqual(45);
   // Floating, main's floor again.
-  await page.locator('#session [data-mode="peek"]').click();
+  await page.locator('#session .s-pin').click();
   await expect.poll(sideways).toBe(false);
   await page.setViewportSize({ width: 640, height: 700 });
   await expect.poll(sideways).toBe(false);

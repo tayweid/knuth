@@ -173,8 +173,12 @@ Files in an `untracked/` folder are left out. More in
 | ⌘⏎ | Run the cell and stay |
 | ⌥⏎ | Run the cell and add a new one below |
 | ⌘⇧⏎ | Add a cell below without running |
-| Esc, then S / M / Y | Make the cell scratch / text / code |
-| Esc, then O | Clear the cell's output |
+| Esc | Leave the cell for command mode (Enter goes back in) |
+| A / B | Add a code cell above / below (command mode) |
+| S / M / Y | Make the cell scratch / text / code (command mode) |
+| O | Clear the cell's output (command mode) |
+| D D | Delete the cell (command mode; ⌘Z brings it back) |
+| ↑ / ↓ | Move to the cell above / below (command mode) |
 | Ctrl-Space | Complete a name from the live session |
 | ⌘⇧E | Switch between cells and the plain file |
 | ⌘S / ⌘O | Save / open |

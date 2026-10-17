@@ -246,9 +246,8 @@ test('opening another document restarts the session for that document', async ({
   await page.goto('/?open=/p/analysis.py');
   await expect(page.getByText('x = 1')).toBeVisible();
 
-  // Recent is in the File tile's menu, beside the traffic lights.
-  await page.locator('#file-tile').click();
-  await page.getByTitle('Your documents').click();
+  // Recent is Open's chevron, beside the traffic lights.
+  await page.locator('#recent-tile').click();
   await page.getByText('other.py', { exact: true }).click();
   await expect(page.getByText('y = 2')).toBeVisible();
   await expect.poll(async () => (await messages(page)).find((m) => m.type === 'restart')).toMatchObject({

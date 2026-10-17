@@ -577,6 +577,27 @@ top to bottom, in the old bar's groups under a hairline:
   right: the same id and Cells / Grid / Source captions, its own glyph,
   lit in source view.
 
+*Since 2026-10-17* (Taylor): the File tile is gone. Open is a split tile,
+as Plass's is: the folder half opens a document (⌘O), the chevron half
+drops the recent documents with Autosave and, where they apply, Get
+Knuth and Install at its foot. New window is a tile of its own. Save
+shows in the name pill only when autosave is off or the document has no
+file yet. History is the bar's tile alone, and Check for updates the
+shell's Knuth menu's, a toast offering to install a build it finds. The
+rail's groups stand apart, 9 px of air
+either side of the rule (the tiles in a group keep their 3 px), and the
+first tile sits 10 px under the bar. The rail's foot holds the view switch alone.
+The Session panel tile is gone (the pill opens the card), and Restart
+session left the Run group for the bar's right end, a tile just before the
+session pill, beside the session it replaces. Between cells, the centred
+hover strip became a very small cell under the run buttons' column — the
+gutter's width, a card's corners, hairline and fill, the three kinds in
+it, untinted, no shadow or line across — shown only in the gaps above
+and below the current cells (the one with the cursor, the one under the
+pointer; none above the top cell); Esc became Jupyter's command mode (A/B,
+Y/S/M, O, D D, Enter, the arrows) in place of the two-second Esc-Y/S/M
+chord.
+
 The captions are the longer words of the mockup ("Code cell", "Restart
 session", "Session panel"), beside the tile; the titles, ids and handlers
 are unchanged. When the window is short the two groups scroll as one,

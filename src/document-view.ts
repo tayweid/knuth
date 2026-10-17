@@ -6,7 +6,9 @@
 //
 // Shortcuts (Jupyter-standard): Cmd-Enter run in place, Shift-Enter run
 // and advance (creating a cell at the end), Alt-Enter run and insert
-// below. New cells also come from hover insert strips between cells.
+// below. Esc leaves the cell for command mode (A/B insert above/below,
+// Y/S/M switch kind, O clears output, D D deletes, Enter edits). New cells
+// also come from the "+" in the run buttons' column between cells.
 
 import { minimalSetup, EditorView } from 'codemirror';
 import {
@@ -19,8 +21,14 @@ import {
   type DecorationSet,
   type ViewUpdate,
 } from '@codemirror/view';
-import { Compartment, RangeSet, RangeSetBuilder, type Extension } from '@codemirror/state';
-import { autocompletion, type CompletionContext, type CompletionResult } from '@codemirror/autocomplete';
+import { Compartment, Prec, RangeSet, RangeSetBuilder, type Extension } from '@codemirror/state';
+import {
+  autocompletion,
+  closeCompletion,
+  completionStatus,
+  type CompletionContext,
+  type CompletionResult,
+} from '@codemirror/autocomplete';
 import { foldGutter, foldKeymap, indentUnit, type LanguageDescription } from '@codemirror/language';
 import { indentationMarkers } from '@replit/codemirror-indentation-markers';
 import { python } from '@codemirror/lang-python';
@@ -254,6 +262,23 @@ const wrapHang = ViewPlugin.fromClass(
   { decorations: (plugin) => plugin.decorations },
 );
 
+/** Esc with a code hint still on its way from the kernel (typed, no popup
+ *  yet): the hint is dropped and Esc goes on to leave the cell. Without
+ *  this the completion keymap (highest precedence) claims an Esc pressed
+ *  just after typing to cancel a popup nobody saw. A popup that shows
+ *  still takes the first Esc. */
+const escapeBeforeHints = Prec.highest(
+  keymap.of([
+    {
+      key: 'Escape',
+      run: (cm) => {
+        if (completionStatus(cm.state) === 'pending') closeCompletion(cm);
+        return false;
+      },
+    },
+  ]),
+);
+
 /** Jedi's kinds, in CodeMirror's icon vocabulary. */
 const COMPLETION_KIND: Record<string, string> = {
   module: 'namespace',
@@ -295,9 +320,12 @@ export class DocumentView {
   private gridHistory = new GridHistory();
   private endZone!: HTMLElement;
   private lastFocused: CellView | null = null;
-  /** Esc arms a brief chord: the next key can switch the cell's kind
-   *  (Y/S/M) or clear its output (O). */
-  private armed: { v: CellView; until: number } | null = null;
+  /** The cell under the pointer, current for the inserters beside it. */
+  private hovered: CellView | null = null;
+  /** The selected cell in command mode (Esc); null while editing. */
+  private selected: CellView | null = null;
+  /** When the first D of D D (delete) was pressed. */
+  private firstD = 0;
   /** Cell identities (CellView.id), by the Cell they belong to. */
   private ids = new WeakMap<Cell, string>();
   private nextId = 1;
@@ -322,48 +350,111 @@ export class DocumentView {
     /** Resolve a figs/<name>.svg receipt to SVG text (project folder). */
     private loadFigure?: (path: string) => Promise<string | null>,
   ) {
-    // The armed Esc chord (Esc, then Y/S/M, or O) is resolved here so it works
-    // regardless of which element ends up with the key event.
-    window.addEventListener(
-      'keydown',
-      (e) => {
-        if (!this.armed || Date.now() > this.armed.until) return;
-        const kind =
-          e.key === 'y' || e.key === 'c'
-            ? 'program'
-            : e.key === 's'
-              ? 'scratch'
-              : e.key === 'm' || e.key === 't'
-                ? 'text'
-                : null;
-        const { v } = this.armed;
-        this.disarm();
-        if (e.key === 'o') {
-          e.preventDefault();
-          e.stopPropagation();
-          this.clearOutputs([v]);
-        } else if (kind) {
-          e.preventDefault();
-          e.stopPropagation();
-          this.convertKind(v, kind);
+    // Command mode (Jupyter's): Esc out of a cell's editor selects the
+    // cell, its row holding the focus so no key types, and the keys act on
+    // it (commandKey). Esc is read last, as it bubbles out to the window,
+    // and only if nothing claimed it on the way — the completion popup, a
+    // menu, the Session card (session.ts): with one of those up, Esc puts
+    // it away, and the next Esc leaves the cell. Read on the window, in
+    // capture, so a selected cell's keys beat everything else's.
+    window.addEventListener('keydown', (e) => this.commandKey(e), { capture: true });
+    // The cell under the pointer is current too (paintZones).
+    container.addEventListener('mouseover', (e) => {
+      const root = (e.target as Element).closest?.('.cell-wrap');
+      const v = root ? this.cellViews().find((view) => view.root === root) ?? null : null;
+      if (v !== this.hovered) {
+        this.hovered = v;
+        this.paintZones();
+      }
+    });
+    container.addEventListener('mouseleave', () => {
+      this.hovered = null;
+      this.paintZones();
+    });
+    window.addEventListener('keydown', (e) => {
+      if (e.key !== 'Escape' || e.defaultPrevented || e.shiftKey || e.metaKey || e.ctrlKey || e.altKey) return;
+      if (this.sourceMode || this.gridMode) return;
+      const v = this.cellViews().find((view) => view.editor?.hasFocus || view.prose?.hasFocus());
+      if (!v) return;
+      e.preventDefault();
+      this.select(v);
+    });
+  }
+
+  /** Every cell view in document order, cell zero first when it shows. */
+  private cellViews(): CellView[] {
+    const p = this.preambleView;
+    return p && !p.root.classList.contains('packages-folded') ? [p, ...this.views] : [...this.views];
+  }
+
+  private select(v: CellView) {
+    this.unselect();
+    this.selected = v;
+    this.firstD = 0;
+    this.setCurrent(v);
+    v.row.classList.add('selected');
+    v.row.tabIndex = -1;
+    v.row.focus({ preventScroll: true });
+    v.row.scrollIntoView({ block: 'nearest' });
+    // A click elsewhere, Tab, an edit: whatever takes the focus ends it.
+    v.row.addEventListener('focusout', () => {
+      if (this.selected === v) this.unselect();
+    }, { once: true });
+  }
+
+  private unselect() {
+    const v = this.selected;
+    if (!v) return;
+    this.selected = null;
+    v.row.classList.remove('selected');
+    v.row.removeAttribute('tabindex');
+  }
+
+  /** A key in command mode: A/B insert a code cell above/below, Y (or C),
+   *  S, M (or T) switch the kind, O clears the output, D D deletes, Enter
+   *  edits, ↑/↓ (or K/J) move, Shift-Enter and ⌘-Enter run. Any other key
+   *  passes through untouched (⌘S, ⌘Z, the session's P). */
+  private commandKey(e: KeyboardEvent) {
+    const v = this.selected;
+    if (!v || e.isComposing) return;
+    if (document.activeElement !== v.row) {
+      this.unselect();
+      return;
+    }
+    const mod = e.metaKey || e.ctrlKey;
+    const key = e.key.length === 1 ? e.key.toLowerCase() : e.key;
+    const list = this.cellViews();
+    const at = list.indexOf(v);
+    let act: (() => void) | null = null;
+    if (key === 'Enter' && mod) act = () => void this.runCell(v);
+    else if (mod || e.altKey) act = null;
+    else if (key === 'Enter' && e.shiftKey) {
+      act = () => (v.cell.kind === 'text' ? this.focusAfter(v, true) : this.runAndAdvance(v));
+    } else if (key === 'Enter') act = () => this.focusCell(v);
+    else if (key === 'a') act = v.isPreamble ? null : () => this.insertBefore(v, 'program');
+    else if (key === 'b') act = () => (v.isPreamble ? this.insertAt(0, 'program') : this.insertAfter(v, 'program'));
+    else if (key === 'y' || key === 'c') act = () => this.convertKind(v, 'program');
+    else if (key === 's') act = () => this.convertKind(v, 'scratch');
+    else if (key === 'm' || key === 't') act = () => this.convertKind(v, 'text');
+    else if (key === 'o') act = () => this.clearOutputs([v]);
+    else if (key === 'ArrowUp' || key === 'k') act = () => list[at - 1] && this.select(list[at - 1]);
+    else if (key === 'ArrowDown' || key === 'j') act = () => list[at + 1] && this.select(list[at + 1]);
+    else if (key === 'd' && !v.isPreamble) {
+      act = () => {
+        if (Date.now() - this.firstD > 1000) {
+          this.firstD = Date.now();
+          return;
         }
-      },
-      { capture: true },
-    );
-  }
-
-  private arm(v: CellView) {
-    this.disarm();
-    this.armed = { v, until: Date.now() + 2000 };
-    v.row.classList.add('armed');
-    window.setTimeout(() => {
-      if (this.armed?.v === v && Date.now() >= this.armed.until) this.disarm();
-    }, 2100);
-  }
-
-  private disarm() {
-    this.armed?.v.row.classList.remove('armed');
-    this.armed = null;
+        const next = list[at + 1] ?? list[at - 1];
+        this.unselect();
+        this.remove(v);
+        if (next && this.views.length > 0 && next !== v) this.select(next);
+      };
+    }
+    if (!act) return;
+    e.preventDefault();
+    e.stopPropagation();
+    act();
   }
 
   /** Switch a cell's kind in place. Program<->scratch keeps the same CM
@@ -1244,6 +1335,7 @@ export class DocumentView {
     v.editor = new EditorView({
       doc: initial,
       extensions: [
+        escapeBeforeHints,
         this.cellKeymap(v),
         this.trackFocus(v),
         minimalSetup,
@@ -1285,7 +1377,7 @@ export class DocumentView {
     const state = EditorState.create({
       doc: mdToDoc(textProse(v.cell)).doc,
       plugins: [
-        // First, so its Shift-Enter/Backspace/Escape/arrow bindings beat
+        // First, so its Shift-Enter/Backspace/arrow bindings beat
         // proseKeymap's own (hard-break Shift-Enter, joining Backspace).
         pmKeymap(this.textCellKeymap(v)),
         proseInputRules,
@@ -1304,10 +1396,22 @@ export class DocumentView {
       },
       handleDOMEvents: {
         focus: () => {
-          this.lastFocused = v;
+          this.setCurrent(v);
           return false;
         },
         mousedown: (_pv, event) => this.openLinkOnModifierClick(event),
+        // ProseMirror claims every Esc as its own (captureKeyDown), so the
+        // window never sees one unclaimed: command mode is entered here,
+        // before it, on the same terms (nothing else took the Esc — the
+        // Session card, a formula's editor).
+        keydown: (_pv, event) => {
+          if (event.key !== 'Escape' || event.shiftKey || event.metaKey || event.ctrlKey || event.altKey) return false;
+          if (!event.defaultPrevented) {
+            event.preventDefault();
+            this.select(v);
+          }
+          return true;
+        },
       },
       // Round-trip honesty: reserialize only on a real doc change, never on
       // a bare selection/focus transaction (that would be pointless churn
@@ -1340,7 +1444,7 @@ export class DocumentView {
   }
 
   /** Cell-level bindings for a text cell's PM keymap: the same Shift-Enter/
-   *  Mod-Shift-Enter/Backspace/Escape/arrow-flow parity every other cell
+   *  Mod-Shift-Enter/Backspace/arrow-flow parity every other cell
    *  kind gets from cellKeymap. Mod-Enter (run) is deliberately absent —
    *  text cells don't run, so it falls through as a no-op, same as today. */
   private textCellKeymap(v: CellView): Record<string, PMCommand> {
@@ -1354,10 +1458,6 @@ export class DocumentView {
         return true;
       },
       'Backspace': () => this.backspaceOnEmpty(v),
-      'Escape': () => {
-        this.arm(v);
-        return true;
-      },
       'ArrowUp': (state, _dispatch, pv) => {
         if (!state.selection.empty || !pv?.endOfTextblock('up')) return false;
         return this.moveToPrevEnd(v);
@@ -1382,7 +1482,7 @@ export class DocumentView {
   private trackFocus(v: CellView) {
     return EditorView.domEventHandlers({
       focus: () => {
-        this.lastFocused = v;
+        this.setCurrent(v);
         return false;
       },
     });
@@ -1399,7 +1499,6 @@ export class DocumentView {
       { key: 'Alt-Enter', run: () => (this.runAndInsertBelow(v), true) },
       { key: 'Mod-Shift-Enter', run: () => (this.insertAfter(v, 'program'), true) },
       { key: 'Backspace', run: () => this.backspaceOnEmpty(v) },
-      { key: 'Escape', run: () => (this.arm(v), true) },
       {
         key: 'ArrowUp',
         run: (cm) => {
@@ -1455,21 +1554,23 @@ export class DocumentView {
     return false;
   }
 
-  /** Hover strip that inserts a cell before `v` (or at the end for null):
-   *  a hairline with a small glass pill of kind icons, the same dialect
-   *  as the toolbar and the kind picker. */
+  /** The inserter in the gap before `v` (or at the end for null): the
+   *  three kinds in a very small cell under the run buttons' column. Only
+   *  the gaps beside a current cell show one (paintZones; Taylor,
+   *  2026-10-17: always there was too much, hover-only was forgotten). */
   private buildZone(v: CellView | null): HTMLElement {
     const zone = document.createElement('div');
     zone.className = 'insert-zone';
     const inner = document.createElement('div');
     inner.className = 'insert-actions';
     const kinds: Array<[NewCellKind, string, string, string]> = [
-      ['program', 'code', 'Code', 'Insert code cell'],
+      ['program', 'code', 'Code', 'Insert code cell (Esc then A or B)'],
       ['scratch', 'scratch', 'Scratch', 'Insert scratch cell'],
       ['text', 'text', 'Text', 'Insert text cell'],
     ];
     for (const [kind, glyph, label, title] of kinds) {
       const b = document.createElement('button');
+      b.className = `k-${kind}`;
       b.title = title;
       b.innerHTML = `${icon(glyph)}<span class="lbl">${label}</span>`;
       b.addEventListener('click', () => {
@@ -1480,6 +1581,32 @@ export class DocumentView {
     }
     zone.append(inner);
     return zone;
+  }
+
+  /** A cell became current: the cursor went into it, or command mode
+   *  selected it. */
+  private setCurrent(v: CellView) {
+    if (this.lastFocused === v) return;
+    this.lastFocused = v;
+    this.paintZones();
+  }
+
+  /** Light the inserters beside the current cells — the one with the
+   *  cursor (or last had it) and the one under the pointer: the gap above
+   *  each and the gap below, so two show most of the time and up to four
+   *  when the two differ. The top cell has no gap above lit (one there is
+   *  still found by pointing at it). */
+  private paintZones() {
+    const near = new Set<Element>();
+    for (const v of [this.lastFocused, this.hovered]) {
+      if (!v) continue;
+      const i = v.isPreamble ? -1 : this.views.indexOf(v);
+      if (i < 0 && !(v.isPreamble && v === this.preambleView)) continue;
+      const above = v.root.querySelector(':scope > .insert-zone');
+      if (above && (i > 0 || this.preambleView)) near.add(above);
+      near.add(this.views[i + 1]?.root.querySelector(':scope > .insert-zone') ?? this.endZone);
+    }
+    for (const zone of this.container.querySelectorAll('.insert-zone')) zone.classList.toggle('near', near.has(zone));
   }
 
   // ---------- structure edits ----------
@@ -1511,6 +1638,7 @@ export class DocumentView {
       this.refreshRunControl(view);
     }
     this.focusCell(view);
+    this.paintZones();
     this.onChange();
   }
 
@@ -1544,6 +1672,8 @@ export class DocumentView {
     this.views.splice(i, 1);
     this.destroyEditors(v);
     v.root.remove();
+    if (this.hovered === v) this.hovered = null;
+    this.paintZones();
     this.markStaleFromIndex(i);
     this.onChange();
     if (this.views.length === 0) this.insertAtEnd('program');

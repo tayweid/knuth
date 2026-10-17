@@ -377,7 +377,7 @@ export class FileManager {
     }, 1200);
   }
 
-  /** The File menu's Autosave. Turned back on, what is unsaved is written
+  /** The Recent menu's Autosave (main.ts). Turned back on, what is unsaved is written
    *  now. The choice is kept for the document's path, so the file stays
    *  the way it was set the next time it opens; off for a document with
    *  no file is the window's until ⌘S gives it one (saveAs). */

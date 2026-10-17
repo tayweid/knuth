@@ -43,8 +43,8 @@ the run took, the names it bound (`+` new, `~` rebound or changed in
 place), the session's other names ("unchanged · prices · n"), the
 figures it drew (a thumbnail of the first, through the same sanitizer
 as every figure), and what it put in the folder ("to the folder ·
-values.json: n · figs/ax.svg", or "no folder yet" when the document has
-none). The kernel reports what a run bound on its `done` event (below);
+values.json: n · figs/ax.svg"; nothing when the document has no folder,
+where the toast offers one). The kernel reports what a run bound on its `done` event (below);
 the page marks new against rebound from its last snapshot, then reads
 the snapshot after the run, which adds what the AST could not see — a
 name bound inside an `if`, a frame changed in place (`prices['q'] = …`).
@@ -52,26 +52,18 @@ name bound inside an `if`, a frame changed in place (`prices['q'] = …`).
 **The receipt card.** After a run, the card appears beside the cell:
 right of the column, over the chips' lane (its own chip hidden while it
 is up), its top on the cell's first line, in the frame's dark glass, its
-width following the room's margin up to 300 px. What happens next is the
-mode's (*Sixth pass*, 2026-10-06):
-
-- **Peek** (the default): as soon as it has eased in (0.24 s) it flies
-  home into the session pill, whatever the pointer or the keys do. The
-  column never moves for it: a margin under 160 px lays the card over the
-  column's right edge for its moment. Going home is the flight: the card
-  lifts and swings along a curve into the pill, shrinking; the pill's
-  names update as it lands, the new ones blue and lit for a moment, and
-  the chip takes its place at the cell. A chip's click opens its receipt
-  over the page as it stands, past the chip where the margin holds it,
-  else over the lane or the column's edge — never moving the column.
-- **Float**: the card stays, kept (its pin lit), until Esc, its ✕ or a
-  click outside it and the column puts it away, or the next run's card
-  takes its place; typing and clicks back into the text leave it. A
-  margin under 192 px slides the column left for the card's stay, until
-  the card has 200. The column stays out while cards keep coming, and a
-  card put away takes it home at once; after a run that makes no card it
-  goes 1.2 s later (typing on starts that over), and it waits for a run
-  still going. A chip's click slides it the same way.
+width following the room's margin up to 300 px. As soon as it has eased
+in (0.24 s) it flies home into the session pill, whatever the pointer or
+the keys do (Peek, *Sixth pass*). The column never moves for it: a
+margin under 160 px lays the card over the column's right edge for its
+moment. Going home is the flight: the card lifts and swings along a
+curve into the pill, shrinking; the pill's names update as it lands, the
+new ones blue and lit for a moment, and the chip takes its place at the
+cell. A chip's click opens its receipt over the page as it stands, past
+the chip where the margin holds it, else over the lane or the column's
+edge, never moving the column. (Float, which kept the card and slid the
+column for it, and Silent, no card at all, went on 2026-10-17: *Eighth
+pass*.)
 
 A click on a chip's hover card keeps it. A run that bound more than nine
 names lists eight and "+393 more · in the Session card", which opens the
@@ -106,41 +98,41 @@ why (there are no cells for the card to stand beside).
 **The Session card.** From the pill, a rounded dark-glass card at the
 room's top right, holding three parts one under another, each with a
 header that folds it to that line (and the count of what it holds):
-**Session** (the band: the last
-run's receipt on top behind a blue rule, "Last run · cell 3", each name
-with its kind and its value under it — a table of six rows or fewer
-whole, the figure at the card's width; then every name with its kind
-glyph, type, preview and the cell that bound it; a table's or figure's
-name opens it, "cell 4" goes to the cell), **Data** (a chip per table, and the table
-viewer, paging 100 rows at a time as the panel did), **Figures** (a chip
-per figure, and the figure viewer; it follows each new figure unless
-held, and a held one shows "New: …" for the one waiting). When the
+**Session** (one list: the band's single line, "Last run · cell 3
+12 ms", which goes to the cell on a click; then every name with its kind
+glyph, type, preview and the cell that bound it, the names the band's
+run touched carrying its `+` or `~` in the glyph's place behind a blue
+edge; a table's or figure's name opens it, "cell 4" goes to the cell),
+**Data** (a chip per table, and the table viewer, paging 100 rows at a
+time as the panel did), **Figures** (a chip per figure, and the figure
+viewer; it follows each new figure unless held, and a held one shows
+"New: …" for the one waiting). Data and Figures show only once they
+hold something. (Until 2026-10-17 the band was the run's whole receipt
+over the list, its names, values, mini tables and figure, and the parts
+said when they were empty; Taylor found the card too complicated, with
+the same names twice.) When the
 open parts do not all fit, each keeps a quarter of the card's height
 (or what it holds, if less), the part last opened or used — the table
 just picked, a header just opened — takes what it needs of the rest,
 and each scrolls inside itself. The folds are remembered (localStorage
 `knuth-session-folded`), floating or pinned alike. A click
-anywhere outside closes it, as does Esc; so does the pill and the rail's
-Session tile (`#toggle-panel`, lit while the card shows).
+anywhere outside closes it, as does Esc; so does the pill, lit
+(`aria-expanded`) while the card shows. (The rail's Session tile,
+`#toggle-panel`, went on 2026-10-17: Taylor had no use for a second way
+in, and the pill is where the card hangs from.)
 
-**The modes**, a segmented control in the card's header:
+**The pin**, the card header's one control beside ✕:
 
-- **Peek** (the default): the receipt card, straight up into the pill.
-- **Float**: the receipt card kept beside the cell, the column making
-  room.
-- **Silent**: no card, no motion; the chip appears and the pill's names
-  change quietly.
 - **Pinned**: the card docks beside the column, on the page, in its own
   look (not the code cells'), as a sidebar card that scrolls inside
   itself; the column slides left by only what the card lacks (narrowing
   under about 1275 px). A run's receipt goes straight into its band,
   lit for a moment; no card beside the cell; the chip still appears, and
   its hover or click shows its cell's receipt in the band ("Earlier run ·
-  cell 2"). Choosing Peek, Float or Silent unpins it back to floating; closing
-  it unpins it.
+  cell 2"). The pin again unpins it back to floating; closing it unpins
+  it.
 
-Peek, Float or Silent is remembered (localStorage `knuth-receipts`); Pinned is
-remembered per window (sessionStorage `knuth-session-pinned`, with the
+Pinned is remembered per window (sessionStorage `knuth-session-pinned`, with the
 last choice in localStorage as a new window's start).
 
 **With the scroll rail** (docs/ZEN-DRAFT.md, *The scroll rail*): the rail
@@ -172,9 +164,10 @@ from `src/panel.ts` with their paging and their sanitizing as they were
 DocumentView gives each cell an id that survives a kind switch and a
 delete-and-restore (a `WeakMap` on the Cell), times each run, and
 reports it with what the kernel said (`RunInfo`), and marks Run all and
-Run stale as a batch. Every shortcut is as it was: Esc is never
-prevented, so in a cell it still arms the Esc-Y/S/M chord while it puts
-the receipt away.
+Run stale as a batch. Every shortcut is as it was. Esc that puts a card
+away (a run's, a kept one, a held band, the floating Session card) is
+claimed (prevented), so it does not also take the cell into command mode
+(document-view.ts): the next Esc does. An Esc with nothing up passes on.
 
 ## The defaults taken
 
@@ -232,11 +225,9 @@ was built:
    the docked card only; unpinned, nothing moves. Taylor's words:
    "putting it right beside the cells like you have it in one of the
    other demos i saw, just on the page".
-2. **The band keeps the values.** Each name on its line with its kind
-   at the right and its value under it: the preview on one line, a table
-   of six rows and columns or fewer whole as a mini table (asked of the
-   kernel once per receipt, and only while the name still holds that
-   run's value), the figure at the card's width.
+2. **The band keeps the values.** (Superseded 2026-10-17: the band is
+   one line now, and the list carries the run's marks; the values are
+   the list's previews, the Data and Figures parts'.)
 3. **A chip while docked** lights its cell's receipt in the band,
    "Earlier run · cell 2" behind a grey rule, scrolled into view — no
    card over the docked one. A hover from the Data or Figures tab goes
@@ -707,3 +698,27 @@ a click folds or opens a part, the part last opened or used has first
 claim on the height, and the others keep a quarter each unless they
 hold less (fitParts, session.ts). The Data and Figures parts' hints
 ("Pick a table…") now show whenever the card does.
+
+## Eighth pass: one list, one behaviour (2026-10-17)
+
+Taylor: "something about the session card is still too complicated",
+and yes to four cuts:
+
+- **The header is the pin and ✕.** Peek, Float and Silent are gone as a
+  choice: a run's receipt eases in beside the cell and flies straight up
+  into the pill, and the column never moves for one. With Float went the
+  column's lean for a card, the linger and its timers (DWELL_MS,
+  RETURN_MS, HOLD_MS), the card riding a sliding column, and the eleven
+  tests that traced them; `knuth-receipts` is no longer read. A test
+  that reads a run's receipt opens it from the chip (session.spec.ts,
+  `held`).
+- **One list.** The band is one line, "Last run · cell 2  10 ms",
+  going to the cell on a click; the names that run touched carry its
+  `+` or `~` in the list itself, behind a blue edge. The receipt over
+  the list (its names again, values, mini tables, the wide figure) and
+  "In the session" as a heading are gone.
+- **Empty parts are not shown.** Data and Figures appear once they hold
+  something, instead of a sentence saying they are empty.
+- **No "no folder yet".** The receipt says where values went only when
+  there is a folder; with none the toast already offers one.
+

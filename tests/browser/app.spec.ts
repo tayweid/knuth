@@ -328,7 +328,7 @@ test('a file opened from a folder Knuth already holds does not ask again', async
 async function expectSourceFrame(page: Page) {
   await expect(page.locator('#toolbar')).toBeVisible();
   await expect(page.locator('#file-name')).toBeVisible();
-  for (const id of ['add-code', 'add-scratch', 'add-text', 'run-stale', 'run-all', 'stop', 'clear-outputs', 'restart', 'toggle-panel']) {
+  for (const id of ['add-code', 'add-scratch', 'add-text', 'run-stale', 'run-all', 'stop', 'clear-outputs', 'restart']) {
     await expect(page.locator(`#${id}`), `#${id} acts on cells`).toBeVisible();
     await expect(page.locator(`#${id}`), `#${id} acts on cells`).toHaveAttribute('aria-disabled', 'true');
   }
@@ -438,6 +438,111 @@ test('an untouched document names the tab after the app', async ({ page }) => {
 
   await expect(page).toHaveTitle('Knuth.py');
   await expect(page.locator('#file-name')).toHaveText('Knuth.py');
+});
+
+test('the gaps beside the current cells offer the three kinds, under the run buttons', async ({ page }) => {
+  await page.addInitScript(() => {
+    sessionStorage.setItem('knuth-doc', JSON.stringify({
+      name: 'gaps.py',
+      dirty: false,
+      text: '# %%\na = 1\n\n# %%\nb = 2\n\n# %%\nc = 3\n',
+    }));
+  });
+  await page.goto('/');
+  await expect(page.locator('#kernel-status')).toHaveText('Python');
+  const stored = () => page.evaluate(() => JSON.parse(sessionStorage.getItem('knuth-doc') ?? '{}').text as string);
+  // Gap 0 is above the first cell, 3 the end.
+  const gap = (i: number) => page.locator('.insert-zone .insert-actions').nth(i);
+  const shown = async () => {
+    const out: number[] = [];
+    for (let i = 0; i < 4; i++) if (await gap(i).isVisible()) out.push(i);
+    return out;
+  };
+  // The cursor in the top cell: only the gap below it (none above the top).
+  await page.locator('.cell .cm-content').nth(0).click();
+  await page.mouse.move(5, 300);
+  await expect.poll(shown).toEqual([1]);
+  // In the middle cell: both of its gaps.
+  await page.locator('.cell .cm-content').nth(1).click();
+  await page.mouse.move(5, 300);
+  await expect.poll(shown).toEqual([1, 2]);
+  // The pointer over the last cell lights its gaps too.
+  await page.locator('.cell .cm-content').nth(2).hover();
+  await expect.poll(shown).toEqual([1, 2, 3]);
+  // The pill's centre is the ▶'s.
+  const centre = async (locator: ReturnType<typeof page.locator>) => {
+    const box = (await locator.boundingBox())!;
+    return box.x + box.width / 2;
+  };
+  expect(Math.abs((await centre(gap(2))) - (await centre(page.locator('.cell .run').nth(2))))).toBeLessThan(3);
+  // A text cell above the last, from the gap's own button.
+  await gap(2).locator('.k-text').click();
+  await expect.poll(stored).toBe('# %%\na = 1\n\n# %%\nb = 2\n\n# %% [markdown]\n\n# %%\nc = 3\n');
+  // A code cell at the end, the cursor in it.
+  await page.locator('.cell .cm-content').last().click();
+  await page.locator('.insert-zone').last().locator('.k-program').click();
+  await page.keyboard.type('d = 4');
+  await expect.poll(stored).toContain('# %%\nc = 3\n\n# %%\nd = 4');
+});
+
+test('Esc is command mode: A and B insert, the arrows move, D D deletes, Enter edits, and keys never type', async ({ page }) => {
+  await page.addInitScript(() => {
+    sessionStorage.setItem('knuth-doc', JSON.stringify({
+      name: 'command.py',
+      dirty: false,
+      text: '# %%\na = 1\n\n# %%\nb = 2\n',
+    }));
+  });
+  await page.goto('/');
+  await expect(page.locator('#kernel-status')).toHaveText('Python');
+  const stored = () => page.evaluate(() => JSON.parse(sessionStorage.getItem('knuth-doc') ?? '{}').text as string);
+  const selected = page.locator('.cell.selected');
+
+  // Esc pressed straight after typing (a code hint may still be on its
+  // way) leaves the cell all the same.
+  await page.locator('.cell .cm-content').nth(0).click();
+  await page.keyboard.press('End');
+  await page.keyboard.type('0');
+  await page.keyboard.press('Escape');
+  await expect(selected).toHaveCount(1);
+  await expect(selected).toContainText('a = 10');
+  // B: a code cell below, in which the cursor already is.
+  await page.keyboard.press('b');
+  await page.keyboard.type('mid = 0');
+  await expect.poll(stored).toBe('# %%\na = 10\n\n# %%\nmid = 0\n\n# %%\nb = 2\n');
+  // A: above. Then back out and down two: the arrows walk the cells.
+  await page.keyboard.press('Escape');
+  await page.keyboard.press('a');
+  await page.keyboard.type('top = 0');
+  await page.keyboard.press('Escape');
+  await expect(selected).toContainText('top = 0');
+  await page.keyboard.press('ArrowDown');
+  await page.keyboard.press('j');
+  await expect(selected).toContainText('b = 2');
+  await page.keyboard.press('k');
+  await expect(selected).toContainText('mid = 0');
+  // Unbound letters do nothing: the selected cell holds the focus.
+  await page.keyboard.press('x');
+  await page.keyboard.press('q');
+  // D D deletes, and the next cell is selected.
+  await page.keyboard.press('d');
+  await page.keyboard.press('d');
+  await expect.poll(stored).toBe('# %%\na = 10\n\n# %%\ntop = 0\n\n# %%\nb = 2\n');
+  await expect(selected).toContainText('b = 2');
+  // Enter edits where the cell is.
+  await page.keyboard.press('Enter');
+  await expect(selected).toHaveCount(0);
+  await page.keyboard.press('End');
+  await page.keyboard.type('2');
+  await expect.poll(stored).toContain('b = 22');
+  // M makes it a text cell, and Esc from a text cell is command mode too.
+  await page.keyboard.press('Escape');
+  await page.keyboard.press('m');
+  await expect(page.locator('.cell.kind-text')).toHaveCount(1);
+  await page.keyboard.press('Escape');
+  await expect(page.locator('.cell.kind-text.selected')).toHaveCount(1);
+  await page.keyboard.press('y');
+  await expect(page.locator('.cell.kind-text')).toHaveCount(0);
 });
 
 test('outputs clear from the rail or one cell at a time, and ⌘Z brings them back', async ({ page }) => {

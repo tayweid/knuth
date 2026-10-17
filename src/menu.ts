@@ -1,13 +1,13 @@
-// Plass's menus (plass/src/toolbar.ts), for the bar's File tile: a text
-// menu in the frame's dark glass that drops under its tile on a click, its
-// submenus (Recent, Get Knuth) taking its place with a way back. The same
+// Plass's menus (plass/src/toolbar.ts), for the bar's Open chevron: a
+// text menu in the frame's dark glass that drops under its tile on a
+// click, its submenu (Get Knuth) taking its place with a way back. The same
 // rules as Plass's: a click on the tile opens it on its first item, a
 // second click, a click elsewhere, Escape or Tab closes it; the arrows,
 // Home, End and a letter walk it; ArrowRight opens a submenu and
 // ArrowLeft goes back. One difference: closing hands the focus back to
 // wherever it was when the menu opened — the cell being typed in, or the
 // tile when it was opened from the keyboard — so Escape never reaches the
-// cell (where it starts the Esc-Y/S/M chord) and a File action leaves the
+// cell (where it would enter command mode) and an action leaves the
 // typing where it was. Tab goes on from the tile, as in Plass.
 
 export interface Menu {

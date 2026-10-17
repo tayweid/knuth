@@ -497,8 +497,8 @@ Taylor: "i'd like to add a way to turn off autosave in knuth. when editing
 manim files it reloads the viewer whenever it saves, so it gets kind of
 annoying." The autosave here is the page's write to disk, 1.2 s after each
 edit and when the window is hidden (`FileManager.scheduleFlush`), which
-ManimLive's watcher takes as a change to the scene. The File menu's
-Autosave, checked by default, turns it off for the document in the window:
+ManimLive's watcher takes as a change to the scene. The Autosave item
+under Open's chevron (the File menu's until 2026-10-17), checked by default, turns it off for the document in the window:
 only ⌘S, a close (quietly, as above) and a rewind's save write it, and
 the name's dot stays red until one does, with "autosave is off" in its
 title. The choice is kept by the document's path (localStorage,

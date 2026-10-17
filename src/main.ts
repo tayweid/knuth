@@ -66,10 +66,14 @@ function labeled(id: string, glyph: string, label: string, title: string, classN
 }
 
 // Zen's shape, as Plass has it (docs/ZEN-DRAFT.md): the bar across the top
-// holds the document's way in and out beside the traffic lights — the File
-// tile, whose text menu holds New, Open, Recent, Save and, where they
-// apply, Get Knuth, Install and the app's update (below); the name pill
-// with the save mark and the folder; beside it, inside Knuth.app, the
+// holds the document's way in and out beside the traffic lights — Open, a
+// split tile as Plass's is (the folder half opens a document, ⌘O; the
+// chevron half drops the recent ones, with Autosave and, where they apply,
+// Get Knuth and Install at its foot: below); New window, a tile of its
+// own; the name pill with the save mark, the folder and, only when
+// autosave is off or the document has no file yet, Save (Taylor,
+// 2026-10-17: the File menu's Save, History and Check for updates were
+// each somewhere else already); beside it, inside Knuth.app, the
 // History tile (Taylor: "it belongs as a tile on the topbar beside the
 // address"), Plass's too, the same glyph — and, at the right, the session pill
 // (session.ts, docs/SESSION.md): the kernel's status, then the session's
@@ -78,18 +82,24 @@ function labeled(id: string, glyph: string, label: string, title: string, classN
 const toolbar = document.getElementById('toolbar')!;
 toolbar.setAttribute('aria-label', 'Document');
 toolbar.innerHTML = `
-  ${labeled('file-tile', icon('open'), 'File', 'File — new, open, recent, save', 'tb-btn tb-tile')}
-  <div class="doc-pod" id="doc-pod"><span class="name" id="file-name" title="Click to rename">${DEFAULT_DOC_NAME}</span><span class="doc-mark" id="doc-mark" aria-hidden="true"></span><span class="doc-folder" id="doc-folder" hidden><span dir="ltr"></span></span></div>
+  <span class="tb-split" id="open-split">
+    <button type="button" class="tb-btn tb-tile" id="open-tile" title="Open… (⌘O)" aria-label="Open" aria-keyshortcuts="Meta+O">${icon('open')}<span class="lbl">Open</span></button>
+    <button type="button" class="tb-btn tb-tile tb-split-more" id="recent-tile" title="Recent documents" aria-label="Recent documents">${icon('chevron')}<span class="lbl">Recent</span></button>
+  </span>
+  ${labeled('new-window', icon('newwindow'), 'New window', 'New window — a new document, with its own session', 'tb-btn tb-tile')}
+  <div class="doc-pod" id="doc-pod"><span class="name" id="file-name" title="Click to rename">${DEFAULT_DOC_NAME}</span><span class="doc-mark" id="doc-mark" aria-hidden="true"></span><span class="doc-folder" id="doc-folder" hidden><span dir="ltr"></span></span><button type="button" class="doc-save" id="doc-save" title="Save (⌘S)" hidden>Save</button></div>
   <button type="button" class="tb-btn tb-tile" id="history-tile" title="History (⇧⌘H)" aria-label="History" aria-keyshortcuts="Shift+Meta+H">${HISTORY_GLYPH}<span class="lbl">History</span></button>
   <div class="tb-end">
+    ${labeled('restart', icon('restart'), 'Restart', 'Restart session: a fresh kernel process, every cell stale', 'tb-btn tb-tile')}
     <button type="button" id="session-pill"><span id="kernel-status">connecting…</span><span class="sp-sep" aria-hidden="true"></span><span class="sp-mark" aria-hidden="true">${icon('braces')}</span><span class="sp-names"></span></button>
   </div>
 `;
 
 // The rail down the left: the cell and run tools in their groups under a
-// hairline, scrolling as one when the window is short, and the Session
-// card's toggle pinned at the foot with the view switch, as Zen pins its
-// bottom icons. The captions are longer words than the old bar's, since
+// hairline, scrolling as one when the window is short, and the view switch
+// pinned at the foot, as Zen pins its bottom icons. (The Session card opens
+// from the bar's pill alone, and Restart sits beside that pill, with the
+// session it replaces: Taylor, 2026-10-17.) The captions are longer words than the old bar's, since
 // there is room beside a tile; the titles are unchanged. The view switch
 // is the same spot in every view, so the way in and the way out are one
 // (Plass's Plain text / Paper switch); its caption names the view it
@@ -105,15 +115,13 @@ rail.innerHTML = `
     </div>
     <div class="tb-rule" role="separator"></div>
     <div class="tb-rail-group" id="run-pod" role="group" aria-label="Run">
-      ${labeled('run-stale', icon('play'), 'Run stale', 'Run stale program cells in order')}
+      ${labeled('run-stale', icon('playstale'), 'Run stale', 'Run the stale code cells in order: the edited ones and every code cell below them')}
       ${labeled('run-all', icon('playall'), 'Run all', 'Run all program cells from the top')}
       ${labeled('stop', icon('stop'), 'Stop', 'Interrupt the running cell')}
       ${labeled('clear-outputs', icon('clear'), 'Clear outputs', 'Clear every cell’s output (Esc then O clears one cell’s)')}
-      ${labeled('restart', icon('restart'), 'Restart session', 'Fresh session (kernel process replaced)')}
     </div>
   </div>
   <div class="tb-rail-foot">
-    ${labeled('toggle-panel', icon('panel'), 'Session', 'Show/hide the Session card: its names, data and figures')}
     <button type="button" class="tb-btn" id="view-toggle" title="${VIEW_TITLE}">${icon('source')}<span class="lbl lbl-cells">Cells</span><span class="lbl lbl-grid">Grid</span><span class="lbl lbl-source">Source</span></button>
   </div>
 `;
@@ -155,7 +163,7 @@ rail.addEventListener('focusin', (e) => placeRailCaption(e.target));
 // view. A click on a resting tile does nothing, and its caption stays
 // hidden (styles.css). The body's data-view, data-cells and data-grid are
 // the document view's (DocumentView.syncView); written only on change.
-const CELL_TOOLS = ['add-code', 'add-scratch', 'add-text', 'run-stale', 'run-all', 'stop', 'clear-outputs', 'restart', 'toggle-panel'];
+const CELL_TOOLS = ['add-code', 'add-scratch', 'add-text', 'run-stale', 'run-all', 'stop', 'clear-outputs', 'restart'];
 function rest(tile: HTMLElement, resting: boolean) {
   if ((tile.getAttribute('aria-disabled') === 'true') === resting) return;
   if (resting) tile.setAttribute('aria-disabled', 'true');
@@ -178,13 +186,16 @@ new MutationObserver(paintRail).observe(document.body, {
   attributes: true,
   attributeFilter: ['data-view', 'data-cells', 'data-grid'],
 });
-rail.addEventListener('click', (e) => {
-  const tile = (e.target as Element).closest('.tb-btn');
-  if (tile?.getAttribute('aria-disabled') === 'true') {
-    e.preventDefault();
-    e.stopPropagation();
-  }
-}, true);
+// The rail's tiles and the bar's Restart alike.
+for (const frame of [rail, toolbar]) {
+  frame.addEventListener('click', (e) => {
+    const tile = (e.target as Element).closest('.tb-btn');
+    if (tile?.getAttribute('aria-disabled') === 'true') {
+      e.preventDefault();
+      e.stopPropagation();
+    }
+  }, true);
+}
 
 const $ = (id: string) => document.getElementById(id)!;
 const toastEl = $('toast');
@@ -229,77 +240,94 @@ function toast(
   }
 }
 
-// The File tile's menu, Plass's File (menu.ts): New window, Open…,
-// Recent ›, Save, and below a rule the three that apply in one place each
-// — Get Knuth for your Mac (the hosted demo), Install Knuth (a locally
-// served tab the browser offers to install) and the update (Knuth.app) —
-// built here, before the onboarding that drives Install, and given their
-// conditions and actions below, where those are decided. Folder needs no
-// item: Save on a homeless doc IS the folder grant (the browser grants the
-// project folder for values.json and figs/ through a picker), and opened
-// or launched documents get the attach offer when it matters.
+// The bar's way in (menu.ts): Open's folder half opens a document; its
+// chevron half drops the recent documents, then below a rule Autosave and
+// the two items that apply in one place each — Get Knuth for your Mac (the
+// hosted demo) and Install Knuth (a locally served tab the browser offers
+// to install) — given their conditions and actions below, where those are
+// decided. New window is a tile of its own; Save shows in the name pill
+// when it is needed (repaintName); History is the bar's tile, and checking
+// for an update the Knuth menu's (the shell's), with a toast offering to
+// install one (below). Folder needs no item: Save on a homeless doc IS the
+// folder grant (the browser grants the project folder for values.json and
+// figs/ through a picker), and opened or launched documents get the attach
+// offer when it matters.
 const menu = menus();
-const fileMenu = menu.create('File', $('file-tile') as HTMLButtonElement);
-const recentMenu = menu.create('Recent', $('file-tile') as HTMLButtonElement, fileMenu);
-const getMenu = menu.create('Get Knuth', $('file-tile') as HTMLButtonElement, fileMenu);
-menu.item(fileMenu, 'New window', () => void window.open(location.pathname, '_blank'), {
-  title: 'New document — opens in a new window (its own session)',
-});
-menu.item(fileMenu, 'Open…', () => void fileManager.open(), { title: 'Open… (⌘O)', shortcut: '⌘O' });
-menu.item(fileMenu, 'Recent documents', () => {}, { title: 'Your documents', submenu: recentMenu });
-const saveItem = menu.item(fileMenu, 'Save', () => void fileManager.save(), { title: 'Save (⌘S)', shortcut: '⌘S' });
+const recentMenu = menu.create('Recent', $('recent-tile') as HTMLButtonElement);
+const getMenu = menu.create('Get Knuth', $('recent-tile') as HTMLButtonElement, recentMenu);
+for (const id of ['open-tile', 'new-window', 'doc-save']) $(id).addEventListener('mousedown', (e) => e.preventDefault());
+$('open-tile').addEventListener('click', () => void fileManager.open());
+$('new-window').addEventListener('click', () => void window.open(location.pathname, '_blank'));
+$('doc-save').addEventListener('click', () => void fileManager.save());
+// The recent documents: the one inherently dynamic list, loaded each time
+// the menu opens.
+menu.heading(recentMenu, 'Recent documents');
+const recentEntries = document.createElement('div');
+recentEntries.setAttribute('role', 'group');
+recentEntries.setAttribute('aria-label', 'Recent documents');
+recentMenu.element.append(recentEntries);
+menu.divider(recentMenu);
 // Autosave, checked: the document written 1.2 s after each edit
 // (file-manager.ts). Off, for this document and remembered by its path,
-// only ⌘S and a close write, and the dot stays red until then (Taylor,
-// 2026-10-11: ManimLive reloads a manim scene's viewer on every write,
-// "so it gets kind of annoying"). The project's autosave record (History)
-// is the shell's and commits what is on disk, so it then sees ⌘S's writes.
+// only ⌘S, the name pill's Save and a close write, and the dot stays red
+// until then (Taylor, 2026-10-11: ManimLive reloads a manim scene's viewer
+// on every write, "so it gets kind of annoying"). The project's autosave
+// record (History) is the shell's and commits what is on disk, so it then
+// sees those writes.
 menu.item(
-  fileMenu,
+  recentMenu,
   'Autosave',
   () => {
     fileManager.setAutosave(!fileManager.autosave);
-    toast(fileManager.autosave ? 'Autosave on' : `Autosave off for ${fileManager.name} — ⌘S saves`);
+    toast(fileManager.autosave ? 'Autosave on' : `Autosave off for ${fileManager.name} — Save or ⌘S writes it`);
   },
   {
     checked: () => fileManager.autosave,
-    title: 'Autosave — write this document to disk as you type. Off, only ⌘S and closing write it (remembered for this file).',
+    title: 'Autosave — write this document to disk as you type. Off, only Save, ⌘S and closing write it (remembered for this file).',
   },
 );
 // The project's autosave record as a path, with a rewind: the shell's own
 // page, laid over the room of this window (Taylor: "instead of a new
 // window, i just want it to open in the same window in the main area"), so
-// only inside Knuth.app, from this item and from the bar's History tile
-// beside the name pill — one way in, two places, and the shell's View ›
-// History… on the same ⇧⌘H a third (toggleHistory, below). The tile takes
-// no focus from a click, as the File tile does not: the cell keeps it.
-const historyItem = menu.item(fileMenu, 'History…', () => void toggleHistory(), {
-  id: 'open-history',
-  title: 'History… (⇧⌘H) — this project’s autosave record, and a rewind to any point on it',
-  shortcut: '⇧⌘H',
-});
+// only inside Knuth.app, from the bar's History tile beside the name pill
+// and the shell's View › History… on the same ⇧⌘H (toggleHistory, below).
+// The tile takes no focus from a click: the cell keeps it.
 const historyTile = $('history-tile') as HTMLButtonElement;
-historyItem.hidden = historyTile.hidden = !shell;
+historyTile.hidden = !shell;
 historyTile.addEventListener('mousedown', (e) => e.preventDefault());
 historyTile.addEventListener('click', () => void toggleHistory());
-const ioRule = menu.divider(fileMenu);
-const getItem = menu.item(fileMenu, 'Get Knuth for your Mac', () => {}, {
+const ioRule = menu.divider(recentMenu);
+const getItem = menu.item(recentMenu, 'Get Knuth for your Mac', () => {}, {
   id: 'get-app',
   title: 'Get Knuth for your Mac — this page runs Python in the tab; the app runs it on your computer, on your files',
   submenu: getMenu,
 });
-const installItem = menu.item(fileMenu, 'Install Knuth', () => {}, {
+const installItem = menu.item(recentMenu, 'Install Knuth', () => {}, {
   id: 'install-app',
   title: 'Install Knuth as an app: its own icon and window (the Python engine stays separate and local)',
 });
-const updateItem = menu.item(fileMenu, 'Check for updates…', () => {}, {
-  id: 'update-app',
-  title: 'Knuth.app: compare this build with the site’s and install a newer one',
-});
-for (const item of [getItem, installItem, updateItem]) item.hidden = true;
-// The rule shows only above one of them.
-fileMenu.refresh = () => {
-  ioRule.hidden = [getItem, installItem, updateItem].every((item) => item.hidden);
+for (const item of [getItem, installItem]) item.hidden = true;
+let recentRequest = 0;
+recentMenu.refresh = () => {
+  // The rule shows only above one of them.
+  ioRule.hidden = [getItem, installItem].every((item) => item.hidden);
+  const request = ++recentRequest;
+  const hint = menu.hint(recentEntries, 'Loading recent documents…');
+  hint.setAttribute('role', 'status');
+  recentEntries.replaceChildren(hint);
+  void fileManager.recents().then((entries) => {
+    if (request !== recentRequest) return;
+    if (!entries.length) {
+      hint.textContent = 'Your saved documents will appear here.';
+      return;
+    }
+    recentEntries.replaceChildren();
+    for (const entry of entries) {
+      menu.item(recentEntries, entry.name, () => void fileManager.openRecent(entry), { title: entry.path ?? entry.name });
+    }
+  }).catch(() => {
+    if (request === recentRequest) hint.textContent = 'Recent documents could not be loaded.';
+  });
 };
 
 const status = $('kernel-status');
@@ -308,7 +336,7 @@ const onboarding = new Onboarding(
   $('install-app') as HTMLButtonElement,
 );
 // The install click is what gives Knuth its own icon and a tab-less window.
-// It is optional, so it lives in the File menu — but an item nobody
+// It is optional, so it lives at the Recent menu's foot — but an item nobody
 // notices is the same as no offer at all. Surface it once, when the app is
 // working and the browser says it can be installed.
 const INSTALL_OFFERED = 'knuth-install-offered';
@@ -333,16 +361,17 @@ function askShell<T>(message: ShellMessage): Promise<T | null> {
 function askShellPath(message: ShellMessage): Promise<string | null> {
   return shell ? shell.pickPath(message) : Promise.resolve(null);
 }
-/** File → History…, the History tile and the shell's View › History…,
- *  one path (shell.ts, inlineHistory): the shell lays the History page
+/** The History tile and the shell's View › History…, one path (shell.ts,
+ *  inlineHistory): the shell lays the History page
  *  over the room's box and the tile is pressed while it is up, by the
  *  shell's word; again, and it goes. Where there is no view the toast says
  *  why (historyNote). An older shell answers null: it has no view, so
- *  after saying so the tile and the item go, as Plass's item does.
+ *  after saying so the tile goes.
  *
  *  The view is the shell's, above everything this page draws in the room.
- *  So whatever acts in the room puts it away first: the File tile (its
- *  menu opens down over the room), a rail tile, the session pill. The bar
+ *  So whatever acts in the room puts it away first: Open and its
+ *  chevron (whose menu opens down over the room), New window, a rail tile,
+ *  the session pill. The bar
  *  above stays as it is, and Escape here (the bar holding the focus) puts
  *  it away as Escape in the view does. The room's box is measured on a
  *  ResizeObserver (the window's size; the scroll rail's gutter coming or
@@ -370,7 +399,7 @@ const historyView = shell
       }
     },
     answered: (answer) => {
-      if (answer === null) historyItem.hidden = historyTile.hidden = true;
+      if (answer === null) historyTile.hidden = true;
       const note = historyNote(answer);
       if (note) toast(note);
     },
@@ -383,7 +412,7 @@ if (historyView) {
   historyTile.setAttribute('aria-pressed', 'false');
   new ResizeObserver(() => historyView.moved()).observe(room);
   window.addEventListener('resize', () => historyView.moved());
-  for (const id of ['file-tile', 'rail', 'session-pill']) {
+  for (const id of ['open-split', 'new-window', 'rail', 'session-pill']) {
     $(id).addEventListener('pointerdown', () => historyView.close(), true);
   }
   document.addEventListener('keydown', (event) => {
@@ -581,7 +610,7 @@ const APP_ZIP = 'https://knuth.tayweid.io/app/Knuth.app.zip';
 const APP_LINE = 'curl -fsSL https://knuth.tayweid.io/install | bash';
 const ENGINE_LINE =
   'python3 -m pip install --upgrade --force-reinstall "knuth @ https://github.com/tayweid/knuth/archive/refs/heads/main.zip#subdirectory=python"';
-// File → Get Knuth for your Mac, on the hosted demo only (Plass's Get
+// Recent's Get Knuth for your Mac, on the hosted demo only (Plass's Get
 // Plass): served by an engine or inside Knuth.app there is nothing to get.
 getItem.hidden = servedLocally || !!shell;
 /** A line for the terminal onto the clipboard, or into the toast to copy
@@ -620,65 +649,34 @@ if (servedLocally && !shell) {
   document.head.append(link);
 }
 
-// Knuth.app updating itself (the shell's update.js; also Knuth menu → Check
-// for Updates…), as Plass's File → Check for updates…: the item asks the
-// shell to compare this build with the site's, and once the shell says a
-// newer one is out — asked, or by itself after launch — it reads Install
-// update, and a click has the shell download that build, swap it in and
-// relaunch, with the steps in the toast; this window is reopened on its
-// document.
+// Knuth.app updating itself (the shell's update.js): checking is the
+// Knuth menu's Check for Updates… (the shell's own, so no File item:
+// Taylor, 2026-10-17). Once the shell says a newer build is out — asked,
+// or by itself after launch — a toast offers it, and its Install has the
+// shell download that build, swap it in and relaunch, with the steps in
+// the toast; this window is reopened on its document.
 if (shell) {
   const host = shell;
   type UpdateStep = import('./shell.ts').UpdateStep;
-  let offered: string | null = null;
-  const label = updateItem.querySelector('.tb-menu-label')!;
-  const show = (text: string, enabled = true) => {
-    label.textContent = text;
-    updateItem.disabled = !enabled;
-  };
   const built = (step: UpdateStep) => (step.latest?.built ? ` (built ${step.latest.built.slice(0, 10)})` : '');
-  updateItem.hidden = false;
-  updateItem.addEventListener('click', () => {
-    if (offered) {
-      show('Updating…', false);
-      host.notify({ type: 'update', action: 'install' });
-      return;
-    }
-    show('Checking…', false);
-    void host.request<UpdateStep>({ type: 'update' }).then((step) => {
-      if (step?.state === 'available') {
-        offered = step.latest?.build ?? 'new';
-        show(`Install update${built(step)}`);
-        toast(`A new Knuth is available${built(step)} — File → Install update`);
-        return;
-      }
-      show('Check for updates…');
-      if (step?.state === 'current') toast(`Knuth is up to date${step.current?.build ? ` (build ${step.current.build})` : ''}`);
-      else if (step?.state === 'development') toast('Running from a checkout: nothing to update');
-      else toast(step?.text ? `Could not check for updates: ${step.text}` : 'Could not check for updates');
-    });
-  });
+  const install = () => host.notify({ type: 'update', action: 'install' });
   host.on('update', (detail) => {
     const step = (detail ?? {}) as UpdateStep;
     switch (step.state) {
       case 'available':
-        offered = step.latest?.build ?? 'new';
-        show(`Install update${built(step)}`);
+        toast(`A new Knuth is available${built(step)}`, { label: 'Install', run: install }, { stay: true });
         break;
       case 'downloading':
       case 'unpacking':
       case 'completing':
       case 'installing':
-        show('Updating…', false);
         progress(step.text ?? 'Updating Knuth…');
         break;
       case 'ready':
-        show('Relaunching…', false);
         progress(step.text ?? 'Knuth relaunches now…');
         break;
       case 'failed':
-        show(offered ? `Install update${built(step)}` : 'Check for updates…');
-        toast(`Could not update Knuth: ${step.text ?? 'unknown error'}`);
+        toast(`Could not update Knuth: ${step.text ?? 'unknown error'}`, { label: 'Try again', run: install });
         break;
       default:
         break;
@@ -1003,7 +1001,7 @@ const docView = new DocumentView(
 // the cell and then up into the pill; a chip at each cell that made
 // something; the Session card from the pill. Built after docView, which
 // it reads cells from (and which reports runs to it).
-session = new Session(kernel, docView, $('toggle-panel') as HTMLButtonElement, {
+session = new Session(kernel, docView, {
   ready: () => kernelState === 'ready',
   showOnboarding: () => onboarding.show(),
   hasFolder: () => !!(fileManager?.path || (fileManager?.root && fileManager.inShell) || fileManager?.dir),
@@ -1177,13 +1175,15 @@ function repaintName() {
   // Just the file name: the installed app's window prepends its own
   // app name, so anything more reads twice.
   document.title = fileManager.name;
-  // ⌘S on a workbook writes its sheet as a CSV (file-manager.ts, saveSheet).
-  const saveLabel = fileManager.workbook ? 'Save as CSV…' : 'Save';
-  const saveText = saveItem.querySelector('.tb-menu-label')!;
-  if (saveText.textContent !== saveLabel) {
-    saveText.textContent = saveLabel;
-    saveItem.title = `${saveLabel} (⌘S)`;
-  }
+  // Save, in the pill, only when something needs it: autosave is off, or
+  // the document has no file yet (Save… picks where it lives). ⌘S always
+  // saves; on a workbook it writes the sheet as a CSV (file-manager.ts,
+  // saveSheet), which no button offers.
+  const save = $('doc-save') as HTMLButtonElement;
+  const saveLabel = homeless ? 'Save…' : 'Save';
+  save.hidden = !!fileManager.workbook || (fileManager.autosave && !homeless);
+  if (save.textContent !== saveLabel) save.textContent = saveLabel;
+  save.title = homeless ? 'Save… — pick where it lives (⌘S)' : 'Save (⌘S) — autosave is off for this document';
   reportUnsaved();
 }
 
@@ -1347,36 +1347,6 @@ if (shell) {
     },
   });
 }
-
-// File → Recent documents: the one inherently dynamic list, loaded each
-// time it opens, in place of the File menu with a way back (Plass's Recent
-// papers).
-menu.back(recentMenu, 'File');
-menu.heading(recentMenu, 'Recent documents');
-const recentEntries = document.createElement('div');
-recentEntries.setAttribute('role', 'group');
-recentEntries.setAttribute('aria-label', 'Recent documents');
-recentMenu.element.append(recentEntries);
-let recentRequest = 0;
-recentMenu.refresh = () => {
-  const request = ++recentRequest;
-  const hint = menu.hint(recentEntries, 'Loading recent documents…');
-  hint.setAttribute('role', 'status');
-  recentEntries.replaceChildren(hint);
-  void fileManager.recents().then((entries) => {
-    if (request !== recentRequest) return;
-    if (!entries.length) {
-      hint.textContent = 'Your saved documents will appear here.';
-      return;
-    }
-    recentEntries.replaceChildren();
-    for (const entry of entries) {
-      menu.item(recentEntries, entry.name, () => void fileManager.openRecent(entry), { title: entry.path ?? entry.name });
-    }
-  }).catch(() => {
-    if (request === recentRequest) hint.textContent = 'Recent documents could not be loaded.';
-  });
-};
 
 $('view-toggle').addEventListener('click', () => docView.setSource(!docView.isSource));
 $('add-code').addEventListener('click', () => docView.insertRelative('program'));

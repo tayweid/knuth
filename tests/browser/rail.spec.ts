@@ -129,8 +129,6 @@ test.beforeEach(async ({ page }) => {
       }
     }
     Object.defineProperty(window, 'WebSocket', { configurable: true, value: MockWebSocket });
-    // Silent: no receipt card beside a cell, so a run moves nothing sideways.
-    localStorage.setItem('knuth-receipts', 'silent');
   }, { figureSvg: FIGURE_SVG, bigSvg: BIG_SVG });
 });
 
@@ -370,8 +368,8 @@ test('the room\'s box with the rail and without, at 1100 and 1500, the floor sti
   // Pinned, the Session card docks inside the room beside the column (it
   // slides the column, not the frame): past the chips' lane, 10 px in from
   // the room's right edge, which is the gutter's.
-  await page.locator('#toggle-panel').click();
-  await page.locator('#session [data-mode="pinned"]').click();
+  await page.locator('#session-pill').click();
+  await page.locator('#session .s-pin').click();
   await expect(page.locator('#session')).toHaveClass(/docked/);
   const pinned = await page.evaluate(() => {
     const card = document.getElementById('session')!.getBoundingClientRect();
@@ -384,7 +382,7 @@ test('the room\'s box with the rail and without, at 1100 and 1500, the floor sti
   expect(Math.abs(pinned.gap - 46)).toBeLessThan(1);
   expect(pinned.right).toBeGreaterThanOrEqual(10 - 0.5);
   expect((await frame(page)).room.right).toBe(1500 - GUTTER);
-  await page.locator('#session [data-mode="peek"]').click();
+  await page.locator('#session .s-pin').click();
 
   // The floor: the room still scrolls sideways under a 640 px window, not
   // 652; with the gutter the column bottoms out 12 px narrower, at 536.

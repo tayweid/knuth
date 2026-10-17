@@ -148,9 +148,8 @@ test('the sheets are tabs, each read when it is picked', async ({ page }) => {
 test('⌘S saves the sheet on screen as CSV, never the workbook', async ({ page }) => {
   await page.goto('/?open=/p/grades.xlsx');
   await expect(page.locator('table.grid')).toHaveClass(/read-only/);
-  await page.locator('#file-tile').click();
-  await expect(page.getByRole('menuitem', { name: /Save as CSV…/ })).toBeVisible();
-  await page.keyboard.press('Escape');
+  // Read-only: no Save in the pill; ⌘S writes the sheet as CSV.
+  await expect(page.locator('#doc-save')).toBeHidden();
 
   await page.getByRole('navigation', { name: 'Sheets' }).getByRole('button', { name: 'Notes' }).click();
   await expect(page.locator('table.grid tr').nth(1).locator('td')).toHaveText(['', 'only cell']);

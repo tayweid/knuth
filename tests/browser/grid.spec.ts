@@ -149,7 +149,7 @@ test('a .csv opens as a grid of its cells', async ({ page }) => {
   await expect(page.locator('body')).toHaveAttribute('data-view', 'grid');
   // The workbench's cell tools rest on the rail, dim (the frame and the
   // file's name stay); the toggle offers the source view.
-  for (const id of ['add-code', 'run-all', 'toggle-panel']) {
+  for (const id of ['add-code', 'run-all', 'restart']) {
     await expect(page.locator(`#${id}`), id).toBeVisible();
     await expect(page.locator(`#${id}`), id).toHaveAttribute('aria-disabled', 'true');
   }
