@@ -485,6 +485,33 @@ test('the gaps beside the current cells offer the three kinds, under the run but
   await expect.poll(stored).toContain('# %%\nc = 3\n\n# %%\nd = 4');
 });
 
+test('a cell never scrolls inside itself: its editor is exactly as tall as its lines, at every zoom', async ({ page }) => {
+  await page.addInitScript(() => {
+    sessionStorage.setItem('knuth-doc', JSON.stringify({
+      name: 'heights.py',
+      dirty: false,
+      text: '# %%\nx = 1\n\n# %%\nfor i in range(3):\n    print(i)\n\n# %% scratch\n#| y = 2\n',
+    }));
+  });
+  await page.goto('/');
+  await expect(page.locator('#kernel-status')).toHaveText('Python');
+  // The run button's hairline once stood 1 px under a one-line cell's
+  // band, and the editor scrolled by it.
+  const overflow = await page.evaluate(() => {
+    const sheet = document.getElementById('sheet')!;
+    const found: Array<[number, number, number, number]> = [];
+    for (const zoom of [0.5, 0.67, 0.75, 0.8, 0.9, 1, 1.1, 1.25, 1.5, 2, 3]) {
+      sheet.style.setProperty('--column-zoom', String(zoom));
+      document.querySelectorAll<HTMLElement>('.cell .cm-scroller').forEach((scroller, i) => {
+        if (scroller.scrollHeight > scroller.clientHeight) found.push([zoom, i, scroller.scrollHeight, scroller.clientHeight]);
+      });
+    }
+    sheet.style.removeProperty('--column-zoom');
+    return found;
+  });
+  expect(overflow).toEqual([]);
+});
+
 test('Esc is command mode: A and B insert, the arrows move, D D deletes, Enter edits, and keys never type', async ({ page }) => {
   await page.addInitScript(() => {
     sessionStorage.setItem('knuth-doc', JSON.stringify({

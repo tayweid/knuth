@@ -1505,6 +1505,10 @@ body[data-view='source'] .cell .run-num { visibility: visible; }
   right: 0;
   top: 0;
   height: calc(1rem + 18.9px);
+  /* The hairline inside the band, not under it: drawn below, it stood
+     1 px past a one-line cell's editor, which then scrolled (a scrollbar
+     and a nudge on the wheel; Taylor, 2026-10-17). */
+  box-sizing: border-box;
   display: flex;
   align-items: center;
   justify-content: center;
