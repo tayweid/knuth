@@ -512,6 +512,29 @@ test('a cell never scrolls inside itself: its editor is exactly as tall as its l
   expect(overflow).toEqual([]);
 });
 
+test('Run stale rests, its amber dot gone, while nothing is stale, and wakes with an edit', async ({ page }) => {
+  await page.addInitScript(() => {
+    sessionStorage.setItem('knuth-doc', JSON.stringify({ name: 'stale.py', dirty: false, text: '# %%\nx = 1\n\n# %%\ny = 2\n' }));
+  });
+  await page.goto('/');
+  await expect(page.locator('#kernel-status')).toHaveText('Python');
+  const tile = page.locator('#run-stale');
+  const dot = tile.locator('.stale-dot');
+  // A fresh page: everything stale.
+  await expect(tile).not.toHaveAttribute('aria-disabled', 'true');
+  await expect(dot).toBeVisible();
+  await page.locator('#run-all').click();
+  await expect(page.locator('body')).toHaveAttribute('data-stale', '0');
+  await expect(tile).toHaveAttribute('aria-disabled', 'true');
+  await expect(tile).toHaveAttribute('title', /^Nothing is stale/);
+  await expect(dot).toBeHidden();
+  // An edit makes its cell and the ones below stale again.
+  await page.locator('.cell .cm-content').first().click();
+  await page.keyboard.type('0');
+  await expect(tile).not.toHaveAttribute('aria-disabled', 'true');
+  await expect(dot).toBeVisible();
+});
+
 test('Esc is command mode: A and B insert, the arrows move, D D deletes, Enter edits, and keys never type', async ({ page }) => {
   await page.addInitScript(() => {
     sessionStorage.setItem('knuth-doc', JSON.stringify({

@@ -591,7 +591,10 @@ either side of the rule (the tiles in a group keep their 3 px), and the
 first tile sits 10 px under the bar. The rail's foot holds the view switch alone.
 The Session panel tile is gone (the pill opens the card), and Restart
 session left the Run group for the bar's right end, a tile just before the
-session pill, beside the session it replaces. Between cells, the centred
+session pill, beside the session it replaces; later that day it became
+the pill's own status dot (green, red, or a spinner), the restart arrow
+under the pointer, as ManimLive's is. Run stale rests, its amber dot
+gone, while nothing is stale. Between cells, the centred
 hover strip became a very small cell under the run buttons' column — the
 gutter's width, a card's corners, hairline and fill, the three kinds in
 it, untinted, no shadow or line across — shown only in the gaps above

@@ -182,6 +182,29 @@ test('the controls are where the frame puts them, with every id the tests and th
   await expect(page.locator('#doc-folder')).toBeHidden();
 });
 
+test('Restart is the session pill\'s status dot: green when ready, the arrow under the pointer, joined to the pill', async ({ page }) => {
+  await boot(page);
+  const dot = page.locator('#restart');
+  const pill = page.locator('#session-pill');
+  await expect(page.locator('#kernel-status')).toHaveClass('ok');
+  const a = (await dot.boundingBox())!;
+  const b = (await pill.boundingBox())!;
+  // One pill in two halves: the same height and top, 1 px between them.
+  expect(Math.round(b.x - (a.x + a.width))).toBe(1);
+  expect([a.y, a.height]).toEqual([b.y, b.height]);
+  const look = () => dot.evaluate((element) => ({
+    mark: getComputedStyle(element.querySelector('.sp-dot-mark')!).backgroundColor,
+    markShown: getComputedStyle(element.querySelector('.sp-dot-mark')!).opacity,
+    arrow: getComputedStyle(element.querySelector('.ico')!).opacity,
+  }));
+  await page.mouse.move(600, 400);
+  await expect.poll(look).toEqual({ mark: 'rgb(110, 165, 118)', markShown: '1', arrow: '0' });
+  await dot.hover();
+  await expect.poll(look).toEqual({ mark: 'rgb(110, 165, 118)', markShown: '0', arrow: '1' });
+  // The status's words are the status's own, the dot drawn beside them.
+  expect(await page.locator('#kernel-status').evaluate((element) => getComputedStyle(element, '::before').content)).toBe('none');
+});
+
 test('the column centres in the room, the Session card closed or floating; docked, it slides left with its width', async ({ page }) => {
   const centred = () => page.evaluate(() => {
     const doc = document.getElementById('doc')!;
@@ -505,12 +528,16 @@ test('source view keeps the frame: the bar and the switch lit, the room One Dark
   // Plass's rule: the tools that cannot act here rest, dim, in their
   // places — the rail reads as the rail in every view.
   await expect(page.locator('#rail .tb-rule')).toBeVisible();
-  for (const id of ['add-code', 'add-scratch', 'add-text', 'run-stale', 'run-all', 'stop', 'clear-outputs', 'restart']) {
+  for (const id of ['add-code', 'add-scratch', 'add-text', 'run-stale', 'run-all', 'stop', 'clear-outputs']) {
     const tile = page.locator(`#${id}`);
     await expect(tile, id).toBeVisible();
     await expect(tile, id).toHaveAttribute('aria-disabled', 'true');
     expect(await tile.evaluate((element) => getComputedStyle(element).opacity), id).toBe('0.4');
   }
+  // Restart rests too, but it is the kernel's status dot as well: that
+  // stays at full strength, and no arrow offers itself.
+  await expect(page.locator('#restart')).toHaveAttribute('aria-disabled', 'true');
+  expect(await page.locator('#restart').evaluate((element) => getComputedStyle(element).opacity)).toBe('1');
   // A click on a resting tile does nothing (forced: Playwright itself
   // waits for an aria-disabled control to wake).
   await page.locator('#run-all').click({ force: true });

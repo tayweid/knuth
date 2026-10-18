@@ -292,8 +292,9 @@ body {
   .doc-pod:has(> #doc-folder:not([hidden])) { --folder-room: 0px; }
 }
 
-/* The bar's right end: the Restart tile, then the session pill. The pill
-   may give way (its names do,
+/* The bar's right end: the session pill, its status dot Restart's
+   button (.sp-dot), joined to it as Open's halves are. The pill may give
+   way (its names do,
    to +N) when the bar is short; the status never does. */
 .tb-end {
   margin-left: auto;
@@ -301,8 +302,54 @@ body {
   min-width: 0;
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 1px;
 }
+
+/* Restart is the kernel's mark (Taylor, 2026-10-17, as ManimLive has it):
+   the pill's left end, the status dot in it — green ready, red failed, a
+   spinner while uv works or a session starts — and under the pointer the
+   restart arrow in its place. Resting (source and grid views: paintRail)
+   it keeps the plain dot. */
+#toolbar #restart.sp-dot {
+  flex: none;
+  width: 28px;
+  min-width: 28px;
+  height: 30px;
+  padding: 0;
+  color: var(--glass-ink-soft);
+  background: var(--pill);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 9px 3px 3px 9px;
+}
+#restart .sp-dot-mark {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: rgba(240, 238, 233, 0.35);
+  transition: opacity 0.12s;
+}
+.tb-end:has(#kernel-status.ok) .sp-dot-mark { background: #6ea576; }
+.tb-end:has(#kernel-status.bad) .sp-dot-mark { background: #cd6452; }
+.tb-end:has(#kernel-status.working) .sp-dot-mark {
+  width: 9px;
+  height: 9px;
+  background: transparent;
+  border: 1.6px solid rgba(240, 238, 233, 0.3);
+  border-top-color: rgba(240, 238, 233, 0.95);
+  animation: knuth-turn 0.8s linear infinite;
+}
+#restart.sp-dot .ico {
+  position: absolute;
+  width: 15px;
+  height: 15px;
+  opacity: 0;
+  transition: opacity 0.12s;
+}
+#toolbar #restart.sp-dot:not([aria-disabled='true']):is(:hover, :focus-visible) { color: #fff; background: #29292d; }
+#restart.sp-dot:not([aria-disabled='true']):is(:hover, :focus-visible) .sp-dot-mark { opacity: 0; }
+#restart.sp-dot:not([aria-disabled='true']):is(:hover, :focus-visible) .ico { opacity: 1; }
+#toolbar #restart.sp-dot[aria-disabled='true'] { opacity: 1; cursor: default; }
+#restart.sp-dot[aria-disabled='true'] .lbl { visibility: hidden; }
 
 /* Tiles: quiet icons, always visible (the old bar's sleep-until-hover is
    gone, as in Plass), the word fading in as a caption — below a bar
@@ -579,7 +626,8 @@ body {
   color: var(--glass-ink-soft);
   background: var(--pill);
   border: 1px solid rgba(255, 255, 255, 0.08);
-  border-radius: 9px;
+  /* Its left end meets Restart's dot (.sp-dot). */
+  border-radius: 3px 9px 9px 3px;
   cursor: pointer;
   transition: background 0.15s, color 0.15s;
 }
@@ -638,10 +686,8 @@ body {
   100% { box-shadow: 0 0 0 2px rgba(157, 184, 214, 0); }
 }
 
-#kernel-status.ok::before { content: '● '; color: #6ea576; }
-/* Work the person is waiting on: a spinner on the pill (uv setting up an
-   environment) and on the toast (a package installing). */
-#kernel-status.working::before,
+/* Work the person is waiting on: a spinner on the toast (a package
+   installing); the pill's is its dot's (.sp-dot, above). */
 #toast.working::before {
   content: '';
   display: inline-block;
@@ -679,11 +725,10 @@ body {
 .packages-summary .list { font-family: var(--mono); font-size: 11.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .packages-folded > .cell { display: none; }
 @media (prefers-reduced-motion: reduce) {
-  #kernel-status.working::before, #toast.working::before,
+  .tb-end:has(#kernel-status.working) .sp-dot-mark, #toast.working::before,
   .cell.running .run::after, .cell.working .run::after,
   .sp-names .land, #session-pill.got, #session .rv.landed { animation: none; }
 }
-#kernel-status.bad::before { content: '● '; color: #cd6452; }
 
 /* ---------- first-run engine and PWA onboarding ---------- */
 
@@ -989,6 +1034,8 @@ body {
 #rail .tb-btn .ico { width: 18px; height: 18px; }
 /* Run stale's dot: the amber of a stale cell's edge, filled. */
 .ico .stale-dot { fill: var(--amber); stroke: none; }
+/* Nothing stale: the tile rests (main.ts, paintRail) and the dot goes. */
+#run-stale[aria-disabled='true'] .stale-dot { visibility: hidden; }
 
 #rail .tb-btn:hover,
 #rail .tb-btn:focus-visible {

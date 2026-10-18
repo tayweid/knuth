@@ -1670,6 +1670,7 @@ export class DocumentView {
     this.doc.cells.splice(i, 1);
     this.syncView();
     this.views.splice(i, 1);
+    this.paintStale();
     this.destroyEditors(v);
     v.root.remove();
     if (this.hovered === v) this.hovered = null;
@@ -1709,5 +1710,13 @@ export class DocumentView {
     v.row.classList.toggle('stale', v.stale);
     v.row.classList.toggle('running', v.running);
     v.row.classList.toggle('working', v.working);
+    this.paintStale();
+  }
+
+  /** How many cells are stale, on the body (data-stale): the rail's Run
+   *  stale rests at none (main.ts, paintRail). Written only on change. */
+  private paintStale() {
+    const count = String(this.staleCount);
+    if (document.body.dataset.stale !== count) document.body.dataset.stale = count;
   }
 }

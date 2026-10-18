@@ -90,7 +90,7 @@ toolbar.innerHTML = `
   ${labeled('new-window', icon('newwindow'), 'New window', 'New window — a new document, with its own session', 'tb-btn tb-tile')}
   <div class="doc-pod" id="doc-pod"><span class="name" id="file-name" title="Click to rename">${DEFAULT_DOC_NAME}</span><span class="doc-mark" id="doc-mark" aria-hidden="true"></span><span class="doc-folder" id="doc-folder" hidden><span dir="ltr"></span></span><button type="button" class="doc-save" id="doc-save" title="Save (⌘S)" hidden>Save</button><button type="button" class="tb-btn tb-tile" id="history-tile" title="History (⇧⌘H)" aria-label="History" aria-keyshortcuts="Shift+Meta+H">${HISTORY_GLYPH}<span class="lbl">History</span></button></div>
   <div class="tb-end">
-    ${labeled('restart', icon('restart'), 'Restart', 'Restart session: a fresh kernel process, every cell stale', 'tb-btn tb-tile')}
+    <button type="button" class="tb-btn sp-dot" id="restart" title="Restart session: a fresh kernel process, every cell stale" aria-label="Restart session"><span class="sp-dot-mark" aria-hidden="true"></span>${icon('restart')}<span class="lbl">Restart</span></button>
     <button type="button" id="session-pill"><span id="kernel-status">connecting…</span><span class="sp-sep" aria-hidden="true"></span><span class="sp-mark" aria-hidden="true">${icon('braces')}</span><span class="sp-names"></span></button>
   </div>
 `;
@@ -98,13 +98,14 @@ toolbar.innerHTML = `
 // The rail down the left: the cell and run tools in their groups under a
 // hairline, scrolling as one when the window is short, and the view switch
 // pinned at the foot, as Zen pins its bottom icons. (The Session card opens
-// from the bar's pill alone, and Restart sits beside that pill, with the
-// session it replaces: Taylor, 2026-10-17.) The captions are longer words than the old bar's, since
-// there is room beside a tile; the titles are unchanged. The view switch
+// from the bar's pill alone, and Restart is that pill's status dot, with
+// the session it replaces: Taylor, 2026-10-17.) The captions are longer
+// words than the old bar's, since there is room beside a tile; the titles are unchanged. The view switch
 // is the same spot in every view, so the way in and the way out are one
 // (Plass's Plain text / Paper switch); its caption names the view it
 // switches TO (styles.css), and it is lit in source view.
 const VIEW_TITLE = 'Switch between source and cell (or grid) view (⌘⇧E)';
+const RUN_STALE_TITLE = 'Run the stale code cells in order: the edited ones and every code cell below them';
 const rail = document.getElementById('rail')!;
 rail.innerHTML = `
   <div class="tb-rail-groups">
@@ -115,7 +116,7 @@ rail.innerHTML = `
     </div>
     <div class="tb-rule" role="separator"></div>
     <div class="tb-rail-group" id="run-pod" role="group" aria-label="Run">
-      ${labeled('run-stale', icon('playstale'), 'Run stale', 'Run the stale code cells in order: the edited ones and every code cell below them')}
+      ${labeled('run-stale', icon('playstale'), 'Run stale', RUN_STALE_TITLE)}
       ${labeled('run-all', icon('playall'), 'Run all', 'Run all program cells from the top')}
       ${labeled('stop', icon('stop'), 'Stop', 'Interrupt the running cell')}
       ${labeled('clear-outputs', icon('clear'), 'Clear outputs', 'Clear every cell’s output (Esc then O clears one cell’s)')}
@@ -170,8 +171,16 @@ function rest(tile: HTMLElement, resting: boolean) {
   else tile.removeAttribute('aria-disabled');
 }
 function paintRail() {
-  const { view, cells, grid } = document.body.dataset;
+  const { view, cells, grid, stale } = document.body.dataset;
   for (const id of CELL_TOOLS) rest(document.getElementById(id)!, view === 'source' || view === 'grid');
+  // Run stale rests, its amber dot gone (styles.css), while nothing is
+  // stale: every code cell has run since it was last edited (Taylor,
+  // 2026-10-17).
+  const runStale = document.getElementById('run-stale')!;
+  const none = stale === '0';
+  if (none) rest(runStale, true);
+  const staleTitle = none ? 'Nothing is stale: every code cell has run since it was last edited' : RUN_STALE_TITLE;
+  if (runStale.title !== staleTitle) runStale.title = staleTitle;
   const toggle = document.getElementById('view-toggle')!;
   // A workbook's sheet is a grid with no source to switch to.
   const sheet = view === 'grid' && grid !== 'true';
@@ -184,7 +193,7 @@ function paintRail() {
 }
 new MutationObserver(paintRail).observe(document.body, {
   attributes: true,
-  attributeFilter: ['data-view', 'data-cells', 'data-grid'],
+  attributeFilter: ['data-view', 'data-cells', 'data-grid', 'data-stale'],
 });
 // The rail's tiles and the bar's Restart alike.
 for (const frame of [rail, toolbar]) {
