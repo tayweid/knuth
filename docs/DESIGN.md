@@ -82,6 +82,20 @@ and makes pyrmd the computation half.
   left side: grey under the pointer, blue with a soft glow inside it, and
   with a faint wash over the cell in command mode in place of the code
   cells' ring. The old 28 px ticks above and below are gone.
+- **Moving cells** (2026-10-21, Taylor: "knuth needs a drag and drop for
+  rearanging cells … make it look pretty"). Every cell but cell zero has
+  a grip, six dots in the margin left of its row, shown under the
+  pointer. Dragged by it (pointer events, not HTML drag and drop, so no
+  browser ghost image), the cell fades where it is, a small label of it
+  (its kind and first line) rides with the pointer, a blue line with
+  round ends marks the gap it will land in, and the doc scrolls when the
+  pointer nears its top or bottom. Letting go moves it (`moveCell`): the
+  editors move with their DOM, undo histories kept; the blank separator
+  lines are kept right; a moved code cell stales every code cell from
+  the higher of where it left and where it landed, as an edit there
+  would, and a text or scratch cell's move stales nothing; the cell
+  glows a moment where it landed, and ⌘Z puts it back. Esc, or letting
+  go over its own place, leaves it.
 
 ## Execution model
 

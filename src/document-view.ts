@@ -1270,6 +1270,18 @@ export class DocumentView {
     this.hydrateOutputs(v);
 
     row.append(body);
+    // The grip a cell is dragged by (moving cells, below): in the margin
+    // left of the row, shown under the pointer. Cell zero never moves.
+    if (!isPreamble) {
+      const grip = document.createElement('button');
+      grip.type = 'button';
+      grip.className = 'cell-grip';
+      grip.title = 'Drag to move the cell';
+      grip.setAttribute('aria-label', 'Move cell');
+      grip.innerHTML = '<svg viewBox="0 0 8 14" aria-hidden="true"><circle cx="2" cy="2" r="1.2"/><circle cx="6" cy="2" r="1.2"/><circle cx="2" cy="7" r="1.2"/><circle cx="6" cy="7" r="1.2"/><circle cx="2" cy="12" r="1.2"/><circle cx="6" cy="12" r="1.2"/></svg>';
+      grip.addEventListener('pointerdown', (e) => this.startDrag(v, e));
+      row.append(grip);
+    }
     root.dataset.cell = v.id;
     // No insert strip above the preamble: nothing can precede cell zero.
     if (isPreamble) root.append(row);
@@ -1682,6 +1694,139 @@ export class DocumentView {
       () => this.spliceIn(Math.min(i, this.views.length), cell),
       'Cell deleted — ⌘Z restores it',
     );
+  }
+
+  // ---------- moving cells ----------
+
+  /** Move `v` so it ends at index `to` among the cells. The editors move
+   *  with their DOM (their undo histories kept); a moved code cell stales
+   *  itself and everything below where it left or landed, whichever is
+   *  higher, as an edit there would; a text or scratch cell's move stales
+   *  nothing. ⌘Z puts it back. */
+  moveCell(v: CellView, to: number, undoable = true) {
+    const from = this.views.indexOf(v);
+    to = Math.max(0, Math.min(to, this.views.length - 1));
+    if (from < 0 || from === to || v.isPreamble) return;
+    this.doc.cells.splice(from, 1);
+    this.views.splice(from, 1);
+    this.doc.cells.splice(to, 0, v.cell);
+    this.views.splice(to, 0, v);
+    (this.views[to + 1]?.root ?? this.endZone).before(v.root);
+    // Every cell but the last ends in its blank separator line.
+    this.ensureSeparator(this.views[to - 1]);
+    if (to < this.views.length - 1) this.ensureSeparator(v);
+    if (to === 0 && this.preambleView) {
+      const p = this.doc.preamble;
+      if (p[p.length - 1]?.trim() !== '') p.push('');
+    }
+    if (v.cell.kind === 'program') this.markStaleFromIndex(Math.min(from, to));
+    v.editor?.requestMeasure();
+    this.paintZones();
+    this.onChange();
+    v.row.classList.remove('just-moved');
+    void v.row.offsetWidth;
+    v.row.classList.add('just-moved');
+    if (undoable) this.onUndoable?.(() => this.moveCell(v, from, false), 'Cell moved — ⌘Z puts it back');
+  }
+
+  /** A grip's drag: the cell dims where it is, a short label of it rides
+   *  with the pointer, and a blue line shows the gap it will land in; the
+   *  doc scrolls when the pointer nears its top or bottom. Esc, or letting
+   *  go where it already is, leaves it. */
+  private startDrag(v: CellView, down: PointerEvent) {
+    if (down.button !== 0 || this.sourceMode || this.gridMode) return;
+    down.preventDefault();
+    const grip = down.currentTarget as HTMLElement;
+    grip.setPointerCapture(down.pointerId);
+    const scroller = this.container.closest<HTMLElement>('#doc') ?? this.container;
+    const line = document.createElement('div');
+    line.className = 'drop-line';
+    const ghost = document.createElement('div');
+    ghost.className = 'drag-ghost';
+    const first = (v.cell.source.find((l) => l.trim()) ?? '').replace(/^#\s?/, '').trim();
+    ghost.append(Object.assign(document.createElement('span'), { className: 'k', textContent: v.cell.kind === 'text' ? 'Text' : v.cell.kind === 'scratch' ? 'Scratch' : 'Code' }));
+    ghost.append(Object.assign(document.createElement('span'), { className: 't', textContent: first || 'empty cell' }));
+    let started = false;
+    let gap = -1;
+    let y = down.clientY;
+    let x = down.clientX;
+    let scrolling = 0;
+    const from = () => this.views.indexOf(v);
+    const gapAt = (py: number) => {
+      for (let i = 0; i < this.views.length; i++) {
+        const r = this.views[i].row.getBoundingClientRect();
+        if (py < r.top + r.height / 2) return i;
+      }
+      return this.views.length;
+    };
+    const place = () => {
+      gap = gapAt(y);
+      const here = from();
+      const still = gap === here || gap === here + 1;
+      line.hidden = still;
+      if (!still) {
+        const rows = this.views.map((w) => w.row.getBoundingClientRect());
+        const above = rows[gap - 1];
+        const below = rows[gap];
+        const at = above && below ? (above.bottom + below.top) / 2 : below ? below.top - 11 : above.bottom + 11;
+        const sheet = this.container.getBoundingClientRect();
+        line.style.top = `${at - 1}px`;
+        line.style.left = `${sheet.left}px`;
+        line.style.width = `${sheet.width}px`;
+      }
+      ghost.style.transform = `translate(${x + 14}px, ${y - 12}px)`;
+    };
+    const tick = () => {
+      const box = scroller.getBoundingClientRect();
+      const edge = 56;
+      const speed = y < box.top + edge ? -Math.ceil((box.top + edge - y) / 4) : y > box.bottom - edge ? Math.ceil((y - (box.bottom - edge)) / 4) : 0;
+      if (speed) {
+        scroller.scrollTop += speed;
+        place();
+      }
+      scrolling = requestAnimationFrame(tick);
+    };
+    const start = () => {
+      started = true;
+      v.row.classList.add('drag-source');
+      document.body.classList.add('cell-dragging');
+      document.body.append(line, ghost);
+      scrolling = requestAnimationFrame(tick);
+    };
+    const end = (drop: boolean) => {
+      grip.removeEventListener('pointermove', move);
+      grip.removeEventListener('pointerup', up);
+      grip.removeEventListener('pointercancel', cancel);
+      window.removeEventListener('keydown', key, true);
+      if (grip.hasPointerCapture(down.pointerId)) grip.releasePointerCapture(down.pointerId);
+      if (!started) return;
+      cancelAnimationFrame(scrolling);
+      line.remove();
+      ghost.remove();
+      v.row.classList.remove('drag-source');
+      document.body.classList.remove('cell-dragging');
+      const here = from();
+      if (drop && gap >= 0 && gap !== here && gap !== here + 1) this.moveCell(v, gap > here ? gap - 1 : gap);
+    };
+    const move = (e: PointerEvent) => {
+      x = e.clientX;
+      y = e.clientY;
+      if (!started && Math.abs(y - down.clientY) + Math.abs(x - down.clientX) < 4) return;
+      if (!started) start();
+      place();
+    };
+    const up = () => end(true);
+    const cancel = () => end(false);
+    const key = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape') return;
+      e.preventDefault();
+      e.stopPropagation();
+      end(false);
+    };
+    grip.addEventListener('pointermove', move);
+    grip.addEventListener('pointerup', up);
+    grip.addEventListener('pointercancel', cancel);
+    window.addEventListener('keydown', key, true);
   }
 
   // ---------- staleness ----------
