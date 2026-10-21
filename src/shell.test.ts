@@ -220,13 +220,19 @@ assert.equal(historyNote(null), 'This Knuth.app has no history view: a newer she
       },
     },
   })!;
-  let box: Box = { x: 44, y: 44, width: 1048, height: 708 };
+  let box: Box = { x: 44, y: 44, width: 780, height: 708 };
   let ratio = 2;
+  let openings = 0;
   const painted: boolean[] = [];
   const answers: unknown[] = [];
   const frames: Array<() => void> = [];
   const view = inlineHistory(shell, {
     room: () => box,
+    // The page puts the Session column away, widening the room, before
+    // the room is measured for the view.
+    opening: () => {
+      if (++openings === 1) box = { x: 44, y: 44, width: 1048, height: 708 };
+    },
     paint: (shown) => painted.push(shown),
     answered: (reply) => answers.push(reply),
     ratio: () => ratio,
@@ -236,6 +242,7 @@ assert.equal(historyNote(null), 'This Knuth.app has no history view: a newer she
   const flush = () => frames.splice(0).forEach((run) => run());
 
   await view.toggle();
+  assert.equal(openings, 1);
   assert.deepEqual(sent, [{ type: 'history', action: 'open', inline: { x: 44, y: 44, width: 1048, height: 708 } }]);
   assert.deepEqual(answers, [{ opened: true, inline: true }]);
   // Not pressed by the click: only by the shell's word.

@@ -279,7 +279,7 @@ test('the pill\'s chip for the page the Session column shows is pressed', async 
   await expect(tile).toHaveAttribute('aria-pressed', 'false');
 });
 
-test('the History view\'s box is the room\'s: the frame\'s numbers, the narrower room while the Session column is open, the pressed tile nothing in the bar', async ({ page }) => {
+test('the History view\'s box is the room\'s: the frame\'s numbers, the whole room with the Session column away under it, the pressed tile nothing in the bar', async ({ page }) => {
   // A shell that lays its view at once (history.spec.ts has the protocol).
   await page.addInitScript(() => {
     const sent: Array<Record<string, unknown>> = [];
@@ -330,17 +330,23 @@ test('the History view\'s box is the room\'s: the frame\'s numbers, the narrower
   expect(await boxes()).toEqual(rest);
   await tile.click();
   await expect(tile).toHaveAttribute('aria-pressed', 'false');
-  // Open, the Session column takes its 320 px and an edge from the room,
-  // and the view's box is the narrower room's; the column stays in view
-  // beside it.
+  // Open, the Session column takes its 260 px and an edge from the room.
+  // The view puts it away and has the whole room, measured after it has
+  // gone, nothing sent after; closed, the column comes back.
   await page.locator('#session-pill .sp-chip[data-part="session"]').click();
   await expect(page.locator('#session')).toBeVisible();
-  expect(await box(page, '#layout')).toEqual({ left: 44, top: 44, right: 764, bottom: 752 });
+  expect(await box(page, '#layout')).toEqual({ left: 44, top: 44, right: 824, bottom: 752 });
   await tile.click();
   await expect(tile).toHaveAttribute('aria-pressed', 'true');
-  expect((await sent()).slice(2)).toEqual([{ type: 'history', action: 'open', inline: { x: 44, y: 44, width: 720, height: 708 } }]);
+  expect((await sent()).slice(2)).toEqual([{ type: 'history', action: 'open', inline: { x: 44, y: 44, width: 1048, height: 708 } }]);
+  await expect(page.locator('#session')).toBeHidden();
+  expect(await box(page, '#layout')).toEqual({ left: 44, top: 44, right: 1092, bottom: 752 });
   await page.waitForTimeout(300);
   expect(await sent()).toHaveLength(3);
+  await tile.click();
+  await expect(tile).toHaveAttribute('aria-pressed', 'false');
+  await expect(page.locator('#session')).toBeVisible();
+  expect(await box(page, '#layout')).toEqual({ left: 44, top: 44, right: 824, bottom: 752 });
 });
 
 test('Open is a split tile: the folder half opens, the chevron drops the recent documents with Autosave, closing on a click elsewhere or Escape', async ({ page }) => {
@@ -688,19 +694,20 @@ test('the floor is main\'s 640 px, the room\'s, which the Session column never l
   await boot(page, 990, 700);
   expect(await sideways()).toBe(false);
   expect(await column()).toBe(832);
-  // Open at 990 the room gives the column 328 px and the cells fill the
-  // 570 left; at 900 the room is under its floor and scrolls sideways,
-  // the column in the frame beside it either way.
+  // Open at 990 the room gives the column 268 px and the cells fill the
+  // 630 left, the column in the frame beside the room; at 900 it floats
+  // over the room instead, which keeps its width and never scrolls.
   await page.locator('#session-pill .sp-chip[data-part="session"]').click();
   await expect(page.locator('#session')).toBeVisible();
-  expect(await column()).toBe(570);
+  expect(await column()).toBe(630);
   expect(await sideways()).toBe(false);
   const beside = () => page.evaluate(() =>
     document.getElementById('session')!.getBoundingClientRect().left - document.getElementById('layout')!.getBoundingClientRect().right);
   expect(await beside()).toBe(8);
   await page.setViewportSize({ width: 900, height: 700 });
-  await expect.poll(sideways).toBe(true);
-  expect(await beside()).toBe(8);
+  await expect(page.locator('#session')).toHaveClass(/floating/);
+  expect(await sideways()).toBe(false);
+  expect(await beside()).toBeLessThan(0);
   await page.setViewportSize({ width: 990, height: 700 });
   // Closed, main's floor again.
   await page.locator('#session .s-close').click();

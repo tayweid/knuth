@@ -102,7 +102,12 @@ pill's chips opens a second column, in the frame beside the room as
 Zen's split view lays its panes: the room's right edge pulls in by the
 column's width and one 8 px edge (`:root.session-open`, `--side`), and
 the column stands in the window's right 8 px, the room's top to its
-bottom, clamp(320 px, 26 vw, 380 px) wide. It is three panes 8 px apart
+bottom, clamp(260 px, 30 vw − 70 px, 380 px) wide: 380 at a 1500 px
+window, 320 at 1300, 260 at 1100 and under. Under a 960 px window the
+room keeps its width and the column floats over its right side instead
+(`#session.floating`: 10 px in, 280 px wide, lifted by a shadow), and a
+click in the room or Esc puts it away. While the History view is up the
+column is away (`:root.history-up`) and the room whole for the view. It is three panes 8 px apart
 on the frame's near-black, each the room's own grey with the room's
 12 px corners and hairline ring. The chip's card is open and takes the
 height; the other two shrink to their header and up to 136 px of
@@ -791,4 +796,17 @@ column open the room scrolls sideways sooner. The History view's box is
 the room's, so it is narrower while the column is open; a move the
 sliding room sends after a close has been asked for is no longer sent
 (shell.ts, `closing`).
+
+Then: "maybe we give less space to the sessions col when things are
+narrow. and maybe there's a minimum width, where the column becomes a
+floating panel again, slightly over the cell column, hiding away when
+you click on the cell column. and i don't think the sessions column
+should be visible in history view." So `--side-w` is clamp(260 px,
+30 vw − 70 px, 380 px); under 960 px (`FLOAT_QUERY`) the column floats
+over the room and the room keeps its width, a mousedown in the room
+(not on a cell chip, whose hover and click still use the band) or Esc
+closing it; and the History view's `opening` hook (shell.ts) puts the
+column away before the room is measured, so the view gets the whole
+room in its open request and nothing moves after; its close brings the
+column back.
 

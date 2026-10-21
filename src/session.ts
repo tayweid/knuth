@@ -110,6 +110,10 @@ const SHORT_PREVIEW = 16;
 const RECEIPT_ROWS = 8;
 /** A chip's title names this many. */
 const CHIP_TITLE_NAMES = 12;
+/** Under this window width the room cannot spare the column's: it floats
+ *  over the room's right side instead, and a click in the room or Esc
+ *  puts it away (Taylor, 2026-10-21). styles.css, #session.floating. */
+const FLOAT_QUERY = '(max-width: 959px)';
 /** The page the column was left open on (per window, with the last
  *  choice as a new window's start); empty when it was closed. */
 const PAGE_KEY = 'knuth-session-page';
@@ -254,6 +258,7 @@ export class Session {
   private startedQueued = new Set<string>();
 
   private readonly pill: HTMLButtonElement;
+  private readonly narrow: MediaQueryList;
   private readonly chips: Record<Tab, HTMLElement>;
   private readonly receiptEl: HTMLElement;
   private readonly cardEl: HTMLElement;
@@ -276,6 +281,8 @@ export class Session {
     // as the last one was left.
     const page = readStore(() => sessionStorage, PAGE_KEY) ?? readStore(() => localStorage, PAGE_KEY);
     this.page = isPage(page) ? page : null;
+    this.narrow = window.matchMedia(FLOAT_QUERY);
+    this.narrow.addEventListener('change', () => this.layout());
 
     // The pill: the kernel's status (#kernel-status, untouched: the shell's
     // smoke reads its words), a hairline and the three chips.
@@ -511,7 +518,8 @@ export class Session {
       const row = this.docView.cellRow(this.card.id);
       if (!row || !row.isConnected || !inCells || this.docked) this.dropCard();
     }
-    this.setRoom(this.docked && inCells, slide);
+    this.setRoom(this.docked && inCells && !this.floating, slide);
+    this.cardEl.classList.toggle('floating', this.floating);
     const f = this.frame();
     let fit = this.card ? this.fitCard(f, this.card.place) : null;
     if (this.card && !fit) {
@@ -1002,6 +1010,12 @@ export class Session {
     return this.page !== null;
   }
 
+  /** A window too narrow to give the column its width: it floats over the
+   *  room instead. */
+  private get floating(): boolean {
+    return this.narrow.matches;
+  }
+
   /** A pill chip: open the column on its page, turn to that page, or close
    *  the column when that page is the one showing. */
   private togglePage(page: Tab) {
@@ -1481,6 +1495,7 @@ export class Session {
         // the next Esc does.
         if (this.card) this.dismiss();
         else if (this.band?.held) this.clearBand();
+        else if (this.docked && this.floating && !this.away) this.closePage();
         else return;
         e.preventDefault();
         return;
@@ -1506,6 +1521,8 @@ export class Session {
         else if (this.card.kind === 'hover' || !target.closest?.('#session')) this.dropCard();
       }
       if (this.band?.held && !onChip && !this.cardEl.contains(target)) this.clearBand();
+      // Floating over the room, the column goes at a click back in it.
+      if (this.docked && this.floating && !onChip && this.room.contains(target) && !this.cardEl.contains(target)) this.closePage();
     }, true);
 
     let frame = 0;

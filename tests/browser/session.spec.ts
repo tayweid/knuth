@@ -452,10 +452,10 @@ test('the column stands in the frame beside the room, which narrows for it, the 
   await expect(card).toBeHidden();
 });
 
-test('the column\'s width follows the window, 320 to 380; the room never lies under it, and below the floor it scrolls sideways', async ({ page }) => {
+test('the column\'s width follows the window, 260 to 380, giving way first; under 960 px it floats over the room, which a click puts it away from', async ({ page }) => {
   await page.emulateMedia({ reducedMotion: 'reduce' });
-  // [window, the column's width]
-  for (const [width, side] of [[1470, 380], [1300, 338], [1100, 320]]) {
+  // [window, the column's width]: 30 vw less 70, from 260 to 380.
+  for (const [width, side] of [[1500, 380], [1470, 371], [1300, 320], [1100, 260], [960, 260]]) {
     await boot(page, width, 820);
     await chipFor(page, 'session').click();
     await expect(page.locator('#session')).toBeVisible();
@@ -470,14 +470,38 @@ test('the column\'s width follows the window, 320 to 380; the room never lies un
     expect(Math.abs(g.sheet.left - centredLeft(g)), at).toBeLessThan(1);
     await page.locator('#session .s-close').click();
   }
-  // Under the room's floor (a 640 px window's) the room scrolls sideways;
-  // the column stays in the frame, beside it.
+  // Under 960 px the room keeps its width and the column floats over its
+  // right side, 10 px in, 280 wide, lifted by a shadow.
   await boot(page, 900, 760);
+  const whole = await layout(page);
   await chipFor(page, 'session').click();
+  const card = page.locator('#session');
+  await expect(card).toHaveClass(/floating/);
   const narrow = await layout(page);
-  expect(narrow.sideways).toBe(true);
-  expect(narrow.session.left - narrow.room.right).toBe(8);
-  expect((await box(page, '#session .s-close')).right).toBeLessThanOrEqual(900 - 8);
+  expect(narrow.room).toEqual(whole.room);
+  expect(narrow.sheet).toEqual(whole.sheet);
+  expect(narrow.sideways).toBe(false);
+  expect(narrow.session.width).toBe(280);
+  expect(narrow.room.right - narrow.session.right).toBe(10);
+  expect(narrow.session.top - narrow.room.top).toBe(10);
+  expect(await card.locator('.s-part').first().evaluate((element) => getComputedStyle(element).boxShadow)).toContain('rgba(0, 0, 0, 0.55)');
+  // A click inside it is its own: a shrunk card opens.
+  await card.locator('.s-part[data-part="data"]').click();
+  await expect(card).toHaveAttribute('data-page', 'data');
+  // A click in the room puts it away; so does Esc.
+  await page.locator('#doc').click({ position: { x: 100, y: 600 } });
+  await expect(card).toBeHidden();
+  await expect(chipFor(page, 'data')).toHaveAttribute('aria-pressed', 'false');
+  await chipFor(page, 'session').click();
+  await expect(card).toBeVisible();
+  await page.keyboard.press('Escape');
+  await expect(card).toBeHidden();
+  // Wider again, the same column stands in the frame beside the room.
+  await chipFor(page, 'session').click();
+  await page.setViewportSize({ width: 1300, height: 760 });
+  await expect(card).not.toHaveClass(/floating/);
+  const wide = await layout(page);
+  expect(wide.session.left - wide.room.right).toBe(8);
 });
 
 test('the room\'s edge moves over 0.36 s on opening and closing, the column coming in from the right', async ({ page }) => {

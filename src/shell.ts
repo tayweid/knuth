@@ -349,6 +349,9 @@ export interface InlineHistory {
 
 export interface InlineHistoryPage {
   room(): Box;
+  /** About to open: the page makes the room what it will be under the
+   *  view (the Session column away) before the room is measured. */
+  opening?(): void;
   paint(shown: boolean): void;
   answered(answer: { opened?: unknown; inline?: unknown; reason?: unknown; detail?: unknown } | null): void;
   /** The device pixel ratio, which a zoom step changes. */
@@ -387,6 +390,7 @@ export function inlineHistory(host: Shell, page: InlineHistoryPage): InlineHisto
       await close();
       return;
     }
+    page.opening?.();
     const { box, key } = measure();
     sent = key;
     page.answered(await host.request({ type: 'history', action: 'open', inline: box }));

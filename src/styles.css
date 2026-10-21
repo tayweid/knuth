@@ -109,8 +109,12 @@
      window's right, the room's height, as wide as --side-w; while it is
      open the room gives up --side, the column and one edge's gap
      (:root.session-open). --room-right is the room's right margin either
-     way, which everything sized to the room reads. */
-  --side-w: clamp(320px, 26vw, 380px);
+     way, which everything sized to the room reads. The column gives way
+     first as the window narrows (Taylor, 2026-10-21: "less space to the
+     sessions col when things are narrow"): 380 px at a 1500 px window,
+     260 at 1100 and under. Under a 960 px window it floats over the room
+     instead (#session.floating). */
+  --side-w: clamp(260px, calc(30vw - 70px), 380px);
   --side: 0px;
   --room-right: calc(var(--edge-right) + var(--side));
   /* The rail: a tile with 6 px either side, 44 px, the bar's height too
@@ -131,6 +135,13 @@
 :root.session-open {
   --side: calc(var(--side-w) + var(--edge));
 }
+
+/* The History view over the room: the Session column is away and the
+   room whole for it (main.ts), back when the view goes. */
+:root.session-open.history-up {
+  --side: 0px;
+}
+:root.history-up #session { display: none; }
 
 * { box-sizing: border-box; }
 
@@ -2091,6 +2102,24 @@ body[data-view='source'] .cell .run-num { visibility: visible; }
   -webkit-mask-image: linear-gradient(to bottom, #000 45%, transparent);
   mask-image: linear-gradient(to bottom, #000 45%, transparent);
 }
+/* Floating (a window under 960 px, where the room cannot spare the
+   column's width): the same three cards over the room's right side, 10 px
+   in from its edges, 280 px wide, lifted by a shadow; a click in the
+   room or Esc puts it away (session.ts). */
+#session.floating {
+  top: calc(var(--topbar) + 10px);
+  bottom: calc(var(--edge) + 10px);
+  right: calc(var(--room-right) + 10px);
+  width: min(280px, calc(100vw - var(--rail) - var(--room-right) - 20px));
+  z-index: 8;
+}
+#session.floating .s-part {
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.09), 0 14px 40px rgba(0, 0, 0, 0.55), 0 2px 8px rgba(0, 0, 0, 0.35);
+}
+#session.floating .s-part:not(.on):hover {
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.18), 0 14px 40px rgba(0, 0, 0, 0.55), 0 2px 8px rgba(0, 0, 0, 0.35);
+}
+
 /* In a shrunk card nothing squeezes to fit: the viewer keeps its height
    and the card shows its top (the table's first rows, the figure's top),
    faded. */

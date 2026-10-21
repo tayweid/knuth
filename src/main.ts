@@ -396,15 +396,18 @@ function askShellPath(message: ShellMessage): Promise<string | null> {
  *  it away as Escape in the view does. The room's box is measured on a
  *  ResizeObserver (the window's size; the scroll rail's gutter coming or
  *  going, which narrows the room by 12 px) and on the window's resize
- *  (a zoom step); the docked Session card slides the column inside the
- *  room, never the room, so it moves nothing. */
+ *  (a zoom step). The Session column is away while the view is up
+ *  (:root.history-up): the room is whole for it, measured after the
+ *  column has gone (opening), and the column comes back on close. */
 const room = $('layout');
 let focusUnder: HTMLElement | null = null;
 const historyView = shell
   ? inlineHistory(shell, {
     room: () => room.getBoundingClientRect(),
+    opening: () => document.documentElement.classList.add('history-up'),
     paint: (shown) => {
       historyTile.setAttribute('aria-pressed', String(shown));
+      document.documentElement.classList.toggle('history-up', shown);
       // Under the view nothing holds the focus, so a key pressed in this
       // page while it is up edits no hidden cell; it comes back on close.
       if (shown) {
@@ -420,6 +423,8 @@ const historyView = shell
     },
     answered: (answer) => {
       if (answer === null) historyTile.hidden = true;
+      // No view came: the Session column comes back.
+      if (!(answer as { opened?: unknown } | null)?.opened && !historyView?.shown) document.documentElement.classList.remove('history-up');
       const note = historyNote(answer);
       if (note) toast(note);
     },
