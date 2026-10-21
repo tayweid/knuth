@@ -223,3 +223,90 @@ test('source view shows no ProseMirror text cell', async ({ page }) => {
   await expect(page.locator('body')).toHaveAttribute('data-view', 'source');
   await expect(page.locator('.ProseMirror')).toHaveCount(0);
 });
+
+// Three text cells in a row, then code, then a text cell on its own.
+const JOINED_DOC = `# %% [markdown]
+# # Demand
+#
+# The first paragraph.
+
+# %% [markdown]
+# A second text cell, the next paragraph.
+
+# %% [markdown]
+# ## Method
+#
+# A third, under a heading.
+
+# %%
+n = 3
+
+# %% [markdown]
+# After the code.
+`;
+
+test('text cells in a row read as one text: a paragraph\'s break between them, the inserter in it; others keep their gap', async ({ page }) => {
+  await seed(page, JOINED_DOC);
+  await page.goto('/');
+  await expect(page.locator('#kernel-status')).toHaveText('Python');
+  await expect(page.locator('.cell.kind-text')).toHaveCount(4);
+  const gaps = await page.evaluate(() => {
+    const rows = [...document.querySelectorAll('#sheet .cell-wrap > .cell')];
+    return rows.slice(1).map((row, i) => Math.round(row.getBoundingClientRect().top - rows[i].getBoundingClientRect().bottom));
+  });
+  // Text to text: 11 px, 0.6em of the 18 px prose, as two paragraphs in
+  // one cell; text to code and code to text keep the 22 px gap.
+  expect(gaps).toEqual([11, 11, 22, 22]);
+  // Inside one cell the same break.
+  const inCell = await page.locator('.cell.kind-text').first().evaluate((cell) => {
+    const p = cell.querySelector('p')!;
+    return Math.round(parseFloat(getComputedStyle(p).marginTop));
+  });
+  expect(inCell).toBe(11);
+  // A heading starting a joined cell keeps its space above.
+  const method = await page.locator('.cell.kind-text').nth(2).evaluate((cell) => {
+    const h = cell.querySelector('h2')!.getBoundingClientRect().top;
+    return Math.round(h - cell.getBoundingClientRect().top);
+  });
+  expect(method).toBeGreaterThan(8);
+  // The seam's inserter: there, and shown under the pointer.
+  const seam = page.locator('#sheet .cell-wrap').nth(1).locator(':scope > .insert-zone');
+  await seam.hover();
+  await expect(seam.locator('.insert-actions')).toBeVisible();
+  await seam.locator('.k-text').click();
+  await expect(page.locator('.cell.kind-text')).toHaveCount(5);
+});
+
+test('a text cell is marked by a bar down its left side: grey under the pointer, blue inside it, with a wash in command mode', async ({ page }) => {
+  await seed(page, JOINED_DOC);
+  await page.goto('/');
+  await expect(page.locator('#kernel-status')).toHaveText('Python');
+  const cell = page.locator('.cell.kind-text').nth(1);
+  const bar = () => cell.evaluate((element) => {
+    const style = getComputedStyle(element, '::before');
+    return { opacity: style.opacity, color: style.backgroundColor, width: style.width };
+  });
+  await page.mouse.move(900, 700);
+  await expect.poll(bar).toMatchObject({ opacity: '0', width: '3px' });
+  await cell.hover();
+  await expect.poll(bar).toEqual({ opacity: '1', color: 'rgba(255, 255, 255, 0.18)', width: '3px' });
+  await cell.locator('.ProseMirror').click();
+  await page.mouse.move(900, 700);
+  await expect.poll(bar).toEqual({ opacity: '1', color: 'rgba(157, 184, 214, 0.85)', width: '3px' });
+  // The bar is the cell's own height, and the old ticks above and below
+  // are gone.
+  const heights = await cell.evaluate((element) => {
+    const prose = getComputedStyle(element.querySelector('.ProseMirror')!, '::before').content;
+    return { prose, cell: Math.round(element.getBoundingClientRect().height) };
+  });
+  expect(heights.prose).toBe('none');
+  // Command mode: the bar, a wash, and no ring.
+  await page.keyboard.press('Escape');
+  await expect(cell).toHaveClass(/selected/);
+  const look = () => cell.evaluate((element) => {
+    const style = getComputedStyle(element);
+    return { outline: style.outlineStyle, wash: style.backgroundColor };
+  });
+  await expect.poll(look).toEqual({ outline: 'none', wash: 'rgba(157, 184, 214, 0.06)' });
+  await expect.poll(bar).toEqual({ opacity: '1', color: 'rgba(157, 184, 214, 0.85)', width: '3px' });
+});

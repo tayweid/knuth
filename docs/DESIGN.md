@@ -71,6 +71,17 @@ and makes pyrmd the computation half.
   Vendored copies may drift from Plass; extract a shared package only
   if that ever hurts. The line-breaker port for justified prose remains
   the horizon nice-to-have.
+  On the page (2026-10-21, Taylor: "no space between them, it should
+  look like one cell, but there should still be a create cell button
+  between them"; "a bar on the left instead of above and below"): text
+  cells one after another read as one text, a paragraph's break (0.6em,
+  11 px) between them with the inserter in it, a heading that starts one
+  keeping its space above, by CSS `:has()` selectors alone, so inserts,
+  deletes, moves and kind changes join and part them with no
+  bookkeeping. Which cell is which shows as a 3 px bar down the cell's
+  left side: grey under the pointer, blue with a soft glow inside it, and
+  with a faint wash over the cell in command mode in place of the code
+  cells' ring. The old 28 px ticks above and below are gone.
 
 ## Execution model
 

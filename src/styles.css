@@ -1687,9 +1687,12 @@ body[data-view='source'] .cell .run-num { visibility: visible; }
 
 /* text cells: light serif prose straight on the room — no box, no modes,
    always editable (a ProseMirror view, not a CodeMirror editor — see
-   document-view.ts's buildProse). Tiny bars above and below mark the
-   cell's top and bottom while you're in (or over) it: the extent made
-   visible without becoming a box. */
+   document-view.ts's buildProse). A bar down the cell's left side, the
+   cell's own height, says which cell is which: grey under the pointer,
+   blue (and a little taller, with a soft glow) while you are in it, and
+   with a faint wash over the cell in command mode (Taylor, 2026-10-21:
+   "maybe a bar on the left instead of above and below. make it look
+   pretty"). */
 
 .cell.kind-text .ProseMirror {
   border: 0;
@@ -1705,31 +1708,58 @@ body[data-view='source'] .cell .run-num { visibility: visible; }
   outline: none;
 }
 
-.cell.kind-text .ProseMirror::before,
-.cell.kind-text .ProseMirror::after {
+.cell.kind-text { border-radius: 6px; transition: background 0.2s ease; }
+.cell.kind-text::before {
   content: '';
   position: absolute;
-  left: calc(0.75rem + 1px);
-  width: 28px;
-  height: 2px;
-  border-radius: 1px;
-  background: transparent;
-  transition: background 0.15s ease;
+  left: 2px;
+  top: 4px;
+  bottom: 4px;
+  width: 3px;
+  border-radius: 2px;
+  background: rgba(157, 184, 214, 0.8);
+  opacity: 0;
+  transform: scaleY(0.55);
+  transition: opacity 0.18s ease, transform 0.26s cubic-bezier(0.2, 0.7, 0.2, 1), background 0.18s ease, box-shadow 0.18s ease;
   pointer-events: none;
 }
-
-.cell.kind-text .ProseMirror::before { top: 0; }
-.cell.kind-text .ProseMirror::after { bottom: 0; }
-
-.cell.kind-text:hover .ProseMirror::before,
-.cell.kind-text:hover .ProseMirror::after {
-  background: rgba(255, 255, 255, 0.16);
+.cell.kind-text:hover::before {
+  opacity: 1;
+  transform: scaleY(0.85);
+  background: rgba(255, 255, 255, 0.18);
+}
+.cell.kind-text:focus-within::before,
+.cell.kind-text.selected::before {
+  opacity: 1;
+  transform: none;
+  background: rgba(157, 184, 214, 0.85);
+  box-shadow: 0 0 10px rgba(157, 184, 214, 0.35);
+}
+/* Command mode: the bar and a wash, in place of the code cells' ring. */
+.cell.kind-text.selected,
+.cell.kind-text.selected:focus-visible {
+  outline: none;
+  background: rgba(157, 184, 214, 0.06);
 }
 
-.cell.kind-text:focus-within .ProseMirror::before,
-.cell.kind-text:focus-within .ProseMirror::after {
-  background: rgba(157, 184, 214, 0.45);
+/* Text cells one after another read as one text (Taylor, 2026-10-21: "no
+   space between them, it should look like one cell, but there should
+   still be a create cell button between them"): the gap between them is
+   a paragraph's break, 0.6em of the prose's 18 px, and the inserter sits
+   in it, shown as any gap's is. A heading that starts such a cell keeps
+   the space a heading has above it. Pure selectors, so an insert, a
+   delete, a move or a change of kind joins and parts cells by itself. */
+.cell-wrap:has(> .cell.kind-text) + .cell-wrap:has(> .cell.kind-text) > .insert-zone { height: 10.8px; }
+.cell-wrap:has(> .cell.kind-text) + .cell-wrap:has(> .cell.kind-text) > .cell,
+.cell-wrap:has(> .cell.kind-text) + .cell-wrap:has(> .cell.kind-text) > .cell .ProseMirror { padding-top: 0; }
+.cell-wrap:has(> .cell.kind-text):has(+ .cell-wrap > .cell.kind-text) > .cell,
+.cell-wrap:has(> .cell.kind-text):has(+ .cell-wrap > .cell.kind-text) > .cell .ProseMirror { padding-bottom: 0; }
+.cell-wrap:has(> .cell.kind-text) + .cell-wrap:has(> .cell.kind-text) > .cell .ProseMirror > :is(h1, h2, h3, h4, h5, h6):first-child {
+  margin-top: calc(0.9em - 10.8px);
 }
+/* Joined, the bars meet at the seam rather than stopping short of it. */
+.cell-wrap:has(> .cell.kind-text) + .cell-wrap:has(> .cell.kind-text) > .cell::before { top: 0; }
+.cell-wrap:has(> .cell.kind-text):has(+ .cell-wrap > .cell.kind-text) > .cell::before { bottom: 0; }
 
 .cell.kind-text .ProseMirror > :first-child { margin-top: 0; }
 .cell.kind-text .ProseMirror > :last-child { margin-bottom: 0; }
