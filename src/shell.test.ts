@@ -268,9 +268,18 @@ assert.equal(historyNote(null), 'This Knuth.app has no history view: a newer she
   assert.equal(sent[2].action, 'bounds');
 
   // Again: close; closed by the shell's word (Escape in the view, too).
+  // A move already waiting for its frame (the room still sliding as the
+  // Session column closes) sends nothing once the close is asked for.
+  box = { x: 44, y: 44, width: 1140, height: 760 };
+  view.moved();
   await view.toggle();
   assert.deepEqual(sent[3], { type: 'history', action: 'close' });
   assert.equal(view.shown, true);
+  flush();
+  view.moved();
+  flush();
+  assert.equal(sent.length, 4);
+  box = { x: 44, y: 44, width: 1136, height: 760 };
   fire({ kind: 'inline', state: 'closed' });
   assert.equal(view.shown, false);
   assert.deepEqual(painted, [true, false]);

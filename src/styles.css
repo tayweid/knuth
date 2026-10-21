@@ -105,6 +105,14 @@
      goes). */
   --gutter: 20px;
   --edge-right: var(--edge);
+  /* The Session column (session.ts): its cards stand in the frame at the
+     window's right, the room's height, as wide as --side-w; while it is
+     open the room gives up --side, the column and one edge's gap
+     (:root.session-open). --room-right is the room's right margin either
+     way, which everything sized to the room reads. */
+  --side-w: clamp(320px, 26vw, 380px);
+  --side: 0px;
+  --room-right: calc(var(--edge-right) + var(--side));
   /* The rail: a tile with 6 px either side, 44 px, the bar's height too
      (Taylor, 2026-10-02: the bar as tall as the rail is wide, the panes
      mockup's proportions). */
@@ -113,11 +121,15 @@
   --rail: calc(var(--rail-tile) + 2 * var(--rail-gap));
   /* The room's axis, where the toast sits: the middle between the rail
      and the room's right edge. */
-  --axis: calc((var(--rail) + 100vw - var(--edge-right)) / 2);
+  --axis: calc((var(--rail) + 100vw - var(--room-right)) / 2);
 }
 
 :root.has-rail {
   --edge-right: var(--gutter);
+}
+
+:root.session-open {
+  --side: calc(var(--side-w) + var(--edge));
 }
 
 * { box-sizing: border-box; }
@@ -724,7 +736,7 @@ body {
    status, which opens this) and the rail stay usable. */
 #onboarding {
   position: fixed;
-  inset: var(--topbar) var(--edge-right) var(--edge) var(--rail);
+  inset: var(--topbar) var(--room-right) var(--edge) var(--rail);
   z-index: 9;
   display: grid;
   place-items: start center;
@@ -739,7 +751,7 @@ body {
 #onboarding[hidden] { display: none; }
 
 .onboarding-card {
-  width: min(680px, calc(100vw - var(--rail) - var(--edge-right) - 3rem));
+  width: min(680px, calc(100vw - var(--rail) - var(--room-right) - 3rem));
   min-width: 560px;
   background: #201f23;
   border: 1px solid var(--glass-border);
@@ -1086,7 +1098,9 @@ body[data-view='source'] #view-toggle {
   position: fixed;
   top: var(--topbar);
   bottom: var(--edge);
-  right: 0;
+  /* In the gutter at the room's right: between the room and the Session
+     column while that is open. */
+  right: var(--side);
   width: var(--gutter);
   z-index: 12;
   user-select: none;
@@ -1317,7 +1331,7 @@ body[data-view='source'] #view-toggle {
    50vw wide at most it never reaches the left). */
 #sr-label {
   position: fixed;
-  right: calc(var(--gutter) + 7px);
+  right: calc(var(--side) + var(--gutter) + 7px);
   top: 0;
   z-index: 60;
   display: flex;
@@ -1399,16 +1413,17 @@ body[data-view='source'] #view-toggle {
    its tiles, --edge at the window's right and bottom — at the right, the
    20 px gutter of the scroll rail instead while the column runs past the
    room (--edge-right; the room is then 12 px narrower, its other edges
-   where they were). The document column
-   centres in it (#sheet); the session's cards stand beside it
-   (session.ts), and the docked Session card slides it left by only what
-   the card lacks. Below the layout floor the room scrolls sideways
+   where they were). While the Session column is open the room gives up
+   its width and one edge more (--room-right), and the column's cards
+   stand in the frame beside it. The document column centres in the room
+   (#sheet), the receipt cards beside it (session.ts). Below the layout
+   floor the room scrolls sideways
    instead of
    crushing (a PWA can't refuse a small window; it can refuse to deform),
    and the bar and the rail stay put. */
 #layout {
   position: fixed;
-  inset: var(--topbar) var(--edge-right) var(--edge) var(--rail);
+  inset: var(--topbar) var(--room-right) var(--edge) var(--rail);
   display: flex;
   align-items: stretch;
   border-radius: 12px;
@@ -1427,12 +1442,10 @@ body[data-view='source'] #view-toggle {
      the rail and the right edge — so the room scrolls sideways at the
      same window width as before the frame; the column bottoms out at
      548 px (536 while the scroll rail's gutter takes its 12 px: the
-     window's 640 stays the floor). Docked, the Session card raises it
-     (--board-floor, session.ts, which reads the room's box) to the
-     column's 640 px floor, the chips' lane and the card: below that the
-     room scrolls sideways rather than the card lie over the column (a
-     window under about 1085 px, 1097 with the gutter). */
-  min-width: max(calc(640px - var(--rail) - var(--edge-right)), var(--board-floor, 0px));
+     window's 640 stays the floor). The Session column's width is not
+     the room's to lose: the floor stays what it is, and the room scrolls
+     sideways sooner while the column is open. */
+  min-width: calc(640px - var(--rail) - var(--edge-right));
   overflow-y: auto;
   /* No scrollbar of its own in the cell view: the scroll rail beside the
      room is the map of a column that runs past it, and a column that fits
@@ -1458,19 +1471,15 @@ body[data-view='source'] #view-toggle {
 /* The bench: Knuth works directly on the room's surface — the lit white
    page belongs to Plass; the workbench glows quietly instead. */
 #sheet {
-  /* Centred, 52rem. The docked Session card (--need: its width, the
-     chips' lane and its gap, less the room's own margin; session.ts)
-     slides it left by only what the card lacks, then narrows it to a
-     640 px floor; a receipt card never moves it. peek-v2's rule:
-     margin-left = max(0, min(centred, room − column − need)). The slide
-     is animated (.slide) on the pin, never on a resize, and a run never
-     changes it. */
-  --need: 0px;
+  /* Centred, 52rem, in whatever the room is: narrower while the Session
+     column is open, so the cells re-centre (and narrow, under about
+     1300 px) as the room gives up its width. A receipt card never moves
+     it. */
   /* The measure and its floor, times the View menu's zoom
      (column-zoom.ts; session.ts columnAt works out the same). */
   --measure: calc(52rem * var(--column-zoom, 1));
-  max-width: max(min(calc(40rem * var(--column-zoom, 1)), 100%), min(var(--measure), 100% - var(--need)));
-  margin: 0 auto 0 max(0px, min((100% - var(--measure)) / 2, 100% - var(--measure) - var(--need)));
+  max-width: max(min(calc(40rem * var(--column-zoom, 1)), 100%), var(--measure));
+  margin: 0 auto 0 max(0px, (100% - var(--measure)) / 2);
 }
 
 /* Knuth.app's View › Zoom (column-zoom.ts): the cells drawn larger or
@@ -1480,10 +1489,11 @@ body[data-view='source'] #view-toggle {
   zoom: var(--column-zoom, 1);
 }
 
-#sheet.slide {
-  transition:
-    margin-left 0.36s cubic-bezier(0.2, 0.7, 0.2, 1),
-    max-width 0.36s cubic-bezier(0.2, 0.7, 0.2, 1);
+/* The Session column opening or closing: the room's right edge moves
+   over 0.36 s (session.ts adds the class for that long; a resize moves
+   it at once). */
+:root.session-sliding #layout {
+  transition: right 0.36s cubic-bezier(0.2, 0.7, 0.2, 1);
 }
 
 /* ---------- cells on the bench ---------- */
@@ -2036,24 +2046,26 @@ body[data-view='source'] .cell .run-num { visibility: visible; }
 #session[hidden] { display: none; }
 
 /* The Session column (Taylor, 2026-10-21: "like a second column beside
-   the cells … the same design language on the same page, with the
-   rounded corners"; then "the grey not the blue … each one gets their own
-   card in the lighter grey color on the darker grey background"): past
-   the chips' lane, the room's height less its margins, three cards
-   stacked 8 px apart on the room itself — Variables, Data, Figures — each
-   a step lighter than the room, with the cells' hairline and 8 px
-   corners, no glass and no shadow. The open one (.on) takes the height;
-   the other two shrink to their header and a preview that fades out, and
-   a click anywhere on one opens it. It is inside the room (#layout), so
-   below the floor it scrolls sideways with the cells. */
+   the cells … with the rounded corners"; "each one gets their own card";
+   then "instead i want them sitting on the dark dark black of the
+   background. they should be the SAME color as the grey background
+   behind the cells"): three panes in the frame at the window's right,
+   the room's height, beside the room as Zen's split view lays its
+   panes — Variables, Data, Figures, 8 px apart, each the room's own grey
+   with the room's 12 px corners and hairline ring. The open one (.on)
+   takes the height; the other two shrink to their header and a preview
+   that fades out, and a click anywhere on one opens it. */
 #session {
-  /* A card's grey: a step up from the room's --bg (#2b2a2d). */
-  --s-card: #363539;
-  position: absolute;
+  --s-card: var(--bg);
+  position: fixed;
+  top: var(--topbar);
+  bottom: var(--edge);
+  right: var(--edge);
+  width: var(--side-w);
   z-index: 6;
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: var(--edge);
   color: var(--room-ink);
   color-scheme: dark;
 }
@@ -2066,13 +2078,13 @@ body[data-view='source'] .cell .run-num { visibility: visible; }
   flex-direction: column;
   overflow: hidden;
   background: var(--s-card);
-  border: 1px solid rgba(255, 255, 255, 0.07);
-  border-radius: 8px;
-  transition: border-color 0.15s;
+  border-radius: 12px;
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.05);
+  transition: box-shadow 0.15s;
 }
 .s-part.on { flex: 1 1 auto; max-height: none; }
 .s-part:not(.on) { cursor: pointer; }
-.s-part:not(.on):hover { border-color: rgba(255, 255, 255, 0.16); }
+.s-part:not(.on):hover { box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.14); }
 /* A shrunk card is one target, its preview a picture of what it holds. */
 .s-part:not(.on) .s-pane {
   pointer-events: none;
@@ -2504,7 +2516,7 @@ body[data-view='source'] .cell .run-num { visibility: visible; }
   font-size: 13px;
   z-index: 20;
   width: max-content;
-  max-width: min(40rem, calc(100vw - var(--rail) - var(--edge-right) - 2rem));
+  max-width: min(40rem, calc(100vw - var(--rail) - var(--room-right) - 2rem));
   text-align: center;
   overflow-wrap: anywhere;
 }

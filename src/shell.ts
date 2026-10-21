@@ -360,6 +360,10 @@ export function inlineHistory(host: Shell, page: InlineHistoryPage): InlineHisto
   const ratio = page.ratio ?? (() => (typeof window === 'undefined' ? 1 : window.devicePixelRatio));
   const frame = page.frame ?? ((run: () => void) => void requestAnimationFrame(run));
   let shown = false;
+  /** A close asked for and not yet answered: no move is sent after it (a
+   *  room still moving, the Session column's slide, would otherwise send
+   *  bounds behind the close). */
+  let closing = false;
   let sent = '';
   let pending = false;
   const measure = () => {
@@ -368,15 +372,19 @@ export function inlineHistory(host: Shell, page: InlineHistoryPage): InlineHisto
     return { box, key: `${box.x},${box.y},${box.width},${box.height}@${ratio()}` };
   };
   const place = () => {
-    if (!shown) return;
+    if (!shown || closing) return;
     const { box, key } = measure();
     if (key === sent) return;
     sent = key;
     void host.request({ type: 'history', action: 'bounds', inline: box });
   };
+  const close = async () => {
+    closing = true;
+    await host.request({ type: 'history', action: 'close' });
+  };
   const toggle = async () => {
     if (shown) {
-      await host.request({ type: 'history', action: 'close' });
+      await close();
       return;
     }
     const { box, key } = measure();
@@ -387,6 +395,7 @@ export function inlineHistory(host: Shell, page: InlineHistoryPage): InlineHisto
     const { kind, state } = (detail ?? {}) as { kind?: unknown; state?: unknown };
     if (kind === 'inline' && (state === 'open' || state === 'closed')) {
       shown = state === 'open';
+      closing = false;
       page.paint(shown);
       // The room may have moved between the click and the view.
       place();
@@ -400,7 +409,7 @@ export function inlineHistory(host: Shell, page: InlineHistoryPage): InlineHisto
     },
     toggle,
     close: () => {
-      if (shown) void host.request({ type: 'history', action: 'close' });
+      if (shown) void close();
     },
     moved: () => {
       if (!shown || pending) return;

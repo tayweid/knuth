@@ -25,8 +25,10 @@
 //   Variables, Data and Figures, the chip's open and the other two shrunk
 //   to their header and a fading preview. Another chip, or a click on a
 //   shrunk card, opens that one; the lit chip or the column's ✕ closes
-//   the column. The cells slide left for it by only what it
-//   lacks (peek-v2's board), on opening, never on a run.
+//   the column. The column stands in the frame beside the room, in the
+//   room's own grey (Taylor, 2026-10-21: "sitting on the dark dark black of
+//   the background"); the room gives up its width while it is open
+//   (:root.session-open), and the cells re-centre in what is left.
 //
 // While the column is open a run's receipt lands in the Variables page's
 // band (no card flies), and a cell chip's hover or click shows its cell's
@@ -81,20 +83,14 @@ type FigureRef = { name: string } | { cell: string };
 export const SHOW_MS = 240;
 /** The flight up into the pill. */
 export const FLY_MS = 460;
-/** The column's slide, on the pin (peek-v2's 0.36 s). */
+/** The room's right edge moving as the Session column opens or closes
+ *  (peek-v2's 0.36 s). */
 export const SLIDE_MS = 360;
 /** The chips' lane beside the column (6 + the chip + 6). */
 const CHIP_LANE = 46;
-/** The column (#sheet's 52rem), and the floor it narrows to while the
- *  Session card is docked, at zoom 1: both times the column's zoom
- *  (column-zoom.ts) where they are used. */
+/** The column (#sheet's 52rem) at zoom 1: times the column's zoom
+ *  (column-zoom.ts) where it is used. */
 const COLUMN = 832;
-const COLUMN_FLOOR = 640;
-/** The docked card: clamp(320, what is beside the column, 380) wide, 10 px
- *  in from the room's right edge. */
-const BOARD_MIN = 320;
-const BOARD_MAX = 380;
-const BOARD_GAP = 10;
 /** The receipt card: 8 px in from the room's right edge; a run's card 6 px
  *  from the column (over the chips' lane: its own chip is hidden while it
  *  is up), a chip's past the lane; at most 300 wide, slim under 270 (short
@@ -175,20 +171,6 @@ function valueTitle(name: string, v: NamespaceVar): string {
   return `${name}: ${typeLabel(v)}${briefValue(v) !== v.preview ? ` · ${v.preview}` : ''}`;
 }
 
-/** The time, as a fraction of the slide's, at which the slide's curve —
- *  cubic-bezier(.2, .7, .2, 1), #sheet.slide's — has gone `p` of the way. */
-function slideTime(p: number): number {
-  const at = (s: number, a: number, b: number) => 3 * (1 - s) ** 2 * s * a + 3 * (1 - s) * s * s * b + s ** 3;
-  let lo = 0;
-  let hi = 1;
-  for (let i = 0; i < 24; i++) {
-    const s = (lo + hi) / 2;
-    if (at(s, 0.7, 1) < p) lo = s;
-    else hi = s;
-  }
-  return at(hi, 0.2, 0.2);
-}
-
 function readStore(store: () => Storage, key: string): string | null {
   try {
     return store().getItem(key);
@@ -216,38 +198,20 @@ interface Frame {
   padL: number;
   padR: number;
   sb: number;
-  /** The doc's width before a docked card's floor: the room's, or main's
-   *  640 px floor's when the window is under it. */
+  /** The doc's width: the room's, or main's 640 px floor's when the
+   *  window is under it. */
   width: number;
-  /** The column's measure and its floor, at the column's zoom. */
+  /** The column's measure, at the column's zoom. */
   column: number;
-  columnFloor: number;
 }
 
-/** Where the column stands in a doc `width` wide — #sheet's CSS rule, worked
- *  out here so a card can be placed where the column is going rather than
- *  where it is mid-slide. `need`: what the docked card needs beside it,
- *  which slides the column left and then narrows it to the floor. */
-function columnAt(f: Frame, width: number, need: number) {
+/** Where the column stands in a doc `width` wide — #sheet's CSS rule,
+ *  worked out here so a receipt card can stand beside it. */
+function columnAt(f: Frame, width: number) {
   const content = width - f.padL - f.padR - f.sb;
-  const col = Math.min(content, Math.max(Math.min(f.columnFloor, content), Math.min(f.column, content - need)));
-  const margin = Math.max(0, Math.min((content - f.column) / 2, content - f.column - need));
+  const col = Math.min(content, f.column);
+  const margin = Math.max(0, (content - f.column) / 2);
   return { content, col, margin, right: f.padL + margin + col };
-}
-
-/** The docked card (peek-v2's board): clamp(320, what is beside the column
- *  at the room's left, 380) wide, past the chips' lane, 10 px in from the
- *  room's right edge. `need` is what the column gives it; `floor`, the
- *  doc's width once the column is at its floor, under which the room
- *  scrolls sideways rather than the card lie over the column. */
-function boardAt(f: Frame) {
-  const content = f.width - f.padL - f.padR - f.sb;
-  const free = f.width - BOARD_GAP - f.padL - Math.min(f.column, content) - CHIP_LANE;
-  const width = Math.round(Math.max(BOARD_MIN, Math.min(free, BOARD_MAX)));
-  const need = CHIP_LANE + width + BOARD_GAP - f.padR - f.sb;
-  const floor = f.padL + f.columnFloor + CHIP_LANE + width + BOARD_GAP;
-  const column = columnAt(f, Math.max(f.width, floor), need);
-  return { width, need, floor: floor > f.width ? floor : 0, left: column.right + CHIP_LANE };
 }
 
 export class Session {
@@ -282,9 +246,6 @@ export class Session {
   private figure: FigureRef | null = null;
   private figHeld = false;
   private figWaiting: FigureRef | null = null;
-  /** What #sheet's CSS is told: the docked card's need, and the doc's
-   *  floor while docked. */
-  private column = { need: 0, floor: 0 };
   private slideTimer = 0;
   /** Runs started and not yet finished, and those that started while
    *  another was still going. The kernel takes requests in order, so a run
@@ -363,7 +324,7 @@ export class Session {
       <div class="s-part" data-part="session">${head('session', '<button type="button" class="s-close" title="Close" aria-label="Close">✕</button>')}<div class="s-pane" data-pane="session" id="s-pane-session"></div></div>
       <div class="s-part" data-part="data">${head('data')}<div class="s-pane" data-pane="data" id="s-pane-data"><div class="s-pick"></div><div class="s-view"></div><div class="s-note"></div></div></div>
       <div class="s-part" data-part="figures">${head('figures')}<div class="s-pane" data-pane="figures" id="s-pane-figures"><div class="s-pick"></div><div class="s-view"></div><div class="s-note"></div></div></div>`;
-    this.room.append(this.cardEl);
+    document.body.append(this.cardEl);
     this.panes = {
       session: this.cardEl.querySelector<HTMLElement>('[data-pane="session"]')!,
       data: this.cardEl.querySelector<HTMLElement>('[data-pane="data"]')!,
@@ -537,22 +498,21 @@ export class Session {
       sb: Math.max(0, this.doc.offsetWidth - this.doc.clientWidth),
       width: Math.max(box.width, floor),
       column: COLUMN * columnZoom(),
-      columnFloor: COLUMN_FLOOR * columnZoom(),
     };
   }
 
-  /** Everything the session lays over the room: where the column stands
-   *  (#sheet's --need, #doc's --board-floor), the receipt card and the
-   *  Session card. `slide`: a pin, which the column follows over SLIDE_MS;
-   *  a resize or a scroll moves it at once. A run never changes what the docked card needs. */
+  /** Everything the session lays out: the room's width (narrower while
+   *  the Session column is open, in the cell view) and the receipt card.
+   *  `slide`: the column opening or closing, which the room's edge
+   *  follows over SLIDE_MS; a resize or a scroll moves things at once. */
   private layout(slide = false) {
     const inCells = !document.body.dataset.view;
     if (this.card) {
       const row = this.docView.cellRow(this.card.id);
       if (!row || !row.isConnected || !inCells || this.docked) this.dropCard();
     }
+    this.setRoom(this.docked && inCells, slide);
     const f = this.frame();
-    const board = this.docked && inCells ? boardAt(f) : null;
     let fit = this.card ? this.fitCard(f, this.card.place) : null;
     if (this.card && !fit) {
       // Past the chip no longer fits (the window narrowed): a kept card
@@ -560,26 +520,20 @@ export class Session {
       if (this.card.kind === 'held') fit = this.fitCard(f, (this.card.place = 'lane'));
       else this.dropCard();
     }
-    this.setColumn(board?.need ?? 0, board?.floor ?? 0, slide);
     if (this.card && fit) this.placeCard(f, fit);
-    this.placeSessionCard(f, board);
   }
 
-  /** Tell #sheet where to stand. */
-  private setColumn(need: number, floor: number, slide: boolean) {
-    const now = this.column;
-    const moved = Math.abs(now.need - need) > 0.5;
-    const sliding = moved && slide && !reducedMotion();
-    if (moved) {
-      if (sliding) {
-        this.sheet.classList.add('slide');
-        clearTimeout(this.slideTimer);
-        this.slideTimer = window.setTimeout(() => this.sheet.classList.remove('slide'), SLIDE_MS + 60);
-      }
-      this.sheet.style.setProperty('--need', `${need}px`);
+  /** The room gives up the Session column's width, and one edge more,
+   *  while the column is open (:root.session-open, styles.css). */
+  private setRoom(open: boolean, slide: boolean) {
+    const root = document.documentElement;
+    if (root.classList.contains('session-open') === open) return;
+    if (slide && !reducedMotion()) {
+      root.classList.add('session-sliding');
+      clearTimeout(this.slideTimer);
+      this.slideTimer = window.setTimeout(() => root.classList.remove('session-sliding'), SLIDE_MS + 60);
     }
-    if (Math.abs(now.floor - floor) > 0.5) this.doc.style.setProperty('--board-floor', `${floor}px`);
-    this.column = { need, floor };
+    root.classList.toggle('session-open', open);
   }
 
   /** The receipt card beside the column, in the viewport: as wide as the
@@ -594,7 +548,7 @@ export class Session {
     const docLeft = f.box.left - f.scroll;
     const edge = f.box.right - CARD_GAP;
     const at = (tie: number) => {
-      const left = docLeft + columnAt(f, f.width, 0).right + tie;
+      const left = docLeft + columnAt(f, f.width).right + tie;
       return { left, width: Math.min(CARD_MAX, edge - left) };
     };
     if (place === 'past') {
@@ -618,20 +572,6 @@ export class Session {
     const height = this.receiptEl.offsetHeight;
     style.left = `${fit.left}px`;
     style.top = `${Math.max(f.box.top + 10, Math.min(anchor.top, f.box.bottom - height - 10))}px`;
-  }
-
-  /** On the page — inside the room, so it scrolls sideways with it below
-   *  the floor — beside the column past the chips' lane, the room's height
-   *  less its margins: a column, whichever page it shows. */
-  private placeSessionCard(f: Frame, board: ReturnType<typeof boardAt> | null) {
-    // Source and grid views hide it where it is.
-    if (this.cardEl.hidden || !board) return;
-    const style = this.cardEl.style;
-    style.left = `${board.left}px`;
-    style.top = '12px';
-    style.height = `${Math.max(160, f.box.height - 24)}px`;
-    style.width = `${board.width}px`;
-    this.cardEl.classList.toggle('narrow', board.width < 300);
   }
 
   // ---------- the receipt card ----------
@@ -1124,42 +1064,27 @@ export class Session {
     void Promise.allSettled(runs.map((run) => run.finished)).then(() => this.cardEl.classList.remove('s-moving'));
   }
 
-  /** The column appears beside the cells, which slide left by what it
-   *  lacks. `animate`: opened now, not restored at boot. */
+  /** The column appears in the frame beside the room, whose right edge
+   *  moves in for it. `animate`: opened now, not restored at boot. */
   private showColumn(animate: boolean, render = true) {
-    const from = this.sheet.getBoundingClientRect().right;
-    // How far past the column the chips reach (they ride with it): the
-    // widest's right edge, inside the lane; none, or tucked inside the
-    // cells on a narrow window, and the column's own edge is what counts.
-    let reach = 0;
-    for (const chip of this.sheet.querySelectorAll<HTMLElement>('.rchip')) reach = Math.max(reach, chip.getBoundingClientRect().right - from);
     this.cardEl.hidden = false;
     this.paintCard();
     this.layout(animate);
     if (animate && !reducedMotion() && !this.away) {
-      // It fades in once the sliding cells and their chips have cleared
-      // the place it stands — when the chips' right edge passes its left
-      // on the slide's own curve — never over either mid-slide.
-      const boardLeft = this.cardEl.getBoundingClientRect().left;
-      const to = boardLeft - CHIP_LANE;
-      const edge = from + Math.min(reach, CHIP_LANE);
-      const delay = edge > boardLeft && from > to ? Math.round(slideTime(Math.min(1, (edge - boardLeft) / (from - to))) * SLIDE_MS) : 0;
+      // In from the right as the room's edge makes way.
       this.cardEl.animate(
-        [{ opacity: 0, transform: 'translateY(-10px) scale(0.98)' }, { opacity: 1, transform: 'none' }],
-        { duration: 220, delay, fill: 'backwards', easing: 'cubic-bezier(.2,.7,.2,1)' },
+        [{ opacity: 0, transform: 'translateX(24px)' }, { opacity: 1, transform: 'none' }],
+        { duration: SLIDE_MS, easing: 'cubic-bezier(.2,.7,.2,1)' },
       );
     }
-    // Under the floor the room scrolls sideways: bring the column's ✕
-    // into view, where it was just opened.
-    if (animate && this.column.floor > 0) this.room.scrollTo({ left: this.room.scrollWidth, behavior: reducedMotion() ? 'auto' : 'smooth' });
     this.paintPill();
     // The Figures card shows whichever card is open: draw the figure it
     // follows.
     if (render && this.figure) void this.renderFigure();
   }
 
-  /** The lit chip or the column's ✕: the column goes, the cells slide
-   *  home. */
+  /** The lit chip or the column's ✕: the column goes, the room widens
+   *  again. */
   private closePage() {
     if (!this.page) return;
     this.page = null;

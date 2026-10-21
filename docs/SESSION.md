@@ -97,15 +97,19 @@ Session card; while the kernel is not ready, it opens the onboarding as
 the status did. In source and grid views it rests, its title saying
 why (there are no cells for the card to stand beside).
 
-**The Session column** (*Tenth pass*, and its follow-up). Each of the
-pill's chips opens a second column beside the cells, on the page, past
-the chips' lane, the room's height less 12 px above and below: three
-cards stacked 8 px apart on the room itself, each a step lighter grey
-than it (#363539 on #2b2a2d) with the cells' hairline and 8 px corners,
-no glass. The chip's card is open and takes the height; the other two
-shrink to their header and up to 136 px of preview that fades out, and
-a click anywhere on one opens it; the cards move to their new heights
-over 0.24 s. The cards: **Variables** (the band's single line, "Last run · cell 3  12 ms",
+**The Session column** (*Tenth pass*, and its follow-ups). Each of the
+pill's chips opens a second column, in the frame beside the room as
+Zen's split view lays its panes: the room's right edge pulls in by the
+column's width and one 8 px edge (`:root.session-open`, `--side`), and
+the column stands in the window's right 8 px, the room's top to its
+bottom, clamp(320 px, 26 vw, 380 px) wide. It is three panes 8 px apart
+on the frame's near-black, each the room's own grey with the room's
+12 px corners and hairline ring. The chip's card is open and takes the
+height; the other two shrink to their header and up to 136 px of
+preview that fades out, and a click anywhere on one opens it; the cards
+move to their new heights over 0.24 s, and the room's edge over 0.36 s
+as the column opens or closes. The cells centre in what is left of the
+room. The cards: **Variables** (the band's single line, "Last run · cell 3  12 ms",
 which goes to the cell on a click; then every name with its kind glyph,
 type, preview and the cell that bound it, the names the band's run
 touched carrying its `+` or `~` in the glyph's place behind a blue edge;
@@ -127,17 +131,10 @@ The open page is remembered per window (sessionStorage
 `knuth-session-page`, with the last choice in localStorage as a new
 window's start; empty when closed).
 
-**With the scroll rail** (docs/ZEN-DRAFT.md, *The scroll rail*): the rail
-is in the frame's gutter outside the room, and the docked card slides the
-column inside it, so the two never meet; its rule reads the room's box,
-which is 12 px narrower while the rail shows (at 1100 × 760 the column
-644 px beside the 320 px card, 656 without the rail; the room scrolls
-sideways under a window of about 1097 px rather than 1085). Docked, the
-column is narrower still, and a figure drawn to its width is shorter
-in it: a column that fits the room only with the gutter's 12 px taken
-keeps the gutter (scroll-rail.ts asks again at the wider width before
-the frame paints), where the gutter had come and gone every frame (a
-window 1100 wide and 665 to 668 tall, a `figsize=(10, 4)` figure).
+**With the scroll rail** (docs/ZEN-DRAFT.md, *The scroll rail*): the
+rail's 20 px gutter stays at the room's right, so while the column is
+open the rail stands between the room and the column (`#scrollrail`'s
+right is `--side`).
 
 **The kernel change.** `Session.bound(names)` (python/knuth/session.py)
 returns the snapshot's entry for each name the run assigned, in the
@@ -777,4 +774,21 @@ the preview is the top of the table or the figure. `slideParts`
 animates each card's height between the two layouts (no flexing
 meanwhile, `.s-moving`). The table viewer's sticky header takes the
 card's grey.
+
+Then: "right now, both times, you have the three cards in their column
+sitting ontop of the cell region. instead i want them sitting on the
+dark dark black of the background. they should be the SAME color as the
+grey background behind the cells, not lighter." So the column left the
+room for the frame. `#session` is fixed at the window's right, and the
+room gives up its width (`--room-right`, which the onboarding, the
+toast's axis and the floor read too); its cards are `--bg` with the
+room's corners and ring. With that went the whole slide rule: the
+board's width and need, `#sheet`'s `--need`, `#doc`'s `--board-floor`,
+the column's 640 px floor while docked, and the fade timed to the
+sliding cell chips. The cells re-centre in the narrower room, and the
+room's own floor is unchanged, so under about a 950 px window with the
+column open the room scrolls sideways sooner. The History view's box is
+the room's, so it is narrower while the column is open; a move the
+sliding room sends after a close has been asked for is no longer sent
+(shell.ts, `closing`).
 

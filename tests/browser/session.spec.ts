@@ -396,124 +396,106 @@ test('a page with nothing in it says what will show there', async ({ page }) => 
   await expect(page.locator('#session .s-empty .lead')).toHaveText('An empty session');
 });
 
-test('the column stands beside the cells, which slide left with their width unchanged, and a reload keeps its page', async ({ page }) => {
+test('the column stands in the frame beside the room, which narrows for it, the cells centred in what is left; a reload keeps its page', async ({ page }) => {
   await page.emulateMedia({ reducedMotion: 'reduce' });
   await boot(page);
   const before = await layout(page);
   expect(before.sheet.width).toBe(832);
   expect(Math.abs(before.sheet.left - centredLeft(before))).toBeLessThan(1);
+  expect(before.room.right).toBe(1500 - 8);
   await chipFor(page, 'session').click();
   const card = page.locator('#session');
   await expect(card).toBeVisible();
-  const docked = await layout(page);
-  // The column slides left by only what the card lacks, its width the same.
-  expect(docked.sheet.width).toBe(832);
-  expect(docked.sheet.left).toBeLessThan(before.sheet.left - 50);
-  // On the page beside it: past the chips' lane, 380 wide, 10 px in from
-  // the room's right edge and 12 from its top and bottom, inside the room.
-  expect(docked.session.width).toBe(380);
-  expect(docked.session.left).toBeGreaterThanOrEqual(docked.sheet.right + 45);
-  expect(Math.round(docked.room.right - docked.session.right)).toBe(10);
-  expect(Math.round(docked.session.top - docked.room.top)).toBe(12);
-  expect(Math.round(docked.room.bottom - docked.session.bottom)).toBe(12);
-  expect(await card.evaluate((element) => element.parentElement?.id)).toBe('layout');
-  // Three cards on the room itself, each a step lighter grey than it,
-  // with the cells' hairline and 8 px corners, no glass.
-  expect(await card.evaluate((element) => getComputedStyle(element).position)).toBe('absolute');
+  const open = await layout(page);
+  // The room gives up the column and one edge: 380 wide at 1500, its
+  // right edge on the window's 8 px (the pill's), the room's top and
+  // bottom, 8 px past the room.
+  expect(open.session.width).toBe(380);
+  expect(open.session.right).toBe(1500 - 8);
+  expect(open.session.left - open.room.right).toBe(8);
+  expect([open.session.top, open.session.bottom]).toEqual([open.room.top, open.room.bottom]);
+  expect(await card.evaluate((element) => [element.parentElement?.tagName, getComputedStyle(element).position])).toEqual(['BODY', 'fixed']);
+  // The cells keep their width and centre in the narrower room.
+  expect(open.sheet.width).toBe(832);
+  expect(Math.abs(open.sheet.left - centredLeft(open))).toBeLessThan(1);
+  expect(open.sheet.left).toBeLessThan(before.sheet.left - 100);
+  // Three panes on the frame, each the room's own grey with its corners
+  // and ring, no glass; the column itself draws nothing.
   expect(await card.evaluate((element) => getComputedStyle(element).backgroundColor)).toBe('rgba(0, 0, 0, 0)');
+  const room = await page.locator('#layout').evaluate((element) => {
+    const style = getComputedStyle(element);
+    return [style.backgroundColor, style.borderTopLeftRadius, style.boxShadow];
+  });
   expect(await card.locator('.s-part').evaluateAll((parts) => parts.map((part) => {
     const style = getComputedStyle(part);
-    return [style.backgroundColor, style.borderTopLeftRadius, style.backdropFilter];
-  }))).toEqual(Array(3).fill(['rgb(54, 53, 57)', '8px', 'none']));
-  // A run never moves the column.
+    return [style.backgroundColor, style.borderTopLeftRadius, style.boxShadow];
+  }))).toEqual(Array(3).fill(room));
+  expect(room[0]).toBe('rgb(43, 42, 45)');
+  // A run never moves the cells.
   await run(page, 0);
   await expect(page.locator('#session .rv .r-head .t')).toHaveText('Last run · cell 1');
-  expect((await layout(page)).sheet).toEqual(docked.sheet);
+  expect((await layout(page)).sheet).toEqual(open.sheet);
   // A reload keeps it open on the page it showed.
   await chipFor(page, 'data').click();
   await page.reload();
   await expect(page.locator('#kernel-status')).toHaveText('Python');
   await expect(card).toHaveAttribute('data-page', 'data');
   await expect(card).toBeVisible();
-  expect((await layout(page)).sheet).toEqual(docked.sheet);
-  // Closed, the column goes back to the middle, and stays closed.
+  expect((await layout(page)).sheet).toEqual(open.sheet);
+  // Closed, the room is whole again, and stays so.
   await card.locator('.s-close').click();
   await expect(card).toBeHidden();
-  expect((await layout(page)).sheet).toEqual(before.sheet);
+  const closed = await layout(page);
+  expect([closed.room, closed.sheet]).toEqual([before.room, before.sheet]);
   await page.reload();
   await expect(page.locator('#kernel-status')).toHaveText('Python');
   await expect(card).toBeHidden();
 });
 
-test('the slide rule: the cells give the Session column only what it lacks, narrowing to their floor, and never lie under it', async ({ page }) => {
+test('the column\'s width follows the window, 320 to 380; the room never lies under it, and below the floor it scrolls sideways', async ({ page }) => {
   await page.emulateMedia({ reducedMotion: 'reduce' });
-  // [window, the card's width, whether the column keeps 832]
-  const cases: Array<[number, number | null, boolean]> = [[1470, 380, true], [1300, null, true], [1100, 320, false]];
-  for (const [width, board, whole] of cases) {
+  // [window, the column's width]
+  for (const [width, side] of [[1470, 380], [1300, 338], [1100, 320]]) {
     await boot(page, width, 820);
-    const before = await layout(page);
     await chipFor(page, 'session').click();
     await expect(page.locator('#session')).toBeVisible();
     const g = await layout(page);
     const at = `at ${width}`;
-    if (board) expect(g.session.width, at).toBe(board);
-    else {
-      expect(g.session.width, at).toBeGreaterThan(320);
-      expect(g.session.width, at).toBeLessThan(380);
-    }
-    // Beside the column past the chips' lane, never over it, in the room.
-    expect(g.session.left, at).toBeGreaterThanOrEqual(g.sheet.right + 45);
-    expect(g.session.right, at).toBeLessThanOrEqual(g.room.right - 9);
+    expect(Math.round(g.session.width), at).toBe(side);
+    expect(g.session.right, at).toBe(width - 8);
+    expect(g.session.left - g.room.right, at).toBe(8);
     expect(g.sideways, at).toBe(false);
-    if (whole) expect(g.sheet.width, at).toBe(832);
-    else {
-      // Under about 1275 px the column narrows, down to 640 at the least.
-      expect(g.sheet.width, at).toBeLessThan(832);
-      expect(g.sheet.width, at).toBeGreaterThanOrEqual(640);
-    }
-    // Slid by only what the card lacks: all the way left at 1300 and 1100,
-    // part of the way at 1470.
-    if (width === 1470) {
-      expect(g.sheet.left, at).toBeGreaterThan(g.contentLeft + 50);
-      expect(g.sheet.left, at).toBeLessThan(before.sheet.left - 50);
-    } else expect(Math.abs(g.sheet.left - g.contentLeft), at).toBeLessThan(1);
+    // The cells fill what there is, up to their 832, centred.
+    expect(g.sheet.width, at).toBe(Math.min(832, Math.round(g.content)));
+    expect(Math.abs(g.sheet.left - centredLeft(g)), at).toBeLessThan(1);
     await page.locator('#session .s-close').click();
-    expect((await layout(page)).sheet, at).toEqual(before.sheet);
   }
-
-  // Below what the floor allows, the room scrolls sideways with the card
-  // past the column's right edge, rather than the card lie over it; the
-  // chip scrolls it there, the column's ✕ in view.
-  await boot(page, 1000, 760);
+  // Under the room's floor (a 640 px window's) the room scrolls sideways;
+  // the column stays in the frame, beside it.
+  await boot(page, 900, 760);
   await chipFor(page, 'session').click();
   const narrow = await layout(page);
-  expect(narrow.sheet.width).toBe(640);
-  expect(narrow.session.left).toBeGreaterThanOrEqual(narrow.sheet.right + 45);
   expect(narrow.sideways).toBe(true);
-  expect(narrow.session.right).toBeLessThanOrEqual(narrow.room.right - 9);
-  const close = await box(page, '#session .s-close');
-  expect(close.right).toBeLessThanOrEqual(narrow.room.right);
+  expect(narrow.session.left - narrow.room.right).toBe(8);
+  expect((await box(page, '#session .s-close')).right).toBeLessThanOrEqual(900 - 8);
 });
 
-test('the slide is animated over 0.36 s on opening, the column fading in once the cells have cleared its place', async ({ page }) => {
+test('the room\'s edge moves over 0.36 s on opening and closing, the column coming in from the right', async ({ page }) => {
   for (const width of [1500, 1100]) {
     await boot(page, width, 760);
     await chipFor(page, 'session').click();
-    const sliding = await page.locator('#sheet').evaluate((element) => ({
-      on: element.classList.contains('slide'),
-      duration: getComputedStyle(element).transitionDuration,
-      property: getComputedStyle(element).transitionProperty,
+    const sliding = await page.evaluate(() => ({
+      on: document.documentElement.classList.contains('session-sliding'),
+      duration: getComputedStyle(document.getElementById('layout')!).transitionDuration,
+      property: getComputedStyle(document.getElementById('layout')!).transitionProperty,
     }));
-    expect(sliding.on).toBe(true);
-    expect(sliding.property).toContain('margin-left');
-    expect(sliding.duration).toContain('0.36s');
-    // The card's fade waits for the column's right edge to pass its left.
-    const delay = await page.locator('#session').evaluate((element) =>
-      Number(element.getAnimations().at(-1)?.effect?.getTiming().delay ?? -1));
-    expect(delay, `at ${width}`).toBeGreaterThan(40);
-    expect(delay, `at ${width}`).toBeLessThan(360);
-    await expect(page.locator('#sheet')).not.toHaveClass(/slide/);
+    expect(sliding).toEqual({ on: true, duration: '0.36s', property: 'right' });
+    const timing = await page.locator('#session').evaluate((element) => element.getAnimations().at(-1)?.effect?.getTiming().duration);
+    expect(timing, `at ${width}`).toBe(360);
+    await expect.poll(() => page.evaluate(() => document.documentElement.classList.contains('session-sliding'))).toBe(false);
     await page.locator('#session .s-close').click();
+    expect(await page.evaluate(() => document.documentElement.classList.contains('session-sliding'))).toBe(true);
+    await expect.poll(() => page.evaluate(() => document.documentElement.classList.contains('session-sliding'))).toBe(false);
   }
 });
 
@@ -946,43 +928,6 @@ test('runs queued behind a busy kernel credit each cell with its own names, and 
   await expect(where('d')).toHaveText('cell 3');
 });
 
-test('the column\'s fade waits for the chips beside the sliding cells, never showing over them', async ({ page }) => {
-  await boot(page, 1100, 760);
-  const before = await layout(page);
-  await runAndFile(page, 1);
-  await expect.poll(async () => (await layout(page)).sheet.left).toBeCloseTo(before.sheet.left, 0);
-  // Every frame from the chip's click: the column's opacity and left
-  // edge, and the cell chip's right edge.
-  await page.evaluate(() => {
-    const probe = window as typeof window & { __frames?: Array<{ o: number; left: number; chip: number }>; __tracing?: boolean };
-    probe.__frames = [];
-    const card = document.getElementById('session')!;
-    const chip = document.querySelector('#sheet .rchip')!;
-    const tick = () => {
-      if (!probe.__tracing) return;
-      probe.__frames!.push({ o: Number(getComputedStyle(card).opacity), left: card.getBoundingClientRect().left, chip: chip.getBoundingClientRect().right });
-      requestAnimationFrame(tick);
-    };
-    document.querySelector('#session-pill .sp-chip[data-part="session"]')!.addEventListener('click', () => {
-      probe.__tracing = true;
-      requestAnimationFrame(tick);
-    }, { capture: true, once: true });
-  });
-  await chipFor(page, 'session').click();
-  await expect(page.locator('#session')).toBeVisible();
-  await expect(page.locator('#sheet')).not.toHaveClass(/slide/);
-  await page.locator('#session').evaluate((element) => Promise.all(element.getAnimations().map((a) => a.finished)));
-  const frames = await page.evaluate(() => {
-    const probe = window as typeof window & { __frames?: Array<{ o: number; left: number; chip: number }>; __tracing?: boolean };
-    probe.__tracing = false;
-    return probe.__frames!;
-  });
-  expect(frames.length).toBeGreaterThan(5);
-  const showing = frames.filter((f) => f.o > 0.02);
-  expect(showing.length).toBeGreaterThan(0);
-  for (const f of showing) expect(f.left, `at opacity ${f.o.toFixed(2)}`).toBeGreaterThanOrEqual(f.chip - 1);
-});
-
 test('a change in place made while runs are queued is credited to no cell, not to the next one', async ({ page }) => {
   await page.emulateMedia({ reducedMotion: 'reduce' });
   await page.addInitScript(() => {
@@ -1020,13 +965,13 @@ test('Variables, Data and Figures are three cards: the open one takes the height
   const heights = () => card.locator('.s-part').evaluateAll((parts) => parts.map((p) => Math.round(p.getBoundingClientRect().height)));
   await chipFor(page, 'session').click();
   await expect(card).toBeVisible();
-  await card.evaluate((element) => Promise.all(element.getAnimations({ subtree: true }).map((a) => a.finished)));
+  await card.evaluate((element) => Promise.allSettled(element.getAnimations({ subtree: true }).map((a) => a.finished)));
   for (const tab of ['session', 'data', 'figures'] as const) {
     if (tab !== 'session') {
       await chipFor(page, tab).click();
       // The cards move to their new heights rather than jump.
       expect(await card.evaluate((element) => [...element.querySelectorAll('.s-part')].every((p) => p.getAnimations().length === 1))).toBe(true);
-      await card.evaluate((element) => Promise.all(element.getAnimations({ subtree: true }).map((a) => a.finished)));
+      await card.evaluate((element) => Promise.allSettled(element.getAnimations({ subtree: true }).map((a) => a.finished)));
     }
     for (const other of ['session', 'data', 'figures']) {
       await expect(pane(other)).toBeVisible();
@@ -1034,7 +979,7 @@ test('Variables, Data and Figures are three cards: the open one takes the height
       else await expect(part(other)).not.toHaveClass(/\bon\b/);
     }
     // The shrunk ones are 136 px at the most; the three and their gaps
-    // fill the column, the room's height less 24.
+    // fill the column, the room's height.
     const h = await heights();
     const open = ['session', 'data', 'figures'].indexOf(tab);
     h.forEach((height, i) => {
@@ -1042,7 +987,7 @@ test('Variables, Data and Figures are three cards: the open one takes the height
     });
     expect(h[open]).toBeGreaterThan(300);
     const column = await box(page, '#session');
-    expect(Math.round(column.bottom - column.top)).toBe(Math.round(room.bottom - room.top) - 24);
+    expect(Math.round(column.bottom - column.top)).toBe(Math.round(room.bottom - room.top));
     expect(Math.abs(h.reduce((a, b) => a + b, 0) + 16 - (column.bottom - column.top))).toBeLessThanOrEqual(2);
   }
   // Each card holds its own: the names, the tables, the figure.
@@ -1118,12 +1063,13 @@ test('Knuth.app\'s View › Zoom draws the column larger in a measure widened by
   await expect(page.locator('#sheet .cm-line').nth(target.index)).toHaveText(target.before.slice(0, target.at) + 'Q' + target.before.slice(target.at));
   await page.keyboard.press('Backspace');
 
-  // Docked, the Session card stands past the chips' lane beside the
-  // zoomed column, which gives it only what it lacks.
+  // The Session column open, the zoomed cells stay inside the narrower
+  // room, the column in the frame beside it.
   await chipFor(page, 'session').click();
   await expect(page.locator('#session')).toBeVisible();
   const docked = await layout(page);
-  expect(docked.session.left).toBeGreaterThanOrEqual(docked.sheet.right + 45);
+  expect(docked.session.left - docked.room.right).toBe(8);
+  expect(docked.sheet.right).toBeLessThanOrEqual(docked.room.right);
   expect(docked.sheet.width).toBeGreaterThanOrEqual(800);
   await page.locator('#session .s-close').click();
 

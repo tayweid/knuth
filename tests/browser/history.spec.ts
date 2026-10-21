@@ -575,6 +575,9 @@ test('the view follows the room: bounds on a resize and when the scroll rail\'s 
 });
 
 test('whatever acts in the room puts the view away first; the bar\'s Escape does too', async ({ page }) => {
+  // The room's edge moves at once as the Session column opens and closes
+  // (its slide would send the view's box frame by frame).
+  await page.emulateMedia({ reducedMotion: 'reduce' });
   await open(page, '# %%\nx = 1\n');
   const tile = page.locator('#history-tile');
   const up = async () => {

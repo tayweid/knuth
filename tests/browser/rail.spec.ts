@@ -337,7 +337,7 @@ test('the gutter and the rail are there while the column runs past the room, nev
   expect((await frame(page)).gutter).toBe(false);
 });
 
-test('the room\'s box with the rail and without, at 1100 and 1500, the floor still a 640 px window, and the Session column beside the cells with the rail there', async ({ page }) => {
+test('the room\'s box with the rail and without, at 1100 and 1500, the floor still a 640 px window, and the Session column in the frame beside the room with the rail between', async ({ page }) => {
   await page.emulateMedia({ reducedMotion: 'reduce' });
   await boot(page, SHORT);
   for (const [width, height] of [[1100, 760], [1500, 940]]) {
@@ -365,22 +365,20 @@ test('the room\'s box with the rail and without, at 1100 and 1500, the floor sti
     expect(column.offset).toBeLessThan(1);
   }
 
-  // Open, the Session column stands inside the room beside the cells (it
-  // slides the cells, not the frame): past the chips' lane, 10 px in from
-  // the room's right edge, which is the gutter's.
+  // Open, the Session column stands in the frame at the window's right,
+  // 380 wide, and the room gives it up with the gutter still at the
+  // room's right: the scroll rail between the room and the column.
   await page.locator('#session-pill .sp-chip[data-part="session"]').click();
   await expect(page.locator('#session')).toBeVisible();
-  const pinned = await page.evaluate(() => {
-    const card = document.getElementById('session')!.getBoundingClientRect();
-    const sheet = document.getElementById('sheet')!.getBoundingClientRect();
-    const room = document.getElementById('layout')!.getBoundingClientRect();
-    return { gap: card.left - sheet.right, right: room.right - card.right, inRoom: document.getElementById('layout')!.contains(document.getElementById('session')), rail: document.documentElement.classList.contains('has-rail') };
+  await expect.poll(() => hasRail(page)).toBe(true);
+  const open = await page.evaluate(() => {
+    const rect = (id: string) => document.getElementById(id)!.getBoundingClientRect();
+    return { card: [rect('session').left, rect('session').right], room: rect('layout').right, rail: [rect('scrollrail').left, rect('scrollrail').right], inRoom: document.getElementById('layout')!.contains(document.getElementById('session')) };
   });
-  expect(pinned.rail).toBe(true);
-  expect(pinned.inRoom).toBe(true);
-  expect(Math.abs(pinned.gap - 46)).toBeLessThan(1);
-  expect(pinned.right).toBeGreaterThanOrEqual(10 - 0.5);
-  expect((await frame(page)).room.right).toBe(1500 - GUTTER);
+  expect(open.inRoom).toBe(false);
+  expect(open.card).toEqual([1500 - 8 - 380, 1500 - 8]);
+  expect(open.room).toBe(1500 - 8 - 380 - GUTTER);
+  expect(open.rail).toEqual([open.room, open.card[0]]);
   await page.locator('#session .s-close').click();
 
   // The floor: the room still scrolls sideways under a 640 px window, not
