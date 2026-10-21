@@ -61,6 +61,15 @@ import {
 const HISTORY_GLYPH =
   '<svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12a8 8 0 1 1 2.34 5.66M2.2 9.8 5 12.6l2.8-2.8"/><polyline points="13 7.5 13 12 16.5 14"/></svg>';
 
+// Restart's ring: an arrow round the status dot, always drawn (Taylor,
+// 2026-10-21: "larger and always shown around the green dot"): a circle of
+// radius 8 about the box's centre, so the dot sits in its middle and the
+// ring turns true while a session starts, open at three o'clock where its
+// arrowhead points down. ManimLive's restart dot draws the very same
+// string (maniml/web/static/viewer.html); the two stay byte-identical.
+const RESTART_RING =
+  '<svg class="ico sp-ring" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6.6v5.4h-5.4"/><path d="M18.55 16.59A8 8 0 1 1 19.25 8.62L20 12"/></svg>';
+
 function labeled(id: string, glyph: string, label: string, title: string, className = 'tb-btn'): string {
   return `<button type="button" class="${className}" id="${id}" title="${title}">${glyph}<span class="lbl">${label}</span></button>`;
 }
@@ -77,8 +86,10 @@ function labeled(id: string, glyph: string, label: string, title: string, classN
 // at the pill's far right, after the folder and Save (Taylor, 2026-10-17,
 // as Plass has it: first "a tile on the topbar beside the address", now
 // in it), the same glyph as Plass's — and, at the right, the session pill
-// (session.ts, docs/SESSION.md): the kernel's status, then the session's
-// names in cell order. In Knuth.app the bar is the window's title bar
+// (session.ts, docs/SESSION.md): Restart's ring round the status dot, the
+// kernel's status, then three chips — variables, data, figures — lit when
+// the session holds one (Taylor, 2026-10-21: "only indicate that something
+// is there"). In Knuth.app the bar is the window's title bar
 // (styles.css).
 const toolbar = document.getElementById('toolbar')!;
 toolbar.setAttribute('aria-label', 'Document');
@@ -90,8 +101,8 @@ toolbar.innerHTML = `
   ${labeled('new-window', icon('newwindow'), 'New window', 'New window — a new document, with its own session', 'tb-btn tb-tile')}
   <div class="doc-pod" id="doc-pod"><span class="name" id="file-name" title="Click to rename">${DEFAULT_DOC_NAME}</span><span class="doc-mark" id="doc-mark" aria-hidden="true"></span><span class="doc-folder" id="doc-folder" hidden><span dir="ltr"></span></span><button type="button" class="doc-save" id="doc-save" title="Save (⌘S)" hidden>Save</button><button type="button" class="tb-btn tb-tile" id="history-tile" title="History (⇧⌘H)" aria-label="History" aria-keyshortcuts="Shift+Meta+H">${HISTORY_GLYPH}<span class="lbl">History</span></button></div>
   <div class="tb-end">
-    <button type="button" class="tb-btn sp-dot" id="restart" title="Restart session: a fresh kernel process, every cell stale" aria-label="Restart session"><span class="sp-dot-mark" aria-hidden="true"></span>${icon('restart')}<span class="lbl">Restart</span></button>
-    <button type="button" id="session-pill"><span id="kernel-status">connecting…</span><span class="sp-sep" aria-hidden="true"></span><span class="sp-mark" aria-hidden="true">${icon('braces')}</span><span class="sp-names"></span></button>
+    <button type="button" class="tb-btn sp-dot" id="restart" title="Restart session: a fresh kernel process, every cell stale" aria-label="Restart session"><span class="sp-dot-mark" aria-hidden="true"></span>${RESTART_RING}<span class="lbl">Restart</span></button>
+    <button type="button" id="session-pill"><span id="kernel-status">connecting…</span><span class="sp-sep" aria-hidden="true"></span><span class="sp-chips"><span class="sp-chip" data-part="session">${icon('braces')}</span><span class="sp-chip" data-part="data">${icon('table')}</span><span class="sp-chip" data-part="figures">${icon('figure')}</span></span></button>
   </div>
 `;
 

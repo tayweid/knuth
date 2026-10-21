@@ -3,8 +3,8 @@
 //
 //   The receipt card. A run's receipt appears beside the cell that ran, in
 //   the frame's dark glass, eases in and flies straight up along a curve
-//   into the session pill, whose names update as it lands (new names
-//   blue). A click on it, `p` (when p would not type) or its pin keeps it
+//   into the session pill, landing on the chip for what it made (a
+//   figure, a table, names), which lights as it lands. A click on it, `p` (when p would not type) or its pin keeps it
 //   in place. It stands in the room's margin, its width following the
 //   margin; the column never moves for it, and a margin too narrow lays it
 //   over the column's right edge.
@@ -17,7 +17,9 @@
 //   after a restart. It never takes the column's width.
 //
 //   The Session card. The pill at the bar's right end holds the kernel's
-//   status and the session's names in cell order; a click drops the card
+//   status and three chips — variables, data, figures — each lit when the
+//   session holds one of its kind, blue while one is new, never saying
+//   what or how many (Taylor, 2026-10-21); a click drops the card
 //   from it (Session, Data, Figures). A click elsewhere or Esc closes it;
 //   the pin docks it beside the column, on the page, in its own look. The
 //   column slides left for it by only what the card lacks (peek-v2's
@@ -254,17 +256,13 @@ export class Session {
   private receipts = new Map<string, Receipt>();
   /** Which cell made each name (its latest receipt holds it). */
   private owner = new Map<string, string>();
-  /** When each name was last bound, as a running count: the pill's least
-   *  recently bound names give way first. */
-  private boundAt = new Map<string, number>();
-  private bindings = 0;
   /** The cell whose receipt is the last run's. */
   private last: string | null = null;
-  /** New names nobody has looked at yet: blue in the pill. */
+  /** New names nobody has looked at yet: their chips blue in the pill. */
   private unseen = new Set<string>();
   /** New names a fresh receipt still holds, until it lands in the pill. */
   private pending = new Set<string>();
-  /** A restart emptied the session: the pill says "fresh session". */
+  /** A restart emptied the session: the pill's title says "fresh session". */
   private fresh = false;
   private docked: boolean;
   private floating = false;
@@ -299,7 +297,7 @@ export class Session {
   private startedQueued = new Set<string>();
 
   private readonly pill: HTMLButtonElement;
-  private readonly names: HTMLElement;
+  private readonly chips: Record<Tab, HTMLElement>;
   private readonly receiptEl: HTMLElement;
   private readonly cardEl: HTMLElement;
   private readonly panes: Record<Tab, HTMLElement>;
@@ -325,9 +323,11 @@ export class Session {
     for (const tab of folded) if (tab === 'session' || tab === 'data' || tab === 'figures') this.folded.add(tab);
 
     // The pill: the kernel's status (#kernel-status, untouched: the shell's
-    // smoke reads its words), a hairline, the session's mark and its names.
+    // smoke reads its words), a hairline and the three chips.
     this.pill = document.getElementById('session-pill') as HTMLButtonElement;
-    this.names = this.pill.querySelector<HTMLElement>('.sp-names')!;
+    const chip = (part: Tab) => this.pill.querySelector<HTMLElement>(`.sp-chip[data-part="${part}"]`)!;
+    this.chips = { session: chip('session'), data: chip('data'), figures: chip('figures') };
+    for (const part of Object.values(this.chips)) part.addEventListener('animationend', () => part.classList.remove('land'));
     this.pill.addEventListener('mousedown', (e) => e.preventDefault());
     this.pill.addEventListener('click', () => {
       if (!this.hooks.ready()) this.hooks.showOnboarding();
@@ -423,7 +423,6 @@ export class Session {
     // The source view's whole-file editor is no cell: what it binds is the
     // session's, unowned, until a cell binds it.
     if (run.id !== 'source') for (const row of receipt.rows) this.owner.set(row.name, run.id);
-    for (const row of receipt.rows) this.boundAt.set(row.name, ++this.bindings);
     // A run on its own replaces the last run's blue; a batch adds up.
     if (!run.batch) this.unseen.clear();
     const added = receipt.rows.filter((row) => row.mark === '+').map((row) => row.name);
@@ -482,7 +481,6 @@ export class Session {
     for (const receipt of this.receipts.values()) receipt.past = true;
     this.snapshot.clear();
     this.owner.clear();
-    this.boundAt.clear();
     this.unseen.clear();
     this.pending.clear();
     this.inFlight = 0;
@@ -672,7 +670,6 @@ export class Session {
     const found = receipt.rows.filter((row) => !known.has(row.name));
     for (const row of found) {
       if (receipt.id !== 'source') this.owner.set(row.name, receipt.id);
-      this.boundAt.set(row.name, ++this.bindings);
       if (row.mark === '+') {
         this.unseen.add(row.name);
         if (this.card?.id === receipt.id && this.card.kind === 'fresh') this.pending.add(row.name);
@@ -749,8 +746,9 @@ export class Session {
   }
 
   /** Every way out of a fresh receipt is the same flight: home, into the
-   *  pill, along a curve, shrinking, seen all the way in; the pill's names
-   *  update as it arrives, and the chip takes its place at the cell. */
+   *  pill's chip for what it made, along a curve, shrinking, seen all the
+   *  way in; the chip lights as it arrives, and the cell's chip takes its
+   *  place at the cell. */
   private tuck() {
     if (!this.card) return;
     const { id, kind } = this.card;
@@ -766,7 +764,7 @@ export class Session {
       if (landed) return;
       landed = true;
       this.pending.clear();
-      this.paintPill(landing.length ? landing : undefined);
+      this.paintPill(landing, id);
       this.paintChip(id);
     };
     const card = this.receiptEl;
@@ -776,7 +774,8 @@ export class Session {
       return;
     }
     const from = card.getBoundingClientRect();
-    const target = (this.names.getClientRects().length && this.names.getBoundingClientRect().width > 0 ? this.names : this.pill).getBoundingClientRect();
+    const home = this.chips[this.landsOn(id)];
+    const target = (home.getClientRects().length && home.getBoundingClientRect().width > 0 ? home : this.pill).getBoundingClientRect();
     const dx = target.left - from.left;
     const dy = target.top - from.top;
     const sx = Math.max(0.08, Math.min(1, target.width / from.width));
@@ -804,7 +803,7 @@ export class Session {
     card.classList.add('flying');
     document.body.classList.add('session-flying');
     const flight = card.animate(frames, { duration: FLY_MS, easing: 'cubic-bezier(.45,0,.25,1)', fill: 'forwards' });
-    // The names light as the card reaches the pill, still showing (seven
+    // The chip lights as the card reaches the pill, still showing (seven
     // eighths of the way, at 60 % of the time on this easing); it fades
     // into them for the rest.
     const landTimer = window.setTimeout(land, FLY_MS * 0.6);
@@ -835,7 +834,7 @@ export class Session {
     if (wasFresh) {
       const landing = [...this.pending];
       this.pending.clear();
-      this.paintPill(landing.length ? landing : undefined);
+      this.paintPill(landing, this.card.id);
     }
     this.renderReceiptCard();
     this.layout();
@@ -848,7 +847,7 @@ export class Session {
     if (this.card?.kind === 'fresh' && this.pending.size) {
       const landing = [...this.pending];
       this.pending.clear();
-      this.paintPill(landing);
+      this.paintPill(landing, this.card.id);
     }
     this.card = null;
     clearTimeout(this.dwell);
@@ -1014,10 +1013,20 @@ export class Session {
       : 'The Session card shows beside a document\'s cells, and this view has none';
   }
 
-  /** The kernel's status, then the names in cell order (new ones blue), or
-   *  "empty session" / "fresh session" in words. `landing`: the names a
-   *  receipt just brought home, lit for a moment. */
-  private paintPill(landing?: string[]) {
+  /** The pill's chip a receipt flies home to: Figures for a run that drew,
+   *  Data for one that bound a table, else the variables. */
+  private landsOn(id: string): Tab {
+    const receipt = this.receipts.get(id);
+    const kind = receipt ? chipKind(receipt) : null;
+    return kind === 'figure' ? 'figures' : kind === 'table' ? 'data' : 'session';
+  }
+
+  /** The kernel's status, then the three chips: each lit when the session
+   *  holds one of its kind (any name; a table; a figure — what the card's
+   *  three parts list), blue while one of those is new. `landing`: the
+   *  names a receipt just brought home and its cell, whose chip lights for
+   *  a moment. */
+  private paintPill(landing?: string[], from?: string) {
     const ready = this.hooks.ready();
     const away = this.away;
     this.pill.classList.toggle('ready', ready);
@@ -1025,77 +1034,50 @@ export class Session {
     this.pill.setAttribute('aria-expanded', String(this.visible && !away));
     if (ready && away) this.pill.setAttribute('aria-disabled', 'true');
     else this.pill.removeAttribute('aria-disabled');
-    this.names.replaceChildren();
     if (!ready) {
       this.pill.title = 'The Python engine is not connected';
       return;
     }
     const names = this.ordered().filter((name) => !this.pending.has(name));
-    if (!names.length) {
-      this.names.append(el('span', 'sp-empty', this.fresh ? 'fresh session' : 'empty session'));
+    const tables = names.filter((name) => isTabular(this.snapshot.get(name)!));
+    const figures = this.figureRefs().filter((ref) => !('name' in ref) || !this.pending.has(ref.name));
+    const unseen = names.filter((name) => this.unseen.has(name));
+    const parts: Record<Tab, { has: boolean; isNew: boolean; title: string }> = {
+      session: {
+        has: names.length > 0,
+        isNew: unseen.length > 0,
+        title: names.length ? 'Variables: the session holds names' : 'Variables: none yet',
+      },
+      data: {
+        has: tables.length > 0,
+        isNew: unseen.some((name) => tables.includes(name)),
+        title: tables.length ? 'Data: the session holds a table' : 'Data: no tables yet',
+      },
+      figures: {
+        has: figures.length > 0,
+        isNew: unseen.some((name) => this.snapshot.get(name)?.figure),
+        title: figures.length ? 'Figures: the session holds a figure' : 'Figures: none yet',
+      },
+    };
+    const lands = landing && from ? this.landsOn(from) : null;
+    for (const part of ['session', 'data', 'figures'] as Tab[]) {
+      const chip = this.chips[part];
+      const { has, isNew, title } = parts[part];
+      chip.classList.toggle('has', has);
+      chip.classList.toggle('new', isNew);
+      if (chip.title !== title) chip.title = title;
+      if (lands) chip.classList.remove('land');
+      if (lands === part) {
+        void chip.offsetWidth;
+        chip.classList.add('land');
+      }
+    }
+    if (!names.length && !figures.length) {
       this.pill.title = away ? this.awayTitle() : this.fresh ? 'A fresh session: run a cell to fill it' : 'Nothing in the session yet: run a cell';
       return;
     }
-    const spans: HTMLElement[] = [];
-    for (const name of names) {
-      const v = this.snapshot.get(name)!;
-      const span = el('span', '', name);
-      span.dataset.name = name;
-      if (this.unseen.has(name)) span.classList.add('new');
-      if (v.scratch) span.classList.add('scratch');
-      if (landing?.includes(name)) span.classList.add('land');
-      spans.push(span);
-    }
-    const more = el('span', 'sp-more');
-    this.names.append(...spans, more);
-    // Never out of sight: what a receipt is bringing home, and the last
-    // run's names.
-    const keep = new Set(landing ?? []);
-    const lastRun = this.last ? this.receipts.get(this.last) : undefined;
-    if (lastRun && !lastRun.past) for (const row of lastRun.rows) keep.add(row.name);
-    this.fitNames(spans, more, keep);
-    const figures = names.filter((name) => this.snapshot.get(name)?.figure).length;
-    const count = `The session: ${names.length} name${names.length === 1 ? '' : 's'}${figures ? `, ${figures} figure${figures === 1 ? '' : 's'}` : ''}`;
+    const count = `The session: ${names.length} name${names.length === 1 ? '' : 's'}${figures.length ? `, ${figures.length} figure${figures.length === 1 ? '' : 's'}` : ''}`;
     this.pill.title = away ? `${count} — ${this.awayTitle()}` : `${count} — click to ${this.visible ? 'close' : 'open'} it`;
-    if (landing) {
-      this.pill.classList.remove('got');
-      void this.pill.offsetWidth;
-      this.pill.classList.add('got');
-    }
-  }
-
-  /** Too many names for the pill: the least recently bound give way to
-   *  "+N" first, and those in `keep` only when nothing else is left. Laid
-   *  out once: every width read in one pass, the hiding worked out here
-   *  and written at the end. */
-  private fitNames(spans: HTMLElement[], more: HTMLElement, keep: Set<string>) {
-    more.textContent = `+${spans.length}`;
-    const room = this.names.clientWidth;
-    const gap = parseFloat(getComputedStyle(this.names).columnGap) || 0;
-    const widths = spans.map((span) => span.offsetWidth);
-    const plus = more.offsetWidth;
-    let total = widths.reduce((sum, w) => sum + w, 0) + gap * Math.max(0, spans.length - 1);
-    if (total <= room + 1) {
-      more.hidden = true;
-      more.textContent = '';
-      return;
-    }
-    const name = (i: number) => spans[i].dataset.name!;
-    const order = spans
-      .map((_, i) => i)
-      .sort((a, b) =>
-        Number(keep.has(name(a))) - Number(keep.has(name(b))) ||
-        (this.boundAt.get(name(a)) ?? 0) - (this.boundAt.get(name(b)) ?? 0) ||
-        b - a);
-    const budget = room - plus - gap;
-    const hide: number[] = [];
-    for (const i of order) {
-      if (total <= budget + 1) break;
-      hide.push(i);
-      total -= widths[i] + gap;
-    }
-    for (const i of hide) spans[i].hidden = true;
-    more.textContent = `+${hide.length}`;
   }
 
   // ---------- the Session card ----------
@@ -1714,12 +1696,6 @@ export class Session {
       cancelAnimationFrame(frame);
       frame = requestAnimationFrame(() => this.layout());
     };
-    // The pill's room changes with the window: how many names fit.
-    let pillFrame = 0;
-    window.addEventListener('resize', () => {
-      cancelAnimationFrame(pillFrame);
-      pillFrame = requestAnimationFrame(() => this.paintPill());
-    });
     this.doc.addEventListener('scroll', () => {
       if (this.card) reflow();
     }, { passive: true });

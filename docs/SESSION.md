@@ -57,8 +57,9 @@ in (0.24 s) it flies home into the session pill, whatever the pointer or
 the keys do (Peek, *Sixth pass*). The column never moves for it: a
 margin under 160 px lays the card over the column's right edge for its
 moment. Going home is the flight: the card lifts and swings along a
-curve into the pill, shrinking; the pill's names update as it lands, the
-new ones blue and lit for a moment, and the chip takes its place at the
+curve into the pill's chip for what the run made (Figures for a run that
+drew, Data for a table, else the variables), shrinking; that chip lights
+for a moment as it lands, and the cell's chip takes its place at the
 cell. A chip's click opens its receipt over the page as it stands, past
 the chip where the margin holds it, else over the lane or the column's
 edge, never moving the column. (Float, which kept the card and slid the
@@ -85,12 +86,13 @@ fades after a restart until its cell runs. A cell whose last run bound
 and drew nothing has no chip. When the lane is too narrow for it (a
 window under about 990 px) it tucks inside the cell's top-right corner.
 
-**The pill.** The bar's right end: the kernel's status
-(`#kernel-status`, its words unchanged, which the shell's smoke reads),
-a hairline, the session's mark, and its names in cell order — new names
-blue — or "empty session" / "fresh session" in words. When the names do
-not fit, the least recently bound give way to "+N", and never the names
-a receipt is bringing home or the last run bound. A click drops the
+**The pill.** The bar's right end, one pill (*Ninth pass*): Restart's
+ring round the status dot, the kernel's status (`#kernel-status`, its
+words unchanged, which the shell's smoke reads), a hairline, and three
+chips — variables, data, figures — each dim while the session holds none
+of its kind and lit once it holds one, blue while one of those is new.
+No names and no counts; the pill's title gives the counts, and says
+"fresh session" after a restart. It never grows. A click drops the
 Session card; while the kernel is not ready, it opens the onboarding as
 the status did. In source and grid views it rests, its title saying
 why (there are no cells for the card to stand beside).
@@ -174,7 +176,7 @@ claimed (prevented), so it does not also take the cell into command mode
 | | default | why |
 |---|---|---|
 | the receipt card's stay | Peek: **0.24 s**, its ease-in, then the flight; Float: until put away or replaced (*Sixth pass*) | Taylor, 2026-10-06: the flight up "as the default behavior but with no pause", and floating receipts "that change the margin and don't go away" as the option; the first passes' 6 s dwell, the pointer holding it, and `p` to keep it are gone |
-| the flight | **460 ms**, a quadratic curve that lifts first and swings across into the pill, shrinking to the names' box, above the bar; opaque until it is seven eighths of the way, the names lighting then (at 60 % of the time) while it still shows, gone only as it settles into them | peek-v2's 380 ms read as a blink on a real window; the curve is the "sends it up" Taylor liked; the first pass faded it before it reached the pill |
+| the flight | **460 ms**, a quadratic curve that lifts first and swings across into the pill, shrinking to its chip's box, above the bar; opaque until it is seven eighths of the way, the names lighting then (at 60 % of the time) while it still shows, gone only as it settles into them | peek-v2's 380 ms read as a blink on a real window; the curve is the "sends it up" Taylor liked; the first pass faded it before it reached the pill |
 | what puts the card away | Peek: nothing, it goes at once; Float: Esc, its ✕, a click outside it and the column, the next run's card | Taylor: clicking back into the text should not move the margin |
 | keeping a run's card | a click anywhere on it (but its pin, ✕, a table or the figure, which act on their own); `p` only when the keystroke would not type (focus off the text); the hint names what works now | after ⌘↩ the cursor stays in the cell, where a `p` must stay a `p`; Esc then P was weighed and left out, since Esc also closes the completion popup and the next `p` would be swallowed |
 | when a run gets a card | a single, clean run that bound or drew something; a run whose news only the snapshot saw gets its card when the snapshot lands, unless you carried on meanwhile | a card saying "nothing" is motion for nothing |
@@ -184,7 +186,7 @@ claimed (prevented), so it does not also take the cell into command mode
 | a run that bound many names | the receipt card lists eight and "+N more · in the Session card" (it opens the Session tab); the docked band the same, its line scrolling to the list below | a loop of globals made a 10,634 px card |
 | a value in a narrow row | a float to six significant digits ("-0.408882"), whole in the tooltip and on a wide card; a numpy scalar is previewed by its value: numbers and dates by numpy's own str (a float64 as Python's float says it, `0.1` for a float32, `2024-01-01T00:00:00.000000000`, `NaT`), strings, bytes and objects by their Python value's repr | "elasticity float64" said nothing; `item()` widened a float32 and turned a nanosecond date into an int and NaT into None |
 | what the receipt lists from the folder | the bound values values.json mirrors (`saved` from the kernel) and the run's `figs/<name>.svg` receipts; "no folder yet" when the document has no folder | both are what the page already writes; a scratch run lists none |
-| new names in the pill | blue until the next single run, or until the Session tab is opened; a batch's add up | round two's rule: opening the Session acknowledges, hovering does not |
+| new names in the pill | their chips blue until the next single run, or until the Session tab is opened; a batch's add up | round two's rule: opening the Session acknowledges, hovering does not |
 | the card beside the cell | a run's 6 px from the column (over the chips' lane), a chip's past its chip; as wide as the margin up to 300 px, 8 px in from the room's edge; slim under 270 px (a short value — a number, a string of 16 characters or fewer — in place of its kind, the kind in the tooltip); a margin under 192 slides the column left until the card has 200, and the card then takes down to 160 | about 280 px with previews at 1470–1500; 198 px at 1300 with the column where it stands (it slid 2 px per run for 200); 186 px slim at 1100 with the column all the way left |
 | the docked card | clamp(320, what is beside the column, 380) wide past the chips' lane, 10 px in from the room's right edge, the room's height less 24 px; inside the room | peek-v2's board |
 | the column, docked | margin-left max(0, min(centred, room − column − need)), need = the card, the lane and its gap less the room's own 24 px margin; narrows under about 1275 px to a 640 px floor; under about 1085 px the room's floor rises and it scrolls sideways | peek-v2's rule, and Taylor's "right beside the cells … just on the page" |
@@ -194,9 +196,9 @@ claimed (prevented), so it does not also take the cell into command mode
 | a narrow room | under about a 1075 px window the receipt card, 160 px, lies at the room's right edge over the column's (after sliding it all the way left); the docked card never does: the room scrolls sideways, and the pin scrolls it to the card's controls | see *What is open*, 1 |
 | the pin's fade | the docked card fades in once the chips riding beside the sliding column have passed its left (the column's own edge where there are none), worked out on the slide's own curve: about 65–80 ms at 1470–1500 and 120 ms at 1100 with no chips, 180–190 ms and 225 ms with them | it showed over the column for the slide's first 150 ms, and then over the chips for 100 ms |
 | runs queued behind a busy kernel | each receipt is what its run reported (`bound`): the snapshot after a run that had others queued with it, before or behind, is the session after them too, so it adds nothing to that receipt (no change in place found, no late card, no owner); a receipt's time counts from when the run before it ended | the snapshot credited each cell with the next cells' names ("6" and a figure on a DataFrame cell), and the queued cell's time with the wait |
-| a restart | the chips fade, the pill says "fresh session", the Session card empties | round two's default |
+| a restart | the chips fade, the pill's chips go dim and its title says "fresh session", the Session card empties | round two's default |
 | a deleted cell | its names stay, marked "deleted cell" | round one's default |
-| names bound before the page loaded (a resumed session) | in the pill and the Session tab, with no cell | round two's default |
+| names bound before the page loaded (a resumed session) | lighting the pill's chips and in the Session tab, with no cell | round two's default |
 | the old `knuth-panel` key | ignored; the card starts closed | the panel was open by default, the card is not |
 
 ## Second pass: the reviewers' findings
@@ -721,4 +723,29 @@ and yes to four cuts:
   something, instead of a sentence saying they are empty.
 - **No "no folder yet".** The receipt says where values went only when
   there is a folder; with none the toast already offers one.
+
+## Ninth pass: one pill, three chips (2026-10-21)
+
+Taylor: the pill "grows and grows as new things are added, and it ends
+up looking really messy and scary … maybe just three little chips …
+only indicate that something is there, not say what's in it"; and "the
+status button should be in the same pill as the session and the refresh
+button should be larger and always shown around the green dot".
+
+- **Three chips in place of the names.** Variables (any name), Data (a
+  DataFrame, Series or 2-D array) and Figures (a named figure, or a
+  run's drawing no name holds) — what the card's three parts list. Dim
+  when empty, lit when not, blue while a new name of that kind has not
+  been looked at. The names, "+N", the least-recently-bound rule
+  (`boundAt`, `fitNames`) and the resize repaint went; so did "empty
+  session" / "fresh session" in words, which the title now carries.
+- **The flight lands on a chip**, the one for what the run made
+  (`landsOn`, from the cell chip's own kind), which lights for 1.3 s.
+- **One pill.** Restart and the session pill meet with no gap and no
+  seam, the outer corners alone rounded (two buttons still: the dot
+  restarts, the rest opens the card).
+- **The ring.** The restart arrow is drawn round the dot all the time,
+  22 px, a circle about the dot's centre (RESTART_RING in main.ts, the
+  same string as ManimLive's); the pointer brightens it. While a session
+  starts the ring turns, where the dot used to become a spinner.
 

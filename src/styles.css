@@ -292,63 +292,56 @@ body {
   .doc-pod:has(> #doc-folder:not([hidden])) { --folder-room: 0px; }
 }
 
-/* The bar's right end: the session pill, its status dot Restart's
-   button (.sp-dot), joined to it as Open's halves are. The pill may give
-   way (its names do,
-   to +N) when the bar is short; the status never does. */
+/* The bar's right end: one pill (Taylor, 2026-10-21: "the status button
+   should be in the same pill as the session"): Restart's ring round the
+   status dot at its left end, then the kernel's status and the session's
+   three chips (#session-pill). Two buttons, drawn as one pill: no gap, no
+   seam, the outer corners rounded. The status never gives way. */
 .tb-end {
   margin-left: auto;
   flex: 0 1 auto;
   min-width: 0;
   display: flex;
   align-items: center;
-  gap: 1px;
 }
 
-/* Restart is the kernel's mark (Taylor, 2026-10-17, as ManimLive has it):
-   the pill's left end, the status dot in it — green ready, red failed, a
-   spinner while uv works or a session starts — and under the pointer the
-   restart arrow in its place. Resting (source and grid views: paintRail)
-   it keeps the plain dot. */
+/* Restart is the kernel's mark, as ManimLive's is: the status dot —
+   green ready, red failed — with the restart arrow drawn round it all the
+   time, a ring a little larger than a tile's glyph. While uv works or a
+   session starts the ring turns round the dot. Under the pointer the ring
+   brightens. Resting (source and grid views: paintRail) the ring dims and
+   no longer answers. */
 #toolbar #restart.sp-dot {
   flex: none;
-  width: 28px;
-  min-width: 28px;
+  width: 32px;
+  min-width: 32px;
   height: 30px;
   padding: 0;
-  color: var(--glass-ink-soft);
+  color: rgba(240, 238, 233, 0.5);
   background: var(--pill);
   border: 1px solid rgba(255, 255, 255, 0.08);
-  border-radius: 9px 3px 3px 9px;
+  border-right: 0;
+  border-radius: 9px 0 0 9px;
 }
 #restart .sp-dot-mark {
   width: 7px;
   height: 7px;
   border-radius: 50%;
   background: rgba(240, 238, 233, 0.35);
-  transition: opacity 0.12s;
 }
 .tb-end:has(#kernel-status.ok) .sp-dot-mark { background: #6ea576; }
 .tb-end:has(#kernel-status.bad) .sp-dot-mark { background: #cd6452; }
-.tb-end:has(#kernel-status.working) .sp-dot-mark {
-  width: 9px;
-  height: 9px;
-  background: transparent;
-  border: 1.6px solid rgba(240, 238, 233, 0.3);
-  border-top-color: rgba(240, 238, 233, 0.95);
-  animation: knuth-turn 0.8s linear infinite;
-}
-#restart.sp-dot .ico {
+#restart.sp-dot .sp-ring {
   position: absolute;
-  width: 15px;
-  height: 15px;
-  opacity: 0;
-  transition: opacity 0.12s;
+  inset: 0;
+  margin: auto;
+  width: 22px;
+  height: 22px;
+  transition: color 0.12s;
 }
+.tb-end:has(#kernel-status.working) .sp-ring { animation: knuth-turn 0.9s linear infinite; }
 #toolbar #restart.sp-dot:not([aria-disabled='true']):is(:hover, :focus-visible) { color: #fff; background: #29292d; }
-#restart.sp-dot:not([aria-disabled='true']):is(:hover, :focus-visible) .sp-dot-mark { opacity: 0; }
-#restart.sp-dot:not([aria-disabled='true']):is(:hover, :focus-visible) .ico { opacity: 1; }
-#toolbar #restart.sp-dot[aria-disabled='true'] { opacity: 1; cursor: default; }
+#toolbar #restart.sp-dot[aria-disabled='true'] { opacity: 1; cursor: default; color: rgba(240, 238, 233, 0.22); }
 #restart.sp-dot[aria-disabled='true'] .lbl { visibility: hidden; }
 
 /* Tiles: quiet icons, always visible (the old bar's sleep-until-hover is
@@ -606,28 +599,28 @@ body {
 #toolbar .name { cursor: text; border-radius: 5px; padding: 1px 4px; }
 #toolbar .name:hover { color: #fff; }
 
-/* The session pill (session.ts, docs/SESSION.md), at the bar's right
-   end: a pill matching the name pill, its right edge on the room's. It
-   holds the kernel's status — text only, the shell's smoke reads its
-   textContent ('uv', 'Pyodide'), with the dot or the spinner drawn before
-   it by class — and, beside a ready kernel, after a hairline, the
-   session's names in cell order (new ones blue), or "empty session" /
-   "fresh session" in words. A click drops the Session card from it, or
-   opens the onboarding while the kernel is not ready. */
+/* The session pill (session.ts, docs/SESSION.md), the bar pill's right
+   half, its right edge on the room's. It holds the kernel's status — text
+   only, the shell's smoke reads its textContent ('uv', 'Pyodide') — and,
+   beside a ready kernel, after a hairline, three chips: variables, data,
+   figures. Each is dim while the session holds none of its kind and lit
+   once it holds one, blue while something in it is new; none says what
+   or how many (Taylor, 2026-10-21: the names "grow and grow … that's
+   impossible to read"). A click drops the Session card from it, or opens
+   the onboarding while the kernel is not ready. */
 #session-pill {
   display: flex;
   align-items: center;
-  gap: 9px;
+  gap: 8px;
   min-width: 0;
-  max-width: min(46vw, 680px);
   height: 30px;
-  padding: 0 12px;
+  padding: 0 7px 0 2px;
   font: 12px/1 var(--sans);
   color: var(--glass-ink-soft);
   background: var(--pill);
   border: 1px solid rgba(255, 255, 255, 0.08);
-  /* Its left end meets Restart's dot (.sp-dot). */
-  border-radius: 3px 9px 9px 3px;
+  border-left: 0;
+  border-radius: 0 9px 9px 0;
   cursor: pointer;
   transition: background 0.15s, color 0.15s;
 }
@@ -644,6 +637,7 @@ body {
 #kernel-status { flex: none; white-space: nowrap; }
 
 #session-pill:not(.ready) > :not(#kernel-status) { display: none; }
+#session-pill:not(.ready) { padding-right: 12px; }
 
 #session-pill .sp-sep {
   flex: none;
@@ -652,42 +646,29 @@ body {
   background: rgba(255, 255, 255, 0.11);
 }
 
-#session-pill .sp-mark { flex: none; display: inline-flex; color: var(--glass-ink-soft); }
-#session-pill .sp-mark .ico { width: 14px; height: 14px; display: block; }
-
-#session-pill .sp-names {
-  flex: 0 1 auto;
-  min-width: 0;
-  display: flex;
-  align-items: center;
-  gap: 9px;
-  overflow: hidden;
-  white-space: nowrap;
-  font: 11.5px/1.2 var(--mono);
-  color: rgba(240, 238, 233, 0.74);
+#session-pill .sp-chips { flex: none; display: flex; align-items: center; gap: 2px; }
+#session-pill .sp-chip {
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 20px;
+  border-radius: 6px;
+  color: rgba(240, 238, 233, 0.2);
+  transition: color 0.3s, background 0.3s;
 }
+#session-pill .sp-chip .ico { width: 13px; height: 13px; display: block; }
+#session-pill .sp-chip.has { color: rgba(240, 238, 233, 0.82); background: rgba(255, 255, 255, 0.06); }
+#session-pill .sp-chip.has.new { color: #9db8d6; background: rgba(157, 184, 214, 0.12); }
 
-.sp-names span { flex: none; transition: color 0.3s; }
-.sp-names span[hidden] { display: none; }
-.sp-names .scratch { font-style: italic; }
-.sp-names .new { color: #9db8d6; }
-.sp-names .sp-more,
-.sp-names .sp-empty { font: 11.5px/1.2 var(--sans); color: var(--glass-ink-soft); }
-
-/* A receipt landing: its names lit for a moment, the pill's rim with them. */
-.sp-names .land { animation: sp-land 1.3s ease-out; }
+/* A receipt landing: its chip lit for a moment. */
+#session-pill .sp-chip.land { animation: sp-land 1.3s ease-out; }
 @keyframes sp-land {
-  0%, 25% { color: #fff; text-shadow: 0 0 8px rgba(157, 184, 214, 0.9); }
-  100% { text-shadow: 0 0 8px rgba(157, 184, 214, 0); }
-}
-#session-pill.got { animation: sp-got 0.9s ease-out; }
-@keyframes sp-got {
-  0% { box-shadow: 0 0 0 2px rgba(157, 184, 214, 0.55); }
-  100% { box-shadow: 0 0 0 2px rgba(157, 184, 214, 0); }
+  0%, 25% { color: #fff; background: rgba(157, 184, 214, 0.32); box-shadow: 0 0 10px rgba(157, 184, 214, 0.7); }
+  100% { box-shadow: 0 0 10px rgba(157, 184, 214, 0); }
 }
 
 /* Work the person is waiting on: a spinner on the toast (a package
-   installing); the pill's is its dot's (.sp-dot, above). */
+   installing); the pill's is its ring's (.sp-dot, above). */
 #toast.working::before {
   content: '';
   display: inline-block;
@@ -725,9 +706,9 @@ body {
 .packages-summary .list { font-family: var(--mono); font-size: 11.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .packages-folded > .cell { display: none; }
 @media (prefers-reduced-motion: reduce) {
-  .tb-end:has(#kernel-status.working) .sp-dot-mark, #toast.working::before,
+  .tb-end:has(#kernel-status.working) .sp-ring, #toast.working::before,
   .cell.running .run::after, .cell.working .run::after,
-  .sp-names .land, #session-pill.got, #session .rv.landed { animation: none; }
+  #session-pill .sp-chip.land, #session .rv.landed { animation: none; }
 }
 
 /* ---------- first-run engine and PWA onboarding ---------- */

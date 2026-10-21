@@ -147,9 +147,10 @@ test('boots against the kernel protocol and renders a normal figure', async ({ p
   await page.goto('/');
 
   await expect(page.locator('#kernel-status')).toHaveText('Python');
-  // The session's names are in the pill; the Session card drops from it,
-  // and a figure's name opens the Figures tab (session.ts).
-  await expect(page.locator('#session-pill .sp-names')).toHaveText('chart');
+  // The pill lights its variables and figures chips; the Session card
+  // drops from it, and a figure's name opens the Figures tab (session.ts).
+  await expect(page.locator('#session-pill .sp-chip.has')).toHaveCount(2);
+  await expect(page.locator('#session-pill .sp-chip[data-part="figures"]')).toHaveClass(/has/);
   await page.locator('#session-pill').click();
   const chart = page.locator('#session .s-row', { hasText: 'chart' });
   await expect(chart).toBeVisible();

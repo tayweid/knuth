@@ -182,25 +182,43 @@ test('the controls are where the frame puts them, with every id the tests and th
   await expect(page.locator('#doc-folder')).toBeHidden();
 });
 
-test('Restart is the session pill\'s status dot: green when ready, the arrow under the pointer, joined to the pill', async ({ page }) => {
+test('Restart is the session pill\'s status dot: green when ready, the arrow always round it, one pill with the session', async ({ page }) => {
   await boot(page);
   const dot = page.locator('#restart');
   const pill = page.locator('#session-pill');
   await expect(page.locator('#kernel-status')).toHaveClass('ok');
   const a = (await dot.boundingBox())!;
   const b = (await pill.boundingBox())!;
-  // One pill in two halves: the same height and top, 1 px between them.
-  expect(Math.round(b.x - (a.x + a.width))).toBe(1);
+  // One pill: the two buttons meet with no gap and no seam between them,
+  // the same height and top, the outer corners alone rounded.
+  expect(Math.round(b.x - (a.x + a.width))).toBe(0);
   expect([a.y, a.height]).toEqual([b.y, b.height]);
-  const look = () => dot.evaluate((element) => ({
-    mark: getComputedStyle(element.querySelector('.sp-dot-mark')!).backgroundColor,
-    markShown: getComputedStyle(element.querySelector('.sp-dot-mark')!).opacity,
-    arrow: getComputedStyle(element.querySelector('.ico')!).opacity,
-  }));
+  const edges = await page.evaluate(() => {
+    const restart = getComputedStyle(document.getElementById('restart')!);
+    const session = getComputedStyle(document.getElementById('session-pill')!);
+    return [restart.borderRightWidth, restart.borderTopRightRadius, session.borderLeftWidth, session.borderTopLeftRadius];
+  });
+  expect(edges).toEqual(['0px', '0px', '0px', '0px']);
+  // The ring stands round the dot, centred on it, and larger than a
+  // tile's glyph, with or without the pointer.
+  const look = () => dot.evaluate((element) => {
+    const mark = element.querySelector<HTMLElement>('.sp-dot-mark')!;
+    const ring = element.querySelector<SVGElement>('.sp-ring')!;
+    const m = mark.getBoundingClientRect();
+    const r = ring.getBoundingClientRect();
+    return {
+      mark: getComputedStyle(mark).backgroundColor,
+      markShown: getComputedStyle(mark).opacity,
+      ring: getComputedStyle(ring).opacity,
+      size: Math.round(r.width),
+      centred: Math.abs(m.left + m.width / 2 - (r.left + r.width / 2)) < 0.6 && Math.abs(m.top + m.height / 2 - (r.top + r.height / 2)) < 0.6,
+    };
+  });
   await page.mouse.move(600, 400);
-  await expect.poll(look).toEqual({ mark: 'rgb(110, 165, 118)', markShown: '1', arrow: '0' });
+  await expect.poll(look).toEqual({ mark: 'rgb(110, 165, 118)', markShown: '1', ring: '1', size: 22, centred: true });
   await dot.hover();
-  await expect.poll(look).toEqual({ mark: 'rgb(110, 165, 118)', markShown: '0', arrow: '1' });
+  await expect.poll(look).toEqual({ mark: 'rgb(110, 165, 118)', markShown: '1', ring: '1', size: 22, centred: true });
+  await expect.poll(() => dot.evaluate((element) => getComputedStyle(element).color)).toBe('rgb(255, 255, 255)');
   // The status's words are the status's own, the dot drawn beside them.
   expect(await page.locator('#kernel-status').evaluate((element) => getComputedStyle(element, '::before').content)).toBe('none');
 });
@@ -542,7 +560,7 @@ test('source view keeps the frame: the bar and the switch lit, the room One Dark
   // waits for an aria-disabled control to wake).
   await page.locator('#run-all').click({ force: true });
   await page.locator('#restart').click({ force: true });
-  await expect(page.locator('#session-pill .sp-names')).not.toHaveText('fresh session');
+  await expect(page.locator('#session-pill')).not.toHaveAttribute('title', /fresh session/);
   await expect(page.locator('#session')).toBeHidden();
   const look = await page.evaluate(() => ({
     room: getComputedStyle(document.getElementById('layout')!).backgroundColor,

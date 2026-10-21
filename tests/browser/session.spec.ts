@@ -175,7 +175,7 @@ async function boot(page: Page, width = 1500, height = 940) {
   await page.setViewportSize({ width, height });
   await page.goto('/');
   await expect(page.locator('#kernel-status')).toHaveText('Python');
-  await expect(page.locator('#session-pill .sp-names')).toHaveText('empty session');
+  await expect(pillLit(page)).toHaveCount(0);
 }
 
 /** A cell's last receipt, held open from its chip: a run's own card flies
@@ -190,7 +190,10 @@ async function held(page: Page, i: number): Promise<Locator> {
 }
 
 const cell = (page: Page, i: number) => page.locator('#sheet .cell-wrap').nth(i);
-const pillNames = (page: Page) => page.locator('#session-pill .sp-names span:not(.sp-more):visible');
+/** The pill's chips (variables, data, figures) lit, and those blue. */
+const pillLit = (page: Page) => page.locator('#session-pill .sp-chip.has');
+const pillNew = (page: Page) => page.locator('#session-pill .sp-chip.has.new');
+const parts = (locator: Locator) => locator.evaluateAll((chips) => chips.map((chip) => (chip as HTMLElement).dataset.part));
 
 async function run(page: Page, i: number) {
   await cell(page, i).locator('.run').click();
@@ -216,8 +219,8 @@ test('Peek: a run\'s receipt shows beside the cell and goes straight up into the
   const receipt = page.locator('#receipt');
   await expect(receipt).toHaveAttribute('data-cell', /c\d+/);
   await expect(receipt).toBeHidden();
-  await expect(pillNames(page)).toHaveText(['prices', 'n']);
-  await expect(page.locator('#session-pill .sp-names .new')).toHaveText(['prices', 'n']);
+  await expect.poll(() => parts(pillLit(page))).toEqual(['session', 'data']);
+  await expect.poll(() => parts(pillNew(page))).toEqual(['session', 'data']);
   const { samples, flying, hidden } = await stop();
   // Seen beside the cell, then flying as soon as it has eased in: no pause.
   expect(flying).not.toBeNull();
@@ -240,12 +243,12 @@ test('Peek: the pointer resting on the receipt does not keep it', async ({ page 
   const at = await box(page, '#receipt');
   await page.mouse.move(at.left + 20, at.top + 20);
   await expect(receipt).toHaveClass(/flying/, { timeout: 1500 });
-  await expect(pillNames(page)).toHaveText(['prices', 'n']);
+  await expect.poll(() => parts(pillLit(page))).toEqual(['session', 'data']);
   // Landed, its chip comes up under the pointer, whose hover is the chip's.
   await expect(receipt).not.toHaveAttribute('data-kind', 'fresh');
 });
 
-test('the flight: the card shrinks into the pill and the pill\'s names update as it lands', async ({ page }) => {
+test('the flight: the card shrinks into the pill\'s chip for what it made, which lights as it lands', async ({ page }) => {
   await boot(page);
   await run(page, 0);
   await expect(page.locator('#receipt')).toBeVisible();
@@ -255,8 +258,14 @@ test('the flight: the card shrinks into the pill and the pill\'s names update as
   await expect(page.locator('#receipt.flying')).toHaveCount(1);
   const mid = await page.locator('#receipt').evaluate((element) => getComputedStyle(element).transform);
   expect(mid).not.toBe('none');
+  // A table: home to the Data chip, lit as it lands.
+  await expect(page.locator('#session-pill .sp-chip.land')).toHaveAttribute('data-part', 'data');
   await expect(page.locator('#receipt')).toBeHidden();
-  await expect(pillNames(page)).toHaveText(['prices', 'n']);
+  await expect.poll(() => parts(pillLit(page))).toEqual(['session', 'data']);
+  // A figure: home to the Figures chip.
+  await run(page, 1);
+  await expect(page.locator('#session-pill .sp-chip.land')).toHaveAttribute('data-part', 'figures');
+  await expect.poll(() => parts(pillLit(page))).toEqual(['session', 'data', 'figures']);
 });
 
 test('a run that drew shows its figure; the chip says so and reopens the receipt on hover', async ({ page }) => {
@@ -272,9 +281,11 @@ test('a run that drew shows its figure; the chip says so and reopens the receipt
   await expect(receipt.locator('.r-also')).toContainText('n');
   await page.keyboard.press('Escape');
   await expect(receipt).toBeHidden();
-  // The pill: in cell order, the new names blue.
-  await expect(pillNames(page)).toHaveText(['prices', 'n', 'demand', 'elasticity', 'ax']);
-  await expect(page.locator('#session-pill .sp-names .new')).toHaveText(['demand', 'elasticity', 'ax']);
+  // The pill: all three lit, blue where the run's new names are (two
+  // Series and the axes), and no names spelled out.
+  await expect.poll(() => parts(pillLit(page))).toEqual(['session', 'data', 'figures']);
+  await expect.poll(() => parts(pillNew(page))).toEqual(['session', 'data', 'figures']);
+  await expect(page.locator('#session-pill')).not.toContainText('demand');
 
   const chip = cell(page, 1).locator('.rchip');
   await expect(chip).toHaveClass(/kind-figure/);
@@ -301,7 +312,7 @@ test('a run that drew shows its figure; the chip says so and reopens the receipt
   await expect(receipt).toBeHidden();
 });
 
-test('an edited cell\'s chip is amber; a restart fades the chips and the pill says fresh session', async ({ page }) => {
+test('an edited cell\'s chip is amber; a restart fades the chips and dims the pill\'s, its title saying fresh session', async ({ page }) => {
   await page.emulateMedia({ reducedMotion: 'reduce' });
   await boot(page);
   await runAndFile(page, 0);
@@ -313,7 +324,8 @@ test('an edited cell\'s chip is amber; a restart fades the chips and the pill sa
   await expect(cell(page, 0).locator('.cell')).toHaveClass(/stale/);
   await expect.poll(() => chip.evaluate((element) => getComputedStyle(element).color)).toBe('rgb(201, 138, 29)');
   await page.locator('#restart').click();
-  await expect(page.locator('#session-pill .sp-names')).toHaveText('fresh session');
+  await expect(pillLit(page)).toHaveCount(0);
+  await expect(page.locator('#session-pill')).toHaveAttribute('title', /fresh session/);
   await expect(chip).toHaveClass(/past/);
   await expect.poll(async () => Number(await chip.evaluate((element) => getComputedStyle(element).opacity))).toBeLessThan(0.5);
   // Its cell runs again: the chip comes back.
@@ -343,7 +355,7 @@ test('the Session card drops from the pill and closes on a click elsewhere or Es
   await expect(card.locator('.s-row b')).toHaveText(['prices', 'n', 'demand', 'elasticity', 'ax']);
   await expect(card.locator('.s-row').first().locator('.cl')).toHaveText('cell 1');
   // Opening it is looking: the blue goes.
-  await expect(page.locator('#session-pill .sp-names .new')).toHaveCount(0);
+  await expect(pillNew(page)).toHaveCount(0);
   await page.locator('#doc').click({ position: { x: 200, y: 700 } });
   await expect(card).toBeHidden();
   await expect(page.locator('#session-pill')).toHaveAttribute('aria-expanded', 'false');
@@ -484,7 +496,7 @@ test('Pinned: a run\'s receipt lands in the docked card\'s top, with no card bes
   await expect(page.locator('#session .rv')).toHaveClass(/landed/);
   await expect(page.locator('#receipt')).toBeHidden();
   await expect(cell(page, 1).locator('.rchip')).toBeVisible();
-  await expect(pillNames(page)).toHaveText(['demand', 'elasticity', 'ax']);
+  await expect.poll(() => parts(pillLit(page))).toEqual(['session', 'data', 'figures']);
 });
 
 test('Run all lays its receipts down as chips, no card, its new names blue', async ({ page }) => {
@@ -495,7 +507,7 @@ test('Run all lays its receipts down as chips, no card, its new names blue', asy
   for (const i of [0, 1, 3]) await expect(cell(page, i).locator('.rchip')).toBeVisible();
   // Program cells only: the scratch cell did not run.
   await expect(cell(page, 2).locator('.rchip')).toHaveCount(0);
-  await expect(page.locator('#session-pill .sp-names .new')).toHaveText(['prices', 'n', 'demand', 'elasticity', 'ax', 'k']);
+  await expect.poll(() => parts(pillNew(page))).toEqual(['session', 'data', 'figures']);
 });
 
 test('a table pages in the Data tab, and a figure opens in the Figures tab', async ({ page }) => {
@@ -711,23 +723,20 @@ test('a slim card shows a short value in place of its kind, which stays in the t
   expect(await page.locator('#layout').evaluate((element) => element.scrollWidth > element.clientWidth)).toBe(false);
 });
 
-test('the pill hides the least recently bound names, never those a receipt brings home', async ({ page }) => {
+test('the pill never grows: three chips say something is there, not what', async ({ page }) => {
   await page.emulateMedia({ reducedMotion: 'reduce' });
   await boot(page, 680, 700);
+  const pill = page.locator('#session-pill');
+  const width = async () => Math.round((await pill.boundingBox())!.width);
+  const empty = await width();
+  await expect(page.locator('#session-pill .sp-chip')).toHaveCount(3);
   await page.locator('#run-all').click();
   await expect(cell(page, 3).locator('.rchip')).toBeVisible();
-  // Cell 1 again (prices and n, rebound): its names come home.
-  await runAndFile(page, 0);
-  const more = page.locator('#session-pill .sp-more');
-  await expect(more).toBeVisible();
-  const visible = await pillNames(page).allTextContents();
-  expect(visible).toEqual(expect.arrayContaining(['prices', 'n']));
-  // What gave way is the oldest of the rest, in the order they were bound.
-  const order = ['demand', 'elasticity', 'ax', 'k'];
-  const hidden = order.filter((name) => !visible.includes(name));
-  expect(hidden.length).toBeGreaterThan(0);
-  expect(hidden).toEqual(order.slice(0, hidden.length));
-  await expect(more).toHaveText(`+${hidden.length}`);
+  await expect.poll(() => parts(pillLit(page))).toEqual(['session', 'data', 'figures']);
+  expect(await width()).toBe(empty);
+  // No names, no counts: the status's words and nothing else.
+  expect((await pill.textContent())!.trim()).toBe('Python');
+  await expect(pill).toHaveAttribute('title', /6 names, 1 figure/);
 });
 
 test('Pinned: a chip\'s hover shows its receipt in the docked card\'s band, and a click keeps it there', async ({ page }) => {
@@ -837,7 +846,7 @@ test('Esc in a cell puts a card away, and the next Esc is command mode', async (
   await cell(page, 3).locator('.cm-content').click();
   await page.keyboard.press('ControlOrMeta+Enter');
   // The Session card, from the pill: the caret stays in the cell.
-  await expect(pillNames(page)).toHaveText(['k']);
+  await expect.poll(() => parts(pillLit(page))).toEqual(['session']);
   await page.locator('#session-pill').click();
   await expect(page.locator('#session')).toBeVisible();
   await page.keyboard.press('Escape');
@@ -848,7 +857,7 @@ test('Esc in a cell puts a card away, and the next Esc is command mode', async (
   await expect(cell(page, 3).locator('.cell')).toHaveClass(/selected/);
   await page.keyboard.press('s');
   await expect(cell(page, 3).locator('.cell')).toHaveClass(/kind-scratch/);
-  await expect(pillNames(page)).toHaveText(['k']);
+  await expect.poll(() => parts(pillLit(page))).toEqual(['session']);
 });
 
 /** "31 ms", "0.80 s": a receipt's time, in ms. */

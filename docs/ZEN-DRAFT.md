@@ -593,7 +593,9 @@ The Session panel tile is gone (the pill opens the card), and Restart
 session left the Run group for the bar's right end, a tile just before the
 session pill, beside the session it replaces; later that day it became
 the pill's own status dot (green, red, or a spinner), the restart arrow
-under the pointer, as ManimLive's is. Run stale rests, its amber dot
+under the pointer, as ManimLive's is (since 2026-10-21 the arrow is a
+ring always drawn round the dot, and Restart and the session pill are
+one pill: SESSION.md, *Ninth pass*). Run stale rests, its amber dot
 gone, while nothing is stale. Between cells, the centred
 hover strip became a very small cell under the run buttons' column — the
 gutter's width, a card's corners, hairline and fill, the three kinds in
