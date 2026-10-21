@@ -122,10 +122,12 @@ and rewrites the outputs and `values.json`. Scratch cells don't run.
 
 The pill at the top right has three small icons, for variables, data
 and figures, which light up once the session holds one. Click one to
-open that page in a column beside your cells: every name the session
-holds, DataFrames in a table you can scroll, figures full size.
+open a column of three cards beside your cells, that one open and the
+other two shrunk below it: every name the session holds, DataFrames in
+a table you can scroll, figures full size. Click a shrunk card to open
+it.
 
-![The Variables page open beside the document: every name the session holds, growth and ax marked + by the last run](docs/images/session.png)
+![The Session column beside the document: the Variables card open with every name the session holds, growth and ax marked + by the last run; Data and Figures shrunk below it](docs/images/session.png)
 
 ## Packages
 

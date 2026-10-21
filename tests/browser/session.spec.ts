@@ -346,7 +346,9 @@ test('a pill chip opens its page in the column beside the cells; the lit chip or
   await chipFor(page, 'session').click();
   await expect(card).toBeVisible();
   await expect(card).toHaveAttribute('data-page', 'session');
-  await expect(card.locator('.s-title')).toHaveText('Variables');
+  // All three cards show, the chip's open and the others shrunk.
+  await expect(card.locator('.s-part .s-title')).toHaveText(['Variables', 'Data', 'Figures']);
+  await expect(card.locator('.s-part.on .s-title')).toHaveText('Variables');
   await expect(chipFor(page, 'session')).toHaveAttribute('aria-pressed', 'true');
   await expect(chipFor(page, 'data')).toHaveAttribute('aria-pressed', 'false');
   // The last run's line on top, then every name with kind and cell.
@@ -359,14 +361,20 @@ test('a pill chip opens its page in the column beside the cells; the lit chip or
   await page.locator('#doc').click({ position: { x: 200, y: 700 } });
   await page.keyboard.press('Escape');
   await expect(card).toBeVisible();
-  // Another chip turns the page, the column where it stands.
+  // Another chip opens its card, the column where it stands; Variables
+  // shrinks to its header and a preview.
   const at = await box(page, '#session');
   await chipFor(page, 'data').click();
   await expect(card).toHaveAttribute('data-page', 'data');
-  await expect(card.locator('.s-title')).toHaveText('Data');
-  await expect(card.locator('[data-pane="session"]')).toBeHidden();
+  await expect(card.locator('.s-part.on .s-title')).toHaveText('Data');
+  await expect(card.locator('[data-pane="session"]')).toBeVisible();
   await expect(card.locator('[data-pane="data"] .s-pick button')).toHaveText(['prices', 'demand', 'elasticity']);
   expect(await box(page, '#session')).toEqual(at);
+  // A click on a shrunk card opens it.
+  await card.locator('.s-part[data-part="figures"]').click();
+  await expect(card).toHaveAttribute('data-page', 'figures');
+  await expect(chipFor(page, 'figures')).toHaveAttribute('aria-pressed', 'true');
+  await chipFor(page, 'data').click();
   // The lit chip closes it; so does ✕.
   await chipFor(page, 'data').click();
   await expect(card).toBeHidden();
@@ -409,12 +417,14 @@ test('the column stands beside the cells, which slide left with their width unch
   expect(Math.round(docked.session.top - docked.room.top)).toBe(12);
   expect(Math.round(docked.room.bottom - docked.session.bottom)).toBe(12);
   expect(await card.evaluate((element) => element.parentElement?.id)).toBe('layout');
-  // In a code cell's material: One Dark's fill, a hairline, 8 px corners,
-  // no glass.
-  expect(await card.evaluate((element) => {
-    const style = getComputedStyle(element);
-    return [style.backgroundColor, style.borderTopLeftRadius, style.backdropFilter, style.position];
-  })).toEqual(['rgb(40, 44, 52)', '8px', 'none', 'absolute']);
+  // Three cards on the room itself, each a step lighter grey than it,
+  // with the cells' hairline and 8 px corners, no glass.
+  expect(await card.evaluate((element) => getComputedStyle(element).position)).toBe('absolute');
+  expect(await card.evaluate((element) => getComputedStyle(element).backgroundColor)).toBe('rgba(0, 0, 0, 0)');
+  expect(await card.locator('.s-part').evaluateAll((parts) => parts.map((part) => {
+    const style = getComputedStyle(part);
+    return [style.backgroundColor, style.borderTopLeftRadius, style.backdropFilter];
+  }))).toEqual(Array(3).fill(['rgb(54, 53, 57)', '8px', 'none']));
   // A run never moves the column.
   await run(page, 0);
   await expect(page.locator('#session .rv .r-head .t')).toHaveText('Last run · cell 1');
@@ -999,35 +1009,53 @@ test('a change in place made while runs are queued is credited to no cell, not t
   await expect(cell(page, 1).locator('.rchip')).toHaveAttribute('title', /^prices — /);
 });
 
-test('Variables, Data and Figures are pages: one shows at a time, the column the room\'s height whichever it is', async ({ page }) => {
-  await page.emulateMedia({ reducedMotion: 'reduce' });
+test('Variables, Data and Figures are three cards: the open one takes the height, the others shrink to a preview, and the move is animated', async ({ page }) => {
   await boot(page, 1500, 760);
   await page.locator('#run-all').click();
   await expect(cell(page, 3).locator('.rchip')).toBeVisible();
   const card = page.locator('#session');
+  const part = (tab: string) => card.locator(`.s-part[data-part="${tab}"]`);
   const pane = (tab: string) => card.locator(`[data-pane="${tab}"]`);
   const room = await box(page, '#layout');
-  const heights: number[] = [];
-  for (const [tab, name] of [['session', 'Variables'], ['data', 'Data'], ['figures', 'Figures']] as const) {
-    await chipFor(page, tab).click();
-    await expect(card.locator('.s-title')).toHaveText(name);
-    for (const other of ['session', 'data', 'figures']) {
-      if (other === tab) await expect(pane(other)).toBeVisible();
-      else await expect(pane(other)).toBeHidden();
-    }
-    heights.push(Math.round((await box(page, '#session')).bottom - (await box(page, '#session')).top));
-  }
-  expect(new Set(heights)).toEqual(new Set([Math.round(room.bottom - room.top) - 24]));
-  // Each page holds its own: the names, the tables, the figure.
+  const heights = () => card.locator('.s-part').evaluateAll((parts) => parts.map((p) => Math.round(p.getBoundingClientRect().height)));
   await chipFor(page, 'session').click();
+  await expect(card).toBeVisible();
+  await card.evaluate((element) => Promise.all(element.getAnimations({ subtree: true }).map((a) => a.finished)));
+  for (const tab of ['session', 'data', 'figures'] as const) {
+    if (tab !== 'session') {
+      await chipFor(page, tab).click();
+      // The cards move to their new heights rather than jump.
+      expect(await card.evaluate((element) => [...element.querySelectorAll('.s-part')].every((p) => p.getAnimations().length === 1))).toBe(true);
+      await card.evaluate((element) => Promise.all(element.getAnimations({ subtree: true }).map((a) => a.finished)));
+    }
+    for (const other of ['session', 'data', 'figures']) {
+      await expect(pane(other)).toBeVisible();
+      if (other === tab) await expect(part(other)).toHaveClass(/\bon\b/);
+      else await expect(part(other)).not.toHaveClass(/\bon\b/);
+    }
+    // The shrunk ones are 136 px at the most; the three and their gaps
+    // fill the column, the room's height less 24.
+    const h = await heights();
+    const open = ['session', 'data', 'figures'].indexOf(tab);
+    h.forEach((height, i) => {
+      if (i !== open) expect(height, `${tab}: card ${i}`).toBeLessThanOrEqual(136);
+    });
+    expect(h[open]).toBeGreaterThan(300);
+    const column = await box(page, '#session');
+    expect(Math.round(column.bottom - column.top)).toBe(Math.round(room.bottom - room.top) - 24);
+    expect(Math.abs(h.reduce((a, b) => a + b, 0) + 16 - (column.bottom - column.top))).toBeLessThanOrEqual(2);
+  }
+  // Each card holds its own: the names, the tables, the figure.
   await expect(pane('session').locator('.s-row')).toHaveCount(6);
   await chipFor(page, 'data').click();
   await pane('data').locator('.s-pick button', { hasText: 'prices' }).click();
   await expect(pane('data').locator('.data-table')).toBeVisible();
-  await chipFor(page, 'figures').click();
   await expect(pane('figures').locator('.viewer .figure img')).toBeVisible();
-  // No folds, no pin: the header is the page's name and ✕.
+  // No folds, no pin: a card's header is its name, the top one's ✕ the
+  // column's.
   await expect(card.locator('.s-fold, .s-pin')).toHaveCount(0);
+  await expect(card.locator('.s-close')).toHaveCount(1);
+  await expect(part('session').locator('.s-close')).toHaveCount(1);
 });
 
 test('Knuth.app\'s View › Zoom draws the column larger in a measure widened by as much, nothing round it moving; the Session column keeps beside it; remembered', async ({ page }) => {

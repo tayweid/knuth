@@ -19,11 +19,13 @@
 //   The Session column. The pill at the bar's right end holds the kernel's
 //   status and three chips — variables, data, figures — each lit when the
 //   session holds one of its kind, blue while one is new, never saying
-//   what or how many (Taylor, 2026-10-21). A chip opens its page in a
-//   second column beside the cells, on the page, in the cells' own look
-//   (Taylor, 2026-10-21: "like separate panes beside the cells page, not
-//   hovering over it"); another chip turns the page, the lit one or the
-//   column's ✕ closes it. The cells slide left for it by only what it
+//   what or how many (Taylor, 2026-10-21). A chip opens a second column
+//   beside the cells, on the page (Taylor, 2026-10-21: "like separate
+//   panes beside the cells page, not hovering over it"): three grey cards,
+//   Variables, Data and Figures, the chip's open and the other two shrunk
+//   to their header and a fading preview. Another chip, or a click on a
+//   shrunk card, opens that one; the lit chip or the column's ✕ closes
+//   the column. The cells slide left for it by only what it
 //   lacks (peek-v2's board), on opening, never on a run.
 //
 // While the column is open a run's receipt lands in the Variables page's
@@ -356,16 +358,11 @@ export class Session {
     this.cardEl.id = 'session';
     this.cardEl.hidden = true;
     this.cardEl.setAttribute('aria-label', 'Session');
+    const head = (tab: Tab, close = '') => `<div class="s-head"><span class="s-title">${PAGE_NAME[tab]}</span>${close}</div>`;
     this.cardEl.innerHTML = `
-      <div class="s-head">
-        <span class="s-title"></span>
-        <button type="button" class="s-close" title="Close" aria-label="Close">✕</button>
-      </div>
-      <div class="s-body">
-        <div class="s-pane" data-pane="session" id="s-pane-session"></div>
-        <div class="s-pane" data-pane="data" id="s-pane-data"><div class="s-pick"></div><div class="s-view"></div><div class="s-note"></div></div>
-        <div class="s-pane" data-pane="figures" id="s-pane-figures"><div class="s-pick"></div><div class="s-view"></div><div class="s-note"></div></div>
-      </div>`;
+      <div class="s-part" data-part="session">${head('session', '<button type="button" class="s-close" title="Close" aria-label="Close">✕</button>')}<div class="s-pane" data-pane="session" id="s-pane-session"></div></div>
+      <div class="s-part" data-part="data">${head('data')}<div class="s-pane" data-pane="data" id="s-pane-data"><div class="s-pick"></div><div class="s-view"></div><div class="s-note"></div></div></div>
+      <div class="s-part" data-part="figures">${head('figures')}<div class="s-pane" data-pane="figures" id="s-pane-figures"><div class="s-pick"></div><div class="s-view"></div><div class="s-note"></div></div></div>`;
     this.room.append(this.cardEl);
     this.panes = {
       session: this.cardEl.querySelector<HTMLElement>('[data-pane="session"]')!,
@@ -382,6 +379,20 @@ export class Session {
       this.paintCard();
     });
     this.cardEl.querySelector('.s-close')!.addEventListener('click', () => this.closePage());
+    // A shrunk card is one target: a click anywhere on it opens it (but on
+    // the column's ✕, which closes the column).
+    for (const part of this.cardEl.querySelectorAll<HTMLElement>('.s-part')) {
+      part.addEventListener('mousedown', (e) => {
+        if (part.dataset.part !== this.page) e.preventDefault();
+      });
+      part.addEventListener('click', (e) => {
+        const tab = part.dataset.part as Tab;
+        if (tab === this.page || (e.target as Element).closest('.s-close')) return;
+        e.stopPropagation();
+        e.preventDefault();
+        this.openPage(tab);
+      }, true);
+    }
 
     this.listen();
     this.paintPill();
@@ -1089,11 +1100,28 @@ export class Session {
    *  hover turning to Variables for a moment is not remembered). */
   private turnTo(page: Tab, remember = false, render = true) {
     if (!this.page) return;
+    const was = this.page;
+    const parts = [...this.cardEl.querySelectorAll<HTMLElement>('.s-part')];
+    const before = parts.map((part) => part.getBoundingClientRect().height);
     this.page = page;
     if (remember) this.savePage();
     this.paintCard();
     this.paintPill();
-    if (render && page === 'figures' && this.figure) void this.renderFigure();
+    if (render && page === 'figures' && this.figure && !this.figs.showing) void this.renderFigure();
+    if (was !== page) this.slideParts(parts, before);
+  }
+
+  /** The cards move to their new heights over 0.24 s, the one opening
+   *  growing as the one closing shrinks, rather than jumping. */
+  private slideParts(parts: HTMLElement[], before: number[]) {
+    if (reducedMotion() || this.cardEl.hidden || !parts[0].animate) return;
+    const after = parts.map((part) => part.getBoundingClientRect().height);
+    this.cardEl.classList.add('s-moving');
+    const runs = parts.map((part, i) => part.animate(
+      [{ height: `${before[i]}px` }, { height: `${after[i]}px` }],
+      { duration: 240, easing: 'cubic-bezier(.2,.7,.2,1)' },
+    ));
+    void Promise.allSettled(runs.map((run) => run.finished)).then(() => this.cardEl.classList.remove('s-moving'));
   }
 
   /** The column appears beside the cells, which slide left by what it
@@ -1125,7 +1153,9 @@ export class Session {
     // into view, where it was just opened.
     if (animate && this.column.floor > 0) this.room.scrollTo({ left: this.room.scrollWidth, behavior: reducedMotion() ? 'auto' : 'smooth' });
     this.paintPill();
-    if (render && this.page === 'figures' && this.figure) void this.renderFigure();
+    // The Figures card shows whichever card is open: draw the figure it
+    // follows.
+    if (render && this.figure) void this.renderFigure();
   }
 
   /** The lit chip or the column's ✕: the column goes, the cells slide
@@ -1149,20 +1179,24 @@ export class Session {
     writeStore(() => localStorage, PAGE_KEY, this.page ?? '');
   }
 
-  /** Whether a page shows: the column up, on that page. */
-  private shows(tab: Tab): boolean {
-    return !this.cardEl.hidden && this.page === tab;
+  /** Whether a page shows: the column up (every card shows, open or
+   *  shrunk). */
+  private shows(_tab: Tab): boolean {
+    return !this.cardEl.hidden;
   }
 
-  /** Repaint the page the column shows. */
+  /** Repaint the three cards, the open one marked. */
   private paintCard() {
     if (this.cardEl.hidden || !this.page) return;
     this.cardEl.dataset.page = this.page;
-    this.cardEl.querySelector('.s-title')!.textContent = PAGE_NAME[this.page];
-    for (const [tab, pane] of Object.entries(this.panes)) pane.hidden = tab !== this.page;
-    if (this.page === 'session') this.paintSessionPane();
-    else if (this.page === 'data') this.paintDataPane();
-    else this.paintFiguresPane();
+    for (const part of this.cardEl.querySelectorAll<HTMLElement>('.s-part')) {
+      const open = part.dataset.part === this.page;
+      part.classList.toggle('on', open);
+      part.title = open ? '' : `Open ${PAGE_NAME[part.dataset.part as Tab]}`;
+    }
+    this.paintSessionPane();
+    this.paintDataPane();
+    this.paintFiguresPane();
   }
 
   /** The band on top (the last run's receipt, or the one a chip asked

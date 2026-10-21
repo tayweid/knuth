@@ -97,11 +97,15 @@ Session card; while the kernel is not ready, it opens the onboarding as
 the status did. In source and grid views it rests, its title saying
 why (there are no cells for the card to stand beside).
 
-**The Session column** (*Tenth pass*). Each of the pill's chips opens
-its page in a second column beside the cells, on the page and in the
-cells' own look — One Dark's fill, a hairline, 8 px corners, no glass —
-past the chips' lane, the room's height less 12 px above and below:
-**Variables** (the band's single line, "Last run · cell 3  12 ms",
+**The Session column** (*Tenth pass*, and its follow-up). Each of the
+pill's chips opens a second column beside the cells, on the page, past
+the chips' lane, the room's height less 12 px above and below: three
+cards stacked 8 px apart on the room itself, each a step lighter grey
+than it (#363539 on #2b2a2d) with the cells' hairline and 8 px corners,
+no glass. The chip's card is open and takes the height; the other two
+shrink to their header and up to 136 px of preview that fades out, and
+a click anywhere on one opens it; the cards move to their new heights
+over 0.24 s. The cards: **Variables** (the band's single line, "Last run · cell 3  12 ms",
 which goes to the cell on a click; then every name with its kind glyph,
 type, preview and the cell that bound it, the names the band's run
 touched carrying its `+` or `~` in the glyph's place behind a blue edge;
@@ -109,9 +113,9 @@ a table's or figure's name turns to its page, "cell 4" goes to the
 cell), **Data** (a chip per table, and the table viewer, paging 100 rows
 at a time) and **Figures** (a chip per figure, and the figure viewer; it
 follows each new figure unless held, and a held one shows "New: …" for
-the one waiting). One page shows at a time, and an empty one says what
-will show there. Another chip turns the page; the lit chip, or the
-column's ✕, closes it. A click elsewhere and Esc leave it: it is part of
+the one waiting). An empty card says what will show there. Another chip
+opens its card; the lit chip, or the ✕ on the top card, closes the
+column. A click elsewhere and Esc leave it: it is part of
 the page. The cells slide left by only what the column lacks, narrowing
 under about 1275 px; a run never moves them. While it is open a run's
 receipt goes straight into the band, lit for a moment, with no card
@@ -759,4 +763,18 @@ the behavior should stay the same."
   surface.
 - Kept as it was: receipts, the flight into the pill, the chips at the
   cells, the viewers, the band and its hover.
+
+Then, the same day: "i actually want the color to be the grey not the
+blue. and i want all three panels to be shown on open. but the
+non-highlighted ones get minimized a little, or partially close. each
+one gets their own card in the lighter grey color on the darker grey
+background." So the column is no box of its own but three cards on the
+room (`.s-part`, `--s-card`), all shown while it is open: the chip's
+card (`.on`) flexes to the height, the others keep `max-height: 136px`
+with a fading mask and no pointer events in their preview (the whole
+card is the click that opens it), their viewers kept from squeezing so
+the preview is the top of the table or the figure. `slideParts`
+animates each card's height between the two layouts (no flexing
+meanwhile, `.s-moving`). The table viewer's sticky header takes the
+card's grey.
 

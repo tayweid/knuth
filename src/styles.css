@@ -1920,7 +1920,7 @@ body[data-view='source'] .cell .run-num { visibility: visible; }
 
 .insert-actions .ico { width: 11px; height: 11px; display: block; }
 
-/* ---------- the viewers' parts (viewers.ts, in the Session card) ---------- */
+/* ---------- the viewers' parts (viewers.ts, in the Session column's Data and Figures cards) ---------- */
 
 .pane-title {
   font-size: 10.5px;
@@ -1982,7 +1982,8 @@ body[data-view='source'] .cell .run-num { visibility: visible; }
 .data-table thead th {
   position: sticky;
   top: 0;
-  background: #252429;
+  /* Opaque, for the rows that scroll under it: the card's own grey. */
+  background: var(--s-card, #252429);
   color: var(--room-ink-soft);
   font-weight: 600;
   z-index: 1;
@@ -2036,26 +2037,59 @@ body[data-view='source'] .cell .run-num { visibility: visible; }
 
 /* The Session column (Taylor, 2026-10-21: "like a second column beside
    the cells … the same design language on the same page, with the
-   rounded corners"): a pane past the chips' lane, the room's height less
-   its margins, in a code cell's material — One Dark's fill, the
-   hairline, 8 px corners — with no glass and no shadow. It is inside the
-   room (#layout), so below the floor it scrolls sideways with the cells.
-   One page at a time, Variables, Data or Figures, chosen by the pill's
-   chips; its header names the page and holds ✕. */
+   rounded corners"; then "the grey not the blue … each one gets their own
+   card in the lighter grey color on the darker grey background"): past
+   the chips' lane, the room's height less its margins, three cards
+   stacked 8 px apart on the room itself — Variables, Data, Figures — each
+   a step lighter than the room, with the cells' hairline and 8 px
+   corners, no glass and no shadow. The open one (.on) takes the height;
+   the other two shrink to their header and a preview that fades out, and
+   a click anywhere on one opens it. It is inside the room (#layout), so
+   below the floor it scrolls sideways with the cells. */
 #session {
+  /* A card's grey: a step up from the room's --bg (#2b2a2d). */
+  --s-card: #363539;
   position: absolute;
   z-index: 6;
   display: flex;
   flex-direction: column;
-  overflow: hidden;
+  gap: 8px;
   color: var(--room-ink);
-  background: #282c34;
-  border: 1px solid rgba(255, 255, 255, 0.07);
-  border-radius: 8px;
   color-scheme: dark;
 }
 
-/* The receipt card: beside the cell that ran, its top on the cell's first
+.s-part {
+  flex: 0 0 auto;
+  min-height: 0;
+  max-height: 136px;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  background: var(--s-card);
+  border: 1px solid rgba(255, 255, 255, 0.07);
+  border-radius: 8px;
+  transition: border-color 0.15s;
+}
+.s-part.on { flex: 1 1 auto; max-height: none; }
+.s-part:not(.on) { cursor: pointer; }
+.s-part:not(.on):hover { border-color: rgba(255, 255, 255, 0.16); }
+/* A shrunk card is one target, its preview a picture of what it holds. */
+.s-part:not(.on) .s-pane {
+  pointer-events: none;
+  -webkit-mask-image: linear-gradient(to bottom, #000 45%, transparent);
+  mask-image: linear-gradient(to bottom, #000 45%, transparent);
+}
+/* In a shrunk card nothing squeezes to fit: the viewer keeps its height
+   and the card shows its top (the table's first rows, the figure's top),
+   faded. */
+.s-part:not(.on) .s-pane > *,
+.s-part:not(.on) .viewer > * { flex-shrink: 0; }
+.s-part:not(.on) .viewer-scroll { flex: none; overflow: hidden; }
+/* Moving between cards (session.ts, slideParts): the heights animate,
+   so none of them flexes meanwhile. */
+#session.s-moving .s-part { flex: none; max-height: none; }
+
+/* The receipt card: beside the cell that ran/* The receipt card: beside the cell that ran, its top on the cell's first
    line; it eases in from the right and flies up into the pill (a Web
    Animation, session.ts). Above the docked card, which it may cross. */
 #receipt {
@@ -2300,8 +2334,9 @@ body[data-view='source'] .cell .run-num { visibility: visible; }
   .cell > .rchip::before { content: none; }
 }
 
-/* The column's header: the page's name, as a cell's gutter is apparatus
-   (the same faint surface and hairline), and ✕. */
+/* A card's header: its name, as a cell's gutter is apparatus (a faint
+   surface and a hairline), lit on the open card; the top card's holds
+   the column's ✕. */
 .s-head {
   flex: none;
   display: flex;
@@ -2309,7 +2344,7 @@ body[data-view='source'] .cell .run-num { visibility: visible; }
   gap: 6px;
   height: 34px;
   padding: 0 6px 0 12px;
-  background: rgba(255, 255, 255, 0.022);
+  background: rgba(255, 255, 255, 0.025);
   border-bottom: 1px solid rgba(255, 255, 255, 0.06);
 }
 .s-title {
@@ -2317,7 +2352,10 @@ body[data-view='source'] .cell .run-num { visibility: visible; }
   letter-spacing: 0.08em;
   text-transform: uppercase;
   color: var(--room-ink-soft);
+  transition: color 0.15s;
 }
+.s-part.on .s-title,
+.s-part:not(.on):hover .s-title { color: var(--room-ink); }
 .s-close {
   margin-left: auto;
   width: 24px;
@@ -2334,9 +2372,8 @@ body[data-view='source'] .cell .run-num { visibility: visible; }
 #session .s-close:focus-visible,
 #receipt button:focus-visible { outline: 2px solid #9db8d6; outline-offset: 1px; }
 
-/* The page: Variables scrolls as one list; Data and Figures hold their
-   picks, the viewer filling the rest, and the viewer scrolls. */
-.s-body { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; overflow: hidden; }
+/* A card's page: Variables scrolls as one list; Data and Figures hold
+   their picks, the viewer filling the rest, and the viewer scrolls. */
 .s-pane { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; overflow: hidden; }
 .s-pane[hidden] { display: none; }
 .s-pane[data-pane='session'] { display: block; overflow-y: auto; overscroll-behavior: contain; }
