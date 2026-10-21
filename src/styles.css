@@ -606,8 +606,9 @@ body {
    figures. Each is dim while the session holds none of its kind and lit
    once it holds one, blue while something in it is new; none says what
    or how many (Taylor, 2026-10-21: the names "grow and grow … that's
-   impossible to read"). A click drops the Session card from it, or opens
-   the onboarding while the kernel is not ready. */
+   impossible to read"). Each chip opens its page of the Session column,
+   and is lit while that page shows; while the kernel is not ready the
+   pill is the status alone, and a click on it opens the onboarding. */
 #session-pill {
   display: flex;
   align-items: center;
@@ -621,18 +622,16 @@ body {
   border: 1px solid rgba(255, 255, 255, 0.08);
   border-left: 0;
   border-radius: 0 9px 9px 0;
-  cursor: pointer;
   transition: background 0.15s, color 0.15s;
 }
 
-#session-pill:hover { background: #29292d; color: var(--glass-ink); }
-#session-pill.open { background: var(--tile); color: var(--glass-ink); }
+#session-pill:not(.ready) { cursor: pointer; }
+#session-pill:not(.ready):hover { background: #29292d; color: var(--glass-ink); }
 
-/* Source and grid views: no cells for the card to stand beside, so the
-   pill rests (session.ts; its title says why), the status as it was. */
-#session-pill[aria-disabled='true'] { cursor: default; }
-#session-pill[aria-disabled='true']:hover { background: var(--pill); color: var(--glass-ink-soft); }
+/* Source and grid views: no cells for the column to stand beside, so the
+   chips rest (session.ts; their titles say why), the status as it was. */
 #session-pill[aria-disabled='true'] > :not(#kernel-status) { opacity: 0.45; }
+#session-pill .sp-chip[aria-disabled='true'] { cursor: default; }
 
 #kernel-status { flex: none; white-space: nowrap; }
 
@@ -652,13 +651,21 @@ body {
   place-items: center;
   width: 22px;
   height: 20px;
+  padding: 0;
+  border: 0;
   border-radius: 6px;
   color: rgba(240, 238, 233, 0.2);
-  transition: color 0.3s, background 0.3s;
+  background: transparent;
+  cursor: pointer;
+  transition: color 0.3s, background 0.3s, box-shadow 0.2s;
 }
 #session-pill .sp-chip .ico { width: 13px; height: 13px; display: block; }
 #session-pill .sp-chip.has { color: rgba(240, 238, 233, 0.82); background: rgba(255, 255, 255, 0.06); }
 #session-pill .sp-chip.has.new { color: #9db8d6; background: rgba(157, 184, 214, 0.12); }
+#session-pill .sp-chip:not([aria-disabled='true']):is(:hover, :focus-visible) { color: #fff; background: rgba(255, 255, 255, 0.12); }
+#session-pill .sp-chip:focus-visible { outline: 2px solid #9db8d6; outline-offset: 1px; }
+/* The page the column shows: its chip lit as a pressed tile. */
+#session-pill .sp-chip.on { color: #fff; background: var(--tile); box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.16); }
 
 /* A receipt landing: its chip lit for a moment. */
 #session-pill .sp-chip.land { animation: sp-land 1.3s ease-out; }
@@ -2007,12 +2014,11 @@ body[data-view='source'] .cell .run-num { visibility: visible; }
 
 /* ---------- the session: the receipt card, the chips, the Session card ---------- */
 
-/* session.ts, docs/SESSION.md. The frame's dark glass (the menus'
-   material, a step more opaque so names read over code), beside the
-   column and never over it: the receipt card in the room's margin, the
-   docked card past the chips' lane (the column slides for either). */
-#receipt,
-#session {
+/* session.ts, docs/SESSION.md. The receipt card is the frame's dark
+   glass (the menus' material, a step more opaque so names read over
+   code), in the room's margin; the Session column is a pane on the page
+   in the cells' own look (below). */
+#receipt {
   position: fixed;
   /* Over the room, under the onboarding (9), the toast and the menus. */
   z-index: 7;
@@ -2027,6 +2033,27 @@ body[data-view='source'] .cell .run-num { visibility: visible; }
 
 #receipt[hidden],
 #session[hidden] { display: none; }
+
+/* The Session column (Taylor, 2026-10-21: "like a second column beside
+   the cells … the same design language on the same page, with the
+   rounded corners"): a pane past the chips' lane, the room's height less
+   its margins, in a code cell's material — One Dark's fill, the
+   hairline, 8 px corners — with no glass and no shadow. It is inside the
+   room (#layout), so below the floor it scrolls sideways with the cells.
+   One page at a time, Variables, Data or Figures, chosen by the pill's
+   chips; its header names the page and holds ✕. */
+#session {
+  position: absolute;
+  z-index: 6;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  color: var(--room-ink);
+  background: #282c34;
+  border: 1px solid rgba(255, 255, 255, 0.07);
+  border-radius: 8px;
+  color-scheme: dark;
+}
 
 /* The receipt card: beside the cell that ran, its top on the cell's first
    line; it eases in from the right and flies up into the pill (a Web
@@ -2273,98 +2300,44 @@ body[data-view='source'] .cell .run-num { visibility: visible; }
   .cell > .rchip::before { content: none; }
 }
 
-/* The Session card: dropped from the pill at the room's top right, or
-   docked beside the column (the pin), in its own look either way — the
-   cells' cards are One Dark; this is the frame's glass. Docked, it is on
-   the page: inside the room (#layout), so below the floor it scrolls
-   sideways with the column. */
-#session {
-  display: flex;
-  flex-direction: column;
-  overflow: hidden;
-  transform-origin: top right;
-}
-
-#session.docked {
-  position: absolute;
-  z-index: 6;
-  box-shadow: 0 1px 0 rgba(255, 255, 255, 0.04) inset, 0 10px 30px rgba(0, 0, 0, 0.35);
-}
-
+/* The column's header: the page's name, as a cell's gutter is apparatus
+   (the same faint surface and hairline), and ✕. */
 .s-head {
-  flex: none;
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 4px 6px;
-  padding: 6px 6px 6px 7px;
-  background: rgba(255, 255, 255, 0.02);
-  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
-}
-
-.s-pin,
-.s-close {
-  border: 0;
-  background: transparent;
-  color: var(--room-ink-soft);
-  cursor: pointer;
-  white-space: nowrap;
-}
-
-/* The pin: the header's one control besides ✕, lit blue and filled while
-   the card is docked. */
-.s-pin {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  height: 24px;
-  padding: 0 8px;
-  border-radius: 6px;
-  font: 11px/1 var(--sans);
-}
-.s-pin .ico { width: 11px; height: 11px; display: block; }
-.s-pin:hover { color: var(--room-ink); background: rgba(255, 255, 255, 0.08); }
-.s-pin[aria-pressed='true'] { color: #9db8d6; }
-.s-pin[aria-pressed='true'] .ico { fill: currentColor; }
-.s-close { width: 24px; height: 24px; border-radius: 6px; font-size: 12px; }
-.s-head .s-close { margin-left: auto; }
-.s-close:hover { color: var(--room-ink); background: rgba(255, 255, 255, 0.08); }
-#session .s-pick button:focus-visible,
-#session :is(.s-fold, .s-pin):focus-visible,
-#session .s-close:focus-visible,
-#receipt button:focus-visible { outline: 2px solid #9db8d6; outline-offset: 1px; }
-
-/* Session, Data and Figures, one under another, each folding to its
-   header; when they do not all fit, session.ts (fitParts) gives each its
-   height and each scrolls inside itself. */
-.s-body { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; overflow: hidden; }
-.s-part { flex: none; display: flex; flex-direction: column; min-height: 0; }
-.s-part[hidden] { display: none; }
-.s-part + .s-part { border-top: 1px solid rgba(255, 255, 255, 0.06); }
-.s-fold {
   flex: none;
   display: flex;
   align-items: center;
   gap: 6px;
-  width: 100%;
-  /* The label at the card's 12 px inset, as its rows; the fold's arrow
-     after it (Taylor, 2026-10-17), the count at the far end. */
-  padding: 6px 10px 6px 12px;
-  border: 0;
-  background: rgba(255, 255, 255, 0.015);
-  color: var(--room-ink-soft);
-  font: 500 11px/1.4 var(--sans);
+  height: 34px;
+  padding: 0 6px 0 12px;
+  background: rgba(255, 255, 255, 0.022);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+}
+.s-title {
+  font: 500 11px/1 var(--sans);
   letter-spacing: 0.08em;
   text-transform: uppercase;
-  text-align: left;
+  color: var(--room-ink-soft);
+}
+.s-close {
+  margin-left: auto;
+  width: 24px;
+  height: 24px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--room-ink-soft);
+  font-size: 12px;
   cursor: pointer;
 }
-.s-fold:hover { color: var(--room-ink); }
-.s-fold.on { color: var(--room-ink); }
-.s-fold .ico { width: 12px; height: 12px; flex: none; transition: transform 0.16s ease; }
-.s-fold[aria-expanded='false'] .ico { transform: rotate(-90deg); }
-.s-fold .c { margin-left: auto; letter-spacing: 0.02em; font-weight: 400; }
-.s-pane { flex: none; min-height: 0; display: flex; flex-direction: column; overflow: hidden; }
+.s-close:hover { color: var(--room-ink); background: rgba(255, 255, 255, 0.08); }
+#session .s-pick button:focus-visible,
+#session .s-close:focus-visible,
+#receipt button:focus-visible { outline: 2px solid #9db8d6; outline-offset: 1px; }
+
+/* The page: Variables scrolls as one list; Data and Figures hold their
+   picks, the viewer filling the rest, and the viewer scrolls. */
+.s-body { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; overflow: hidden; }
+.s-pane { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; overflow: hidden; }
 .s-pane[hidden] { display: none; }
 .s-pane[data-pane='session'] { display: block; overflow-y: auto; overscroll-behavior: contain; }
 .s-pane[data-pane='session'][hidden] { display: none; }

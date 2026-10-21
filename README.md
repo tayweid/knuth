@@ -120,10 +120,12 @@ knuth run analysis.py && typst compile paper.typ
 fresh Python, runs the code cells top to bottom, stops at the first error,
 and rewrites the outputs and `values.json`. Scratch cells don't run.
 
-Click the pill at the top right to see everything the session holds.
-DataFrames open in a table you can scroll; figures open full size.
+The pill at the top right has three small icons, for variables, data
+and figures, which light up once the session holds one. Click one to
+open that page in a column beside your cells: every name the session
+holds, DataFrames in a table you can scroll, figures full size.
 
-![The Session card open beside the document: one list of what the session holds, growth and ax marked + by the last run, then the figure it drew](docs/images/session.png)
+![The Variables page open beside the document: every name the session holds, growth and ax marked + by the last run](docs/images/session.png)
 
 ## Packages
 

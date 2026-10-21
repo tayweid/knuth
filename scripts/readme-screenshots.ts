@@ -75,10 +75,10 @@ mkdirSync(out, { recursive: true });
   await shot(page, 'document');
 }
 
-// The Session card from the pill: what the session holds, cell by cell.
+// The Session column from the pill: what the session holds, cell by cell.
 {
   const page = await open(1200, 760);
-  await page.locator('#session-pill').click();
+  await page.locator('#session-pill .sp-chip[data-part="session"]').click();
   await page.locator('#session').waitFor();
   await page.waitForTimeout(800);
   await shot(page, 'session');

@@ -97,45 +97,31 @@ Session card; while the kernel is not ready, it opens the onboarding as
 the status did. In source and grid views it rests, its title saying
 why (there are no cells for the card to stand beside).
 
-**The Session card.** From the pill, a rounded dark-glass card at the
-room's top right, holding three parts one under another, each with a
-header that folds it to that line (and the count of what it holds):
-**Session** (one list: the band's single line, "Last run · cell 3
-12 ms", which goes to the cell on a click; then every name with its kind
-glyph, type, preview and the cell that bound it, the names the band's
-run touched carrying its `+` or `~` in the glyph's place behind a blue
-edge; a table's or figure's name opens it, "cell 4" goes to the cell),
-**Data** (a chip per table, and the table viewer, paging 100 rows at a
-time as the panel did), **Figures** (a chip per figure, and the figure
-viewer; it follows each new figure unless held, and a held one shows
-"New: …" for the one waiting). Data and Figures show only once they
-hold something. (Until 2026-10-17 the band was the run's whole receipt
-over the list, its names, values, mini tables and figure, and the parts
-said when they were empty; Taylor found the card too complicated, with
-the same names twice.) When the
-open parts do not all fit, each keeps a quarter of the card's height
-(or what it holds, if less), the part last opened or used — the table
-just picked, a header just opened — takes what it needs of the rest,
-and each scrolls inside itself. The folds are remembered (localStorage
-`knuth-session-folded`), floating or pinned alike. A click
-anywhere outside closes it, as does Esc; so does the pill, lit
-(`aria-expanded`) while the card shows. (The rail's Session tile,
-`#toggle-panel`, went on 2026-10-17: Taylor had no use for a second way
-in, and the pill is where the card hangs from.)
+**The Session column** (*Tenth pass*). Each of the pill's chips opens
+its page in a second column beside the cells, on the page and in the
+cells' own look — One Dark's fill, a hairline, 8 px corners, no glass —
+past the chips' lane, the room's height less 12 px above and below:
+**Variables** (the band's single line, "Last run · cell 3  12 ms",
+which goes to the cell on a click; then every name with its kind glyph,
+type, preview and the cell that bound it, the names the band's run
+touched carrying its `+` or `~` in the glyph's place behind a blue edge;
+a table's or figure's name turns to its page, "cell 4" goes to the
+cell), **Data** (a chip per table, and the table viewer, paging 100 rows
+at a time) and **Figures** (a chip per figure, and the figure viewer; it
+follows each new figure unless held, and a held one shows "New: …" for
+the one waiting). One page shows at a time, and an empty one says what
+will show there. Another chip turns the page; the lit chip, or the
+column's ✕, closes it. A click elsewhere and Esc leave it: it is part of
+the page. The cells slide left by only what the column lacks, narrowing
+under about 1275 px; a run never moves them. While it is open a run's
+receipt goes straight into the band, lit for a moment, with no card
+beside the cell; the cell's chip still appears, and its hover or click
+shows its cell's receipt in the band ("Earlier run · cell 2"), turning
+to Variables for a hover from Data or Figures and back when it ends.
 
-**The pin**, the card header's one control beside ✕:
-
-- **Pinned**: the card docks beside the column, on the page, in its own
-  look (not the code cells'), as a sidebar card that scrolls inside
-  itself; the column slides left by only what the card lacks (narrowing
-  under about 1275 px). A run's receipt goes straight into its band,
-  lit for a moment; no card beside the cell; the chip still appears, and
-  its hover or click shows its cell's receipt in the band ("Earlier run ·
-  cell 2"). The pin again unpins it back to floating; closing it unpins
-  it.
-
-Pinned is remembered per window (sessionStorage `knuth-session-pinned`, with the
-last choice in localStorage as a new window's start).
+The open page is remembered per window (sessionStorage
+`knuth-session-page`, with the last choice in localStorage as a new
+window's start; empty when closed).
 
 **With the scroll rail** (docs/ZEN-DRAFT.md, *The scroll rail*): the rail
 is in the frame's gutter outside the room, and the docked card slides the
@@ -748,4 +734,29 @@ button should be larger and always shown around the green dot".
   22 px, a circle about the dot's centre (RESTART_RING in main.ts, the
   same string as ManimLive's); the pointer brightens it. While a session
   starts the ring turns, where the dot used to become a spinner.
+
+## Tenth pass: the Session column (2026-10-21)
+
+Taylor: "the session sidebar should appear like separate panes beside
+the cells page, not hovering over it. it should be the same design
+language on the same page, with the rounded corners and such. it's like
+a second column beside the cells, with three possible pages in the
+column, one for each variables, data, and figures. everything else about
+the behavior should stay the same."
+
+- **The pill's chips are the doors.** Each is a button that opens the
+  column on its page, turns to it, or closes the column when it is the
+  page showing (pressed while it shows). The status alone opens the
+  onboarding while the kernel is not ready.
+- **One way to show it.** The floating card, the pin, its click-outside
+  and Esc closing, and the folding parts with their quarter-height rule
+  (`fitParts`, `knuth-session-folded`, `knuth-session-pinned`) are gone.
+  What was the docked card is the column: the same slide rule, the same
+  fade timed to the sliding chips, the same band.
+- **The cells' material**, not the frame's glass: `#session` is
+  absolutely placed in the room in a code cell's fill, hairline and
+  corners; its header is the page's name and ✕ on the gutter's faint
+  surface.
+- Kept as it was: receipts, the flight into the pill, the chips at the
+  cells, the viewers, the band and its hover.
 

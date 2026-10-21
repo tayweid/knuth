@@ -337,7 +337,7 @@ test('the gutter and the rail are there while the column runs past the room, nev
   expect((await frame(page)).gutter).toBe(false);
 });
 
-test('the room\'s box with the rail and without, at 1100 and 1500, the floor still a 640 px window, and the pinned Session card beside the column with the rail there', async ({ page }) => {
+test('the room\'s box with the rail and without, at 1100 and 1500, the floor still a 640 px window, and the Session column beside the cells with the rail there', async ({ page }) => {
   await page.emulateMedia({ reducedMotion: 'reduce' });
   await boot(page, SHORT);
   for (const [width, height] of [[1100, 760], [1500, 940]]) {
@@ -365,12 +365,11 @@ test('the room\'s box with the rail and without, at 1100 and 1500, the floor sti
     expect(column.offset).toBeLessThan(1);
   }
 
-  // Pinned, the Session card docks inside the room beside the column (it
-  // slides the column, not the frame): past the chips' lane, 10 px in from
+  // Open, the Session column stands inside the room beside the cells (it
+  // slides the cells, not the frame): past the chips' lane, 10 px in from
   // the room's right edge, which is the gutter's.
-  await page.locator('#session-pill').click();
-  await page.locator('#session .s-pin').click();
-  await expect(page.locator('#session')).toHaveClass(/docked/);
+  await page.locator('#session-pill .sp-chip[data-part="session"]').click();
+  await expect(page.locator('#session')).toBeVisible();
   const pinned = await page.evaluate(() => {
     const card = document.getElementById('session')!.getBoundingClientRect();
     const sheet = document.getElementById('sheet')!.getBoundingClientRect();
@@ -382,7 +381,7 @@ test('the room\'s box with the rail and without, at 1100 and 1500, the floor sti
   expect(Math.abs(pinned.gap - 46)).toBeLessThan(1);
   expect(pinned.right).toBeGreaterThanOrEqual(10 - 0.5);
   expect((await frame(page)).room.right).toBe(1500 - GUTTER);
-  await page.locator('#session .s-pin').click();
+  await page.locator('#session .s-close').click();
 
   // The floor: the room still scrolls sideways under a 640 px window, not
   // 652; with the gutter the column bottoms out 12 px narrower, at 536.

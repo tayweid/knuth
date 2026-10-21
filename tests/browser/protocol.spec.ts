@@ -116,8 +116,8 @@ test('Stop interrupts the running cell, which ends in the interrupt', async ({ p
 test('a DataFrame opens in the data viewer as a page of rows', async ({ page }) => {
   await page.goto('/');
   await expect(page.locator('#kernel-status')).toHaveText('Python');
-  // The Session card drops from the pill; a table's name opens the Data tab.
-  await page.locator('#session-pill').click();
+  // The pill's chip opens the Session column; a table's name turns to Data.
+  await page.locator('#session-pill .sp-chip[data-part="session"]').click();
   const row = page.locator('#session .s-row', { hasText: 'df' });
   await expect(row).toBeVisible();
   await row.click();

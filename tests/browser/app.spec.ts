@@ -147,11 +147,12 @@ test('boots against the kernel protocol and renders a normal figure', async ({ p
   await page.goto('/');
 
   await expect(page.locator('#kernel-status')).toHaveText('Python');
-  // The pill lights its variables and figures chips; the Session card
-  // drops from it, and a figure's name opens the Figures tab (session.ts).
+  // The pill lights its variables and figures chips; the first opens the
+  // Session column's Variables page, and a figure's name turns to Figures
+  // (session.ts).
   await expect(page.locator('#session-pill .sp-chip.has')).toHaveCount(2);
   await expect(page.locator('#session-pill .sp-chip[data-part="figures"]')).toHaveClass(/has/);
-  await page.locator('#session-pill').click();
+  await page.locator('#session-pill .sp-chip[data-part="session"]').click();
   const chart = page.locator('#session .s-row', { hasText: 'chart' });
   await expect(chart).toBeVisible();
   await chart.click();
@@ -237,7 +238,7 @@ test('renders malicious SVG as a sanitized inert image', async ({ page }) => {
   });
 
   await page.goto('/');
-  await page.locator('#session-pill').click();
+  await page.locator('#session-pill .sp-chip[data-part="session"]').click();
   await page.locator('#session .s-row', { hasText: 'chart' }).click();
 
   const figure = page.locator('.viewer .figure img');

@@ -89,7 +89,7 @@ function labeled(id: string, glyph: string, label: string, title: string, classN
 // (session.ts, docs/SESSION.md): Restart's ring round the status dot, the
 // kernel's status, then three chips — variables, data, figures — lit when
 // the session holds one (Taylor, 2026-10-21: "only indicate that something
-// is there"). In Knuth.app the bar is the window's title bar
+// is there"), each opening its page of the Session column. In Knuth.app the bar is the window's title bar
 // (styles.css).
 const toolbar = document.getElementById('toolbar')!;
 toolbar.setAttribute('aria-label', 'Document');
@@ -102,7 +102,7 @@ toolbar.innerHTML = `
   <div class="doc-pod" id="doc-pod"><span class="name" id="file-name" title="Click to rename">${DEFAULT_DOC_NAME}</span><span class="doc-mark" id="doc-mark" aria-hidden="true"></span><span class="doc-folder" id="doc-folder" hidden><span dir="ltr"></span></span><button type="button" class="doc-save" id="doc-save" title="Save (⌘S)" hidden>Save</button><button type="button" class="tb-btn tb-tile" id="history-tile" title="History (⇧⌘H)" aria-label="History" aria-keyshortcuts="Shift+Meta+H">${HISTORY_GLYPH}<span class="lbl">History</span></button></div>
   <div class="tb-end">
     <button type="button" class="tb-btn sp-dot" id="restart" title="Restart session: a fresh kernel process, every cell stale" aria-label="Restart session"><span class="sp-dot-mark" aria-hidden="true"></span>${RESTART_RING}<span class="lbl">Restart</span></button>
-    <button type="button" id="session-pill"><span id="kernel-status">connecting…</span><span class="sp-sep" aria-hidden="true"></span><span class="sp-chips"><span class="sp-chip" data-part="session">${icon('braces')}</span><span class="sp-chip" data-part="data">${icon('table')}</span><span class="sp-chip" data-part="figures">${icon('figure')}</span></span></button>
+    <div id="session-pill" role="group" aria-label="Session"><span id="kernel-status">connecting…</span><span class="sp-sep" aria-hidden="true"></span><span class="sp-chips"><button type="button" class="sp-chip" data-part="session" aria-label="Variables" aria-pressed="false">${icon('braces')}</button><button type="button" class="sp-chip" data-part="data" aria-label="Data" aria-pressed="false">${icon('table')}</button><button type="button" class="sp-chip" data-part="figures" aria-label="Figures" aria-pressed="false">${icon('figure')}</button></span></div>
   </div>
 `;
 

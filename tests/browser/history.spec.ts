@@ -585,15 +585,15 @@ test('whatever acts in the room puts the view away first; the bar\'s Escape does
     await expect(tile).toHaveAttribute('aria-pressed', 'false');
     expect((await historySent(page)).at(-1)).toEqual({ action: 'close' });
   };
-  // A rail tile (the Session card would open under the view).
+  // A pill chip (the Session column would open under the view).
   await up();
-  await page.locator('#session-pill').click();
+  await page.locator('#session-pill .sp-chip[data-part="session"]').click();
   await closes();
   await expect(page.locator('#session')).toBeVisible();
-  await page.locator('#session-pill').click();
+  await page.locator('#session-pill .sp-chip[data-part="session"]').click();
   // The session pill.
   await up();
-  await page.locator('#session-pill').click();
+  await page.locator('#session-pill .sp-chip[data-part="session"]').click();
   await closes();
   await page.keyboard.press('Escape');
   // Escape with the page's focus (on the bar), as Escape in the view.

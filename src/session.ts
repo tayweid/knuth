@@ -16,19 +16,20 @@
 //   elsewhere or Esc puts it away. Amber when the cell is stale, faded
 //   after a restart. It never takes the column's width.
 //
-//   The Session card. The pill at the bar's right end holds the kernel's
+//   The Session column. The pill at the bar's right end holds the kernel's
 //   status and three chips — variables, data, figures — each lit when the
 //   session holds one of its kind, blue while one is new, never saying
-//   what or how many (Taylor, 2026-10-21); a click drops the card
-//   from it (Session, Data, Figures). A click elsewhere or Esc closes it;
-//   the pin docks it beside the column, on the page, in its own look. The
-//   column slides left for it by only what the card lacks (peek-v2's
-//   board), once, on the pin, never on a run.
+//   what or how many (Taylor, 2026-10-21). A chip opens its page in a
+//   second column beside the cells, on the page, in the cells' own look
+//   (Taylor, 2026-10-21: "like separate panes beside the cells page, not
+//   hovering over it"); another chip turns the page, the lit one or the
+//   column's ✕ closes it. The cells slide left for it by only what it
+//   lacks (peek-v2's board), on opening, never on a run.
 //
-// The card's header holds only its pin and ✕: pinned, the card is docked,
-// a run's receipt lands in its band (no card flies), and a chip's hover or
-// click shows its cell's receipt there. (Peek, Float and Silent were a
-// choice in the header until 2026-10-17; Peek is how it works now.)
+// While the column is open a run's receipt lands in the Variables page's
+// band (no card flies), and a cell chip's hover or click shows its cell's
+// receipt there. (Until 2026-10-21 the card floated from the pill and a pin
+// docked it, its three parts one under another, each folding.)
 
 import type { Kernel, NamespaceVar } from './kernel/kernel.ts';
 import type { DocumentView, RunInfo } from './document-view.ts';
@@ -111,16 +112,13 @@ const SHORT_PREVIEW = 16;
 const RECEIPT_ROWS = 8;
 /** A chip's title names this many. */
 const CHIP_TITLE_NAMES = 12;
-const PINNED_KEY = 'knuth-session-pinned';
-const FOLD_KEY = 'knuth-session-folded';
-/** An open part keeps at least this share of the card's height when the
- *  three do not all fit (less only when it holds less). */
-const PART_FLOOR = 0.25;
-
-/** A part's header: a click folds it to that line, or opens it again. */
-function fold(tab: Tab, label: string): string {
-  return `<button type="button" class="s-fold" data-tab="${tab}" aria-controls="s-pane-${tab}"><span class="l">${label}</span>${icon('chevron')}<span class="c"></span></button>`;
-}
+/** The page the column was left open on (per window, with the last
+ *  choice as a new window's start); empty when it was closed. */
+const PAGE_KEY = 'knuth-session-page';
+const PAGES: Tab[] = ['session', 'data', 'figures'];
+/** Each page's name, in the column's header and the pill chip's title. */
+const PAGE_NAME: Record<Tab, string> = { session: 'Variables', data: 'Data', figures: 'Figures' };
+const isPage = (value: string | null): value is Tab => value === 'session' || value === 'data' || value === 'figures';
 
 export interface SessionHooks {
   /** The kernel is connected and past ready. */
@@ -264,16 +262,12 @@ export class Session {
   private pending = new Set<string>();
   /** A restart emptied the session: the pill's title says "fresh session". */
   private fresh = false;
-  private docked: boolean;
-  private floating = false;
-  /** The part last opened or used: it has first claim on the height. */
-  private tab: Tab = 'session';
-  /** The parts folded to their headers (remembered). */
-  private folded = new Set<Tab>();
+  /** The page the Session column shows, or null while it is closed. */
+  private page: Tab | null;
   private card: Card | null = null;
-  /** Docked: the cell whose receipt the band shows in place of the last
-   *  run's (a chip hovered, or clicked: held), and the tab to go back to
-   *  when a hover ends. */
+  /** The column open: the cell whose receipt the band shows in place of
+   *  the last run's (a chip hovered, or clicked: held), and the page to go
+   *  back to when a hover ends. */
   private band: { id: string; held: boolean; back?: Tab } | null = null;
   private dwell = 0;
   private hoverTimer = 0;
@@ -315,24 +309,29 @@ export class Session {
     this.room = document.getElementById('layout')!;
     this.doc = document.getElementById('doc')!;
     this.sheet = document.getElementById('sheet')!;
-    // Pinned is per window (a reload keeps it); a new window starts as the
-    // last one was left.
-    const pinned = readStore(() => sessionStorage, PINNED_KEY) ?? readStore(() => localStorage, PINNED_KEY);
-    this.docked = pinned === '1';
-    const folded = readStore(() => localStorage, FOLD_KEY)?.split(',') ?? [];
-    for (const tab of folded) if (tab === 'session' || tab === 'data' || tab === 'figures') this.folded.add(tab);
+    // The open page is per window (a reload keeps it); a new window starts
+    // as the last one was left.
+    const page = readStore(() => sessionStorage, PAGE_KEY) ?? readStore(() => localStorage, PAGE_KEY);
+    this.page = isPage(page) ? page : null;
 
     // The pill: the kernel's status (#kernel-status, untouched: the shell's
     // smoke reads its words), a hairline and the three chips.
     this.pill = document.getElementById('session-pill') as HTMLButtonElement;
     const chip = (part: Tab) => this.pill.querySelector<HTMLElement>(`.sp-chip[data-part="${part}"]`)!;
     this.chips = { session: chip('session'), data: chip('data'), figures: chip('figures') };
-    for (const part of Object.values(this.chips)) part.addEventListener('animationend', () => part.classList.remove('land'));
     this.pill.addEventListener('mousedown', (e) => e.preventDefault());
+    // While the kernel is not ready the chips are hidden and the status is
+    // the way to the onboarding.
     this.pill.addEventListener('click', () => {
       if (!this.hooks.ready()) this.hooks.showOnboarding();
-      else this.toggleCard();
     });
+    for (const part of PAGES) {
+      const button = this.chips[part];
+      button.addEventListener('animationend', () => button.classList.remove('land'));
+      button.addEventListener('click', () => {
+        if (this.hooks.ready()) this.togglePage(part);
+      });
+    }
 
     this.receiptEl = el('div');
     this.receiptEl.id = 'receipt';
@@ -359,15 +358,15 @@ export class Session {
     this.cardEl.setAttribute('aria-label', 'Session');
     this.cardEl.innerHTML = `
       <div class="s-head">
-        <button type="button" class="s-pin" aria-pressed="false">${icon('pin')}<span>Pin</span></button>
-        <button type="button" class="s-close" title="Close (Esc)" aria-label="Close">✕</button>
+        <span class="s-title"></span>
+        <button type="button" class="s-close" title="Close" aria-label="Close">✕</button>
       </div>
       <div class="s-body">
-        <div class="s-part" data-part="session">${fold('session', 'Session')}<div class="s-pane" data-pane="session" id="s-pane-session"></div></div>
-        <div class="s-part" data-part="data">${fold('data', 'Data')}<div class="s-pane" data-pane="data" id="s-pane-data"><div class="s-pick"></div><div class="s-view"></div><div class="s-note"></div></div></div>
-        <div class="s-part" data-part="figures">${fold('figures', 'Figures')}<div class="s-pane" data-pane="figures" id="s-pane-figures"><div class="s-pick"></div><div class="s-view"></div><div class="s-note"></div></div></div>
+        <div class="s-pane" data-pane="session" id="s-pane-session"></div>
+        <div class="s-pane" data-pane="data" id="s-pane-data"><div class="s-pick"></div><div class="s-view"></div><div class="s-note"></div></div>
+        <div class="s-pane" data-pane="figures" id="s-pane-figures"><div class="s-pick"></div><div class="s-view"></div><div class="s-note"></div></div>
       </div>`;
-    document.body.append(this.cardEl);
+    this.room.append(this.cardEl);
     this.panes = {
       session: this.cardEl.querySelector<HTMLElement>('[data-pane="session"]')!,
       data: this.cardEl.querySelector<HTMLElement>('[data-pane="data"]')!,
@@ -382,25 +381,11 @@ export class Session {
       this.figHeld = false;
       this.paintCard();
     });
-    for (const button of this.cardEl.querySelectorAll<HTMLButtonElement>('[data-tab]')) {
-      button.addEventListener('mousedown', (e) => e.preventDefault());
-      button.addEventListener('click', () => this.toggleFold(button.dataset.tab as Tab));
-    }
-    // The parts share the card's height (fitParts): whatever changes what
-    // one holds — a table paging in, a figure loading — sizes them again.
-    let fitFrame = 0;
-    const refit = () => {
-      cancelAnimationFrame(fitFrame);
-      fitFrame = requestAnimationFrame(() => this.fitParts());
-    };
-    new MutationObserver(refit).observe(this.cardEl.querySelector('.s-body')!, { childList: true, subtree: true, characterData: true });
-    this.cardEl.addEventListener('load', refit, true);
-    this.cardEl.querySelector('.s-pin')!.addEventListener('click', () => this.setPinned(!this.docked));
-    this.cardEl.querySelector('.s-close')!.addEventListener('click', () => this.closeCard());
+    this.cardEl.querySelector('.s-close')!.addEventListener('click', () => this.closePage());
 
     this.listen();
     this.paintPill();
-    if (this.docked) this.showSessionCard();
+    if (this.page) this.showColumn(false);
   }
 
   // ---------- what the document view and main tell the session ----------
@@ -567,7 +552,6 @@ export class Session {
     this.setColumn(board?.need ?? 0, board?.floor ?? 0, slide);
     if (this.card && fit) this.placeCard(f, fit);
     this.placeSessionCard(f, board);
-    this.fitParts();
   }
 
   /** Tell #sheet where to stand. */
@@ -625,31 +609,18 @@ export class Session {
     style.top = `${Math.max(f.box.top + 10, Math.min(anchor.top, f.box.bottom - height - 10))}px`;
   }
 
-  /** Floating: from the pill, at the room's top right, over the room.
-   *  Docked: on the page — inside the room, so it scrolls sideways with it
-   *  below the floor — beside the column past the chips' lane. */
+  /** On the page — inside the room, so it scrolls sideways with it below
+   *  the floor — beside the column past the chips' lane, the room's height
+   *  less its margins: a column, whichever page it shows. */
   private placeSessionCard(f: Frame, board: ReturnType<typeof boardAt> | null) {
     // Source and grid views hide it where it is.
-    if (this.cardEl.hidden || this.away) return;
-    const parent = board ? this.room : document.body;
-    if (this.cardEl.parentElement !== parent) parent.append(this.cardEl);
+    if (this.cardEl.hidden || !board) return;
     const style = this.cardEl.style;
-    let width: number;
-    if (board) {
-      width = board.width;
-      style.left = `${board.left}px`;
-      style.top = '12px';
-      style.maxHeight = `${Math.max(160, f.box.height - 24)}px`;
-    } else {
-      width = Math.min(380, f.box.width - 20);
-      style.left = `${f.box.right - 10 - width}px`;
-      style.top = `${f.box.top + 10}px`;
-      style.maxHeight = `${Math.max(160, f.box.height - 20)}px`;
-    }
-    style.width = `${width}px`;
-    this.cardEl.classList.toggle('docked', !!board);
-    this.cardEl.classList.toggle('floating', !board);
-    this.cardEl.classList.toggle('narrow', width < 300);
+    style.left = `${board.left}px`;
+    style.top = '12px';
+    style.height = `${Math.max(160, f.box.height - 24)}px`;
+    style.width = `${board.width}px`;
+    this.cardEl.classList.toggle('narrow', board.width < 300);
   }
 
   // ---------- the receipt card ----------
@@ -962,23 +933,19 @@ export class Session {
     chip.setAttribute('aria-label', `Receipt of cell ${this.cellName(id)}'s last run: ${this.chipTitle(receipt, false)}`);
   }
 
-  // ---------- the band: the Session tab's top, docked ----------
+  // ---------- the band: the Variables page's top ----------
 
-  /** Docked, a chip's hover (or click: held) shows its cell's receipt in
-   *  the band — "Earlier run · cell 2" — lit and in view, rather than a
-   *  card over the docked one. A hover from the Data or Figures tab goes
-   *  back to it when it ends. */
+  /** The column open, a chip's hover (or click: held) shows its cell's
+   *  receipt in the band — "Earlier run · cell 2" — lit and in view,
+   *  rather than a card beside the cell. A hover from the Data or Figures
+   *  page goes back to it when it ends. */
   private showBand(id: string, held: boolean) {
     if (!this.docked || !this.receipts.has(id)) return;
     const previous = this.band?.id;
-    const back = held ? undefined : this.band?.back ?? (this.tab !== 'session' ? this.tab : undefined);
+    const back = held ? undefined : this.band?.back ?? (this.page !== 'session' ? this.page ?? undefined : undefined);
     this.band = { id, held, back };
     this.landedAt = performance.now();
-    this.tab = 'session';
-    // A chip's click opens the Session part if it was folded; a hover
-    // leaves the folds as they are.
-    if (held && this.folded.delete('session')) this.saveFolds();
-    this.paintCard();
+    this.turnTo('session');
     this.panes.session.scrollTop = 0;
     if (previous && previous !== id) this.paintChip(previous);
     this.paintChip(id);
@@ -989,8 +956,8 @@ export class Session {
     if (!this.band) return;
     const { id, back } = this.band;
     this.band = null;
-    if (back) this.tab = back;
-    this.paintCard();
+    if (back && this.page) this.turnTo(back);
+    else this.paintCard();
     this.paintChip(id);
   }
 
@@ -1030,10 +997,17 @@ export class Session {
     const ready = this.hooks.ready();
     const away = this.away;
     this.pill.classList.toggle('ready', ready);
-    this.pill.classList.toggle('open', this.visible && !away);
-    this.pill.setAttribute('aria-expanded', String(this.visible && !away));
+    this.pill.classList.toggle('open', this.docked && !away);
     if (ready && away) this.pill.setAttribute('aria-disabled', 'true');
     else this.pill.removeAttribute('aria-disabled');
+    for (const part of PAGES) {
+      const chip = this.chips[part];
+      const on = this.page === part && !away;
+      chip.classList.toggle('on', on);
+      chip.setAttribute('aria-pressed', String(on));
+      if (away) chip.setAttribute('aria-disabled', 'true');
+      else chip.removeAttribute('aria-disabled');
+    }
     if (!ready) {
       this.pill.title = 'The Python engine is not connected';
       return;
@@ -1042,29 +1016,19 @@ export class Session {
     const tables = names.filter((name) => isTabular(this.snapshot.get(name)!));
     const figures = this.figureRefs().filter((ref) => !('name' in ref) || !this.pending.has(ref.name));
     const unseen = names.filter((name) => this.unseen.has(name));
-    const parts: Record<Tab, { has: boolean; isNew: boolean; title: string }> = {
-      session: {
-        has: names.length > 0,
-        isNew: unseen.length > 0,
-        title: names.length ? 'Variables: the session holds names' : 'Variables: none yet',
-      },
-      data: {
-        has: tables.length > 0,
-        isNew: unseen.some((name) => tables.includes(name)),
-        title: tables.length ? 'Data: the session holds a table' : 'Data: no tables yet',
-      },
-      figures: {
-        has: figures.length > 0,
-        isNew: unseen.some((name) => this.snapshot.get(name)?.figure),
-        title: figures.length ? 'Figures: the session holds a figure' : 'Figures: none yet',
-      },
+    const parts: Record<Tab, { has: boolean; isNew: boolean; held: string }> = {
+      session: { has: names.length > 0, isNew: unseen.length > 0, held: names.length ? 'the session holds names' : 'none yet' },
+      data: { has: tables.length > 0, isNew: unseen.some((name) => tables.includes(name)), held: tables.length ? 'the session holds a table' : 'no tables yet' },
+      figures: { has: figures.length > 0, isNew: unseen.some((name) => this.snapshot.get(name)?.figure), held: figures.length ? 'the session holds a figure' : 'none yet' },
     };
     const lands = landing && from ? this.landsOn(from) : null;
     for (const part of ['session', 'data', 'figures'] as Tab[]) {
       const chip = this.chips[part];
-      const { has, isNew, title } = parts[part];
+      const { has, isNew, held } = parts[part];
       chip.classList.toggle('has', has);
       chip.classList.toggle('new', isNew);
+      const does = away ? this.awayTitle() : this.page === part ? 'click to close it' : 'click to open it beside the cells';
+      const title = `${PAGE_NAME[part]}: ${held} — ${does}`;
       if (chip.title !== title) chip.title = title;
       if (lands) chip.classList.remove('land');
       if (lands === part) {
@@ -1077,224 +1041,128 @@ export class Session {
       return;
     }
     const count = `The session: ${names.length} name${names.length === 1 ? '' : 's'}${figures.length ? `, ${figures.length} figure${figures.length === 1 ? '' : 's'}` : ''}`;
-    this.pill.title = away ? `${count} — ${this.awayTitle()}` : `${count} — click to ${this.visible ? 'close' : 'open'} it`;
+    this.pill.title = away ? `${count} — ${this.awayTitle()}` : count;
   }
 
-  // ---------- the Session card ----------
+  // ---------- the Session column ----------
 
-  private get visible(): boolean {
-    return this.docked || this.floating;
+  /** The column is open, on one of its pages. */
+  private get docked(): boolean {
+    return this.page !== null;
   }
 
-  private toggleCard() {
+  /** A pill chip: open the column on its page, turn to that page, or close
+   *  the column when that page is the one showing. */
+  private togglePage(page: Tab) {
     if (this.away) return;
-    if (this.visible) this.closeCard();
-    else this.openFloating();
+    if (this.page === page) this.closePage();
+    else this.openPage(page);
   }
 
-  /** "+392 more · in the Session card": the receipt goes home (a run's
-   *  flies into the pill) and the card drops from the pill on its Session
-   *  tab, every name listed. */
+  /** "+392 more · in Variables": the receipt goes home (a run's flies into
+   *  the pill) and the column opens on Variables, every name listed. */
   private openSessionTab() {
     if (this.card?.kind === 'fresh') this.tuck();
     else this.dropCard();
-    this.showTab('session');
-    if (!this.visible) this.openFloating();
+    this.openPage('session');
   }
 
-  private openFloating() {
+  /** Open the column on `page`, or turn to it if the column is open.
+   *  Opening Variables is looking: the new names' blue goes. `render`:
+   *  draw the followed figure on turning to Figures (openFigure draws its
+   *  own). */
+  private openPage(page: Tab, render = true) {
     if (this.away) return;
-    this.floating = true;
-    this.showSessionCard(true);
+    if (this.band && !this.band.held) this.band.back = undefined;
+    if (page === 'session') this.unseen.clear();
+    if (this.page) {
+      this.turnTo(page, true, render);
+      return;
+    }
+    if (this.card) this.dropCard();
+    this.page = page;
+    this.savePage();
+    this.showColumn(true, render);
   }
 
-  private showSessionCard(animate = false) {
-    if (!this.folded.has('session')) this.unseen.clear();
+  /** The open column shows `page`; `remember` it for the window (a chip's
+   *  hover turning to Variables for a moment is not remembered). */
+  private turnTo(page: Tab, remember = false, render = true) {
+    if (!this.page) return;
+    this.page = page;
+    if (remember) this.savePage();
+    this.paintCard();
+    this.paintPill();
+    if (render && page === 'figures' && this.figure) void this.renderFigure();
+  }
+
+  /** The column appears beside the cells, which slide left by what it
+   *  lacks. `animate`: opened now, not restored at boot. */
+  private showColumn(animate: boolean, render = true) {
+    const from = this.sheet.getBoundingClientRect().right;
+    // How far past the column the chips reach (they ride with it): the
+    // widest's right edge, inside the lane; none, or tucked inside the
+    // cells on a narrow window, and the column's own edge is what counts.
+    let reach = 0;
+    for (const chip of this.sheet.querySelectorAll<HTMLElement>('.rchip')) reach = Math.max(reach, chip.getBoundingClientRect().right - from);
     this.cardEl.hidden = false;
     this.paintCard();
     this.layout(animate);
-    if (animate && !reducedMotion()) {
+    if (animate && !reducedMotion() && !this.away) {
+      // It fades in once the sliding cells and their chips have cleared
+      // the place it stands — when the chips' right edge passes its left
+      // on the slide's own curve — never over either mid-slide.
+      const boardLeft = this.cardEl.getBoundingClientRect().left;
+      const to = boardLeft - CHIP_LANE;
+      const edge = from + Math.min(reach, CHIP_LANE);
+      const delay = edge > boardLeft && from > to ? Math.round(slideTime(Math.min(1, (edge - boardLeft) / (from - to))) * SLIDE_MS) : 0;
       this.cardEl.animate(
-        [{ opacity: 0, transform: 'translateY(-6px) scale(0.97)' }, { opacity: 1, transform: 'none' }],
-        { duration: 160, easing: 'cubic-bezier(.2,.7,.2,1)' },
+        [{ opacity: 0, transform: 'translateY(-10px) scale(0.98)' }, { opacity: 1, transform: 'none' }],
+        { duration: 220, delay, fill: 'backwards', easing: 'cubic-bezier(.2,.7,.2,1)' },
       );
     }
+    // Under the floor the room scrolls sideways: bring the column's ✕
+    // into view, where it was just opened.
+    if (animate && this.column.floor > 0) this.room.scrollTo({ left: this.room.scrollWidth, behavior: reducedMotion() ? 'auto' : 'smooth' });
     this.paintPill();
-    // Its height is known once it is placed (layout).
-    this.fitParts();
-    // The figure the Figures part follows is drawn once there is a part to
-    // draw it in.
-    if (this.shows('figures') && this.figure && !this.figs.showing) void this.renderFigure();
+    if (render && this.page === 'figures' && this.figure) void this.renderFigure();
   }
 
-  private closeCard() {
-    if (!this.visible) return;
-    if (this.docked) this.setDocked(false);
-    this.floating = false;
+  /** The lit chip or the column's ✕: the column goes, the cells slide
+   *  home. */
+  private closePage() {
+    if (!this.page) return;
+    this.page = null;
+    this.savePage();
+    if (this.band) {
+      const was = this.band.id;
+      this.band = null;
+      this.paintChip(was);
+    }
     this.cardEl.hidden = true;
     this.layout(true);
     this.paintPill();
   }
 
-  private setDocked(on: boolean) {
-    this.docked = on;
-    if (!on && this.band) {
-      const was = this.band.id;
-      this.band = null;
-      this.paintChip(was);
-    }
-    writeStore(() => sessionStorage, PINNED_KEY, on ? '1' : '0');
-    writeStore(() => localStorage, PINNED_KEY, on ? '1' : '0');
+  private savePage() {
+    writeStore(() => sessionStorage, PAGE_KEY, this.page ?? '');
+    writeStore(() => localStorage, PAGE_KEY, this.page ?? '');
   }
 
-  /** The header's pin: docks the card beside the column (per window), or
-   *  floats it from the pill again. A run's receipt shows one way, beside
-   *  the cell and straight up into the pill (Taylor, 2026-10-17: the Peek,
-   *  Float and Silent choice was one too many in the card). */
-  private setPinned(on: boolean) {
-    if (on) {
-      if (this.docked) return;
-      this.dropCard();
-      this.setDocked(true);
-      this.floating = false;
-      const from = this.sheet.getBoundingClientRect().right;
-      // How far past the column the chips reach (they ride with it): the
-      // widest's right edge, inside the lane; none, or tucked inside the
-      // cells on a narrow window, and the column's own edge is what counts.
-      let reach = 0;
-      for (const chip of this.sheet.querySelectorAll<HTMLElement>('.rchip')) reach = Math.max(reach, chip.getBoundingClientRect().right - from);
-      this.paintCard();
-      this.layout(true);
-      if (!reducedMotion()) {
-        // The board fades in once the sliding column and its chips have
-        // cleared the place it stands — when the chips' right edge passes
-        // the board's left on the slide's own curve — never over either
-        // mid-slide.
-        const boardLeft = this.cardEl.getBoundingClientRect().left;
-        const to = boardLeft - CHIP_LANE;
-        const edge = from + Math.min(reach, CHIP_LANE);
-        const delay = edge > boardLeft && from > to ? Math.round(slideTime(Math.min(1, (edge - boardLeft) / (from - to))) * SLIDE_MS) : 0;
-        this.cardEl.animate(
-          [{ opacity: 0, transform: 'translateY(-10px) scale(0.98)' }, { opacity: 1, transform: 'none' }],
-          { duration: 220, delay, fill: 'backwards', easing: 'cubic-bezier(.2,.7,.2,1)' },
-        );
-      }
-      // Under the floor the room scrolls sideways: bring the card's
-      // controls (the pin, ✕) into view, where it was just pinned.
-      if (this.column.floor > 0) this.room.scrollTo({ left: this.room.scrollWidth, behavior: reducedMotion() ? 'auto' : 'smooth' });
-      this.paintPill();
-      return;
-    }
-    if (!this.docked) return;
-    this.setDocked(false);
-    this.floating = true;
-    this.paintCard();
-    this.layout(true);
-  }
-
-  /** Open a part (unfolded) and give it first claim on the height. */
-  private showTab(tab: Tab) {
-    this.tab = tab;
-    if (this.band && !this.band.held) this.band.back = undefined;
-    if (this.folded.delete(tab)) this.saveFolds();
-    if (tab === 'session') this.unseen.clear();
-    this.paintCard();
-    this.paintPill();
-    if (tab === 'figures' && this.figure) void this.renderFigure();
-  }
-
-  /** A part's header: fold it to that line, or open it again (then it is
-   *  the one that has first claim on the height). */
-  private toggleFold(tab: Tab) {
-    if (this.folded.has(tab)) {
-      this.showTab(tab);
-      return;
-    }
-    this.folded.add(tab);
-    this.saveFolds();
-    if (this.tab === tab) this.tab = (['session', 'data', 'figures'] as Tab[]).find((t) => !this.folded.has(t)) ?? tab;
-    this.paintCard();
-  }
-
-  private saveFolds() {
-    writeStore(() => localStorage, FOLD_KEY, [...this.folded].join(','));
-  }
-
-  /** Whether a part shows: the card up and the part open. */
+  /** Whether a page shows: the column up, on that page. */
   private shows(tab: Tab): boolean {
-    return !this.cardEl.hidden && !this.folded.has(tab);
+    return !this.cardEl.hidden && this.page === tab;
   }
 
-  /** The open parts share the card's height. When all of them fit, each
-   *  is as tall as what it holds. When they do not, each keeps a quarter
-   *  of the card (or what it holds, if less), the part last opened or
-   *  used takes what it needs of the rest, and the others share what is
-   *  left; each scrolls inside itself. Read and written in one pass,
-   *  scroll positions kept. */
-  private fitParts() {
-    if (this.cardEl.hidden) return;
-    const body = this.cardEl.querySelector<HTMLElement>('.s-body')!;
-    const open = (['session', 'data', 'figures'] as Tab[]).filter((t) => !this.folded.has(t));
-    const panes = open.map((t) => this.panes[t]);
-    const scrolls = panes.map((pane) => [...pane.querySelectorAll<HTMLElement>('*'), pane].filter((n) => n.scrollTop > 0).map((n) => [n, n.scrollTop] as const));
-    for (const pane of panes) pane.style.height = '';
-    const max = parseFloat(this.cardEl.style.maxHeight) || this.cardEl.clientHeight;
-    const head = this.cardEl.querySelector<HTMLElement>('.s-head')!.offsetHeight;
-    const headers = [...body.querySelectorAll<HTMLElement>('.s-fold')].reduce((sum, h) => sum + h.offsetHeight, 0);
-    const room = Math.max(0, max - head - headers - 2);
-    const natural = panes.map((pane) => pane.scrollHeight);
-    if (natural.reduce((a, b) => a + b, 0) > room + 1) {
-      const floor = (max - head) * PART_FLOOR;
-      const give = natural.map((n) => Math.min(n, floor));
-      let spare = room - give.reduce((a, b) => a + b, 0);
-      if (spare < 0) {
-        // Too short even for the floors: each gives way in proportion.
-        const scale = room / (room - spare);
-        for (let i = 0; i < give.length; i++) give[i] *= scale;
-        spare = 0;
-      }
-      const first = Math.max(0, open.indexOf(this.tab));
-      const order = [first, ...open.map((_, i) => i).filter((i) => i !== first)];
-      for (const i of order) {
-        const more = Math.min(spare, natural[i] - give[i]);
-        give[i] += more;
-        spare -= more;
-      }
-      panes.forEach((pane, i) => (pane.style.height = `${Math.floor(give[i])}px`));
-    }
-    for (const kept of scrolls) for (const [node, top] of kept) node.scrollTop = top;
-  }
-
-  /** Repaint whatever the card shows. */
+  /** Repaint the page the column shows. */
   private paintCard() {
-    if (this.cardEl.hidden) return;
-    const counts: Record<Tab, number> = {
-      session: this.snapshot.size,
-      data: this.ordered().filter((name) => isTabular(this.snapshot.get(name)!)).length,
-      figures: this.figureRefs().length,
-    };
-    // Data and Figures show once they hold something, never as a sentence
-    // saying they are empty (Taylor, 2026-10-17).
-    for (const part of this.cardEl.querySelectorAll<HTMLElement>('.s-part')) {
-      const tab = part.dataset.part as Tab;
-      part.hidden = tab !== 'session' && counts[tab] === 0;
-    }
-    for (const button of this.cardEl.querySelectorAll<HTMLButtonElement>('[data-tab]')) {
-      const tab = button.dataset.tab as Tab;
-      const open = !this.folded.has(tab);
-      button.setAttribute('aria-expanded', String(open));
-      button.classList.toggle('on', open && tab === this.tab);
-      button.title = open ? 'Fold it to this line' : 'Open it';
-      button.querySelector('.c')!.textContent = counts[tab] ? String(counts[tab]) : '';
-    }
-    const pin = this.cardEl.querySelector<HTMLButtonElement>('.s-pin')!;
-    pin.setAttribute('aria-pressed', String(this.docked));
-    pin.title = this.docked ? 'Unpin: the card floats from the pill again' : 'Pin the card beside the column, the last run on top';
-    for (const [tab, pane] of Object.entries(this.panes)) pane.hidden = this.folded.has(tab as Tab);
-    if (!this.folded.has('session')) this.paintSessionPane();
-    if (!this.folded.has('data')) this.paintDataPane();
-    if (!this.folded.has('figures')) this.paintFiguresPane();
-    this.fitParts();
+    if (this.cardEl.hidden || !this.page) return;
+    this.cardEl.dataset.page = this.page;
+    this.cardEl.querySelector('.s-title')!.textContent = PAGE_NAME[this.page];
+    for (const [tab, pane] of Object.entries(this.panes)) pane.hidden = tab !== this.page;
+    if (this.page === 'session') this.paintSessionPane();
+    else if (this.page === 'data') this.paintDataPane();
+    else this.paintFiguresPane();
   }
 
   /** The band on top (the last run's receipt, or the one a chip asked
@@ -1383,7 +1251,9 @@ export class Session {
       return button;
     }));
     pick.hidden = !tables.length;
-    note.textContent = tables.length && !this.dataName ? 'Pick a table to page through it.' : '';
+    note.textContent = !tables.length
+      ? 'No tables yet. A DataFrame, a Series or a 2-D array shows here once a cell binds one.'
+      : !this.dataName ? 'Pick a table to page through it.' : '';
     note.hidden = !note.textContent;
   }
 
@@ -1427,7 +1297,8 @@ export class Session {
         void this.openFigure(next, true);
       });
       note.append(go);
-    } else if (!this.figure) note.textContent = 'Pick a figure.';
+    } else if (!refs.length) note.textContent = 'No figures yet. A figure shows here once a cell draws one.';
+    else if (!this.figure) note.textContent = 'Pick a figure.';
     note.hidden = !note.childNodes.length;
   }
 
@@ -1467,11 +1338,7 @@ export class Session {
   private async openTable(name: string) {
     if (this.away) return;
     this.dataName = name;
-    this.tab = 'data';
-    if (this.folded.delete('data')) this.saveFolds();
-    if (this.band && !this.band.held) this.band.back = undefined;
-    if (!this.visible) this.openFloating();
-    this.paintCard();
+    this.openPage('data');
     await this.data.open(name);
     if (this.data.showing !== name) this.dataName = null;
     this.paintCard();
@@ -1481,11 +1348,7 @@ export class Session {
     if (this.away) return;
     this.figure = ref;
     if (chosen && this.figWaiting) this.figWaiting = null;
-    this.tab = 'figures';
-    if (this.folded.delete('figures')) this.saveFolds();
-    if (this.band && !this.band.held) this.band.back = undefined;
-    if (!this.visible) this.openFloating();
-    this.paintCard();
+    this.openPage('figures', false);
     await this.renderFigure();
   }
 
@@ -1568,8 +1431,8 @@ export class Session {
       if (shown.length < receipt.rows.length) {
         const more = el('button', 'r-more');
         more.type = 'button';
-        more.append(el('b', '', `+${receipt.rows.length - shown.length} more`), ' · in the Session card');
-        more.title = 'Every name this run bound, in the Session card';
+        more.append(el('b', '', `+${receipt.rows.length - shown.length} more`), ' · in Variables');
+        more.title = 'Every name this run bound, in the Session column\'s Variables page';
         more.addEventListener('click', () => this.openSessionTab());
         box.append(more);
       }
@@ -1659,7 +1522,6 @@ export class Session {
         // the next Esc does.
         if (this.card) this.dismiss();
         else if (this.band?.held) this.clearBand();
-        else if (this.floating) this.closeCard();
         else return;
         e.preventDefault();
         return;
@@ -1685,10 +1547,6 @@ export class Session {
         else if (this.card.kind === 'hover' || !target.closest?.('#session')) this.dropCard();
       }
       if (this.band?.held && !onChip && !this.cardEl.contains(target)) this.clearBand();
-      if (this.floating && !this.cardEl.contains(target) && !this.pill.contains(target) &&
-        !this.receiptEl.contains(target) && !target.closest?.('.tb-menu')) {
-        this.closeCard();
-      }
     }, true);
 
     let frame = 0;
@@ -1710,10 +1568,7 @@ export class Session {
     // Source and grid views have no cells to stand beside: the cards go,
     // the column stands as those views have it, the pill rests.
     new MutationObserver(() => {
-      if (this.away) {
-        this.dropCard(true);
-        if (this.floating) this.closeCard();
-      }
+      if (this.away) this.dropCard(true);
       this.layout();
       this.paintPill();
     }).observe(document.body, { attributes: true, attributeFilter: ['data-view', 'data-cells'] });

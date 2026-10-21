@@ -157,7 +157,7 @@ test('the controls are where the frame puts them, with every id the tests and th
     await expect(page.locator(`#rail #${id}`), id).toHaveCount(1);
   }
   // Restart stands beside the pill, with the session it replaces; the
-  // Session card opens from the pill alone.
+  // Session column opens from the pill's chips alone.
   await expect(page.locator('#toggle-panel')).toHaveCount(0);
   await expect(page.locator('.tb-end > #restart + #session-pill')).toHaveCount(1);
   for (const id of ['open-split', 'open-tile', 'recent-tile', 'new-window', 'doc-pod', 'file-name', 'doc-mark', 'doc-folder', 'doc-save', 'restart', 'session-pill', 'kernel-status']) {
@@ -223,7 +223,7 @@ test('Restart is the session pill\'s status dot: green when ready, the arrow alw
   expect(await page.locator('#kernel-status').evaluate((element) => getComputedStyle(element, '::before').content)).toBe('none');
 });
 
-test('the column centres in the room, the Session card closed or floating; docked, it slides left with its width', async ({ page }) => {
+test('the column centres in the room, the Session column closed; open, the cells slide left with their width', async ({ page }) => {
   const centred = () => page.evaluate(() => {
     const doc = document.getElementById('doc')!;
     const sheet = document.getElementById('sheet')!.getBoundingClientRect();
@@ -238,18 +238,14 @@ test('the column centres in the room, the Session card closed or floating; docke
   const closed = await centred();
   expect(closed.width).toBe(832);
   expect(closed.offset).toBeLessThan(1);
-  // Floating, the card lies over the room: the column stays.
-  await page.locator('#session-pill').click();
-  await expect(page.locator('#session')).toHaveClass(/floating/);
-  expect(await centred()).toEqual(closed);
-  // Docked, the column slides left by what the card lacks, its width kept
-  // (session.spec.ts has the rule at each width).
-  await page.locator('#session .s-pin').click();
-  await expect(page.locator('#session')).toHaveClass(/docked/);
+  // Open, the cells slide left by what the Session column lacks, their
+  // width kept (session.spec.ts has the rule at each width).
+  await page.locator('#session-pill .sp-chip[data-part="session"]').click();
+  await expect(page.locator('#session')).toBeVisible();
   const docked = await centred();
   expect(docked.width).toBe(832);
   expect(docked.offset).toBeGreaterThan(50);
-  await page.locator('#session .s-pin').click();
+  await page.locator('#session .s-close').click();
   expect(await centred()).toEqual(closed);
   // Narrower than the column and its margins: the column fills what there
   // is.
@@ -261,28 +257,27 @@ test('the column centres in the room, the Session card closed or floating; docke
   expect(await page.locator('#doc').evaluate((element) => getComputedStyle(element).paddingTop)).toBe('24px');
 });
 
-test('the session pill is lit while the Session card shows', async ({ page }) => {
+test('the pill\'s chip for the page the Session column shows is pressed', async ({ page }) => {
   await boot(page);
-  const tile = page.locator('#session-pill');
+  const tile = page.locator('#session-pill .sp-chip[data-part="session"]');
   await expect(page.locator('#session')).toBeHidden();
-  await expect(tile).toHaveAttribute('aria-expanded', 'false');
+  await expect(tile).toHaveAttribute('aria-pressed', 'false');
   await tile.click();
   await expect(page.locator('#session')).toBeVisible();
-  await expect(tile).toHaveAttribute('aria-expanded', 'true');
+  await expect(tile).toHaveAttribute('aria-pressed', 'true');
   await page.mouse.move(600, 400);
   await expect.poll(() => tile.evaluate((element) => getComputedStyle(element).backgroundColor)).toBe('rgb(46, 46, 50)');
-  // Docked, it is remembered for the window, and painted at boot.
-  await page.locator('#session .s-pin').click();
+  // Open, it is remembered for the window, and painted at boot.
   await page.reload();
   await expect(page.locator('#kernel-status')).toHaveText('Python');
   await expect(page.locator('#session')).toBeVisible();
-  await expect(tile).toHaveAttribute('aria-expanded', 'true');
+  await expect(tile).toHaveAttribute('aria-pressed', 'true');
   await tile.click();
   await expect(page.locator('#session')).toBeHidden();
-  await expect(tile).toHaveAttribute('aria-expanded', 'false');
+  await expect(tile).toHaveAttribute('aria-pressed', 'false');
 });
 
-test('the History view\'s box is the room\'s: the frame\'s numbers, the docked Session card moving none of it, the pressed tile nothing in the bar', async ({ page }) => {
+test('the History view\'s box is the room\'s: the frame\'s numbers, the Session column moving none of it, the pressed tile nothing in the bar', async ({ page }) => {
   // A shell that lays its view at once (history.spec.ts has the protocol).
   await page.addInitScript(() => {
     const sent: Array<Record<string, unknown>> = [];
@@ -333,11 +328,10 @@ test('the History view\'s box is the room\'s: the frame\'s numbers, the docked S
   expect(await boxes()).toEqual(rest);
   await tile.click();
   await expect(tile).toHaveAttribute('aria-pressed', 'false');
-  // Docked, the Session card slides the column inside the room, never the
+  // Open, the Session column slides the cells inside the room, never the
   // room: the view's box is the same, and nothing is sent on the slide.
-  await page.locator('#session-pill').click();
-  await page.locator('#session .s-pin').click();
-  await expect(page.locator('#session')).toHaveClass(/docked/);
+  await page.locator('#session-pill .sp-chip[data-part="session"]').click();
+  await expect(page.locator('#session')).toBeVisible();
   expect(await box(page, '#layout')).toEqual({ left: 44, top: 44, right: 1092, bottom: 752 });
   await tile.click();
   await expect(tile).toHaveAttribute('aria-pressed', 'true');
@@ -669,7 +663,7 @@ test('a short window cuts the cell tools under a fade and keeps the switch whole
 });
 
 test('below the layout floor the room scrolls sideways, and the bar and the rail stay put', async ({ page }) => {
-  // Under main's 640 px floor (with the Session card closed).
+  // Under main's 640 px floor (with the Session column closed).
   await boot(page, 600, 600);
   const scroll = await page.evaluate(() => {
     const layout = document.getElementById('layout')!;
@@ -684,7 +678,7 @@ test('below the layout floor the room scrolls sideways, and the bar and the rail
   expect((await box(page, '#session-pill')).right).toBe(600 - 8);
 });
 
-test('the floor is main\'s 640 px; the docked card raises it, so the card never lies over the column', async ({ page }) => {
+test('the floor is main\'s 640 px; the Session column raises it, so it never lies over the cells', async ({ page }) => {
   const sideways = () => page.locator('#layout').evaluate((element) => element.scrollWidth > element.clientWidth);
   const column = () => page.locator('#sheet').evaluate((element) => element.getBoundingClientRect().width);
   await page.emulateMedia({ reducedMotion: 'reduce' });
@@ -694,16 +688,15 @@ test('the floor is main\'s 640 px; the docked card raises it, so the card never 
   // Docked at 990 the column narrows to its 640 px floor, and the chips'
   // lane and the card need more than the room has: the room scrolls
   // sideways, the card past the column's edge.
-  await page.locator('#session-pill').click();
-  await page.locator('#session .s-pin').click();
-  await expect(page.locator('#session')).toHaveClass(/docked/);
+  await page.locator('#session-pill .sp-chip[data-part="session"]').click();
+  await expect(page.locator('#session')).toBeVisible();
   expect(await column()).toBe(640);
   expect(await sideways()).toBe(true);
   const beside = await page.evaluate(() =>
     document.getElementById('session')!.getBoundingClientRect().left - document.getElementById('sheet')!.getBoundingClientRect().right);
   expect(beside).toBeGreaterThanOrEqual(45);
-  // Floating, main's floor again.
-  await page.locator('#session .s-pin').click();
+  // Closed, main's floor again.
+  await page.locator('#session .s-close').click();
   await expect.poll(sideways).toBe(false);
   await page.setViewportSize({ width: 640, height: 700 });
   await expect.poll(sideways).toBe(false);
