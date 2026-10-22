@@ -155,10 +155,14 @@ def _owning_figure(value):
 
 
 def _figure_svg(fig):
+    """The figure as SVG, cropped to what it draws (bbox_inches="tight", as
+    Jupyter's inline figures are): an axis label or a title that matplotlib
+    lays outside the figure's own box, a short figure's x label above all,
+    is kept rather than cut off at the edge."""
     import io
 
     buf = io.StringIO()
-    fig.savefig(buf, format="svg")
+    fig.savefig(buf, format="svg", bbox_inches="tight")
     return buf.getvalue()
 
 

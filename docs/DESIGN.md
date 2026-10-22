@@ -113,6 +113,13 @@ and makes pyrmd the computation half.
   never over a file that is there unless the toast's Replace says so,
   since the export is meant to be edited on in Plass. Checked by opening
   an export in Plass and making its PDF.
+- **Figures are cropped to what they draw** (2026-10-21): every figure's
+  SVG (under a cell, a named figure, figs/<name>.svg, an export) is saved
+  with `bbox_inches="tight"`, as Jupyter's inline figures are, so an axis
+  label or title matplotlib lays outside the figure's own box — a short
+  figure's x label above all — is kept rather than cut off at the edge
+  (`_figure_svg`, session.py; both engines run it). The export check
+  found the clipped label.
 
 ## Execution model
 

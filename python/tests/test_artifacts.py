@@ -141,3 +141,26 @@ def test_non_string_globals_cannot_break_namespace_or_artifacts():
     assert ok, error
     assert session.snapshot() == []
     assert session.artifacts() == ({}, {})
+
+
+def test_figures_keep_labels_laid_outside_their_box():
+    """A short figure's x label falls below the figure's own box; the SVG is
+    cropped to what is drawn (bbox_inches="tight"), so it is kept, in the
+    cell's figure and in figs/<name>.svg alike, not cut off at the edge."""
+    import re
+
+    s = Session()
+    ok, tb = s.run(
+        "import matplotlib\nmatplotlib.use('Agg')\nimport matplotlib.pyplot as plt\n"
+        "short, ax = plt.subplots(figsize=(6, 1.5))\n"
+        "_ = ax.plot([1, 2, 3])\n_ = ax.set_xlabel('price')\n"
+        "label = ax.xaxis.label.get_window_extent(short.canvas.get_renderer())"
+    )
+    assert ok, tb
+    # The label really lies outside: below the figure's bottom edge.
+    assert s.namespace["label"].y0 < 0
+    _, figures = s.artifacts()
+    width, height = re.search(r'width="([\d.]+)pt" height="([\d.]+)pt"', figures["short"]).groups()
+    # 1.5 in is 108 pt: the tight box grows to take the label in.
+    assert float(height) > 108, height
+    assert "<!-- price -->" in figures["short"]

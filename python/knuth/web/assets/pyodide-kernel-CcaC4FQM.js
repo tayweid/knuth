@@ -1,4 +1,4 @@
-import{c as e,i as t}from"./index-DLXH58-y.js";var n=/^\s*#\s*[%!]\s*pip\s+install\s+(.+?)\s*$/;function r(e){let t=[];for(let r of e.split(`
+import{c as e,i as t}from"./index-DAUPskML.js";var n=/^\s*#\s*[%!]\s*pip\s+install\s+(.+?)\s*$/;function r(e){let t=[];for(let r of e.split(`
 `)){let e=n.exec(r);if(e)for(let n of e[1].split(/\s+/))n&&!n.startsWith(`-`)&&!t.includes(n)&&t.push(n)}return t}var i=`from .session import Session
 
 __all__ = ["Session"]
@@ -1364,10 +1364,14 @@ def _owning_figure(value):
 
 
 def _figure_svg(fig):
+    """The figure as SVG, cropped to what it draws (bbox_inches="tight", as
+    Jupyter's inline figures are): an axis label or a title that matplotlib
+    lays outside the figure's own box, a short figure's x label above all,
+    is kept rather than cut off at the edge."""
     import io
 
     buf = io.StringIO()
-    fig.savefig(buf, format="svg")
+    fig.savefig(buf, format="svg", bbox_inches="tight")
     return buf.getvalue()
 
 
