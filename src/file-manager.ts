@@ -1385,6 +1385,59 @@ export class FileManager {
     input.click();
   }
 
+  /** Write `text` as `name` in the document's own folder — Export's
+   *  Markdown beside the .py, as R Markdown's knit writes beside the .Rmd
+   *  — by whichever way the document itself is written: the engine by
+   *  path, or the folder the browser was granted. Never over a file that
+   *  is there, unless `replace` (Taylor edits the export in Plass).
+   *  With no folder at all, the browser downloads it. */
+  async writeBeside(name: string, text: string, replace = false): Promise<'written' | 'exists' | 'downloaded' | 'failed'> {
+    try {
+      if (this.path && this.hooks.savePath && this.hooks.statPath) {
+        const folder = dirname(this.path);
+        // The document's own separator (a Windows path has only \).
+        const sep = this.path.includes('/') ? '/' : '\\';
+        const target = folder.endsWith(sep) ? folder + name : folder + sep + name;
+        if (!replace) {
+          const stat = await this.hooks.statPath(target);
+          if (stat?.modified) return 'exists';
+        }
+        const saved = await this.hooks.savePath(target, text);
+        if (!saved || saved.error) {
+          this.hooks.message(`Could not export: ${saved?.error ?? 'the engine is not running'}`);
+          return 'failed';
+        }
+        return 'written';
+      }
+      if (this.dir) {
+        if (!replace) {
+          try {
+            await this.dir.getFileHandle(name);
+            return 'exists';
+          } catch {
+            // Not there: write it.
+          }
+        }
+        await this.writeFile(this.dir, name, text);
+        return 'written';
+      }
+      this.downloadText(name, text, 'text/markdown');
+      return 'downloaded';
+    } catch (e) {
+      console.warn('Export failed', e);
+      this.hooks.message(`Could not export ${name}`);
+      return 'failed';
+    }
+  }
+
+  private downloadText(name: string, text: string, type: string) {
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(new Blob([text], { type }));
+    a.download = name;
+    a.click();
+    URL.revokeObjectURL(a.href);
+  }
+
   private download(name = this.name) {
     const type = /\.py$/i.test(name) ? 'text/x-python' : 'text/plain';
     const blob = new Blob([serializeDocument(this.hooks.getDoc())], { type });

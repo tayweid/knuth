@@ -32,6 +32,7 @@ import { menus } from './menu.ts';
 import { icon } from './icons.ts';
 import { Onboarding } from './onboarding.ts';
 import { keepPlace } from './place.ts';
+import { exportName, shownName, TABLE_ROWS, toMarkdown, type ExportCell } from './export.ts';
 import { zoomColumn } from './column-zoom.ts';
 import {
   answerRewinds,
@@ -70,6 +71,8 @@ const HISTORY_GLYPH =
 const RESTART_RING =
   '<svg class="ico sp-ring" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6.6v5.4h-5.4"/><path d="M18.55 16.59A8 8 0 1 1 19.25 8.62L20 12"/></svg>';
 
+const EXPORT_TITLE = 'Export to Markdown for Plass: the text and figures, code hidden';
+
 function labeled(id: string, glyph: string, label: string, title: string, className = 'tb-btn'): string {
   return `<button type="button" class="${className}" id="${id}" title="${title}">${glyph}<span class="lbl">${label}</span></button>`;
 }
@@ -85,7 +88,9 @@ function labeled(id: string, glyph: string, label: string, title: string, classN
 // each somewhere else already) and, inside Knuth.app, the History tile
 // at the pill's far right, after the folder and Save (Taylor, 2026-10-17,
 // as Plass has it: first "a tile on the topbar beside the address", now
-// in it), the same glyph as Plass's — and, at the right, the session pill
+// in it), the same glyph as Plass's; then Export (export.ts), right after
+// the name pill as Plass's Export is, with Plass's glyph — and, at the
+// right, the session pill
 // (session.ts, docs/SESSION.md): Restart's ring round the status dot, the
 // kernel's status, then three chips — variables, data, figures — lit when
 // the session holds one (Taylor, 2026-10-21: "only indicate that something
@@ -100,6 +105,7 @@ toolbar.innerHTML = `
   </span>
   ${labeled('new-window', icon('newwindow'), 'New window', 'New window — a new document, with its own session', 'tb-btn tb-tile')}
   <div class="doc-pod" id="doc-pod"><span class="name" id="file-name" title="Click to rename">${DEFAULT_DOC_NAME}</span><span class="doc-mark" id="doc-mark" aria-hidden="true"></span><span class="doc-folder" id="doc-folder" hidden><span dir="ltr"></span></span><button type="button" class="doc-save" id="doc-save" title="Save (⌘S)" hidden>Save</button><button type="button" class="tb-btn tb-tile" id="history-tile" title="History (⇧⌘H)" aria-label="History" aria-keyshortcuts="Shift+Meta+H">${HISTORY_GLYPH}<span class="lbl">History</span></button></div>
+  ${labeled('export-tile', icon('download'), 'Export', EXPORT_TITLE, 'tb-btn tb-tile')}
   <div class="tb-end">
     <button type="button" class="tb-btn sp-dot" id="restart" title="Restart session: a fresh kernel process, every cell stale" aria-label="Restart session"><span class="sp-dot-mark" aria-hidden="true"></span>${RESTART_RING}<span class="lbl">Restart</span></button>
     <div id="session-pill" role="group" aria-label="Session"><span id="kernel-status">connecting…</span><span class="sp-sep" aria-hidden="true"></span><span class="sp-chips"><button type="button" class="sp-chip" data-part="session" aria-label="Variables" aria-pressed="false">${icon('braces')}</button><button type="button" class="sp-chip" data-part="data" aria-label="Data" aria-pressed="false">${icon('table')}</button><button type="button" class="sp-chip" data-part="figures" aria-label="Figures" aria-pressed="false">${icon('figure')}</button></span></div>
@@ -192,6 +198,11 @@ function paintRail() {
   if (none) rest(runStale, true);
   const staleTitle = none ? 'Nothing is stale: every code cell has run since it was last edited' : RUN_STALE_TITLE;
   if (runStale.title !== staleTitle) runStale.title = staleTitle;
+  // Export reads cells: a plain file or a workbook has none.
+  const exportTile = document.getElementById('export-tile')!;
+  rest(exportTile, cells !== 'true');
+  const exportTitle = cells === 'true' ? EXPORT_TITLE : 'Nothing to export: this file has no # %% cells';
+  if (exportTile.title !== exportTitle) exportTile.title = exportTitle;
   const toggle = document.getElementById('view-toggle')!;
   // A workbook's sheet is a grid with no source to switch to.
   const sheet = view === 'grid' && grid !== 'true';
@@ -275,7 +286,7 @@ function toast(
 const menu = menus();
 const recentMenu = menu.create('Recent', $('recent-tile') as HTMLButtonElement);
 const getMenu = menu.create('Get Knuth', $('recent-tile') as HTMLButtonElement, recentMenu);
-for (const id of ['open-tile', 'new-window', 'doc-save']) $(id).addEventListener('mousedown', (e) => e.preventDefault());
+for (const id of ['open-tile', 'new-window', 'export-tile', 'doc-save']) $(id).addEventListener('mousedown', (e) => e.preventDefault());
 $('open-tile').addEventListener('click', () => void fileManager.open());
 $('new-window').addEventListener('click', () => void window.open(location.pathname, '_blank'));
 $('doc-save').addEventListener('click', () => void fileManager.save());
@@ -1040,6 +1051,43 @@ docView.onDocument = () => session?.documentChanged();
 // changes a tick's colour without a size, so the runs tell it (onRunDone,
 // below), as does the cursor moving to another cell and the view switch.
 // Typing writes nothing to it.
+// Export (export.ts): the document as Markdown for Plass, code hidden,
+// written beside the document as R Markdown's knit writes beside the .Rmd.
+// A code cell that ends by showing a table by name gets the table's first
+// rows from the session; its figures are the ones under it now.
+async function exportMarkdown() {
+  const cells: ExportCell[] = [];
+  for (const cell of docView.exportCells()) {
+    if (cell.kind === 'text') {
+      cells.push(cell);
+      continue;
+    }
+    const name = kernelState === 'ready' ? shownName(cell.code) : null;
+    const shown = name ? await kernel.table(name, 0, TABLE_ROWS) : null;
+    const table = shown && !shown.error && shown.columns && shown.rows
+      ? { columns: shown.columns, index: shown.index ?? [], rows: shown.rows, total: shown.total_rows ?? shown.rows.length }
+      : null;
+    cells.push({ ...cell, table });
+  }
+  const text = toMarkdown(cells);
+  const name = exportName(fileManager.name);
+  const stale = docView.staleCount > 0 ? ' Some cells are stale: run them for their latest figures.' : '';
+  const done = (result: Awaited<ReturnType<FileManager['writeBeside']>>) => {
+    if (result === 'written') toast(`Exported ${name} beside ${fileManager.name}: open it in Plass to make the PDF.${stale}`);
+    else if (result === 'downloaded') toast(`Downloaded ${name}: open it in Plass to make the PDF.${stale}`);
+    else if (result === 'exists') {
+      toast(`${name} is already there, perhaps edited in Plass since`, {
+        label: 'Replace',
+        run: () => void fileManager.writeBeside(name, text, true).then(done),
+      }, { stay: true });
+    }
+  };
+  done(await fileManager.writeBeside(name, text));
+}
+$('export-tile').addEventListener('click', () => {
+  if ($('export-tile').getAttribute('aria-disabled') !== 'true') void exportMarkdown();
+});
+
 const scrollRail = attachScrollRail(cellMarks(docView, (id) => session?.tables(id) ?? []), $('doc'), $('sheet'));
 docView.onOutputsCleared = () => scrollRail.cells();
 docView.onRunStart = (id) => {

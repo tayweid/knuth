@@ -8,6 +8,8 @@ export const ICONS: Record<string, string> = {
     '<path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/><circle cx="12" cy="14" r="2.4"/><line x1="12" y1="9.5" x2="12" y2="11.6"/>',
   plus: '<line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>',
   // Plass's New window glyph (plass/src/toolbar.ts), the same string.
+  // Export: Plass's Export PDF glyph, the same string (plass/src/toolbar.ts).
+  download: '<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/>',
   newwindow:
     '<path d="M12 21H7a2 2 0 0 1-2-2V4.5a2 2 0 0 1 2-2h5.5L17 7v3.5"/><path d="M12.5 2.5V7H17"/><path fill="currentColor" stroke="none" fill-rule="evenodd" d="M22.5 17a5.5 5.5 0 1 1-11 0a5.5 5.5 0 1 1 11 0ZM16.15 13.9v2.25H13.9v1.7h2.25v2.25h1.7v-2.25h2.25v-1.7h-2.25V13.9Z"/>',
   // A code cell: ManimLive's prompt, >_ (maniml/web/static/viewer.html),

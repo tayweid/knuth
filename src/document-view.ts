@@ -122,6 +122,9 @@ export interface RailCell {
   running: boolean;
 }
 
+/** A cell as Export reads it (exportCells). */
+type ExportSource = { kind: 'text'; prose: string } | { kind: 'program'; code: string; figures: string[] };
+
 interface CellView {
   cell: Cell;
   /** The cell's identity for the session's receipts and chips: minted
@@ -1694,6 +1697,17 @@ export class DocumentView {
       () => this.spliceIn(Math.min(i, this.views.length), cell),
       'Cell deleted — ⌘Z restores it',
     );
+  }
+
+  /** The cells as Export reads them (export.ts): a text cell's prose, a
+   *  code cell's code and the figures under it; scratch cells and cell
+   *  zero are not the document a reader sees. */
+  exportCells(): ExportSource[] {
+    return this.views.flatMap((v): ExportSource[] => {
+      if (v.cell.kind === 'text') return [{ kind: 'text' as const, prose: textProse(v.cell) }];
+      if (v.cell.kind === 'program') return [{ kind: 'program' as const, code: cellCode(v.cell), figures: v.figSvgs ?? [] }];
+      return [];
+    });
   }
 
   // ---------- moving cells ----------

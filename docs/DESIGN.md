@@ -96,6 +96,23 @@ and makes pyrmd the computation half.
   would, and a text or scratch cell's move stales nothing; the cell
   glows a moment where it landed, and ⌘Z puts it back. Esc, or letting
   go over its own place, leaves it.
+- **Export to Markdown for Plass** (2026-10-21, Taylor: "a knuth export
+  to markdown or pdf to create a plass like document, but without the
+  code being visible … r studio has something like this with
+  rmarkdown"). The bar's Export tile (Plass's download glyph) writes the
+  document as a reader sees it, in the Pandoc Markdown Plass opens
+  (plass/docs/MARKDOWN-FORMAT.md), so Plass makes the PDF: the text cells
+  as written, a first `# Title` as the front matter's title, each code
+  cell's figures embedded as SVG data URLs (one file, nothing to grant or
+  keep beside it), and a code cell that ends by showing a table by name
+  as a pipe table of its first 30 rows from the session; no code, no
+  printed output, no scratch cells, no cell zero (export.ts). It is
+  written beside the document as `<name>.md`, as knit writes beside the
+  .Rmd, by whichever way the document is written (the engine by path, the
+  granted folder; a download with neither: FileManager.writeBeside), and
+  never over a file that is there unless the toast's Replace says so,
+  since the export is meant to be edited on in Plass. Checked by opening
+  an export in Plass and making its PDF.
 
 ## Execution model
 

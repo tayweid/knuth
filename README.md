@@ -129,6 +129,11 @@ it.
 
 ![The Session column beside the document: the Variables card open with every name the session holds, growth and ax marked + by the last run; Data and Figures shrunk below it](docs/images/session.png)
 
+To share the work as a document, click **Export** in the bar. It writes
+a Markdown file beside your `.py`, with your text, tables and figures
+and none of the code, ready to open in
+[Plass](https://plass.tayweid.io) to make the PDF.
+
 ## Packages
 
 A document can list its own packages in a standard header at the top
