@@ -974,6 +974,60 @@ def test_kernel_root(tmp_path):
     asyncio.run(check_kernel_root(tmp_path.resolve()))
 
 
+async def check_chdir_moves_imports_too(project):
+    """Saving a document into another folder sends chdir: relative paths
+    and imports follow it without a restart, the folder left behind leaves
+    sys.path, and that holds after a cell wandered off with os.chdir."""
+    port = free_port()
+    old, new, newer = project / "old", project / "new", project / "newer"
+    for folder in (old, new, newer):
+        folder.mkdir()
+        (folder / f"knuth_test_{folder.name}_side.py").write_text(f"WHERE = {folder.name!r}\n")
+    server = subprocess.Popen(
+        server_command(port, root=old),
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+    )
+
+    def probe(module, left):
+        return (
+            f"import os, sys, {module}\n"
+            f"os.getcwd(), sys.path[0], {str(left)!r} in sys.path, {module}.WHERE"
+        )
+
+    try:
+        ws = await connect_when_up(port)
+        async with closing_websocket(ws):
+            client = Client(ws)
+            await client.attach("chdir-test")
+            await client.wait_ready()
+            _, final = await client.run(1, probe("knuth_test_old_side", new))
+            assert final.get("result") == repr((str(old), str(old), False, "old")), final
+
+            await client.send(type="chdir", path=str(new))
+            _, final = await client.run(2, probe("knuth_test_new_side", old))
+            assert final.get("result") == repr((str(new), str(new), False, "new")), final
+
+            # A cell's own chdir moves the cwd, not the session's folder.
+            _, final = await client.run(3, f"import os; os.chdir({str(project)!r})")
+            assert final["type"] == "done", final
+            await client.send(type="chdir", path=str(newer))
+            _, final = await client.run(4, probe("knuth_test_newer_side", new))
+            assert final.get("result") == repr((str(newer), str(newer), False, "newer")), final
+
+            # A folder that is not there leaves everything as it was.
+            await client.send(type="chdir", path=str(project / "missing"))
+            _, final = await client.run(5, probe("knuth_test_newer_side", new))
+            assert final.get("result") == repr((str(newer), str(newer), False, "newer")), final
+    finally:
+        server.terminate()
+        server.wait(timeout=5)
+
+
+def test_chdir_moves_imports_too(tmp_path):
+    asyncio.run(check_chdir_moves_imports_too(tmp_path.resolve()))
+
+
 def test_serve_rejects_missing_root():
     """The engine never binds a port for a root that isn't a real directory."""
     port = free_port()

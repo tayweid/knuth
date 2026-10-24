@@ -169,8 +169,9 @@ always lands in the environment the kernel is already running in: the
 cell runs again with every variable intact. The header comes back as a
 `header` event naming the scratch file; the page splices it into the
 document as an edit and autosave carries it to the real file. Saving or
-renaming sends `chdir` so relative paths follow the file, without a
-restart; the session moves to the document's own environment at the next
+renaming sends `chdir` so relative paths and imports follow the file,
+without a restart (a module already imported from the old folder stays
+until one); the session moves to the document's own environment at the next
 restart, rebuilt from uv's cache. `KNUTH_ENVIRONMENTS=off` turns scratch
 environments off for the tests that predate them. An unsaved document's
 text goes with the attach and each restart, so a scratch environment
