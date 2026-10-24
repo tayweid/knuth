@@ -164,3 +164,42 @@ def test_figures_keep_labels_laid_outside_their_box():
     # 1.5 in is 108 pt: the tight box grows to take the label in.
     assert float(height) > 108, height
     assert "<!-- price -->" in figures["short"]
+
+
+def test_the_same_drawing_renders_the_same_bytes():
+    """matplotlib dates every SVG and hashes its ids (clip paths, markers,
+    hatches, images) with a fresh random salt, so the same drawing came out
+    new bytes each time and `knuth run` made every figs/<name>.svg look
+    changed in git. Knuth's figures carry no date and one fixed salt: the
+    same drawing gives the same bytes, in figs/, the viewer and under a cell."""
+    import re
+
+    s = Session()
+    draw = (
+        "fig, ax = plt.subplots()\n"
+        "_ = ax.plot([1, 2, 3], [2, 4, 9], 'o-')\n"
+        "_ = ax.bar([1, 2, 3], [1, 3, 2], hatch='//', alpha=0.3)\n"
+        "_ = ax.imshow([[0, 1], [1, 0]], extent=(1, 2, 1, 2))\n"
+        "_ = ax.set_title('growth')\n"
+    )
+    ok, tb = s.run("import matplotlib\nmatplotlib.use('Agg')\nimport matplotlib.pyplot as plt\n" + draw)
+    assert ok, tb
+    _, figures = s.artifacts()
+    svg = figures["fig"]
+    # Each kind of hashed id is there to be kept steady, and no date is written.
+    for kind in ("p", "m", "h", "image"):
+        assert re.search(rf'id="{kind}[0-9a-f]{{10}}"', svg), kind
+    assert "<dc:date>" not in svg
+
+    _, again = s.artifacts()
+    assert again["fig"] == svg, "a second render of the same figure must be byte-identical"
+    assert s.figure("fig")["svg"] == svg, "the viewer renders the same bytes"
+
+    # Under a cell: the cell run again draws a new figure with the same bytes.
+    capture_open_figures()
+    ok, tb = s.run(draw)
+    assert ok, tb
+    first = capture_open_figures()
+    ok, tb = s.run(draw)
+    assert ok, tb
+    assert capture_open_figures() == first == [svg]

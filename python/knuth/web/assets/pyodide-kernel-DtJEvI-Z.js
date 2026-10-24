@@ -1,4 +1,4 @@
-import{c as e,i as t}from"./index-DpAxPwDX.js";var n=/^\s*#\s*[%!]\s*pip\s+install\s+(.+?)\s*$/;function r(e){let t=[];for(let r of e.split(`
+import{c as e,i as t}from"./index-CpTI_kWC.js";var n=/^\s*#\s*[%!]\s*pip\s+install\s+(.+?)\s*$/;function r(e){let t=[];for(let r of e.split(`
 `)){let e=n.exec(r);if(e)for(let n of e[1].split(/\s+/))n&&!n.startsWith(`-`)&&!t.includes(n)&&t.push(n)}return t}var i=`from .session import Session
 
 __all__ = ["Session"]
@@ -1255,6 +1255,11 @@ MAX_TABLE_COLS = 200
 # reads the rest from the snapshot it takes after every run.
 MAX_BOUND = 64
 
+# The salt matplotlib hashes a figure's SVG ids with (svg.hashsalt), in
+# place of its default, a new random one per render. Never change it: every
+# figure file's ids would change with it.
+FIGURE_SALT = "knuth"
+
 
 def _listed(name, value):
     """Whether the variable explorer lists a namespace entry: underscore
@@ -1384,14 +1389,28 @@ def _owning_figure(value):
 
 
 def _figure_svg(fig):
-    """The figure as SVG, cropped to what it draws (bbox_inches="tight", as
-    Jupyter's inline figures are): an axis label or a title that matplotlib
-    lays outside the figure's own box, a short figure's x label above all,
-    is kept rather than cut off at the edge."""
+    """The figure as SVG. Every figure Knuth shows or saves is rendered
+    here: under a cell, in the viewer, figs/<name>.svg, an export, in both
+    engines.
+
+    Cropped to what it draws (bbox_inches="tight", as Jupyter's inline
+    figures are): an axis label or a title that matplotlib lays outside the
+    figure's own box, a short figure's x label above all, is kept rather
+    than cut off at the edge.
+
+    The same drawing gives the same bytes, so a rerun leaves an unchanged
+    figs/<name>.svg unchanged in git: no date in the metadata, and ids
+    (clip paths, markers, hatches, images) hashed with FIGURE_SALT instead
+    of a random salt. One salt for every figure is safe because each figure
+    is its own document wherever it is shown (an image under a cell, a file
+    in Plass's PDF), so ids never meet across figures."""
     import io
 
+    import matplotlib
+
     buf = io.StringIO()
-    fig.savefig(buf, format="svg", bbox_inches="tight")
+    with matplotlib.rc_context({"svg.hashsalt": FIGURE_SALT}):
+        fig.savefig(buf, format="svg", bbox_inches="tight", metadata={"Date": None})
     return buf.getvalue()
 
 

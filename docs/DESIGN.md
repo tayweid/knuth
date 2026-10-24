@@ -120,6 +120,20 @@ and makes pyrmd the computation half.
   figure's x label above all — is kept rather than cut off at the edge
   (`_figure_svg`, session.py; both engines run it). The export check
   found the clipped label.
+- **A figure's file changes only when its drawing does** (2026-10-24).
+  A dissertation chapter ported to Knuth showed all seven of its figs/
+  files as changed after a rerun that drew nothing new: matplotlib writes
+  the time into every SVG (`<dc:date>`) and hashes its ids (clip paths,
+  markers, hatches, images) with a new random salt per render. `_figure_svg` saves with no
+  date and one fixed salt (`FIGURE_SALT`, never to change), so an id is a
+  hash of what it names and a rerun leaves an unchanged figure's file
+  byte-identical, as receipts are with their addresses stripped. One
+  salt for every figure is safe because each is its own document
+  wherever it is shown (an image under a cell, a file in Plass's PDF), so
+  ids never meet across figures. A gap left to matplotlib: before 3.10 it
+  hashes a non-rectangular clip (a polar plot's, a custom clip path) with
+  the clip path's memory address, so such figures still change on every
+  run with an older matplotlib, Pyodide's 3.8.4 included.
 
 ## Execution model
 
@@ -146,8 +160,9 @@ and makes pyrmd the computation half.
   - Scalars / small serializables (int, float, str, bool, small
     lists/dicts) → mirrored to `values.json`.
   - A figure object assigned to a name → `figs/<name>.svg`, rewritten on
-    each run. Unnamed figures display but do not persist ("if it's given a
-    name, it's saved as that name").
+    each run (byte-identical while the drawing is unchanged). Unnamed
+    figures display but do not persist ("if it's given a name, it's saved
+    as that name").
   - DataFrames: session-only (viewer material; too big for the contract).
   - `values.json` is REGENERATED on each clean run, never appended — it
     mirrors the program namespace exactly; deleted variables disappear.

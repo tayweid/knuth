@@ -244,9 +244,11 @@ def test_runner(tmp_path):
     assert "<svg" in (tmp_path / "figs" / "fig.svg").read_text()
     assert not (tmp_path / "figs" / "ax.svg").exists(), "one canonical file per figure"
 
-    # Idempotence: a second run reproduces the same bytes.
+    # Idempotence: a second run reproduces the same bytes, figures included.
+    figure = (tmp_path / "figs" / "fig.svg").read_bytes()
     assert run_file(doc_path, echo=quiet) == 0
     assert doc_path.read_text() == after, "second run must be byte-stable"
+    assert (tmp_path / "figs" / "fig.svg").read_bytes() == figure, "an unchanged figure's file must be too"
 
     # Failure: stops at the error, writes the traceback receipt, leaves
     # later receipts and the previous contract untouched.
