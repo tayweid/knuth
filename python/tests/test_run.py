@@ -1,8 +1,10 @@
 """Percent-format parity and full reproducibility-runner scenarios."""
 
 import json
+import os
 import subprocess
 import sys
+import venv
 from pathlib import Path
 
 import pytest
@@ -367,7 +369,7 @@ def test_run_moves_into_the_documents_environment(tmp_path, monkeypatch):
     lines = []
     assert run_file(doc_path, echo=lines.append) == 3
     (command, environ), = calls
-    assert command == [fake_python, "-m", "knuth", "run", str(doc_path)]
+    assert command == [fake_python, "-P", "-m", "knuth", "run", str(doc_path)]
     assert environ[runner.env.IN_ENVIRONMENT_VAR] == "1"
     assert environ["PYTHONPATH"].split(":")[0] == runner.env.shim_dir()
     assert "running in its own environment" in lines[0]
@@ -383,3 +385,80 @@ def test_run_moves_into_the_documents_environment(tmp_path, monkeypatch):
         lambda document: runner.env.Environment(document, sys.executable, True),
     )
     assert run_file(doc_path, echo=lines.append) == 0 and calls == []
+
+
+@pytest.fixture(scope="module")
+def environment_on_this_python(tmp_path_factory):
+    """A second environment on the Python running these tests: like two uv
+    environments on one Python build, its interpreter is a symlink to the
+    same binary as ours, and only its folder tells it apart."""
+    folder = tmp_path_factory.mktemp("environment")
+    venv.EnvBuilder(symlinks=os.name != "nt", with_pip=False).create(folder)
+    if os.name == "nt":
+        return folder, str(folder / "Scripts" / "python.exe")
+    return folder, str(folder / "bin" / "python")
+
+
+def test_run_moves_into_an_environment_on_its_own_python_build(
+    tmp_path, monkeypatch, environment_on_this_python
+):
+    """The document's environment runs the engine's own Python build. The
+    run still moves into it, and the cells see that environment, not ours:
+    same binary, different packages."""
+    folder, python = environment_on_this_python
+    doc_path = tmp_path / "analysis.py"
+    doc_path.write_text(
+        "# /// script\n# dependencies = []\n# ///\n\n# %%\nimport sys\nprefix = sys.prefix\n"
+    )
+    monkeypatch.setattr(
+        runner.env,
+        "ensure_environment",
+        lambda document: runner.env.Environment(document, python, True),
+    )
+    lines = []
+    assert run_file(doc_path, echo=lines.append) == 0, lines
+    assert "running in its own environment" in lines[0], lines
+    prefix = json.loads((tmp_path / "values.json").read_text())["prefix"]
+    assert os.path.samefile(prefix, folder), prefix
+
+
+@pytest.mark.parametrize("own_environment", [False, True], ids=["here", "own-environment"])
+def test_modules_beside_the_document_import_wherever_the_run_starts(
+    tmp_path, monkeypatch, environment_on_this_python, own_environment
+):
+    """As under `python file.py`, the document's folder comes first on
+    sys.path, here and in the document's own environment, for the run
+    only; the folder the run was started from is not on it at all."""
+    project = tmp_path / "project"
+    project.mkdir()
+    (project / "knuth_test_beside.py").write_text("ANSWER = 42\n")
+    doc_path = project / "analysis.py"
+    doc_path.write_text(
+        "# %%\n"
+        "from knuth_test_beside import ANSWER\n"
+        "answer = ANSWER\n"
+        "import importlib.util\n"
+        "stray = importlib.util.find_spec('knuth_test_stray') is not None\n"
+    )
+    elsewhere = tmp_path / "elsewhere"
+    elsewhere.mkdir()
+    (elsewhere / "knuth_test_stray.py").write_text("")
+    if own_environment:
+        _, python = environment_on_this_python
+        monkeypatch.setattr(
+            runner.env,
+            "ensure_environment",
+            lambda document: runner.env.Environment(document, python, True),
+        )
+    monkeypatch.chdir(elsewhere)
+    # "" on sys.path follows a chdir, which would hide the bug.
+    monkeypatch.setattr(sys, "path", [p for p in sys.path if p not in ("", ".")])
+    before = list(sys.path)
+    lines = []
+    try:
+        assert run_file(doc_path, echo=lines.append) == 0, lines
+    finally:
+        sys.modules.pop("knuth_test_beside", None)
+    values = json.loads((project / "values.json").read_text())
+    assert values["answer"] == 42 and values["stray"] is False, values
+    assert sys.path == before, "the document's folder is on sys.path for the run only"

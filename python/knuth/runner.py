@@ -84,8 +84,10 @@ def _in_own_environment(path, echo):
         echo(f"{path.name}: running in its own environment ({environment.python})")
         # The child writes the receipts to the same terminal; ours must land first.
         sys.stdout.flush()
+        # -P: `-m` would put the folder the run was started from first on
+        # the child's sys.path; run_file puts the document's folder there.
         result = subprocess.run(
-            [environment.python, "-m", "knuth", "run", str(path)],
+            [environment.python, "-P", "-m", "knuth", "run", str(path)],
             env={**env.kernel_environ(environment), env.IN_ENVIRONMENT_VAR: "1"},
         )
         return result.returncode
@@ -129,7 +131,11 @@ def run_file(file, echo=print):
     session = Session()
     failed = False
     old_cwd = os.getcwd()
+    old_path = sys.path[:]
     os.chdir(path.parent)
+    # Modules beside the document import, as under `python file.py`, from
+    # wherever the run was started (and in the re-executed child too).
+    sys.path.insert(0, str(path.parent))
     try:
         for i, (cell, code) in enumerate(units, 1):
             buf = io.StringIO()
@@ -167,4 +173,5 @@ def run_file(file, echo=print):
                  + (f", {len(figures)} figure(s)" if figures else "") + ")")
     finally:
         os.chdir(old_cwd)
+        sys.path[:] = old_path
     return 1 if failed else 0

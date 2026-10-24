@@ -231,11 +231,15 @@ at the start of every run, so a package installed into its environment
 imports without a restart.
 
 **`knuth run`** resolves the document's environment the same way and, if
-it is not already running on that interpreter, re-executes itself there
+it is not already running in that environment, re-executes itself there
 with the same shim, guarded by `KNUTH_IN_ENVIRONMENT` against loops. A
 header with no uv on the machine is reported and the run proceeds on the
 engine's Python, since the alternative is refusing to run a file that
-plain `python` would run.
+plain `python` would run. "That environment" means its folder
+(`sys.prefix`), not its interpreter binary: every uv environment on one
+Python build links to the same binary. Either way the document's folder
+comes first on `sys.path` for the run, as under `python file.py`, so a
+module beside the document imports wherever the run was started.
 
 **New documents.** `files.save_document` to a `.py` path that does not
 exist, with text that has no header, prepends one and returns its lines in

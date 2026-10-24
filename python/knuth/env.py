@@ -378,9 +378,29 @@ def ensure_environment(document, on_progress=None):
     return Environment(document, python, True)
 
 
+def environment_prefix(python):
+    """The virtual environment an interpreter path belongs to, found the way
+    Python finds it (pyvenv.cfg one folder above the executable's, else
+    beside it), or None for a base interpreter."""
+    folder = Path(os.path.abspath(python)).parent
+    for candidate in (folder.parent, folder):
+        if (candidate / "pyvenv.cfg").is_file():
+            return candidate
+    return None
+
+
 def same_interpreter(python):
+    """Whether `python` runs in the environment this process runs in.
+
+    Environments, not binaries: a uv environment's bin/python is a symlink
+    to the shared uv-managed interpreter, so two environments on one Python
+    build resolve to the same file. Their folders (sys.prefix here) differ."""
+    prefix = environment_prefix(python)
     try:
-        return os.path.samefile(python, sys.executable)
+        if prefix is not None:
+            return os.path.samefile(prefix, sys.prefix)
+        # A base interpreter is ours only when no venv sits on top of it here.
+        return sys.prefix == sys.base_prefix and os.path.samefile(python, sys.executable)
     except OSError:
         return False
 

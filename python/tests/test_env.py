@@ -189,6 +189,26 @@ def test_kernel_side_modules_need_only_the_standard_library():
     assert result.stdout.strip() == str(Path(env.__file__).resolve().parent / "kernel.py")
 
 
+def test_same_interpreter_compares_environments_not_binaries(tmp_path):
+    """A uv environment's bin/python is a symlink to the shared uv-managed
+    interpreter, so environments on one Python build are one binary. They
+    are still different environments, with different packages."""
+    other = tmp_path / "other"
+    (other / "bin").mkdir(parents=True)
+    (other / "pyvenv.cfg").write_text(f"home = {Path(sys.executable).resolve().parent}\n")
+    python = other / "bin" / "python"
+    try:
+        python.symlink_to(Path(sys.executable).resolve())
+    except OSError:
+        pytest.skip("this system cannot make symlinks")
+    assert os.path.samefile(python, sys.executable)  # one binary
+    assert not env.same_interpreter(str(python))  # two environments
+    assert env.same_interpreter(sys.executable)
+    # A base interpreter is this process's environment only outside a venv.
+    base = getattr(sys, "_base_executable", sys.executable)
+    assert env.same_interpreter(base) == (sys.prefix == sys.base_prefix)
+
+
 @needs_uv
 def test_uv_builds_the_environment_and_pins_what_it_adds(tmp_path):
     document = tmp_path / "analysis.py"
